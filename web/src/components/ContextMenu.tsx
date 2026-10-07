@@ -103,6 +103,8 @@ export function findEntry(entries: MenuEntry[], id: string): MenuItem | MenuSubm
 // ---- Rendering ------------------------------------------------------------------------------
 
 const ITEM = "flex min-h-9 w-full items-center gap-2 rounded px-2 text-left text-sm outline-none";
+/** How long after opening a panel ignores hover (the release of the long press that opened it). */
+const SETTLE_MS = 350;
 
 function MenuPanel({ entries, anchor, prefer, onClose, onCloseSub, label, depth, testId }: { entries: MenuEntry[]; anchor: AnchorRect; prefer: "bottom" | "right"; onClose: () => void; onCloseSub?: () => void; label?: string; depth: number; testId?: string }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -111,6 +113,16 @@ function MenuPanel({ entries, anchor, prefer, onClose, onCloseSub, label, depth,
   const [active, setActive] = useState(0);
   const [open, setOpen] = useState<{ id: string; anchor: AnchorRect } | null>(null);
   const buttons = useRef<Record<string, HTMLButtonElement | null>>({});
+  // A menu opened by a long press sits under the finger: the compatibility mouse move of the release would hover
+  // whatever item lies there (and open its submenu). Hover counts only once the panel has settled; clicks and the
+  // keyboard work right away.
+  const settled = useRef(false);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      settled.current = true;
+    }, SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, []);
 
   const focused = useRef(false);
   useLayoutEffect(() => {
@@ -243,6 +255,7 @@ function MenuPanel({ entries, anchor, prefer, onClose, onCloseSub, label, depth,
               data-menu-item={e.id}
               className={`${ITEM} ${tone}`}
               onMouseEnter={() => {
+                if (!settled.current) return;
                 setActive(index);
                 if (e.kind === "submenu") openSub(e);
                 else if (open) setOpen(null);

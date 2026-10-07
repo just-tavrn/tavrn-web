@@ -957,6 +957,7 @@
   "errors.auth.invalid_credentials": "Wrong username or password",
   "errors.auth.username_taken": "This username is already taken",
   "errors.auth.password_weak": "Password: at least 10 characters",
+  "errors.auth.reset_invalid": "Link invalid or expired",
   "errors.auth.username_invalid": "Username: 2–32 characters a-z, 0-9, _ . -, starting with a letter or digit",
   "errors.auth.email_invalid": "Invalid email address",
   "errors.auth.email_required": "This node requires an email address",

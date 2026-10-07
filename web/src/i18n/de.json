@@ -957,6 +957,7 @@
   "errors.auth.invalid_credentials": "Benutzername oder Passwort falsch",
   "errors.auth.username_taken": "Dieser Benutzername ist bereits vergeben",
   "errors.auth.password_weak": "Passwort: mindestens 10 Zeichen",
+  "errors.auth.reset_invalid": "Link ungültig oder abgelaufen",
   "errors.auth.username_invalid": "Benutzername: 2–32 Zeichen a-z, 0-9, _ . -, beginnend mit Buchstabe oder Ziffer",
   "errors.auth.email_invalid": "E-Mail-Adresse ungültig",
   "errors.auth.email_required": "Dieser Knoten verlangt eine E-Mail-Adresse",

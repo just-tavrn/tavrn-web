@@ -166,11 +166,14 @@ test.describe("Node admin: applications and SSO", () => {
       await page.reload();
       await page.getByTestId("admin-sso-group").fill(group);
       await page.getByTestId("admin-sso-room-creation").fill("3");
-      await page.getByTestId("admin-sso-rooms").fill(room.id);
+      // Rooms are picked by name (the search feeds the select), not by id.
+      await page.getByTestId("admin-sso-room-search").fill("SSO-Karte");
+      await page.getByTestId("admin-sso-room-add").selectOption(room.id);
+      await expect(page.locator(`[data-testid="admin-sso-room-grant"][data-room="${room.id}"]`)).toContainText("SSO-Karte");
       await page.getByTestId("admin-sso-add").click();
       const mapping = page.locator(`[data-testid="admin-sso-mapping"][data-group="${group}"]`);
       await expect(mapping).toContainText("Raum-Erstellungen: 3");
-      await expect(mapping).toContainText(room.id);
+      await expect(mapping.getByTestId("admin-sso-mapping-room")).toContainText("SSO-Karte");
       expect((await getMap()).map[group]).toEqual({ room_creation: 3, rooms: [{ room: room.id, roles: [] }] });
 
       await page.reload();
