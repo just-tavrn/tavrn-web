@@ -54,7 +54,7 @@ function mediapipeAssets(): Plugin {
  * 13 MB) is left out; CJK text falls back to the system fonts.
  */
 function excalidrawFonts(): Plugin {
-  const dir = resolve(__dirname, "node_modules/@excalidraw/excalidraw/dist/prod/fonts");
+  const dir = resolve(import.meta.dirname, "node_modules/@excalidraw/excalidraw/dist/prod/fonts");
   const excluded = new Set(["Xiaolai"]);
   const prefix = "/assets/excalidraw/fonts/";
   const files = (): string[] => {
@@ -99,7 +99,7 @@ function excalidrawFonts(): Plugin {
 export default defineConfig({
   plugins: [react(), tailwindcss(), mediapipeAssets(), excalidrawFonts()],
   // Excalidraw's Mermaid import (text-to-diagram) is replaced by a stub: see src/whiteboard/mermaid-stub.ts.
-  resolve: { alias: { "@excalidraw/mermaid-to-excalidraw": resolve(__dirname, "src/whiteboard/mermaid-stub.ts") } },
+  resolve: { alias: { "@excalidraw/mermaid-to-excalidraw": resolve(import.meta.dirname, "src/whiteboard/mermaid-stub.ts") } },
   server: {
     port: webPort,
     strictPort: true,
