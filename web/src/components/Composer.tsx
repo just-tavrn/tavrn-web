@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import type { Attachment, Gif } from "@tavrn/sdk";
-import { useT } from "../i18n";
+import { errorMessage, t as translate, useT } from "../i18n";
 import { formatSize } from "./AttachmentView";
 import { GifPicker } from "./GifPicker";
 import { EmojiPicker, type CustomEmoji } from "./Reactions";
@@ -56,6 +56,12 @@ export interface ComposerUploadPolicy {
 }
 
 const ALL_CATEGORIES = 6;
+
+/** A failed upload in the user's language: the node's problem code when it has a translation, else the error's text. */
+function uploadError(e: unknown): string {
+  const err = e as { problem?: { code?: string; detail?: string }; message?: string };
+  return errorMessage(err.problem?.code, err.problem?.detail || err.message || translate("composer.upload_failed"));
+}
 
 export function Composer({
   placeholder,
@@ -227,7 +233,7 @@ export function Composer({
       setUploads((u) => [...u, { key, name: file.name, size: file.size, progress: 0, note }]);
       onUpload(file, (p) => setUploads((u) => u.map((x) => (x.key === key ? { ...x, progress: p } : x))))
         .then((attachment) => setUploads((u) => u.map((x) => (x.key === key ? { ...x, attachment, progress: 1 } : x))))
-        .catch((e: unknown) => setUploads((u) => u.map((x) => (x.key === key ? { ...x, error: (e as { message?: string }).message ?? t("composer.upload_failed") } : x))));
+        .catch((e: unknown) => setUploads((u) => u.map((x) => (x.key === key ? { ...x, error: uploadError(e) } : x))));
     }
   };
 

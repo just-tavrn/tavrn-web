@@ -89,6 +89,20 @@ describe("Composer: attachments", () => {
     expect(onUpload).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Senden" })).toBeDisabled();
   });
+
+  it("shows the node's refusal of an upload in the user's language, not the node's English detail", async () => {
+    // Before the node's upload rules are loaded, the node itself refuses the file (problem code upload.type_not_allowed).
+    const refusal = Object.assign(new Error("File type application/x-sh is not allowed on this node"), {
+      problem: { code: "upload.type_not_allowed", detail: "File type application/x-sh is not allowed on this node" },
+    });
+    const onUpload = vi.fn(async () => {
+      throw refusal;
+    });
+    render(<Composer placeholder="Nachricht" onSend={vi.fn()} canAttach onUpload={onUpload} />);
+    await userEvent.setup({ applyAccept: false }).upload(screen.getByLabelText("Datei auswählen"), new File(["echo"], "script.sh", { type: "application/x-sh" }));
+    expect(await screen.findByText("Dieser Dateityp ist auf diesem Knoten nicht erlaubt")).toBeInTheDocument();
+    expect(screen.queryByText(/is not allowed on this node/)).not.toBeInTheDocument();
+  });
 });
 
 describe("Composer: commands (design note 4.11)", () => {

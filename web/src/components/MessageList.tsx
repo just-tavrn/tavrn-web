@@ -864,8 +864,10 @@ const MessageRow = memo(function MessageRow({ m, grouped, own, bot, author, repl
         </div>
         {/* The hover actions float over the row's top right corner instead of taking a column of the layout (an
             invisible column cost the text a third of a phone's width). Hidden ones ignore the pointer, so a tap on
-            the text below never hits an invisible button; keyboard focus shows them. */}
-        <div className="pointer-events-none absolute right-1 top-0.5 z-10 flex items-start gap-0.5 rounded-md border border-line bg-bg-1 p-0.5 opacity-0 shadow-sm focus-within:pointer-events-auto focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100" data-testid="message-actions">
+            the text below never hits an invisible button; keyboard focus shows them. Plain `:hover` on purpose
+            (Tailwind's group-hover only applies on devices with a hover pointer): on touch screens a tap on a
+            message makes it the hovered one, so its actions appear and the next tap reaches them. */}
+        <div className="pointer-events-none absolute right-1 top-0.5 z-10 flex items-start gap-0.5 rounded-md border border-line bg-bg-1 p-0.5 opacity-0 shadow-sm focus-within:pointer-events-auto focus-within:opacity-100 [.group:hover_&]:pointer-events-auto [.group:hover_&]:opacity-100" data-testid="message-actions">
           {canReact && onReact && <EmojiPicker customEmojis={customEmojis} onPick={(e) => onReact(m, e, false)} />}
           {canPin && onPin && (
             <button type="button" aria-label={m.pinned ? t("messages.unpin") : t("messages.pin")} onClick={() => onPin(m, !m.pinned)} className="min-h-8 min-w-8 rounded text-fg-2 hover:bg-bg-3 hover:text-fg-0">
