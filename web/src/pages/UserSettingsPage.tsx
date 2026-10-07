@@ -16,14 +16,18 @@ import { ApplicationsTab } from "./settings/ApplicationsTab";
 import { PersonalEmojisTab } from "./settings/PersonalEmojisTab";
 import { PersonalSoundsTab } from "./settings/PersonalSoundsTab";
 import { LegalTab } from "./settings/LegalTab";
+import { AppTab } from "./settings/AppTab";
+import { platform } from "../platform";
 
-const TABS = ["profile", "privacy", "security", "voice", "notifications", "emojis", "sounds", "applications", "language", "devices", "legal"] as const;
+const TABS = ["profile", "privacy", "security", "voice", "notifications", "emojis", "sounds", "applications", "language", "devices", "legal", "app"] as const;
+/** Tabs of this platform: "app" (home node, updates) only in the desktop app. */
+const tabs = () => TABS.filter((x) => x !== "app" || platform().isDesktop);
 
 export function UserSettingsPage() {
   const t = useT();
   const { tab = "profile" } = useParams();
   const navigate = useNavigate();
-  if (!TABS.includes(tab as (typeof TABS)[number])) return <Navigate to="/settings/profile" replace />;
+  if (!tabs().includes(tab as (typeof TABS)[number])) return <Navigate to="/settings/profile" replace />;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-4">
@@ -34,7 +38,7 @@ export function UserSettingsPage() {
       </header>
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <nav aria-label={t("settings.sections")} className="flex shrink-0 gap-1 overflow-x-auto border-b border-line p-2 md:w-48 md:flex-col md:border-b-0 md:border-r">
-          {TABS.map((x) => (
+          {tabs().map((x) => (
             <NavLink key={x} to={`/settings/${x}`} className={({ isActive }) => `whitespace-nowrap rounded-md px-3 py-2 text-sm ${isActive ? "bg-accent-soft text-fg-0" : "text-fg-1 hover:bg-bg-3/60 hover:text-fg-0"}`}>
               {t(`user.tab.${x}`)}
             </NavLink>
@@ -52,6 +56,7 @@ export function UserSettingsPage() {
           {tab === "language" && <LanguageTab />}
           {tab === "devices" && <DevicesTab />}
           {tab === "legal" && <LegalTab />}
+          {tab === "app" && <AppTab />}
         </div>
       </div>
     </div>

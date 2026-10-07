@@ -19,6 +19,7 @@ import { NoticesTab } from "./admin/NoticesTab";
 import { DeletionsSection, UserDataActions } from "./admin/AccountRequests";
 import { ReportsInbox } from "../moderation/ReportsInbox";
 import { badgeText, useOpenAdminReports } from "../moderation/hooks";
+import { webOrigin } from "../platform";
 
 const TABS = ["overview", "users", "invites", "bans", "reports", "entitlements", "tokens", "applications", "sso", "federation", "legal", "notices", "audit"] as const;
 type Tab = (typeof TABS)[number];
@@ -292,11 +293,11 @@ function InvitesTab() {
       <ul className="divide-y divide-line text-sm" data-testid="account-invite-list">
         {invites.data?.map((i) => (
           <li key={i.code} className="flex flex-wrap items-center gap-2 py-2">
-            <code className="rounded bg-bg-0 px-1.5 py-0.5 text-xs">{`${location.origin}/login?invite=${i.code}`}</code>
+            <code className="rounded bg-bg-0 px-1.5 py-0.5 text-xs">{`${webOrigin()}/login?invite=${i.code}`}</code>
             {i.note && <span className="text-fg-1">{i.note}</span>}
             <span className="text-xs text-fg-2">{t("admin.invite_uses", { uses: i.uses, max: i.max_uses === 0 ? t("admin.invite_unlimited") : i.max_uses })}</span>
             <span className="flex-1" />
-            <Button variant="ghost" onClick={() => void navigator.clipboard?.writeText(`${location.origin}/login?invite=${i.code}`)}>
+            <Button variant="ghost" onClick={() => void navigator.clipboard?.writeText(`${webOrigin()}/login?invite=${i.code}`)}>
               {t("common.copy")}
             </Button>
             <Button variant="ghost" onClick={async () => { try { await api.admin.deleteInvite(i.code); await refresh(); } catch (e) { toastError(e); } }}>

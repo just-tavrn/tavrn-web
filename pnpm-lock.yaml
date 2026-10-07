@@ -227,6 +227,9 @@ importers:
       '@tanstack/react-virtual':
         specifier: ^3.14.13
         version: 3.14.13(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@tauri-apps/api':
+        specifier: ^2.12.1
+        version: 2.12.1
       '@tavrn/crypto':
         specifier: github:just-tavrn/tavrn-crypto#v0.1.0&path:pkg
         version: git+https://github.com/just-tavrn/tavrn-crypto.git#5b5929a573fd573ed1417132b26b8fe72c1027b5&path:pkg
@@ -1275,6 +1278,9 @@ packages:
 
   '@tanstack/virtual-core@3.17.11':
     resolution: {integrity: sha512-+ILjvtHup6Y2hzQ6YzwMgX1Q+oQpxEGOXCEsCNaPoIP0VxMbizIBTmYTDtkerkIQS8/CbP1BRuyt8V/8BCsy1g==}
+
+  '@tauri-apps/api@2.12.1':
+    resolution: {integrity: sha512-DeyFHa3wynpyoqTDikDEDGTJIq4LQ5USfolQGRmGIWT6JMADyxZBTDa5cAdT3tDg73rUXufPaCwN7aXBos4OnQ==}
 
   '@tavrn/bot@git+https://github.com/just-tavrn/tavrn-js.git#82356b8a38d554da43616b25930740407ff6410c&path:bot':
     resolution: {commit: 82356b8a38d554da43616b25930740407ff6410c, path: bot, repo: https://github.com/just-tavrn/tavrn-js.git, type: git}
@@ -3645,6 +3651,8 @@ snapshots:
       react-dom: 19.3.0(react@19.3.0)
 
   '@tanstack/virtual-core@3.17.11': {}
+
+  '@tauri-apps/api@2.12.1': {}
 
   '@tavrn/bot@git+https://github.com/just-tavrn/tavrn-js.git#82356b8a38d554da43616b25930740407ff6410c&path:bot':
     dependencies:

@@ -8,16 +8,16 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { SsoInfo } from "@tavrn/sdk";
 import { publicApi } from "../../lib/api";
-import { forgetSsoLogout, peekSsoLogout, startSso } from "../../lib/sso";
+import { forgetSsoLogout, peekSsoLogout, ssoAvailable, startSso } from "../../lib/sso";
 import { useT } from "../../i18n";
 import { describeError } from "../../stores/toasts";
 import { Button, ErrorText } from "../ui";
 import { AuthCard } from "./AuthCard";
 
-/** The node's SSO settings (`GET /node`), null without a provider. */
+/** The node's SSO settings (`GET /node`), null without a provider and in the desktop app (no SSO there yet). */
 export function useSso(): SsoInfo | null {
   const node = useQuery({ queryKey: ["node", "origin"], queryFn: () => publicApi.node.info() });
-  return node.data?.sso ?? null;
+  return ssoAvailable() ? (node.data?.sso ?? null) : null;
 }
 
 /** "Sign in with SSO" plus a divider; renders nothing on nodes without a provider. */
@@ -82,6 +82,11 @@ export function SsoOnlyLogin({ next, onAdmin }: { next: string; onAdmin: () => v
       <p className="mb-4 text-sm text-fg-1" data-testid="sso-only">
         {t("sso.only_hint")}
       </p>
+      {!ssoAvailable() && (
+        <p role="status" className="mb-4 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-fg-1" data-testid="sso-desktop">
+          {t("desktop.sso_unavailable")}
+        </p>
+      )}
       <SsoButton next={next} divider={false} />
       <button type="button" className="mt-4 block min-h-9 w-full border-t border-line pt-3 text-center text-sm text-fg-2 hover:text-fg-0" onClick={onAdmin} data-testid="sso-break-glass">
         {t("sso.admin_login")}

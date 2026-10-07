@@ -7,8 +7,11 @@
 import { secretStoragePrfInput } from "@tavrn/crypto";
 import { b64urlDecode, credentialToJSON, parseCreationOptions, parseRequestOptions, prfEnabled, prfFirst, stripPrfResults, type AuthResponse, type TavrnApi, type WebauthnRegistered, type DeviceProof } from "@tavrn/sdk";
 import { ensureCrypto } from "@tavrn/e2ee";
+import { platform } from "../platform";
 
+/** WebAuthn is there; never in the desktop app, whose origin is not the node's (passkeys are bound to the node's domain). */
 export function passkeysSupported(): boolean {
+  if (platform().isDesktop) return false;
   return typeof window !== "undefined" && typeof window.PublicKeyCredential !== "undefined" && !!navigator.credentials;
 }
 

@@ -16,6 +16,7 @@ import { TavrnApi, TavrnApiError, createRefresher, isNodeDomain, resolveNode, ty
 import { CLIENT_HEADER, api, publicApi } from "../lib/api";
 import { useAuth } from "./auth";
 import { trackingFetch, useReach } from "./reach";
+import { allowsInsecureNodes, originUrl, originWsUrl, webOrigin } from "../platform";
 
 const KEY = "tavrn.nodes";
 /** Renew a federated session when less than this is left of its 7-day cap. */
@@ -109,7 +110,7 @@ export const useNodes = create<NodesState>((set, get) => ({
 export const nodeDeps = {
   now: () => Date.now(),
   /**
-   * Discovery: the node this client was loaded from is reached on this origin (its identity domain comes
+   * Discovery: the node this client was loaded from is reached on this origin (desktop app: the chosen node) (its identity domain comes
    * from its discovery document, never from `location`); any other node through the well-known of its
    * identity domain, whose endpoints may live on another host (delegation, design note 4.2c), otherwise
    * through the resolution of this client's node (which also reads `_tavrn._tcp` SRV records).
@@ -117,10 +118,10 @@ export const nodeDeps = {
   discover: async (domain: string): Promise<NodeEndpoints> => {
     const own = await originDocument().catch(() => null);
     if (own?.domain === domain) {
-      return { domain, base: location.origin, ws: `${location.origin.replace(/^http/, "ws")}/api/v1/ws`, web: location.origin };
+      return { domain, base: originUrl(), ws: originWsUrl(), web: webOrigin() };
     }
     // The own node resolves like nodes do among themselves (well-known → SRV → domain): SRV-only setups work too.
-    return resolveNode(domain, { resolve: (d) => publicApi.federation.resolve(d), allowInsecure: typeof location !== "undefined" && location.protocol === "http:" });
+    return resolveNode(domain, { resolve: (d) => publicApi.federation.resolve(d), allowInsecure: typeof location !== "undefined" && allowsInsecureNodes() });
   },
   /** The home node's client (federation tokens). */
   home: (): TavrnApi => api,

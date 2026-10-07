@@ -11,6 +11,7 @@ import { useT } from "../i18n";
 import { DownloadButton, mediaKind, useAttachmentUrl, type ViewAttachment } from "./AttachmentView";
 import { isSvg } from "../lib/preview";
 import { useFocusTrap } from "../lib/focusTrap";
+import { platform } from "../platform";
 
 export const MIN_ZOOM = 1;
 export const MAX_ZOOM = 5;
@@ -128,6 +129,8 @@ function Stage({ item, state, dispatch }: { item: ViewAttachment; state: ViewerS
 function OpenOriginal({ item }: { item: ViewAttachment }) {
   const t = useT();
   const { url } = useAttachmentUrl(item, true);
+  // The desktop app opens no browser tabs of its own; the download icon saves the original there.
+  if (platform().isDesktop) return null;
   return (
     <button type="button" disabled={!url} onClick={() => url && window.open(url, "_blank", "noopener")} className="min-h-9 min-w-9 rounded text-white/80 hover:bg-white/10 hover:text-white disabled:opacity-40" aria-label={t("media.open_original")} title={t("media.open_original")} data-testid="viewer-original">
       ↗

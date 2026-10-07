@@ -10,6 +10,7 @@ import { api } from "../lib/api";
 import { fromUnfurl, unfurlCandidate, type LinkPreview } from "../lib/linkPreview";
 import { useContentPrivacy } from "../stores/contentPrivacy";
 import { PreviewCard } from "./LinkPreviews";
+import { originUrl } from "../platform";
 
 export const UNFURL_DEBOUNCE_MS = 700;
 
@@ -28,7 +29,7 @@ function unfurlOffered(): Promise<boolean> {
 
 export function useComposePreview(text: string, enabled: boolean): { preview: LinkPreview | null; card: ReactNode; reset: () => void } {
   const create = useContentPrivacy((s) => s.createPreviews);
-  const candidate = enabled && create ? unfurlCandidate(text, location.hostname) : null;
+  const candidate = enabled && create ? unfurlCandidate(text, new URL(originUrl()).hostname) : null;
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
   const [result, setResult] = useState<{ url: string; preview: LinkPreview | null } | null>(null);
   const generation = useRef(0);
