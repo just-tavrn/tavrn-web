@@ -26,6 +26,10 @@ permissions:
   contents: read
   packages: read
 
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   e2e:
     name: End-to-end
