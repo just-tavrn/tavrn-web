@@ -1,0 +1,47 @@
+# Node
+node_modules/
+*.tsbuildinfo
+*.tgz
+# The web client's build output (pnpm --filter @tavrn/web build); released as a tarball, never committed
+dist/
+/release/
+
+# Local data of the end-to-end nodes and secrets: never part of the repository
+/data
+data/
+data-dev/
+pgdata/
+*.db
+*.sqlite
+*.sqlite3
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+# Bot key files and state directories of local runs
+tavrn-key-*.txt
+.tavrn-state*/
+
+# Rust build output (a locally built tavrn-node for the end-to-end tests lives elsewhere; phase 6: Tauri shells)
+target/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Agent settings, memory files and planning notes: never part of the repository
+.claude/
+CLAUDE.md
+docs/PLAN.md
+
+# Test output
+test-results/
+playwright-report/
+blob-report/
+coverage/
+perf/results/
+
+# Private pattern list of the pre-publication check
+.publish-check.private

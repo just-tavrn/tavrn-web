@@ -1,0 +1,75 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Release of the web client (docs/GITHUB.md "Releases"). Push a tag vX.Y.Z whose commit carries version X.Y.Z in
+# web/package.json: the workflow checks the tag, runs the checks, builds web/dist and attaches it as
+# tavrn-web-X.Y.Z.tar.gz (with its SHA-256 sum) to a GitHub release, so the node's image build can embed a pinned
+# bundle instead of building this repository. Gated by CI_ENABLED.
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Release ${{ github.ref_name }}
+    if: ${{ vars.CI_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Access to private organization repositories
+        env:
+          READ_TOKEN: ${{ secrets.TAVRN_READ_PAT }}
+        run: |
+          if [ -n "$READ_TOKEN" ]; then
+            git config --global url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "https://github.com/just-tavrn/"
+            git config --global --add url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "ssh://git@github.com/just-tavrn/"
+            git config --global --add url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "git@github.com:just-tavrn/"
+          fi
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Tag matches the version
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          v="${TAG#v}"
+          pv="$(node -p "require('./web/package.json').version")"
+          if [ "$pv" != "$v" ]; then
+            echo "tag $TAG does not match web/package.json version $pv" >&2
+            exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - run: pnpm install --frozen-lockfile
+      - name: Checks (SPDX headers, dependency licenses, typecheck, tests)
+        run: |
+          scripts/check-spdx.sh
+          node scripts/check-js-licenses.mjs
+          pnpm -r --if-present typecheck
+          pnpm -r --if-present test
+      - name: Build web/dist and pack it
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          pnpm --filter @tavrn/web build
+          test -f web/dist/index.html
+          mkdir -p release
+          tar -C web/dist -czf "release/tavrn-web-$VERSION.tar.gz" .
+          (cd release && sha256sum "tavrn-web-$VERSION.tar.gz" > "tavrn-web-$VERSION.tar.gz.sha256")
+          ls -l release
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --generate-notes --verify-tag release/*

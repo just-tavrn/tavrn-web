@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Uses the organization's reusable workflows (just-tavrn/.github). Every job is gated by the repository
+# variable CI_ENABLED (docs/GITHUB.md): nothing runs until the owner sets it to "true".
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  js:
+    name: JavaScript
+    if: ${{ vars.CI_ENABLED == 'true' }}
+    uses: just-tavrn/.github/.github/workflows/js-ci.yml@main
+    with:
+      # SPDX headers and dependency licenses (the reusable workflow's defaults), typecheck of the web client and the
+      # end-to-end suite, Vitest (unit, component and the static accessibility checks of web/src/test/a11yStatic.test.ts),
+      # then the production bundle web/dist.
+      typecheck: pnpm -r --if-present typecheck
+      test: pnpm -r --if-present test
+      build: pnpm --filter @tavrn/web build && test -f web/dist/index.html
+      submodules: "false"
+    secrets:
+      # The @tavrn packages are git dependencies of private repositories until the repositories go public.
+      READ_TOKEN: ${{ secrets.TAVRN_READ_PAT }}
+
+  publish-check:
+    name: Publication hygiene
+    if: ${{ vars.CI_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: No private files, domains or secrets
+        env:
+          # Comma-separated private domains, hosts and addresses (repository or organization secret).
+          PUBLISH_CHECK_PRIVATE: ${{ secrets.PUBLISH_CHECK_PRIVATE }}
+        run: scripts/publish-check.sh

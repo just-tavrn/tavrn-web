@@ -1,0 +1,18 @@
+packages:
+  - web
+  - e2e
+  # Phase 6: the Tauri desktop and mobile shells (apps/desktop) join here.
+
+# Only these packages may run install scripts (pnpm >= 12: allowBuilds).
+allowBuilds:
+  esbuild: true
+
+# Private phase: the @tavrn packages come from their repositories by tag (tavrn-js README, "Installation").
+# @tavrn/e2ee and @tavrn/bot depend on their siblings and on @tavrn/crypto through git dependencies, which pnpm
+# blocks below the top level by default; the overrides make every package use the same tagged copies (one
+# WebAssembly module for the client and @tavrn/e2ee). Once the packages are on npm these become version ranges.
+blockExoticSubdeps: false
+overrides:
+  "@tavrn/sdk": "github:just-tavrn/tavrn-js#v0.1.0&path:sdk"
+  "@tavrn/e2ee": "github:just-tavrn/tavrn-js#v0.1.0&path:e2ee"
+  "@tavrn/crypto": "github:just-tavrn/tavrn-crypto#v0.1.0&path:pkg"

@@ -1,0 +1,245 @@
+// SPDX-License-Identifier: Apache-2.0
+import { describe, expect, it, vi } from "vitest";
+import { ALL_PERMISSIONS, Permission } from "@tavrn/sdk";
+import { findEntry, type MenuEntry } from "../components/ContextMenu";
+import { channelMenu, dmMenu, memberMenu, messageMenu, notifyEntries, roomMenu, voiceParticipantMenu, type MemberMenuActions, type MemberMenuContext, type VoiceParticipantMenuActions } from "./menus";
+
+const t = (key: string, params?: Record<string, string | number>) => (params ? `${key}:${JSON.stringify(params)}` : key);
+const ids = (entries: MenuEntry[]) => entries.filter((e) => e.kind !== "separator").map((e) => e.id);
+
+const memberActions = (): MemberMenuActions => ({
+  profile: vi.fn(),
+  message: vi.fn(),
+  call: vi.fn(),
+  addFriend: vi.fn(),
+  mention: vi.fn(),
+  copyAddress: vi.fn(),
+  kick: vi.fn(),
+  ban: vi.fn(),
+  timeout: vi.fn(),
+  clearTimeout: vi.fn(),
+  serverMute: vi.fn(),
+  disconnect: vi.fn(),
+  moveTo: vi.fn(),
+  toggleRole: vi.fn(),
+  volume: (v) => ({ kind: "custom", id: "volume", render: () => String(v) }),
+  block: vi.fn(),
+});
+
+const roles = [
+  { id: "everyone", name: "@everyone", position: 0, is_everyone: true },
+  { id: "admin", name: "Admin", position: 10, is_everyone: false },
+  { id: "mod", name: "Mod", position: 5, is_everyone: false },
+  { id: "member", name: "Member", position: 1, is_everyone: false },
+];
+
+const ctx = (over: Partial<MemberMenuContext> = {}): MemberMenuContext => ({
+  self: false,
+  target: { address: "bob@x", name: "Bob", isOwner: false, top: 1, roles: ["member"], timedOut: false, bot: false },
+  room: { perms: Permission.KICK_MEMBERS | Permission.BAN_MEMBERS | Permission.MODERATE_MEMBERS | Permission.MANAGE_ROLES, isOwner: false, myTop: 5, roles },
+  friend: false,
+  friendPending: false,
+  callsAvailable: false,
+  canMention: true,
+  ...over,
+});
+
+describe("memberMenu", () => {
+  it("offers the everyday items and, for a moderator above the target, moderation", () => {
+    const entries = memberMenu(ctx(), memberActions(), t);
+    expect(ids(entries)).toEqual(["profile", "message", "call", "add-friend", "mention", "copy-address", "roles", "timeout", "kick", "ban", "block"]);
+    expect(findEntry(entries, "call")).toMatchObject({ disabled: true, reason: "menu.reason.calls_soon" });
+    expect(findEntry(entries, "kick")?.disabled).toBeFalsy();
+  });
+
+  it("hides moderation without the permission and disables it (with the reason) against higher members", () => {
+    expect(ids(memberMenu(ctx({ room: { perms: 0n, isOwner: false, myTop: 5, roles } }), memberActions(), t))).not.toContain("kick");
+    const above = memberMenu(ctx({ target: { address: "a@x", name: "A", isOwner: false, top: 10, roles: ["admin"], timedOut: false, bot: false } }), memberActions(), t);
+    expect(findEntry(above, "kick")).toMatchObject({ disabled: true, reason: "menu.reason.hierarchy" });
+    expect(findEntry(above, "ban")).toMatchObject({ disabled: true });
+    const owner = memberMenu(ctx({ target: { address: "o@x", name: "O", isOwner: true, top: 0, roles: [], timedOut: false, bot: false } }), memberActions(), t);
+    expect(findEntry(owner, "kick")).toMatchObject({ disabled: true, reason: "menu.reason.owner" });
+  });
+
+  it("never offers moderation, friend or block items on oneself", () => {
+    const entries = memberMenu(ctx({ self: true }), memberActions(), t);
+    expect(ids(entries)).toEqual(["profile", "mention", "copy-address", "roles"]);
+  });
+
+  it("checks the roles of the target and locks roles at or above the own one", () => {
+    const toggle = vi.fn();
+    const actions = { ...memberActions(), toggleRole: toggle };
+    const entries = memberMenu(ctx(), actions, t);
+    expect(findEntry(entries, "role-member")).toMatchObject({ checked: true, keepOpen: true });
+    expect(findEntry(entries, "role-admin")).toMatchObject({ checked: false, disabled: true, reason: "menu.reason.role_above" });
+    expect(findEntry(entries, "role-mod")).toMatchObject({ disabled: true });
+    const member = findEntry(entries, "role-member");
+    if (member?.kind === "item") member.onSelect?.();
+    expect(toggle).toHaveBeenCalledWith("member", false);
+    // The owner may assign every role.
+    const owner = memberMenu(ctx({ room: { perms: ALL_PERMISSIONS, isOwner: true, myTop: Number.MAX_SAFE_INTEGER, roles } }), memberActions(), t);
+    expect(findEntry(owner, "role-admin")?.disabled).toBeFalsy();
+  });
+
+  it("offers timeouts with durations, or removing a running one", () => {
+    const entries = memberMenu(ctx(), memberActions(), t);
+    const timeout = findEntry(entries, "timeout");
+    expect(timeout?.kind === "submenu" && timeout.items.map((e) => e.id)).toEqual(["timeout-1", "timeout-5", "timeout-10", "timeout-60", "timeout-1440", "timeout-10080"]);
+    const running = memberMenu(ctx({ target: { address: "b@x", name: "B", isOwner: false, top: 1, roles: [], timedOut: true, bot: false } }), memberActions(), t);
+    expect(ids(running)).toContain("timeout-clear");
+  });
+
+  it("adds voice moderation and the volume slider for members in voice", () => {
+    const voice = { channelId: "v1", serverMuted: false, channels: [{ id: "v2", name: "Raid" }], inMyCall: true, volume: 150 };
+    const mod = memberMenu(ctx({ voice, room: { perms: Permission.MUTE_MEMBERS | Permission.MOVE_MEMBERS, isOwner: false, myTop: 5, roles } }), memberActions(), t);
+    expect(ids(mod)).toEqual(expect.arrayContaining(["volume", "server-mute", "server-deafen", "disconnect", "move"]));
+    expect(findEntry(mod, "server-deafen")).toMatchObject({ disabled: true, reason: "menu.reason.not_supported" });
+    const move = findEntry(mod, "move");
+    expect(move?.kind === "submenu" && move.items.map((e) => e.id)).toEqual(["move-v2"]);
+    const plain = memberMenu(ctx({ voice: { ...voice, inMyCall: false }, room: { perms: 0n, isOwner: false, myTop: 0, roles } }), memberActions(), t);
+    expect(ids(plain)).not.toContain("volume");
+    expect(ids(plain)).not.toContain("disconnect");
+  });
+});
+
+describe("voice participant menus (design note 4.13 item 3)", () => {
+  it("the member menu of a voice participant adds 'copy id'; the member list keeps its entries", () => {
+    const copyId = vi.fn();
+    const entries = memberMenu(ctx(), { ...memberActions(), copyId }, t);
+    expect(ids(entries).slice(0, 7)).toEqual(["profile", "message", "call", "add-friend", "mention", "copy-address", "copy-id"]);
+    const item = findEntry(entries, "copy-id");
+    if (item?.kind === "item") item.onSelect?.();
+    expect(copyId).toHaveBeenCalled();
+    expect(ids(memberMenu(ctx(), memberActions(), t))).not.toContain("copy-id");
+  });
+
+  const actions = (): VoiceParticipantMenuActions => ({
+    volume: (v) => ({ kind: "custom", id: "volume", render: () => String(v) }),
+    serverMute: vi.fn(),
+    disconnect: vi.fn(),
+    moveTo: vi.fn(),
+    copyAddress: vi.fn(),
+    copyId: vi.fn(),
+  });
+  const base = { self: false, perms: 0n, serverMuted: false, inMyCall: true, volume: 100, channels: [{ id: "v2", name: "Raid" }] };
+
+  it("reduced menu for participants without a loaded member: volume, mute, disconnect, move, copy", () => {
+    const mod = voiceParticipantMenu({ ...base, perms: Permission.MUTE_MEMBERS | Permission.MOVE_MEMBERS }, actions(), t);
+    expect(ids(mod)).toEqual(["volume", "server-mute", "server-deafen", "disconnect", "move", "copy-address", "copy-id"]);
+    expect(findEntry(mod, "server-deafen")).toMatchObject({ disabled: true });
+    const a = actions();
+    const muted = voiceParticipantMenu({ ...base, perms: Permission.MUTE_MEMBERS, serverMuted: true }, a, t);
+    const unmute = findEntry(muted, "server-mute");
+    expect(unmute?.label).toBe("menu.member.server_unmute");
+    if (unmute?.kind === "item") unmute.onSelect?.();
+    expect(a.serverMute).toHaveBeenCalledWith(false);
+  });
+
+  it("without permissions only volume and copy; never moderation or volume on oneself", () => {
+    expect(ids(voiceParticipantMenu(base, actions(), t))).toEqual(["volume", "copy-address", "copy-id"]);
+    expect(ids(voiceParticipantMenu({ ...base, inMyCall: false }, actions(), t))).toEqual(["copy-address", "copy-id"]);
+    expect(ids(voiceParticipantMenu({ ...base, self: true, perms: ALL_PERMISSIONS }, actions(), t))).toEqual(["copy-address", "copy-id"]);
+    // No other voice channel: no move submenu.
+    expect(ids(voiceParticipantMenu({ ...base, perms: Permission.MOVE_MEMBERS, channels: [] }, actions(), t))).not.toContain("move");
+  });
+});
+
+describe("messageMenu", () => {
+  const actions = { reply: vi.fn(), react: vi.fn(), copyText: vi.fn(), copyLink: vi.fn(), copyId: vi.fn(), pin: vi.fn(), edit: vi.fn(), remove: vi.fn(), markUnread: vi.fn() };
+  const base = { own: false, text: "hi", pinned: false, canPin: true, canReact: true, canManage: false, canReply: true, canEdit: true, canDelete: true };
+
+  it("lets authors edit and delete, moderators delete others' messages", () => {
+    expect(ids(messageMenu({ ...base, own: true }, actions, t))).toEqual(["reply", "react", "copy-text", "copy-link", "copy-id", "mark-unread", "pin", "edit", "delete"]);
+    expect(ids(messageMenu(base, actions, t))).not.toContain("delete");
+    const mod = messageMenu({ ...base, canManage: true }, actions, t);
+    expect(findEntry(mod, "delete")?.label).toBe("menu.message.delete_mod");
+    expect(ids(mod)).not.toContain("edit");
+  });
+
+  it("toggles pin/unpin and hides text items for undecryptable messages", () => {
+    const pinned = messageMenu({ ...base, pinned: true }, actions, t);
+    expect(findEntry(pinned, "pin")?.label).toBe("menu.message.unpin");
+    const p = findEntry(pinned, "pin");
+    if (p?.kind === "item") p.onSelect?.();
+    expect(actions.pin).toHaveBeenCalledWith(false);
+    expect(ids(messageMenu({ ...base, text: null, canPin: false, canReact: false }, actions, t))).toEqual(["reply", "copy-link", "copy-id", "mark-unread"]);
+  });
+});
+
+describe("notification and list menus", () => {
+  const notify = { mode: null, inherited: "mentions" as const, mutedUntil: null };
+  const notifyActions = { setMode: vi.fn(), mute: vi.fn(), unmute: vi.fn() };
+
+  it("offers modes with the inherited default and mute durations, or unmute while muted", () => {
+    const entries = notifyEntries("channel", notify, notifyActions, t);
+    const modes = findEntry(entries, "channel-notify");
+    expect(modes?.kind === "submenu" && modes.items.map((e) => e.id)).toEqual(["channel-mode-default", "channel-mode-all", "channel-mode-mentions", "channel-mode-nothing"]);
+    expect(findEntry(entries, "channel-mode-default")).toMatchObject({ checked: true });
+    const mute = findEntry(entries, "channel-mute");
+    expect(mute?.kind === "submenu" && mute.items.map((e) => e.id)).toEqual(["channel-mute-1", "channel-mute-8", "channel-mute-24", "channel-mute-0"]);
+    const muted = notifyEntries("channel", { ...notify, mutedUntil: new Date(Date.now() + 3_600_000).toISOString() }, notifyActions, t);
+    expect(ids(muted)).toContain("channel-unmute");
+  });
+
+  it("offers \"keep the full history on this device\" only where it applies (encrypted, unlocked)", () => {
+    const toggleFullHistory = vi.fn();
+    const actions = { ...notifyActions, markRead: vi.fn(), edit: vi.fn(), duplicate: vi.fn(), remove: vi.fn(), copyLink: vi.fn(), copyId: vi.fn(), moveEveryoneHere: vi.fn(), moveEveryoneTo: vi.fn(), toggleFullHistory };
+    const off = channelMenu({ kind: "text", unread: false, canManage: false, system: false, notify, fullHistory: false }, actions, t);
+    expect(ids(off)).toEqual(["mark-read", "channel-notify", "channel-mute", "full-history", "copy-link", "copy-id"]);
+    expect(findEntry(off, "full-history")).toMatchObject({ checked: false, label: "menu.full_history" });
+    const entry = findEntry(off, "full-history");
+    if (entry?.kind === "item") entry.onSelect?.();
+    expect(toggleFullHistory).toHaveBeenCalled();
+    expect(findEntry(channelMenu({ kind: "text", unread: false, canManage: false, system: false, notify, fullHistory: true }, actions, t), "full-history")).toMatchObject({ checked: true });
+    expect(ids(channelMenu({ kind: "text", unread: false, canManage: false, system: false, notify, fullHistory: null }, actions, t))).not.toContain("full-history");
+    const dmActions = { ...notifyActions, markRead: vi.fn(), profile: vi.fn(), close: vi.fn(), block: vi.fn(), copyAddress: vi.fn(), toggleFullHistory };
+    expect(ids(dmMenu({ unread: false, kind: "dm", peer: null, notify, fullHistory: true }, dmActions, t))).toContain("full-history");
+    expect(ids(dmMenu({ unread: false, kind: "dm", peer: null, notify }, dmActions, t))).not.toContain("full-history");
+  });
+
+  it("gates channel management and voice moving", () => {
+    const actions = { ...notifyActions, markRead: vi.fn(), edit: vi.fn(), duplicate: vi.fn(), remove: vi.fn(), copyLink: vi.fn(), copyId: vi.fn(), moveEveryoneHere: vi.fn(), moveEveryoneTo: vi.fn() };
+    const member = channelMenu({ kind: "text", unread: false, canManage: false, system: false, notify }, actions, t);
+    expect(ids(member)).toEqual(["mark-read", "channel-notify", "channel-mute", "copy-link", "copy-id"]);
+    expect(findEntry(member, "mark-read")).toMatchObject({ disabled: true });
+    const admin = channelMenu({ kind: "text", unread: true, canManage: true, system: false, notify }, actions, t);
+    expect(ids(admin)).toEqual(expect.arrayContaining(["edit", "duplicate", "delete"]));
+    const welcome = channelMenu({ kind: "system", unread: false, canManage: true, system: true, notify }, actions, t);
+    expect(ids(welcome)).not.toContain("delete");
+  });
+
+  it("gives voice channels the text channel menu plus the mass moves (move_members)", () => {
+    const actions = { ...notifyActions, markRead: vi.fn(), edit: vi.fn(), duplicate: vi.fn(), remove: vi.fn(), copyLink: vi.fn(), copyId: vi.fn(), moveEveryoneHere: vi.fn(), moveEveryoneTo: vi.fn() };
+    // Without move_members: exactly the entries of a text channel.
+    const plain = channelMenu({ kind: "voice", unread: false, canManage: false, system: false, notify }, actions, t);
+    expect(ids(plain)).toEqual(["mark-read", "channel-notify", "channel-mute", "copy-link", "copy-id"]);
+    const voiceMove = { elsewhere: 3, here: 2, targets: [{ id: "v2", name: "Raid" }, { id: "v3", name: "AFK" }] };
+    const mod = channelMenu({ kind: "voice", unread: false, canManage: true, system: false, voiceMove, notify }, actions, t);
+    expect(ids(mod)).toEqual(["mark-read", "channel-notify", "channel-mute", "move-here", "move-from", "edit", "duplicate", "copy-link", "copy-id", "delete"]);
+    expect(findEntry(mod, "move-here")).toMatchObject({ label: `menu.channel.move_here_count:{"count":3}`, disabled: false });
+    const from = findEntry(mod, "move-from");
+    expect(from?.kind === "submenu" && from.items.map((e) => e.id)).toEqual(["move-to-v2", "move-to-v3"]);
+    const target = from?.kind === "submenu" ? from.items[1] : undefined;
+    if (target?.kind === "item") target.onSelect?.();
+    expect(actions.moveEveryoneTo).toHaveBeenCalledWith("v3");
+    // Nobody to move: disabled with the reason; no other voice channel: no submenu.
+    const empty = channelMenu({ kind: "voice", unread: false, canManage: false, system: false, voiceMove: { elsewhere: 0, here: 0, targets: [] }, notify }, actions, t);
+    expect(findEntry(empty, "move-here")).toMatchObject({ disabled: true, reason: "menu.reason.nobody_elsewhere" });
+    expect(ids(empty)).not.toContain("move-from");
+    const nobodyHere = channelMenu({ kind: "voice", unread: false, canManage: false, system: false, voiceMove: { ...voiceMove, here: 0 }, notify }, actions, t);
+    expect(findEntry(nobodyHere, "move-from")).toMatchObject({ disabled: true, reason: "menu.reason.nobody_here" });
+    // The voice entries never show up on text channels.
+    expect(ids(channelMenu({ kind: "text", unread: false, canManage: false, system: false, voiceMove, notify }, actions, t))).not.toContain("move-here");
+  });
+
+  it("does not let owners leave their room; DMs can be closed and blocked", () => {
+    const actions = { ...notifyActions, setSuppressEveryone: vi.fn(), markRead: vi.fn(), invite: vi.fn(), settings: vi.fn(), leave: vi.fn(), copyId: vi.fn() };
+    const owner = roomMenu({ unread: true, canInvite: true, isOwner: true, notify: { ...notify, suppressEveryone: false } }, actions, t);
+    expect(findEntry(owner, "leave")).toMatchObject({ disabled: true, reason: "menu.reason.owner_leave" });
+    expect(findEntry(owner, "room-suppress-everyone")).toMatchObject({ checked: false });
+    const dm = dmMenu({ unread: true, kind: "dm", peer: { address: "b@x", name: "B" }, notify }, { ...notifyActions, markRead: vi.fn(), profile: vi.fn(), close: vi.fn(), block: vi.fn(), copyAddress: vi.fn() }, t);
+    expect(ids(dm)).toEqual(["mark-read", "profile", "copy-address", "dm-notify", "dm-mute", "close", "block"]);
+    const group = dmMenu({ unread: false, kind: "group", peer: null, notify }, { ...notifyActions, markRead: vi.fn(), profile: vi.fn(), close: vi.fn(), block: vi.fn(), copyAddress: vi.fn() }, t);
+    expect(ids(group)).not.toContain("block");
+  });
+});

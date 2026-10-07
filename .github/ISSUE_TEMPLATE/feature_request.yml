@@ -1,0 +1,28 @@
+name: Feature request
+description: Suggest an improvement to the web client
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Features that need new routes, events or wire formats start as a proposal in
+        [tavrn-protocol](https://github.com/just-tavrn/tavrn-protocol). Bigger ideas are welcome in the
+        [Discussions](https://github.com/orgs/just-tavrn/discussions) first.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what is missing?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: How could it look and behave, on phones and on desktop? How does it work with a keyboard and a screen reader?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives

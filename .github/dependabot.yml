@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: Apache-2.0
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      javascript:
+        patterns: ["*"]
+    # The @tavrn packages are git dependencies by tag during the private phase; they move with the release train.
+    ignore:
+      - dependency-name: "@tavrn/*"
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      actions:
+        patterns: ["*"]

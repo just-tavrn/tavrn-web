@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The full Playwright suite (chromium, mobile-android, tablet-chromium) against the node image, on the self-hosted
+# runner of the test host (label tavrn-e2e) through the organization's reusable e2e workflow: it copies tavrn-node,
+# livekit-server and ffmpeg out of the image and runs the suite with E2E_NODE_BIN (README.md "End-to-end tests").
+# Gated by CI_ENABLED (docs/GITHUB.md). Never for pull requests from forks: a self-hosted runner executes the code it
+# checks out, so only branches of this repository run here.
+name: End-to-end
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      node-image:
+        description: "Container image of the node (default: vars.TAVRN_NODE_IMAGE or ghcr.io/just-tavrn/tavrn-node:edge)"
+        required: false
+        default: ""
+      playwright-args:
+        description: "Arguments for playwright test (default: the three Chromium projects, two workers)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  e2e:
+    name: End-to-end
+    if: >-
+      ${{ vars.CI_ENABLED == 'true' &&
+          (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+    uses: just-tavrn/.github/.github/workflows/e2e.yml@main
+    with:
+      node-image: ${{ inputs.node-image || vars.TAVRN_NODE_IMAGE || 'ghcr.io/just-tavrn/tavrn-node:edge' }}
+      playwright-args: ${{ inputs.playwright-args || '--project chromium --project mobile-android --project tablet-chromium --workers=2' }}
+      submodules: "false"
+    secrets:
+      READ_TOKEN: ${{ secrets.TAVRN_READ_PAT }}

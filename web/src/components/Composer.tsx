@@ -1,0 +1,554 @@
+// SPDX-License-Identifier: Apache-2.0
+import { useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
+import type { Attachment, Gif } from "@tavrn/sdk";
+import { useT } from "../i18n";
+import { formatSize } from "./AttachmentView";
+import { GifPicker } from "./GifPicker";
+import { EmojiPicker, type CustomEmoji } from "./Reactions";
+import { fuzzyFilter } from "../commands/fuzzy";
+import { activeArgIndex, currentToken, parseArgs, parseCommandLine, tokenize } from "../commands/parse";
+import { ArgumentHint, CommandHelp, CommandList, argLabel } from "../commands/CommandPalette";
+import { choiceSuggestions, resolveCommand } from "../commands/merge";
+import type { ArgValue, CommandArg, CommandDefinition } from "../commands/types";
+import { acceptFor, classifyFile, isAllowed } from "../lib/uploads";
+import type { LinkPreview } from "../lib/linkPreview";
+import { useUploadPrivacy } from "./UploadPrivacy";
+import { useComposePreview } from "./ComposePreview";
+import { wrapSpoiler } from "../lib/markdown";
+import { composerGrowth, type Growth } from "../lib/composerGrowth";
+
+export interface PendingUpload {
+  key: string;
+  name: string;
+  size: number;
+  progress: number;
+  attachment?: Attachment;
+  error?: string;
+  /** Image metadata was removed before the upload, or could not be (design note 4.13 item 6). */
+  note?: "removed" | "not_removed";
+  /** Shown blurred until clicked (design note 4.13). */
+  spoiler?: boolean;
+}
+
+export interface SendPayload {
+  body: string;
+  attachmentIds: string[];
+  gif?: Gif;
+  /** Link preview created while composing (design note 4.13 item 7). */
+  preview?: LinkPreview;
+  /** The attachments (of `attachmentIds`) marked as spoilers. */
+  spoilerIds?: string[];
+}
+
+/** Slash commands of the conversation (design note 4.11): what is available and how to run it. */
+export interface ComposerCommands {
+  available: CommandDefinition[];
+  /** Runs a command; resolves when done (the input is cleared), rejects with a shown error. */
+  run: (def: CommandDefinition, values: Record<string, ArgValue>) => Promise<void>;
+  /** Completions for `user` and `channel` arguments. */
+  suggest?: (arg: CommandArg, partial: string) => { value: string; label: string }[];
+}
+
+/** What the user may upload here (`GET /conversations/{id}/upload-policy`). */
+export interface ComposerUploadPolicy {
+  allowed: string[];
+  executablesAllowed: boolean;
+}
+
+const ALL_CATEGORIES = 6;
+
+export function Composer({
+  placeholder,
+  disabled,
+  disabledReason,
+  onSend,
+  onTyping,
+  canAttach = false,
+  uploadLimitBytes,
+  onUpload,
+  gifsEnabled = false,
+  customEmojis = [],
+  commands,
+  uploadPolicy,
+  above,
+}: {
+  placeholder: string;
+  disabled?: boolean;
+  disabledReason?: string;
+  onSend: (payload: SendPayload) => Promise<void> | void;
+  onTyping?: () => void;
+  canAttach?: boolean;
+  uploadLimitBytes?: number;
+  onUpload?: (file: File, onProgress: (f: number) => void) => Promise<Attachment>;
+  gifsEnabled?: boolean;
+  customEmojis?: CustomEmoji[];
+  commands?: ComposerCommands;
+  uploadPolicy?: ComposerUploadPolicy;
+  /** Shown directly above the input and part of the expanded overlay (the reply bar). */
+  above?: ReactNode;
+}) {
+  const t = useT();
+  const paletteId = useId();
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [uploads, setUploads] = useState<PendingUpload[]>([]);
+  const [dragging, setDragging] = useState(false);
+  const [sendWhenReady, setSendWhenReady] = useState(false);
+  const [gifOpen, setGifOpen] = useState(false);
+  const [selected, setSelected] = useState(0);
+  const [dismissed, setDismissed] = useState<string | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [commandError, setCommandError] = useState<string | undefined>();
+  /** The command picked from the palette: the selection is bound to it, not to its name (APPLICATIONS.md §5.4). */
+  const [picked, setPicked] = useState<CommandDefinition | null>(null);
+  const lastTyping = useRef(0);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  // ---- growth on focus (design note 4.13 item 14, lib/composerGrowth.ts)
+  const anchor = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const mirror = useRef<HTMLTextAreaElement>(null);
+  const inputRow = useRef<HTMLDivElement>(null);
+  /** Height of the collapsed composer: the in-flow placeholder keeps it while the overlay is expanded. */
+  const collapsedBox = useRef(0);
+  const [focused, setFocused] = useState(false);
+  const [shrunk, setShrunk] = useState(false);
+  const [growth, setGrowth] = useState<Growth>({ expanded: false, height: null });
+  const [, viewportChanged] = useReducer((x: number) => x + 1, 0);
+  const blurTimer = useRef<number | undefined>(undefined);
+  const uploadPrivacy = useUploadPrivacy();
+  const composePreview = useComposePreview(value, !disabled && !value.startsWith("/"));
+  const uploading = uploads.some((u) => !u.attachment && !u.error);
+  const ready = uploads.filter((u) => u.attachment).map((u) => u.attachment!.id);
+  const spoilerIds = uploads.filter((u) => u.attachment && u.spoiler).map((u) => u.attachment!.id);
+
+  // ---- slash commands
+  const line = commands ? parseCommandLine(value) : null;
+  const typingName = !!line && !line.complete && dismissed !== value;
+  const matches = useMemo(() => (commands && line && !line.complete ? fuzzyFilter(commands.available, line.name, (d) => d.name) : []), [commands, line?.name, line?.complete]);
+  const resolved = commands && line?.complete ? resolveCommand(commands.available, line.name, picked) : null;
+  const def = resolved && "def" in resolved ? resolved.def : undefined;
+  const active = def && line ? activeArgIndex(def, line.rest, true) : -1;
+  const activeArg = def && active >= 0 ? def.args[active] : undefined;
+  const partial = line ? currentToken(line.rest) : "";
+  const suggestions = useMemo(() => {
+    if (!activeArg || !line || activeArg.rest || !def) return [];
+    // Every argument is filled: nothing to suggest (Enter sends).
+    const typed = tokenize(line.rest);
+    if (typed.trailingSpace && typed.tokens.length >= def.args.length) return [];
+    // Pick lists (`options`) and booleans, also before anything is typed.
+    if (activeArg.options?.length || activeArg.type === "boolean") return choiceSuggestions(activeArg, partial).filter((x) => x.value !== partial).slice(0, 25);
+    return commands?.suggest && (activeArg.type === "user" || activeArg.type === "channel") && partial
+      ? commands.suggest(activeArg, partial).filter((x) => x.value !== partial).slice(0, 8)
+      : [];
+  }, [commands, def, activeArg, partial, line?.rest]);
+  const paletteOpen = typingName && !!commands;
+  const listLength = paletteOpen ? matches.length : suggestions.length;
+  useEffect(() => setSelected(0), [line?.name, line?.complete, partial]);
+
+  const pickCommand = (d: CommandDefinition) => {
+    setPicked(d);
+    const next = `/${d.name}${d.args.length ? " " : ""}`;
+    setValue(next);
+    // A picked command without arguments closes the list: Enter runs exactly this one.
+    if (!d.args.length) setDismissed(next);
+    setCommandError(undefined);
+    requestAnimationFrame(() => textarea.current?.focus());
+  };
+  const pickSuggestion = (v: string) => {
+    if (!line || !def) return;
+    const rest = line.rest;
+    const base = partial ? rest.slice(0, rest.length - partial.length) : rest;
+    setValue(`/${def.name} ${base}${v} `.replace(/\s+$/, " "));
+    requestAnimationFrame(() => textarea.current?.focus());
+  };
+
+  const runCommand = async (): Promise<boolean> => {
+    if (!commands || !line) return false;
+    const r = resolveCommand(commands.available, line.name, picked);
+    if (r && "ambiguous" in r) {
+      setCommandError(t("cmd.error.ambiguous", { names: r.ambiguous.map((d) => d.qualifier ?? d.application?.name ?? "").join(", ") }));
+      return true;
+    }
+    if (!r) return false;
+    return runDefinition(r.def, line.rest);
+  };
+
+  const runDefinition = async (d: CommandDefinition, rest: string): Promise<boolean> => {
+    if (!commands) return false;
+    const parsed = parseArgs(d, rest);
+    if (parsed.invalid) {
+      setCommandError(t(`cmd.error.${parsed.invalid.reason}`, { arg: argLabel(parsed.invalid.arg, t) }));
+      return true;
+    }
+    if (parsed.missing.length) {
+      setCommandError(t("cmd.error.missing", { args: parsed.missing.map((a) => argLabel(a, t)).join(", ") }));
+      return true;
+    }
+    if (d.name === "help") {
+      setHelpOpen(true);
+      setValue("");
+      return true;
+    }
+    setBusy(true);
+    try {
+      await commands.run(d, parsed.values);
+      setValue("");
+      setPicked(null);
+      setCommandError(undefined);
+    } catch {
+      // The runner reported the error; the line stays for a correction.
+    } finally {
+      setBusy(false);
+    }
+    return true;
+  };
+
+  const addFiles = async (files: FileList | File[]) => {
+    if (!onUpload) return;
+    for (const picked of Array.from(files)) {
+      // Metadata removal and the video location warning run before the upload (and before encryption).
+      const prepared = await uploadPrivacy.prepare(picked);
+      if (!prepared) continue;
+      const { file, note } = prepared;
+      const key = `${Date.now()}-${Math.random()}`;
+      if (uploadLimitBytes && file.size > uploadLimitBytes) {
+        setUploads((u) => [...u, { key, name: file.name, size: file.size, progress: 0, error: t("composer.too_large", { limit: formatSize(uploadLimitBytes) }) }]);
+        continue;
+      }
+      if (uploadPolicy) {
+        const c = await classifyFile(file);
+        if (!isAllowed(c, uploadPolicy.allowed, uploadPolicy.executablesAllowed)) {
+          const error = c.executable ? t("upload.executable_forbidden") : t("upload.type_forbidden", { category: t(`upload.category.${c.category}`) });
+          setUploads((u) => [...u, { key, name: file.name, size: file.size, progress: 0, error }]);
+          continue;
+        }
+      }
+      setUploads((u) => [...u, { key, name: file.name, size: file.size, progress: 0, note }]);
+      onUpload(file, (p) => setUploads((u) => u.map((x) => (x.key === key ? { ...x, progress: p } : x))))
+        .then((attachment) => setUploads((u) => u.map((x) => (x.key === key ? { ...x, attachment, progress: 1 } : x))))
+        .catch((e: unknown) => setUploads((u) => u.map((x) => (x.key === key ? { ...x, error: (e as { message?: string }).message ?? t("composer.upload_failed") } : x))));
+    }
+  };
+
+  const submit = async (gif?: Gif) => {
+    if (!gif && line && (await runCommand())) return;
+    const body = value.trim();
+    if (uploading) {
+      setSendWhenReady(true);
+      return;
+    }
+    if ((!body && ready.length === 0 && !gif) || busy) return;
+    setBusy(true);
+    try {
+      await onSend({ body, attachmentIds: ready, gif, preview: gif ? undefined : (composePreview.preview ?? undefined), ...(spoilerIds.length ? { spoilerIds } : {}) });
+      setValue("");
+      composePreview.reset();
+      setUploads([]);
+      setGifOpen(false);
+    } catch {
+      // The caller has already reported the error; the text stays for sending again.
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (sendWhenReady && !uploading) {
+      setSendWhenReady(false);
+      void submit();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sendWhenReady, uploading]);
+
+  useEffect(() => {
+    window.addEventListener("resize", viewportChanged);
+    return () => {
+      window.removeEventListener("resize", viewportChanged);
+      window.clearTimeout(blurTimer.current);
+    };
+  }, []);
+
+  // Measures before paint: the text's height in a hidden twin of the textarea (measuring the textarea itself
+  // would reset its height and break the transition), the rest of the composer, the viewport.
+  useLayoutEffect(() => {
+    const el = textarea.current;
+    const twin = mirror.current;
+    const row = inputRow.current;
+    if (!el || !twin || !row || !anchor.current || !panel.current) return;
+    if (!growth.expanded) collapsedBox.current = anchor.current.offsetHeight;
+    let contentHeight = 0;
+    if (focused && value) {
+      // Only on a change: assigning scrolls the twin, and popups (emoji picker) close on any scroll.
+      const width = `${el.clientWidth}px`;
+      if (twin.style.width !== width) twin.style.width = width;
+      if (twin.value !== value) twin.value = value;
+      contentHeight = twin.scrollHeight;
+    }
+    const next = composerGrowth({
+      focused,
+      dismissed: shrunk,
+      contentHeight,
+      collapsedHeight: twin.offsetHeight,
+      // Everything but the input row's content box; independent of the textarea's (possibly animating) height.
+      chromeHeight: panel.current.offsetHeight - rowContentHeight(row),
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+    });
+    if (next.expanded !== growth.expanded || next.height !== growth.height) setGrowth(next);
+  });
+
+  const insertAtCursor = (text: string) => {
+    const el = textarea.current;
+    if (!el) return setValue((v) => v + text);
+    const start = el.selectionStart ?? value.length;
+    const end = el.selectionEnd ?? value.length;
+    setValue(value.slice(0, start) + text + value.slice(end));
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(start + text.length, start + text.length);
+    });
+  };
+
+  /** Wraps the selection in `||…||` (toolbar button, Ctrl+Shift+S). */
+  const spoiler = () => {
+    const el = textarea.current;
+    const start = el?.selectionStart ?? value.length;
+    const end = el?.selectionEnd ?? value.length;
+    const next = wrapSpoiler(value, start, end);
+    setValue(next.value);
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(next.start, next.end);
+    });
+  };
+
+  const restricted = uploadPolicy && uploadPolicy.allowed.length < ALL_CATEGORIES;
+  const allowedText = uploadPolicy ? uploadPolicy.allowed.map((c) => t(`upload.category.${c}`)).join(", ") : "";
+  const accept = uploadPolicy ? acceptFor(uploadPolicy.allowed) : "";
+
+  return (
+    <div
+      ref={anchor}
+      className="relative shrink-0"
+      style={growth.expanded ? { height: collapsedBox.current } : undefined}
+      data-testid="composer"
+      data-expanded={growth.expanded || undefined}
+      // React focus events bubble through portals, so the emoji picker's popup counts as inside. Blur and
+      // focus of a move within the composer are separate events: the blur waits a task, or the overlay
+      // would collapse and grow again in between.
+      onFocus={() => {
+        window.clearTimeout(blurTimer.current);
+        if (!focused) setShrunk(false);
+        setFocused(true);
+      }}
+      onBlur={() => {
+        blurTimer.current = window.setTimeout(() => setFocused(false), 0);
+      }}
+    >
+    <textarea ref={mirror} aria-hidden tabIndex={-1} readOnly rows={1} className="pointer-events-none invisible absolute left-0 top-0 min-h-6 resize-none overflow-hidden px-1 text-sm" />
+    <div ref={panel} data-testid="composer-panel" className={growth.expanded ? "composer-overlay absolute inset-x-0 bottom-0 z-20 bg-bg-2" : undefined}>
+    {above}
+    <form
+      className={`border-t border-line p-3 ${dragging ? "bg-accent-soft" : ""}`}
+      style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+      onSubmit={(e) => {
+        e.preventDefault();
+        void submit();
+      }}
+      onDragOver={(e) => {
+        if (!canAttach) return;
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={(e) => {
+        if (!canAttach) return;
+        e.preventDefault();
+        setDragging(false);
+        void addFiles(e.dataTransfer.files);
+      }}
+    >
+      {disabled && disabledReason && <p className="mb-2 text-xs text-fg-2">{disabledReason}</p>}
+      {uploadPrivacy.dialog}
+      {composePreview.card && <div className="mb-2">{composePreview.card}</div>}
+      {gifOpen && <GifPicker onPick={(g) => void submit(g)} onClose={() => setGifOpen(false)} />}
+      {helpOpen && commands && <CommandHelp items={commands.available} onClose={() => setHelpOpen(false)} />}
+      {paletteOpen && <CommandList id={paletteId} items={matches} selected={selected} onPick={pickCommand} onHover={setSelected} />}
+      {def && !typingName && <ArgumentHint def={def} active={active} suggestions={suggestions} selected={selected} onPick={pickSuggestion} error={commandError} />}
+      {!def && !typingName && commandError && (
+        <p className="mb-2 rounded-lg border border-line bg-bg-1 px-3 py-2 text-xs text-danger" role="alert" data-testid="command-error">
+          {commandError}
+        </p>
+      )}
+      {uploads.length > 0 && (
+        <ul className="mb-2 flex flex-wrap gap-2" data-testid="pending-uploads">
+          {uploads.map((u) => (
+            <li key={u.key} className={`flex min-h-8 items-center gap-2 rounded-md border px-2 text-xs ${u.error ? "border-danger/50 text-danger" : "border-line text-fg-1"}`}>
+              <span className="max-w-40 truncate">{u.name}</span>
+              {u.note && !u.error && (
+                <span className="text-fg-2" data-testid="metadata-note" title={t(`upload.metadata.note_hint.${u.note}`)}>
+                  {t(`upload.metadata.note.${u.note}`)}
+                </span>
+              )}
+              <span className="text-fg-2" data-testid={u.error ? "upload-error" : undefined}>
+                {u.error ?? (u.attachment ? formatSize(u.size) : `${Math.round(u.progress * 100)} %`)}
+              </span>
+              {sendWhenReady && !u.attachment && !u.error && <span className="text-fg-2">{t("composer.sending_when_ready")}</span>}
+              {!u.error && (
+                <button
+                  type="button"
+                  aria-pressed={!!u.spoiler}
+                  aria-label={t("composer.spoiler_file", { name: u.name })}
+                  title={t("composer.spoiler_file", { name: u.name })}
+                  onClick={() => setUploads((x) => x.map((y) => (y.key === u.key ? { ...y, spoiler: !y.spoiler } : y)))}
+                  className={`min-h-6 rounded px-1 ${u.spoiler ? "bg-accent-soft text-fg-0" : "text-fg-2 hover:text-fg-0"}`}
+                  data-testid="upload-spoiler"
+                >
+                  {u.spoiler ? "🙈" : "👁"}
+                </button>
+              )}
+              <button type="button" aria-label={t("composer.remove", { name: u.name })} onClick={() => setUploads((x) => x.filter((y) => y.key !== u.key))} className="min-h-6 min-w-6 text-fg-2 hover:text-fg-0">
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div ref={inputRow} className="flex items-end gap-1 rounded-lg border border-line bg-bg-0 px-2 py-2 focus-within:border-accent">
+        {canAttach && (
+          <>
+            <input
+              ref={fileInput}
+              type="file"
+              multiple
+              className="hidden"
+              accept={accept || undefined}
+              aria-label={t("composer.pick_file")}
+              data-testid="file-input"
+              onChange={(e) => {
+                if (e.target.files) void addFiles(e.target.files);
+                e.target.value = "";
+              }}
+            />
+            <button
+              type="button"
+              aria-label={t("composer.attach")}
+              title={restricted ? t("upload.allowed", { categories: allowedText }) : undefined}
+              disabled={disabled}
+              onClick={() => fileInput.current?.click()}
+              className="min-h-10 min-w-10 rounded-md text-fg-2 hover:bg-bg-3 hover:text-fg-0 disabled:opacity-40"
+            >
+              ＋
+            </button>
+          </>
+        )}
+        <textarea
+          ref={textarea}
+          aria-label={t("composer.message")}
+          rows={1}
+          value={value}
+          disabled={disabled}
+          placeholder={placeholder}
+          role={commands ? "combobox" : undefined}
+          aria-expanded={commands ? paletteOpen : undefined}
+          aria-controls={paletteOpen ? paletteId : undefined}
+          aria-activedescendant={paletteOpen && matches.length ? `${paletteId}-${selected}` : undefined}
+          aria-autocomplete={commands ? "list" : undefined}
+          onChange={(e) => {
+            setValue(e.target.value);
+            if (!e.target.value.startsWith("/")) setPicked(null);
+            setCommandError(undefined);
+            setShrunk(false);
+            const now = Date.now();
+            if (onTyping && now - lastTyping.current > 3000 && !e.target.value.startsWith("/")) {
+              lastTyping.current = now;
+              onTyping();
+            }
+          }}
+          onPaste={(e) => {
+            if (!canAttach) return;
+            const files = Array.from(e.clipboardData.files);
+            if (files.length) {
+              e.preventDefault();
+              void addFiles(files);
+            }
+          }}
+          onKeyDown={(e) => {
+            if ((paletteOpen || suggestions.length > 0) && listLength > 0) {
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setSelected((s) => (s + 1) % listLength);
+                return;
+              }
+              if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setSelected((s) => (s - 1 + listLength) % listLength);
+                return;
+              }
+              if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+                e.preventDefault();
+                const choice = matches[selected] ?? matches[0]!;
+                // Commands without arguments run right away with Enter (Tab only completes).
+                if (paletteOpen && e.key === "Enter" && choice.args.length === 0) {
+                  setPicked(choice);
+                  void runDefinition(choice, "");
+                } else if (paletteOpen) pickCommand(choice);
+                else pickSuggestion(suggestions[selected]?.value ?? suggestions[0]!.value);
+                return;
+              }
+            }
+            if (e.key === "Escape" && (paletteOpen || helpOpen)) {
+              e.preventDefault();
+              setDismissed(value);
+              setHelpOpen(false);
+              return;
+            }
+            if (e.key === "Escape" && growth.expanded) {
+              e.preventDefault();
+              setShrunk(true);
+              return;
+            }
+            if ((e.key === "S" || e.key === "s") && e.shiftKey && (e.ctrlKey || e.metaKey)) {
+              e.preventDefault();
+              spoiler();
+              return;
+            }
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              void submit();
+            }
+          }}
+          style={growth.height ? { height: growth.height } : undefined}
+          className={`composer-text ${growth.expanded ? "" : "max-h-40"} min-h-6 flex-1 resize-none bg-transparent px-1 text-sm text-fg-0 outline-none placeholder:text-fg-2 disabled:opacity-50`}
+        />
+        {!disabled && (
+          <button type="button" aria-label={t("composer.spoiler")} title={t("composer.spoiler_hint")} onClick={spoiler} className="min-h-10 min-w-8 rounded-md text-xs font-semibold text-fg-2 hover:bg-bg-3 hover:text-fg-0" data-testid="composer-spoiler">
+            ▒
+          </button>
+        )}
+        {!disabled && <EmojiPicker customEmojis={customEmojis} onPick={insertAtCursor} label={t("composer.emoji")} />}
+        {gifsEnabled && !disabled && (
+          <button type="button" aria-label={t("composer.gif")} aria-pressed={gifOpen} onClick={() => setGifOpen((v) => !v)} className="min-h-10 rounded-md px-2 text-xs font-semibold text-fg-2 hover:bg-bg-3 hover:text-fg-0">
+            GIF
+          </button>
+        )}
+        <button type="submit" aria-label={t("composer.send")} disabled={disabled || (!value.trim() && ready.length === 0) || busy || uploading} className="min-h-10 min-w-10 rounded-md text-accent hover:bg-accent-soft hover:text-accent-hover disabled:opacity-40">
+          ➤
+        </button>
+      </div>
+      {canAttach && restricted && (
+        <p className="mt-1 text-[11px] text-fg-2" data-testid="upload-allowed">
+          {t("upload.allowed", { categories: allowedText })}
+        </p>
+      )}
+    </form>
+    </div>
+    </div>
+  );
+}
+
+/** Height of the input row's content box (the textarea, or the toolbar buttons when they are taller). */
+function rowContentHeight(row: HTMLElement): number {
+  const style = getComputedStyle(row);
+  return row.clientHeight - (parseFloat(style.paddingTop) || 0) - (parseFloat(style.paddingBottom) || 0);
+}

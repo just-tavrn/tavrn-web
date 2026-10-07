@@ -1,0 +1,167 @@
+@import "tailwindcss";
+
+/* Design-Tokens. Dark only: neutral charcoal greys, accents derived from the logo gradient
+   (mint #80ffef -> teal #04cfc7 -> deep blue #00427b), toned down so nothing glares.
+   Contrast (WCAG 2.2 AA, docs/ACCESSIBILITY.md): fg-2 on bg-0..bg-3 >= 4.5:1, accent text on bg-0..bg-3
+   >= 5.2:1, accent-text on accent 6.28:1, white on danger-solid 5.97:1. */
+@theme {
+  --color-bg-0: #0f1115;      /* deepest background (room rail) */
+  --color-bg-1: #161920;      /* sidebars */
+  --color-bg-2: #1d2129;      /* content area */
+  --color-bg-3: #262b35;      /* hover, input fields */
+  --color-line: #2f3542;      /* dividers */
+  --color-fg-0: #f3f4f6;      /* primary text */
+  --color-fg-1: #b4bac6;      /* secondary text */
+  --color-fg-2: #8a92a2;      /* muted (was #7c8494: 4.29:1 on bg-2, now >= 4.5:1 on bg-0..bg-3, design note 4.14) */
+
+  /* Accent: desaturated, darker logo teal for buttons, links, focus, active states. */
+  --color-accent: #33aea6;
+  --color-accent-hover: #40b9b1;
+  --color-accent-soft: #33aea626;   /* 15 % teal: subtle backgrounds of selected items */
+  --color-accent-text: #06201f;     /* text on accent surfaces */
+
+  /* Logo colors: only tiny highlights (status dot, thin gradient line, text selection). */
+  --color-brand-mint: #80ffef;
+  --color-brand-teal: #04cfc7;
+  --color-brand-deep: #00427b;
+
+  /* Semantic colors, tuned for the dark greys. */
+  --color-ok: #45b980;
+  --color-warn: #d9b04e;
+  --color-danger: #e87a76;          /* danger text and borders */
+  --color-danger-solid: #b03a3d;    /* background of destructive buttons (white text) */
+  --color-danger-solid-hover: #bd4044;
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --radius-md: 0.5rem;
+}
+
+html, body, #root { height: 100%; }
+html { color-scheme: dark; }
+body { @apply bg-bg-2 text-fg-0 font-sans antialiased; }
+
+@layer base {
+  /* Keyboard focus: one calm teal ring everywhere (inputs override it with their border). */
+  :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+  input[type="checkbox"], input[type="radio"], input[type="range"], progress { accent-color: var(--color-accent); }
+  /* Small check boxes never shrink below their size next to long labels (WCAG 2.5.8 target size). */
+  input[type="checkbox"], input[type="radio"] { flex-shrink: 0; }
+  ::selection { background: var(--color-brand-deep); color: var(--color-fg-0); }
+}
+
+/* Skip link (WCAG 2.4.1): off screen until it takes the keyboard focus, then a small accent chip top left. */
+.skip-link { position: fixed; left: 0.5rem; top: 0.5rem; z-index: 100; transform: translateY(-200%); border-radius: var(--radius-md); background: var(--color-accent); color: var(--color-accent-text); padding: 0.5rem 0.75rem; font-size: 0.875rem; font-weight: 500; }
+.skip-link:focus { transform: none; }
+
+/* Thin logo gradient, e.g. at the top edge of the sign-in card. */
+.brand-line { height: 2px; background: linear-gradient(90deg, var(--color-brand-mint), var(--color-brand-teal) 45%, var(--color-brand-deep)); opacity: 0.7; }
+
+/* Markdown in messages */
+.markdown p { margin: 0; }
+.markdown p + p { margin-top: 0.25rem; }
+.markdown a { color: var(--color-accent); text-decoration: underline; text-underline-offset: 2px; }
+.markdown a:hover { color: var(--color-accent-hover); }
+.markdown code { background: var(--color-bg-0); border: 1px solid var(--color-line); border-radius: 0.25rem; padding: 0 0.25rem; font-size: 0.85em; }
+.markdown pre { background: var(--color-bg-0); border: 1px solid var(--color-line); border-radius: 0.5rem; padding: 0.5rem 0.75rem; overflow-x: auto; margin: 0.25rem 0; }
+.markdown pre code { border: 0; padding: 0; background: transparent; }
+.markdown ul { list-style: disc; padding-left: 1.25rem; }
+.markdown ol { list-style: decimal; padding-left: 1.25rem; }
+.markdown blockquote { border-left: 3px solid var(--color-fg-2); padding: 0.125rem 0 0.125rem 0.625rem; margin: 0.25rem 0; color: var(--color-fg-1); }
+.markdown blockquote blockquote { border-left-color: var(--color-line); }
+
+/* Spoilers (design note 4.13): hidden until clicked; the content keeps its layout. */
+.markdown .spoiler { background: var(--color-bg-3); color: transparent; border-radius: 0.25rem; padding: 0 0.125rem; cursor: pointer; transition: background-color 0.15s; }
+.markdown .spoiler * { color: transparent !important; background: transparent !important; }
+.markdown .spoiler img { visibility: hidden; }
+.markdown .spoiler:hover { background: var(--color-line); }
+.markdown .spoiler:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+.markdown .spoiler.revealed { background: var(--color-bg-3); color: inherit; cursor: auto; }
+.markdown .spoiler.revealed * { color: inherit !important; }
+.markdown .spoiler.revealed img { visibility: visible; }
+@media (prefers-reduced-motion: reduce) { .markdown .spoiler { transition: none; } }
+
+/* Code blocks: language label, copy and wrap buttons, highlight.js scopes in the theme's tokens. */
+.markdown .codeblock { margin: 0.25rem 0; border: 1px solid var(--color-line); border-radius: 0.5rem; background: var(--color-bg-0); overflow: hidden; max-width: 100%; }
+.markdown .codeblock pre { margin: 0; border: 0; border-radius: 0; }
+.markdown .codeblock-bar { display: flex; align-items: center; gap: 0.25rem; padding: 0.125rem 0.25rem 0.125rem 0.75rem; border-bottom: 1px solid var(--color-line); font-size: 0.7rem; color: var(--color-fg-2); }
+.markdown .codeblock-lang { flex: 1; text-transform: lowercase; }
+.markdown .codeblock-btn { min-width: 1.75rem; min-height: 1.75rem; border-radius: 0.25rem; color: var(--color-fg-2); }
+.markdown .codeblock-btn:hover, .markdown .codeblock-btn[aria-pressed="true"] { background: var(--color-bg-3); color: var(--color-fg-0); }
+.markdown .codeblock-wrap pre { white-space: pre-wrap; word-break: break-word; overflow-x: hidden; }
+.markdown .hljs-keyword, .markdown .hljs-selector-tag, .markdown .hljs-literal, .markdown .hljs-built_in, .markdown .hljs-type { color: var(--color-accent-hover); }
+.markdown .hljs-string, .markdown .hljs-regexp, .markdown .hljs-addition, .markdown .hljs-attribute, .markdown .hljs-template-tag { color: var(--color-ok); }
+.markdown .hljs-number, .markdown .hljs-symbol, .markdown .hljs-bullet, .markdown .hljs-variable, .markdown .hljs-template-variable { color: var(--color-warn); }
+.markdown .hljs-comment, .markdown .hljs-quote, .markdown .hljs-meta { color: var(--color-fg-2); font-style: italic; }
+.markdown .hljs-title, .markdown .hljs-section, .markdown .hljs-name, .markdown .hljs-selector-id, .markdown .hljs-selector-class { color: var(--color-fg-0); font-weight: 500; }
+.markdown .hljs-attr, .markdown .hljs-property, .markdown .hljs-params { color: var(--color-fg-1); }
+.markdown .hljs-deletion { color: var(--color-danger); }
+.markdown .hljs-emphasis { font-style: italic; }
+.markdown .hljs-strong { font-weight: 600; }
+.mention[data-bot] { color: var(--color-accent); font-weight: 500; }
+.bot-mention-badge { margin-left: 0.2em; padding: 0 0.25em; border-radius: 0.25rem; background: var(--color-accent-soft); color: var(--color-accent); font-size: 0.65em; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; vertical-align: middle; }
+.emoji-missing { display: inline-block; padding: 0 0.3em; border-radius: 0.25rem; background: var(--color-bg-3); color: var(--color-fg-2); font-size: 0.85em; }
+.markdown img.emoji { display: inline-block; height: 1.375em; width: auto; max-width: 3em; vertical-align: -0.3em; object-fit: contain; }
+.markdown h1, .markdown h2, .markdown h3 { font-weight: 600; margin: 0.25rem 0; }
+/* Legal documents (design note 4.14): longer texts with headings, lists and tables. */
+.legal-doc h1 { font-size: 1.25rem; margin: 1rem 0 0.5rem; }
+.legal-doc h2 { font-size: 1.1rem; margin: 1rem 0 0.5rem; }
+.legal-doc h3, .legal-doc h4 { font-size: 1rem; margin: 0.75rem 0 0.25rem; font-weight: 600; }
+.legal-doc p + p, .legal-doc ul, .legal-doc ol, .legal-doc table, .legal-doc blockquote { margin-top: 0.5rem; }
+.legal-doc ol { list-style: decimal; padding-left: 1.25rem; }
+.legal-doc table { border-collapse: collapse; display: block; overflow-x: auto; }
+.legal-doc th, .legal-doc td { border: 1px solid var(--color-line); padding: 0.25rem 0.5rem; text-align: left; }
+.legal-doc hr { border-color: var(--color-line); margin: 1rem 0; }
+
+/* Message authors open the profile card (components/AuthorProfiles.tsx). */
+[data-author-profiles] li[data-message-id] .w-9 > span,
+[data-author-profiles] li[data-message-id] .items-baseline > span.font-semibold { cursor: pointer; }
+[data-author-profiles] li[data-message-id] .items-baseline > span.font-semibold:hover { text-decoration: underline; }
+
+/* Voice speaking indicator (design note 4.5 item 6). `--level` (0…1) is set at most ~10×/s from LiveKit's
+   active-speaker levels; transitions smooth it, nothing animates per frame in JavaScript. */
+.voice-ring { --level: 0; box-shadow: 0 0 0 2px transparent; transition: box-shadow 140ms ease-out; }
+.voice-ring[data-speaking] {
+  box-shadow: 0 0 0 2px var(--color-accent), 0 0 calc(3px + var(--level) * 9px) calc(var(--level) * 2px) color-mix(in srgb, var(--color-accent) 65%, transparent);
+}
+.voice-tile { --level: 0; border: 2px solid transparent; transition: border-color 140ms ease-out, box-shadow 140ms ease-out; }
+.voice-tile[data-speaking] {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 calc(6px + var(--level) * 18px) calc(var(--level) * 3px) color-mix(in srgb, var(--color-accent) 55%, transparent);
+}
+.voice-avatar { transition: transform 160ms ease-out; }
+.voice-tile[data-speaking] .voice-avatar { transform: scale(calc(1.03 + var(--level) * 0.07)); }
+.voice-meter { display: inline-flex; align-items: flex-end; gap: 1.5px; height: 10px; }
+.voice-meter span { width: 2.5px; border-radius: 1px; background: var(--color-brand-mint); opacity: 0.85; transition: height 120ms ease-out; height: calc(25% + var(--level) * 75%); }
+.voice-meter span:nth-child(2) { height: calc(35% + var(--level) * 65%); }
+.voice-meter span:nth-child(3) { height: calc(20% + var(--level) * 55%); }
+.voice-glyph[data-speaking] { filter: drop-shadow(0 0 3px color-mix(in srgb, var(--color-accent) 70%, transparent)); }
+/* Static ring on touch devices, with reduced motion and on weak machines (frame-drop detector). */
+@media (prefers-reduced-motion: reduce), (pointer: coarse) {
+  .voice-ring[data-speaking] { box-shadow: 0 0 0 2px var(--color-accent); transition: none; }
+  .voice-tile[data-speaking] { box-shadow: none; transition: none; }
+  .voice-tile[data-speaking] .voice-avatar { transform: none; }
+  .voice-meter span { transition: none; height: 70%; }
+}
+/* Connection problems (design note 4.5 item 7): the amber plug pulses softly; static with reduced motion. */
+@keyframes voice-plug-pulse { from { opacity: 0.55; } to { opacity: 1; } }
+.voice-plug { animation: voice-plug-pulse 0.8s ease-in-out infinite alternate; }
+@media (prefers-reduced-motion: reduce) { .voice-plug { animation: none; } }
+[data-weak-device] .voice-ring[data-speaking] { box-shadow: 0 0 0 2px var(--color-accent); transition: none; }
+[data-weak-device] .voice-tile[data-speaking] { box-shadow: none; }
+[data-weak-device] .voice-tile[data-speaking] .voice-avatar { transform: none; }
+/* Priority speaker (design note 4.13 item 3): accent border on the tile and the list row while active. */
+.voice-tile[data-priority] { border-color: var(--color-accent); box-shadow: inset 0 0 0 1px var(--color-accent); }
+.voice-priority-row { box-shadow: inset 2px 0 0 var(--color-accent); background: color-mix(in srgb, var(--color-accent) 12%, transparent); }
+/* Soundboard clip emoji on the sender's tile: pops in once, static with reduced motion. */
+@keyframes voice-sound-pop { from { transform: scale(0.4); opacity: 0; } 60% { transform: scale(1.15); opacity: 1; } to { transform: scale(1); } }
+.voice-sound { animation: voice-sound-pop 260ms ease-out; filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.6)); }
+@media (prefers-reduced-motion: reduce) { .voice-sound { animation: none; } }
+/* Composer growth (design note 4.13 item 14): the expanded composer floats above the last message rows on the
+   content surface, with a soft shadow upwards; the text area grows smoothly, instantly with reduced motion. */
+.composer-overlay { box-shadow: 0 -12px 20px -14px rgb(0 0 0 / 0.75); }
+.composer-overlay .composer-text { transition: height 120ms ease-out; }
+@media (prefers-reduced-motion: reduce) { .composer-overlay .composer-text { transition: none; } }
+/* Reduced motion (WCAG 2.3.3): every remaining animation and transition (drawers, fades, pulses, the speaking
+   glow, the composer growth, cue indicators) ends at once; the specific rules above keep their static looks. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}

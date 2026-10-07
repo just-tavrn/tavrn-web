@@ -1,0 +1,57 @@
+# Whiteboard (`web/src/whiteboard/`)
+
+The shared whiteboard of a conversation (design note 4.10, normative protocol: `tavrn-protocol/WHITEBOARD.md`). It works in
+every conversation: voice and text channels, DMs and group DMs. Nothing in here knows about voice.
+
+| File | Role |
+|---|---|
+| `sync.ts` | Pure helpers: element diffs (`version`/`versionNonce`), reconciliation, validation of untrusted payloads, permissions, throttle, send budget, chunking. |
+| `protocol.ts` | Event types and timings. |
+| `controller.ts` | `WhiteboardController`: one board on this device (owner authority, proposals, snapshots, files, cursors, thumbnails, keepalive). Network and canvas are injected. |
+| `store.ts` | One controller per conversation, shared by all views; socket wiring (`ephemeral`, `whiteboard.session`), encryption, local draft. **Integration hook** `useWhiteboardSession`. |
+| `scenes.ts` | Scene library: serialization, encryption under the backup key (`encryptScene`), API. |
+| `share.ts` | "Share to channel": PNG as an (encrypted) attachment. |
+| `excalidraw.ts` | Lazy loading of Excalidraw (fonts from the node), PNG/SVG export, thumbnails. |
+| `WhiteboardCanvas.tsx` | The Excalidraw canvas (the lazy chunk). |
+| `WhiteboardSession.tsx` | The board UI: open/join/leave/close, permissions, scenes, background, export, share. |
+| `WhiteboardBadge.tsx` | `WhiteboardBadge`, `WhiteboardThumbnail`, `WhiteboardButton` (header link to the board). |
+| `WhiteboardPage.tsx` | Routes `…/channels/<id>/whiteboard`, `…/conversations/<id>/whiteboard` (full screen; also the "maximize" target). |
+
+## On the voice stage
+
+`WhiteboardStage.tsx` (with the lazy `WhiteboardStageTile.tsx`) and `stage.ts` plug into `web/src/voice/ui/*` with
+small additive edits: `VoiceStage` passes `WhiteboardTileOverlay` to each participant tile (badge, thumbnail,
+"Join whiteboard session", double-click, "watching" marks for the owner) and shows `WhiteboardStageTile` (focus,
+maximize, popout = the full-screen route in a new window) once joined; `VoiceControls` gets `WhiteboardControl`
+and calls `beforeScreenShare()` before the screen share dialog; `VoiceChannelRow` shows `WhiteboardOwnerBadge`.
+`openBoard()` / `beforeBoard()` stop a running screen share first. Both ask before ending the other presentation.
+
+## Integration surface
+
+Use inside the node scope of the conversation (`useNode()` must name the hosting node, as everywhere else):
+
+```tsx
+import { useWhiteboardSession } from "../whiteboard/store";
+import { WhiteboardThumbnail, WhiteboardBadge } from "../whiteboard/WhiteboardBadge";
+
+const { session, isOwner, role, joined, ended, join, leave, thumbnailUrl, controller } = useWhiteboardSession(channelId);
+// Plaintext text channels need { encrypted: false }; voice channels and DMs are always encrypted (the default).
+```
+
+- `session`: `{ conversation_id, owner, owner_id, device_id, open_for_all, grants, started_at }` or `null`. Show
+  the board on the tile of the participant whose address is `session.owner` (and whose device is
+  `session.device_id`); one user presents either a screen share or a board.
+- `isOwner`: this device presents the board. `role`: `"owner" | "editor" | "viewer" | null`.
+- `joined` / `join()` / `leave()`: "Join whiteboard session" / "Leave session" on the tile. Joining only marks the
+  device as joined and asks the owner for a snapshot; render the board with `<WhiteboardSession>` (or navigate
+  to the full-screen route: `${channelPath}/whiteboard`).
+- `thumbnailUrl`: a small `data:image/webp` of the board, refreshed by the owner at most every 5 s after changes;
+  available **before** joining (render `<WhiteboardThumbnail conversationId=… />` on the tile and
+  `<WhiteboardBadge conversationId=… />` as the small badge).
+- `ended`: the board was closed while this device had joined.
+- The hook must run where the conversation's MLS group is joined on this device (the voice view does that for the
+  channel; the full-screen page uses `useE2eeConversation`), otherwise events cannot be decrypted.
+
+`<WhiteboardSession layout="embedded" …>` fills its parent instead of the screen (a tile); it leaves the session
+for viewers when it unmounts. A board keeps running on the owner's device while no view shows it (it answers late joiners) until it is closed;
+viewers leave the session when their last view unmounts.

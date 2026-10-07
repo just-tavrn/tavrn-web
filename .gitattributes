@@ -1,0 +1,6 @@
+pnpm-lock.yaml linguist-generated=true
+# Binary assets
+*.png binary
+*.ico binary
+*.gif binary
+*.tflite binary

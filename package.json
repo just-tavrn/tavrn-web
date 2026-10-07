@@ -1,0 +1,13 @@
+{
+  "name": "tavrn-web-workspace",
+  "private": true,
+  "license": "Apache-2.0",
+  "scripts": {
+    "dev": "pnpm --filter @tavrn/web dev",
+    "build": "pnpm --filter @tavrn/web build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "e2e": "pnpm --filter @tavrn/e2e e2e"
+  },
+  "packageManager": "pnpm@12.9.1"
+}

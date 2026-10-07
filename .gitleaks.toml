@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# gitleaks configuration: the default rules, minus known false positives. The tests use throwaway passwords of
+# accounts on throwaway development nodes (`password: "…"` in specs and component tests); they protect nothing.
+# Every other file is scanned with the default rules.
+title = "tavrn-web"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Throwaway passwords of test accounts"
+paths = ['''^e2e/tests/[^/]+\.ts$''', '''^web/src/.+\.test\.tsx?$''']
+regexTarget = "line"
+regexes = ['''password: "[a-z-]+-?[0-9]+"''']

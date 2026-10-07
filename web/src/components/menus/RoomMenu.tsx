@@ -1,0 +1,98 @@
+// SPDX-License-Identifier: Apache-2.0
+/**
+ * The context menu of a room in the rail (design note 4.11): mark as read, notification settings, invite,
+ * settings, leave. The room detail (channels, permissions) is loaded when the menu opens.
+ */
+import { useState, type ReactNode } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router";
+import { Permission, hasPermission, parsePermissions, type Room } from "@tavrn/sdk";
+import { useT } from "../../i18n";
+import { roomMenu } from "../../lib/menus";
+import { apiFor } from "../../stores/nodes";
+import { isUnread, markConversationRead, useUnread } from "../../stores/unread";
+import { toastError, useToasts } from "../../stores/toasts";
+import { indexLeftRoom } from "../../stores/conversationIndex";
+import { ContextMenu, useContextMenu, type ContextMenuTrigger } from "../ContextMenu";
+import { NodeScope, roomPath } from "../NodeScope";
+import { useShell } from "../AppShell";
+import { InviteDialog } from "../../pages/ChannelSidebar";
+import { ConfirmAction, copyWithToast } from "./common";
+import { useNotifyMenu } from "./useNotifyMenu";
+
+/** `node` = domain of the room's node, null for the home node. */
+export function useRoomMenu(room: Pick<Room, "id" | "name">, node: string | null): { menu: ContextMenuTrigger; overlay: ReactNode } {
+  const t = useT();
+  const menu = useContextMenu();
+  const client = apiFor(node);
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const { closeNav } = useShell();
+  const [dialog, setDialog] = useState<"invite" | "leave" | null>(null);
+  // The same cache entry as the sidebar's `useRoom`; fetched when the menu opens.
+  const detail = useQuery({
+    queryKey: ["room", room.id],
+    queryFn: async () => {
+      const r = await client.rooms.get(room.id);
+      useUnread.getState().seed(r.read_states ?? []);
+      return r;
+    },
+    enabled: menu.open,
+    staleTime: 30_000,
+  });
+  const channelIds = (detail.data?.channels ?? []).filter((c) => c.kind !== "voice").map((c) => c.id);
+  const unread = useUnread((s) => channelIds.some((id) => isUnread(s.states, id)));
+  const notify = useNotifyMenu("room", room.id, null);
+  const perms = parsePermissions(detail.data?.my_permissions);
+
+  const entries = menu.open
+    ? roomMenu(
+        { unread, canInvite: hasPermission(perms, Permission.CREATE_INVITES), isOwner: !!detail.data?.is_owner, notify: notify.state },
+        {
+          ...notify.actions,
+          markRead: () =>
+            void Promise.all(channelIds.map((id) => markConversationRead(client, id)))
+              .then(() => useToasts.getState().push({ kind: "info", title: t("menu.marked_read") }))
+              .catch(toastError),
+          invite: () => setDialog("invite"),
+          settings: () => {
+            closeNav();
+            navigate(roomPath(node, room.id, undefined, "settings"));
+          },
+          leave: () => setDialog("leave"),
+          copyId: () => void copyWithToast(room.id, t("menu.copied")),
+        },
+        t,
+      )
+    : [];
+
+  const overlay = (
+    <>
+      {menu.open && menu.anchor && <ContextMenu entries={entries} anchor={menu.anchor} onClose={menu.close} label={t("menu.label", { name: room.name })} testId="room-menu" />}
+      {dialog === "invite" &&
+        (node ? (
+          <NodeScope domain={node} quiet>
+            <InviteDialog roomId={room.id} open onClose={() => setDialog(null)} />
+          </NodeScope>
+        ) : (
+          <InviteDialog roomId={room.id} open onClose={() => setDialog(null)} />
+        ))}
+      {dialog === "leave" && (
+        <ConfirmAction
+          title={t("room.leave")}
+          text={t("room.leave_text")}
+          action={t("room.leave_action")}
+          onClose={() => setDialog(null)}
+          onConfirm={async () => {
+            await client.rooms.leave(room.id);
+            void indexLeftRoom(node, room.id);
+            await queryClient.invalidateQueries({ queryKey: ["rooms"] });
+            navigate("/");
+          }}
+          testId="leave-dialog"
+        />
+      )}
+    </>
+  );
+  return { menu, overlay };
+}

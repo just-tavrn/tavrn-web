@@ -1,0 +1,53 @@
+name: Bug report
+description: Something in the web client does not work as described
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Security problems (anything that could weaken the encryption, leak secrets or bypass permissions) are
+        reported privately through "Report a vulnerability" on the Security tab, not here. Problems of a node
+        (server errors, federation, voice server) belong in [tavrn-node](https://github.com/just-tavrn/tavrn-node/issues).
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - sign-in, registration, account
+        - chat, messages, attachments
+        - encryption, devices, recovery key
+        - voice, video, screen sharing
+        - rooms, settings, moderation
+        - several nodes, Discover
+        - layout on phones or tablets
+        - accessibility
+        - translations
+        - end-to-end suite, build or CI
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What did you do, what did you expect, what happened instead? Screenshots help (blur names and messages).
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: Steps from a fresh page load. Never paste passwords, recovery keys, recovery codes or tokens.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: The node's version (`GET /node`; it embeds the web client) or the tavrn-web commit you run.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Browser and version, operating system, phone/tablet/desktop, screen reader if relevant.

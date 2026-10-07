@@ -1,0 +1,218 @@
+// SPDX-License-Identifier: Apache-2.0
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Route, Routes } from "react-router";
+import { pkceChallenge } from "@tavrn/sdk";
+import { LoginPage } from "./LoginPage";
+import { ConnectCallbackPage, ConnectPage, validConnectOrigin } from "./ConnectPages";
+import { useAuth } from "../stores/auth";
+import { resetNodeCaches, useNodes } from "../stores/nodes";
+import { checkCallback, safeNext, startConnect, takePendingConnect, type PendingConnect } from "../lib/remoteSignIn";
+import { renderWithProviders } from "../test/render";
+import { deviceProofFor } from "../crypto/e2ee";
+
+// The browser's stored device (IndexedDB) is replaced by a stub: no device unless a test provides a proof.
+vi.mock("../crypto/e2ee", async (original) => ({ ...(await original<typeof import("../crypto/e2ee")>()), deviceProofFor: vi.fn(async () => null) }));
+
+const HOME = "home.example";
+const VISIT = "visit.example";
+const homeUser = { id: "H1", username: "alice", domain: HOME, address: `alice@${HOME}`, display_name: "Alice", kind: "user", is_node_admin: false, avatar_blob_id: null, created_at: "", email: null, email_verified: false, has_identity_key: true };
+const session = { status: "ok", user: homeUser, access_token: "home-acc", refresh_token: "home-ref", expires_in: 3600, device_id: "01J9ZK3G5M8Q2W4E6R8T0Y2VA1", recovery_code_used: false };
+const endpoints = { domain: HOME, base: `https://${HOME}`, ws: `wss://${HOME}/api/v1/ws`, web: `https://${HOME}` };
+
+function doc(domain: string) {
+  return { tavrn: 1, domain, name: domain, description: "", api: `https://${domain}/api/v1`, ws: `wss://${domain}/api/v1/ws`, web: `https://${domain}`, capabilities: ["federation", "federation.v1"], keys: [], registration: "open", email: "none", policies: {}, directory_listing: true, software: { name: "tavrn-node", version: "0" } };
+}
+
+interface Call {
+  url: string;
+  method: string;
+  body: Record<string, unknown> | null;
+  auth?: string;
+}
+
+/** Fake network: the home node home.example and the node this client was loaded from (visit.example). */
+function network(overrides: Record<string, (body: Record<string, unknown> | null) => { status?: number; body: unknown }> = {}) {
+  const calls: Call[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
+    const url = new URL(String(input), location.origin);
+    const body = init.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : null;
+    calls.push({ url: url.toString(), method: init.method ?? "GET", body, auth: (init.headers as Record<string, string> | undefined)?.Authorization });
+    const key = `${url.host === location.host ? "origin" : url.host}${url.pathname}`;
+    const json = (status: number, b: unknown) => new Response(JSON.stringify(b), { status, headers: { "Content-Type": "application/json" } });
+    if (overrides[key]) {
+      const r = overrides[key]!(body);
+      return json(r.status ?? 200, r.body);
+    }
+    switch (key) {
+      case `${HOME}/.well-known/tavrn`:
+        throw new TypeError("Failed to fetch"); // e.g. blocked: the proxy of this client's node answers
+      case "origin/.well-known/tavrn":
+        return json(200, doc(VISIT));
+      case `origin/api/v1/federation/resolve/${HOME}`: {
+        const d = doc(HOME);
+        return json(200, { domain: HOME, api: d.api, ws: d.ws, web: d.web, source: "well_known" });
+      }
+      case "origin/api/v1/node":
+        return json(200, { name: "Visit", domain: VISIT, registration: "open" });
+      case `${HOME}/api/v1/auth/login`:
+        return json(200, { status: "second_factor_required", preauth_token: "pre", methods: ["totp", "webauthn", "recovery_code"], expires_in: 600 });
+      case `${HOME}/api/v1/auth/second-factor/verify`:
+        return json(200, session);
+      case `${HOME}/api/v1/auth/connect/token`:
+        return json(200, session);
+      case `${HOME}/api/v1/federation/token`:
+        return json(200, { token: "fed-jwt", target: body?.target, expires_in: 600 });
+      case "origin/api/v1/auth/federated":
+        return json(200, { ...session, user: { ...homeUser, id: "V-LOCAL" }, access_token: "visit-acc", refresh_token: "visit-ref", session_expires_at: "2099-01-01T00:00:00Z" });
+      default:
+        return json(404, { type: "x", title: "", status: 404, detail: key, code: "route.not_found" });
+    }
+  }) as typeof fetch;
+  return calls;
+}
+
+function renderAt(route: string) {
+  return renderWithProviders(
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/connect" element={<ConnectPage />} />
+      <Route path="/connect/callback" element={<ConnectCallbackPage />} />
+      <Route path="/encryption" element={<p>Verschlüsselungsseite</p>} />
+      <Route path="/" element={<p>Startseite</p>} />
+    </Routes>,
+    { route },
+  );
+}
+
+beforeEach(() => {
+  useAuth.getState().logout();
+  useNodes.getState().clear();
+  resetNodeCaches();
+  sessionStorage.clear();
+});
+
+afterEach(() => vi.restoreAllMocks());
+
+describe("sign-in with an account of another node: direct flow", () => {
+  it("discovers the home node, signs in with password and TOTP there and opens a federated session here", async () => {
+    const calls = network();
+    renderAt("/login?next=%2Ffriends");
+    const u = userEvent.setup();
+    await u.click(await screen.findByRole("button", { name: "Mit einem Konto eines anderen Knotens anmelden" }));
+    await u.type(screen.getByLabelText("Deine Adresse"), "alice@visit.example");
+    await u.click(screen.getByRole("button", { name: "Weiter" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("gehört zu diesem Knoten");
+    await u.clear(screen.getByLabelText("Deine Adresse"));
+    await u.type(screen.getByLabelText("Deine Adresse"), `Alice@${HOME}`);
+    await u.click(screen.getByRole("button", { name: "Weiter" }));
+    expect(await screen.findByTestId("remote-home")).toHaveTextContent(`Anmeldung bei ${HOME}`);
+    expect(screen.getByTestId("remote-warning")).toHaveTextContent(VISIT);
+    await u.type(screen.getByLabelText("Passwort"), "passwort-alice");
+    await u.click(screen.getByRole("button", { name: "Mit Passwort anmelden" }));
+    expect(await screen.findByLabelText("6-stelliger Code")).toBeInTheDocument();
+    // Passkeys of the home node cannot run on this origin.
+    expect(screen.queryByRole("button", { name: "Passkey verwenden" })).toBeNull();
+    await u.type(screen.getByLabelText("6-stelliger Code"), "123456");
+    await u.click(screen.getByRole("button", { name: "Bestätigen" }));
+    expect(await screen.findByText("Verschlüsselungsseite")).toBeInTheDocument();
+
+    expect(calls.find((c) => c.url.endsWith("/auth/login"))).toMatchObject({ url: `https://${HOME}/api/v1/auth/login`, body: { username: "alice", password: "passwort-alice" } });
+    expect(useAuth.getState().token).toBe("home-acc");
+    expect(useAuth.getState().home).toEqual({ domain: HOME, base: `https://${HOME}`, ws: `wss://${HOME}/api/v1/ws`, web: `https://${HOME}` });
+    await waitFor(() => expect(useNodes.getState().sessions[VISIT]?.token).toBe("visit-acc"));
+    expect(calls.find((c) => c.url.endsWith("/federation/token"))).toMatchObject({ body: { target: VISIT }, auth: "Bearer home-acc" });
+  });
+});
+
+describe("connect flow", () => {
+  it("starts with state and a PKCE challenge kept in this tab", async () => {
+    const url = new URL(await startConnect(endpoints, "/friends", `alice@${HOME}`));
+    expect(url.origin + url.pathname).toBe(`https://${HOME}/connect`);
+    expect(url.searchParams.get("origin")).toBe(location.origin);
+    const pending = JSON.parse(sessionStorage.getItem("tavrn.connect")!) as PendingConnect;
+    expect(url.searchParams.get("state")).toBe(pending.state);
+    expect(url.searchParams.get("code_challenge")).toBe(await pkceChallenge(pending.verifier));
+    expect(pending.next).toBe("/friends");
+    expect(pending.address).toBe(`alice@${HOME}`);
+    expect(takePendingConnect()?.state).toBe(pending.state);
+    expect(takePendingConnect()).toBeNull();
+  });
+
+  it("checks the callback against the flow of this tab", () => {
+    const pending: PendingConnect = { state: "s".repeat(43), verifier: "v", endpoints, next: "/", startedAt: 1000 };
+    const p = (q: string) => new URLSearchParams(q);
+    expect(checkCallback(p(`code=c&state=${pending.state}&node=${HOME}`), pending, 2000)).toEqual({ ok: true, code: "c" });
+    expect(checkCallback(p(`code=c&state=other&node=${HOME}`), pending, 2000)).toEqual({ ok: false, reason: "state" });
+    expect(checkCallback(p(`code=c&state=${pending.state}&node=${HOME}`), null, 2000)).toEqual({ ok: false, reason: "state" });
+    expect(checkCallback(p(`code=c&state=${pending.state}&node=${HOME}`), pending, 1000 + 16 * 60_000)).toEqual({ ok: false, reason: "state" });
+    expect(checkCallback(p(`error=access_denied&state=${pending.state}`), pending, 2000)).toEqual({ ok: false, reason: "cancelled" });
+    expect(checkCallback(p(`code=c&state=${pending.state}&node=evil.example`), pending, 2000)).toEqual({ ok: false, reason: "invalid" });
+    expect(safeNext("//evil.example")).toBe("/");
+    expect(safeNext("https://evil.example")).toBe("/");
+    expect(safeNext("/rooms/x")).toBe("/rooms/x");
+  });
+
+  it("callback: exchanges code and verifier on the home node", async () => {
+    const calls = network();
+    const pending: PendingConnect = { state: "S".repeat(43), verifier: "V".repeat(43), endpoints, next: "/friends", startedAt: Date.now() };
+    sessionStorage.setItem("tavrn.connect", JSON.stringify(pending));
+    renderAt(`/connect/callback?code=the-code&state=${pending.state}&node=${HOME}`);
+    expect(await screen.findByText("Verschlüsselungsseite")).toBeInTheDocument();
+    expect(calls.filter((c) => c.url.endsWith("/auth/connect/token"))).toHaveLength(1);
+    expect(calls.find((c) => c.url.endsWith("/auth/connect/token"))).toMatchObject({ url: `https://${HOME}/api/v1/auth/connect/token`, body: { code: "the-code", code_verifier: pending.verifier } });
+    expect(useAuth.getState().home?.domain).toBe(HOME);
+    expect(sessionStorage.getItem("tavrn.connect")).toBeNull();
+  });
+
+  it("callback: continues this browser's device of the named account (device proof, ENCRYPTION.md §3.4)", async () => {
+    const calls = network();
+    const proof = { id: "01J9ZK3G5M8Q2W4E6R8T0Y2VA1", nonce: "n", proof: "p" };
+    vi.mocked(deviceProofFor).mockResolvedValueOnce(proof);
+    const pending: PendingConnect = { state: "S".repeat(43), verifier: "V".repeat(43), endpoints, next: "/friends", startedAt: Date.now(), address: `alice@${HOME}` };
+    sessionStorage.setItem("tavrn.connect", JSON.stringify(pending));
+    renderAt(`/connect/callback?code=the-code&state=${pending.state}&node=${HOME}`);
+    expect(await screen.findByText("Verschlüsselungsseite")).toBeInTheDocument();
+    expect(vi.mocked(deviceProofFor)).toHaveBeenCalledWith(expect.anything(), `alice@${HOME}`);
+    expect(calls.find((c) => c.url.endsWith("/auth/connect/token"))?.body).toMatchObject({ code: "the-code", device: proof });
+  });
+
+  it("callback: refuses a foreign state without exchanging anything", async () => {
+    const calls = network();
+    sessionStorage.setItem("tavrn.connect", JSON.stringify({ state: "S".repeat(43), verifier: "V", endpoints, next: "/", startedAt: Date.now() }));
+    renderAt(`/connect/callback?code=c&state=${"X".repeat(43)}&node=${HOME}`);
+    expect(await screen.findByRole("alert")).toHaveTextContent("nicht in diesem Browser-Tab begonnen");
+    expect(calls.some((c) => c.url.includes("connect/token"))).toBe(false);
+    expect(useAuth.getState().token).toBeNull();
+  });
+
+  it("home side: asks for confirmation, then issues a code bound to the origin and challenge", async () => {
+    const calls = network({ "origin/api/v1/auth/connect/code": () => ({ body: { code: "one-time", expires_in: 120 } }) });
+    useAuth.setState({ token: "local", refresh: "r", user: { ...homeUser, domain: VISIT, address: `alice@${VISIT}` }, deviceId: "D", home: null });
+    const challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
+    renderAt(`/connect?origin=${encodeURIComponent("https://other.example")}&state=${"s".repeat(43)}&code_challenge=${challenge}`);
+    expect(await screen.findByTestId("connect-text")).toHaveTextContent(`other.example möchte dich als alice@${VISIT} anmelden`);
+    expect(calls.some((c) => c.url.includes("connect/code"))).toBe(false);
+    vi.spyOn(console, "error").mockImplementation(() => undefined); // jsdom cannot navigate
+    await userEvent.setup().click(screen.getByRole("button", { name: "Dort anmelden" }));
+    expect(await screen.findByText("Zurück zu other.example…")).toBeInTheDocument();
+    expect(calls.find((c) => c.url.endsWith("/auth/connect/code"))).toMatchObject({ body: { origin: "https://other.example", code_challenge: challenge }, auth: "Bearer local" });
+  });
+
+  it("home side: invalid links are refused and signed-out users sign in first", async () => {
+    network();
+    useAuth.setState({ token: "local", refresh: "r", user: homeUser, deviceId: "D", home: null });
+    const { unmount } = renderAt(`/connect?origin=${encodeURIComponent("javascript:alert(1)")}&state=${"s".repeat(43)}&code_challenge=${"c".repeat(43)}`);
+    expect(await screen.findByText("Dieser Anmeldelink ist ungültig oder unvollständig.")).toBeInTheDocument();
+    unmount();
+    useAuth.getState().logout();
+    renderAt(`/connect?origin=${encodeURIComponent("https://other.example")}&state=${"s".repeat(43)}&code_challenge=${"c".repeat(43)}`);
+    expect(await screen.findByRole("button", { name: "Anmelden" })).toBeInTheDocument();
+    expect(validConnectOrigin("https://other.example", false)).toBe(true);
+    expect(validConnectOrigin("http://other.example", false)).toBe(false);
+    expect(validConnectOrigin("http://b.test:5274", true)).toBe(true);
+    expect(validConnectOrigin("https://other.example/path", true)).toBe(false);
+    expect(validConnectOrigin("https://user@other.example", true)).toBe(false);
+  });
+});
