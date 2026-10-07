@@ -1,0 +1,8 @@
+tavrn
+Copyright 2026 The tavrn authors
+
+This product contains the tavrn desktop app, developed by the tavrn project and its contributors and licensed
+under the Apache License, Version 2.0 (see LICENSE). It bundles the tavrn web client (web/ in this repository).
+
+The tavrn logo and icon images (src-tauri/icons/) are not licensed under the Apache License; see TRADEMARK.md
+in the root of this repository.

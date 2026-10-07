@@ -61,6 +61,11 @@ export function originHost(): string {
   return new URL(originUrl()).host;
 }
 
+/** Name of a new device of this platform, as the node lists it under the account's devices. */
+export function deviceName(): string {
+  return current.isDesktop ? "Desktop app" : "Browser";
+}
+
 /** Nodes in development mode speak plain HTTP; only a client of such a node accepts http peers. */
 export function allowsInsecureNodes(): boolean {
   return originUrl().startsWith("http:");

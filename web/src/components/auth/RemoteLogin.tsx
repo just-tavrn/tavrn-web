@@ -9,9 +9,8 @@ import { homeClient, startConnect } from "../../lib/remoteSignIn";
 import { Button, ErrorText, Field, Input } from "../ui";
 import { deviceProofFor } from "../../crypto/e2ee";
 import { SecondFactorVerify } from "./SecondFactorVerify";
-import { originHost, platform } from "../../platform";
+import { deviceName, originHost, platform } from "../../platform";
 
-const DEVICE_NAME = "Browser";
 
 /**
  * "Sign in with an account of another node" (FEDERATION.md §8): address → discovery of the home node →
@@ -57,7 +56,7 @@ export function RemoteLogin({ next, onSession, onCancel }: { next: string; onSes
       // Continue this browser's device of that account if it has one (PROTOCOL.md §5b). The address always
       // carries the identity domain, wherever the node's API lives (design note 4.2c).
       const device = await deviceProofFor(home, `${user}@${endpoints.domain}`);
-      const resp = await home.auth.login({ username: user, password, device_name: DEVICE_NAME, device });
+      const resp = await home.auth.login({ username: user, password, device_name: deviceName(), device });
       setPassword("");
       if (resp.status === "enrollment_required") setError(t("auth.remote_enroll_needed", { domain: endpoints.domain }));
       else setPreauth(resp);

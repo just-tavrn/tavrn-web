@@ -16,14 +16,13 @@ import { TavrnApi, TavrnApiError, createRefresher, isNodeDomain, resolveNode, ty
 import { CLIENT_HEADER, api, publicApi } from "../lib/api";
 import { useAuth } from "./auth";
 import { trackingFetch, useReach } from "./reach";
-import { allowsInsecureNodes, originUrl, originWsUrl, webOrigin } from "../platform";
+import { allowsInsecureNodes, deviceName, originUrl, originWsUrl, webOrigin } from "../platform";
 
 const KEY = "tavrn.nodes";
 /** Renew a federated session when less than this is left of its 7-day cap. */
 export const RENEW_BEFORE_MS = 24 * 3600 * 1000;
 /** Discovery documents are cached for at most one hour (§1.4). */
 export const DISCOVERY_TTL_MS = 3600 * 1000;
-export const DEVICE_NAME = "Browser";
 
 export interface FederatedSession extends NodeEndpoints {
   token: string;
@@ -177,7 +176,7 @@ async function login(domain: string): Promise<FederatedSession> {
   const endpoints = await endpointsOf(domain);
   const { token } = await nodeDeps.home().federation.token(domain);
   const target = new TavrnApi({ baseUrl: endpoints.base, clientHeader: CLIENT_HEADER, fetchImpl: trackingFetch(() => domain) });
-  const session = toSession(endpoints, await target.auth.federated(token, DEVICE_NAME));
+  const session = toSession(endpoints, await target.auth.federated(token, deviceName()));
   useNodes.getState().put(session);
   return session;
 }

@@ -1,0 +1,233 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# The desktop app (apps/desktop, docs/DESKTOP.md) on GitHub-hosted runners (the self-hosted runner image has no
+# WebKit). Gated by CI_ENABLED (docs/GITHUB.md). Minutes matter: no matrix on pull requests, no scheduled runs.
+#
+# - Pull requests that touch the app or the client: Linux build with cargo fmt, clippy, tests, cargo deny (licenses),
+#   the WebDriver smoke test of the built app under xvfb, the .deb and .AppImage as artifacts for 7 days.
+# - By hand (workflow_dispatch): the same for any branch; `windows: true` adds the Windows installers (.msi, NSIS).
+# - Release tags: release.yml calls this workflow with `release-tag` after it created the GitHub release; Linux and
+#   Windows installers, their updater signatures and latest.json are attached to that release (never a second one).
+name: Desktop
+
+on:
+  pull_request:
+    paths:
+      - apps/desktop/**
+      - web/**
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - .github/workflows/desktop.yml
+  workflow_dispatch:
+    inputs:
+      windows:
+        description: "Also build the Windows installers (.msi, NSIS)"
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      release-tag:
+        description: "The tag whose GitHub release receives the installers and the updater files"
+        type: string
+        required: true
+    secrets:
+      TAVRN_READ_PAT:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  RELEASE_TAG: ${{ inputs.release-tag || '' }}
+
+jobs:
+  linux:
+    name: Desktop (Linux)
+    if: ${{ vars.CI_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    timeout-minutes: 60
+    steps:
+      - name: Access to private organization repositories
+        env:
+          READ_TOKEN: ${{ secrets.TAVRN_READ_PAT }}
+        run: |
+          if [ -n "$READ_TOKEN" ]; then
+            git config --global url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "https://github.com/just-tavrn/"
+            git config --global --add url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "ssh://git@github.com/just-tavrn/"
+            git config --global --add url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "git@github.com:just-tavrn/"
+          fi
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.release-tag || github.ref }}
+      - name: System packages (WebKitGTK, WebDriver, xvfb)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf xdg-utils webkit2gtk-driver xvfb
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal --component clippy,rustfmt && rustup default stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri -> target
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny,tauri-driver
+      - run: pnpm install --frozen-lockfile
+      - name: Release builds need the owner's updater key
+        if: ${{ inputs.release-tag }}
+        env:
+          KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if grep -q REPLACE_WITH_THE_OWNERS_MINISIGN_PUBLIC_KEY apps/desktop/src-tauri/tauri.conf.json; then
+            echo "tauri.conf.json still carries the placeholder public key (docs/DESKTOP.md, Updates)" >&2; exit 1
+          fi
+          [ -n "$KEY" ] || { echo "the secret TAURI_SIGNING_PRIVATE_KEY is missing (docs/GITHUB.md)" >&2; exit 1; }
+      - name: Web client (web/dist, embedded by the shell)
+        run: pnpm --filter @tavrn/web build
+      - name: Checks (fmt, clippy, tests, licenses)
+        working-directory: apps/desktop/src-tauri
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo test --locked
+          cargo deny check licenses
+      - name: Update manifest script
+        run: pnpm --filter @tavrn/desktop test
+      - name: Build (.deb, .AppImage)
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ env.RELEASE_TAG != '' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ env.RELEASE_TAG != '' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+        run: |
+          # Updater artifacts (signatures) only for releases: pull requests build without the secret.
+          extra=()
+          [ -n "$RELEASE_TAG" ] && extra=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
+          pnpm --filter @tavrn/desktop tauri build --bundles deb,appimage "${extra[@]}"
+      - name: WebDriver smoke test (node picker, login page)
+        run: |
+          echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          image="${{ vars.TAVRN_NODE_IMAGE || 'ghcr.io/just-tavrn/tavrn-node:edge' }}"
+          docker run -d --name tavrn-node --network host -e TAVRN_LISTEN=127.0.0.1:8300 -e TAVRN_VOICE_ENABLED=false \
+            -e TAVRN_DATABASE_URL='sqlite:///tmp/node.db?mode=rwc' -e TAVRN_DATA_DIR=/tmp/node "$image" --dev
+          E2E_NODE_URL=http://127.0.0.1:8300 TAVRN_DESKTOP_APP=apps/desktop/src-tauri/target/release/tavrn \
+            xvfb-run -a node apps/desktop/e2e/smoke.mjs
+      - name: Node log
+        if: ${{ failure() }}
+        run: docker logs tavrn-node 2>&1 | tail -100 || true
+      - name: Collect the installers
+        run: |
+          mkdir -p dist-desktop
+          cp apps/desktop/src-tauri/target/release/bundle/deb/*.deb dist-desktop/
+          cp apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage* dist-desktop/
+          ls -l dist-desktop
+      - uses: actions/upload-artifact@v5
+        with:
+          name: desktop-linux
+          path: dist-desktop/
+          retention-days: 7
+      - uses: actions/upload-artifact@v5
+        if: ${{ failure() }}
+        with:
+          name: desktop-smoke-screenshot
+          path: test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  windows:
+    name: Desktop (Windows)
+    if: ${{ vars.CI_ENABLED == 'true' && (inputs.windows || inputs.release-tag) }}
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    timeout-minutes: 75
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Access to private organization repositories
+        env:
+          READ_TOKEN: ${{ secrets.TAVRN_READ_PAT }}
+        run: |
+          if [ -n "$READ_TOKEN" ]; then
+            git config --global url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "https://github.com/just-tavrn/"
+            git config --global --add url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "ssh://git@github.com/just-tavrn/"
+            git config --global --add url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "git@github.com:just-tavrn/"
+          fi
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.release-tag || github.ref }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri -> target
+      - run: pnpm install --frozen-lockfile
+      - name: Build (.msi, NSIS)
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ env.RELEASE_TAG != '' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ env.RELEASE_TAG != '' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+        run: |
+          extra=()
+          [ -n "$RELEASE_TAG" ] && extra=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
+          pnpm --filter @tavrn/desktop tauri build --bundles msi,nsis "${extra[@]}"
+      - name: Collect the installers
+        run: |
+          mkdir -p dist-desktop
+          cp apps/desktop/src-tauri/target/release/bundle/msi/*.msi* dist-desktop/
+          cp apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe* dist-desktop/
+          ls -l dist-desktop
+      - uses: actions/upload-artifact@v5
+        with:
+          name: desktop-windows
+          path: dist-desktop/
+          retention-days: 7
+
+  # The only job that writes: installers, signatures and latest.json go to the release release.yml created.
+  release-assets:
+    name: Release assets (installers, latest.json)
+    if: ${{ vars.CI_ENABLED == 'true' && inputs.release-tag }}
+    needs: [linux, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.release-tag }}
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: desktop-*
+          path: installers
+          merge-multiple: true
+      - name: latest.json and the upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node apps/desktop/scripts/latest-json.mjs installers "$RELEASE_TAG" "$GITHUB_REPOSITORY" \
+            "See https://github.com/$GITHUB_REPOSITORY/releases/tag/$RELEASE_TAG" > latest.json
+          cat latest.json
+          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber installers/* latest.json

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { allowsInsecureNodes, apiBase, initPlatform, originHost, originUrl, originWsUrl, platform, resetPlatform, setPlatform, webOrigin } from "./index";
+import { allowsInsecureNodes, apiBase, deviceName, initPlatform, originHost, originUrl, originWsUrl, platform, resetPlatform, setPlatform, webOrigin } from "./index";
 import { browserPlatform } from "./browser";
 import type { Platform } from "./types";
 
@@ -26,6 +26,12 @@ describe("platform", () => {
     expect(webOrigin()).toBe(location.origin);
     expect(originHost()).toBe(location.host);
     expect(allowsInsecureNodes()).toBe(location.protocol === "http:");
+  });
+
+  it("names new devices after the platform", () => {
+    expect(deviceName()).toBe("Browser");
+    setPlatform(desktop("https://tavrn.example"));
+    expect(deviceName()).toBe("Desktop app");
   });
 
   it("stays the browser when no Tauri runtime is detected and never loads the Tauri module", async () => {
