@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useState, type ComponentProps } from "react";
+import { useEffect, useMemo, useState, type ComponentProps } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Permission, hasPermission, type Channel } from "@tavrn/sdk";
 import { THREAD_TITLE_MAX, qualify } from "@tavrn/e2ee";
@@ -32,7 +32,8 @@ export function ThreadPanel({ threadId, channel, perms, onClose, view }: { threa
   const queryClient = useQueryClient();
   const thread = useQuery({ queryKey: threadKey(domain, threadId), queryFn: () => api.threads.get(threadId) });
   const q = qualify(domain, channel.id);
-  const titles = useThreadTitles(q, thread.data ? [thread.data] : undefined);
+  const one = useMemo(() => (thread.data ? [thread.data] : undefined), [thread.data]);
+  const titles = useThreadTitles(q, one);
   const following = useThreads((s) => !!s.followed[threadId]);
   const [renaming, setRenaming] = useState(false);
   const menu = useContextMenu();

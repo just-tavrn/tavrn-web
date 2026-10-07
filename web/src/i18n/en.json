@@ -130,6 +130,7 @@
   "threads.settings_hint": "Threads without new messages are archived after this time; a new message reopens them.",
   "threads.settings_forum_hint": "Posts without new messages are archived after this time. Tags help members sort and filter posts.",
   "threads.auto_archive": "Archive idle threads after",
+  "threads.settings_save": "Save thread settings",
   "threads.archive_days": "{count} day(s)",
   "threads.archive_hours": "{count} hour(s)",
   "forum.new_post": "New post",

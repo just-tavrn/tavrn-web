@@ -105,7 +105,7 @@ function ThreadsPopover({ channel, onOpen, onNew }: { channel: Channel; onOpen: 
       </div>
       {list.isPending && <p className="p-2 text-sm text-fg-2">{t("common.loading")}</p>}
       {list.data?.items.length === 0 && <p className="p-2 text-sm text-fg-2">{archived ? t("threads.none_archived") : t("threads.none")}</p>}
-      <ThreadRows channel={channel} threads={list.data?.items ?? []} onOpen={onOpen} />
+      {list.data && <ThreadRows channel={channel} threads={list.data.items} onOpen={onOpen} />}
     </div>
   );
 }

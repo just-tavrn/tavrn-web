@@ -130,6 +130,7 @@
   "threads.settings_hint": "Threads ohne neue Nachrichten werden nach dieser Zeit archiviert; eine neue Nachricht öffnet sie wieder.",
   "threads.settings_forum_hint": "Beiträge ohne neue Nachrichten werden nach dieser Zeit archiviert. Tags helfen beim Sortieren und Filtern.",
   "threads.auto_archive": "Inaktive Threads archivieren nach",
+  "threads.settings_save": "Thread-Einstellungen speichern",
   "threads.archive_days": "{count} Tag(en)",
   "threads.archive_hours": "{count} Stunde(n)",
   "forum.new_post": "Neuer Beitrag",

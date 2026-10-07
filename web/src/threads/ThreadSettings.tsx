@@ -73,7 +73,7 @@ export function ThreadSettingsSection({ channel, room, canManage, onChanged }: {
         {canManage && (
           <div className="flex justify-end">
             <Button onClick={() => void save()} disabled={busy || (forum && tags.some((tg) => !tg.name.trim()))} data-testid="thread-settings-save">
-              {t("common.save")}
+              {t("threads.settings_save")}
             </Button>
           </div>
         )}
