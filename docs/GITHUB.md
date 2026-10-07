@@ -28,6 +28,7 @@ Every job carries `if: ${{ vars.CI_ENABLED == 'true' }}`.
 | `TAVRN_NODE_IMAGE` | variable | optional: the node image the end-to-end suite runs against (default `ghcr.io/just-tavrn/tavrn-node:edge`). Pin it to a release tag (`:0.1`) to test against a released node. |
 | `TAVRN_READ_PAT` | secret | Private phase only: fine-grained PAT with `contents: read` on `tavrn-js` and `tavrn-crypto` (the `@tavrn` git dependencies), passed to the reusable workflows as `READ_TOKEN`. Delete it once the repositories are public. |
 | `PUBLISH_CHECK_PRIVATE` | secret (repository or organization) | comma-separated private domains, hosts and addresses that must never appear in the tree (`Publication hygiene`). Without it the check fails on purpose. Locally the same list lives in an untracked `.publish-check.private` (in the repository or its parent directory). |
+| Dependabot secrets | secret (Dependabot) | Dependabot pull requests run with Dependabot's own secret store: add `TAVRN_READ_PAT` and `PUBLISH_CHECK_PRIVATE` again under Settings → Secrets and variables → Dependabot (or as organization Dependabot secrets), otherwise their CI fails at the private git dependencies and at the hygiene check. |
 | `CLA_PAT` | organization secret | the CLA bot's token (`contents: write` on `just-tavrn/cla-signatures`). Organization secrets do not reach private repositories on the free plan: until the repository is public, add it as a repository secret as well. |
 
 ## End-to-end tests on the self-hosted runner
