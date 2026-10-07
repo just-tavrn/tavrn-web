@@ -29,6 +29,8 @@ import { useShell } from "../AppShell";
 import { openDm, useFriends } from "../../pages/DirectMessages";
 import { ConfirmAction, copyWithToast } from "./common";
 import type { AnchorRect } from "../../lib/position";
+import { useCapabilities } from "../../moderation/hooks";
+import { ReportDialog } from "../../moderation/ReportDialog";
 
 function VolumeSlider({ address, initial }: { address: string; initial: number }) {
   const t = useT();
@@ -72,12 +74,13 @@ export interface VoiceMenuTarget {
 export function useMemberMenu(room: RoomDetail, member: Member | null, voiceTarget?: VoiceMenuTarget): { menu: ContextMenuTrigger; overlay: ReactNode } {
   const t = useT();
   const menu = useContextMenu();
-  const { api, domain, me } = useNode();
+  const { api, domain, me, home } = useNode();
+  const canReport = !!useCapabilities(home ? null : domain)?.includes("reports.v1");
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { closeMembers } = useShell();
   const friends = useFriends();
-  const [dialog, setDialog] = useState<"kick" | "ban" | "block" | null>(null);
+  const [dialog, setDialog] = useState<"kick" | "ban" | "block" | "report" | null>(null);
   const [profile, setProfile] = useState<AnchorRect | null>(null);
   const [roles, setRoles] = useState<string[] | null>(null);
   const userId = member?.user.id ?? voiceTarget?.participant.user_id ?? "";
@@ -137,6 +140,7 @@ export function useMemberMenu(room: RoomDetail, member: Member | null, voiceTarg
         friendPending: !!friendList?.outgoing.some((r) => r.user.address === address),
         callsAvailable: false,
         canMention: true,
+        canReport,
       },
       {
         ...voiceActions,
@@ -176,6 +180,7 @@ export function useMemberMenu(room: RoomDetail, member: Member | null, voiceTarg
             });
         },
         block: () => setDialog("block"),
+        report: () => setDialog("report"),
         copyId,
       },
       t,
@@ -191,6 +196,9 @@ export function useMemberMenu(room: RoomDetail, member: Member | null, voiceTarg
       )}
       {dialog === "ban" && member && (
         <ConfirmAction title={t("menu.member.ban_title", { name })} text={t("menu.member.ban_text", { address })} action={t("menu.member.ban")} reasonLabel={t("member.reason")} onClose={() => setDialog(null)} onConfirm={async (reason) => { await api.members.ban(room.id, { subject: address, reason }); useToasts.getState().push({ kind: "info", title: t("member.banned") }); await refresh(); }} testId="ban-dialog" />
+      )}
+      {dialog === "report" && member && (
+        <ReportDialog subject={{ kind: "user", address, name, roomId: room.id, roomName: room.name }} client={api} node={domain} onClose={() => setDialog(null)} />
       )}
       {dialog === "block" && member && (
         <ConfirmAction title={t("menu.member.block_title", { name })} text={t("menu.member.block_text", { address })} action={t("menu.member.block")} reasonLabel={t("menu.member.block_reason")} onClose={() => setDialog(null)} onConfirm={async (reason) => { await homeApi.blocks.block(address, reason || null); useToasts.getState().push({ kind: "info", title: t("menu.member.blocked") }); await queryClient.invalidateQueries({ queryKey: ["blocks"] }); }} testId="block-dialog" />

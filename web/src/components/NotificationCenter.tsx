@@ -12,7 +12,7 @@ import { rectOf, useFloating, type AnchorRect } from "../lib/position";
 import { useShell } from "./AppShell";
 import { formatFullTime } from "../lib/format";
 
-const ICON = { mention: "@", dm: "✉", message: "#", call: "📞", legal: "§" } as const;
+const ICON = { mention: "@", dm: "✉", message: "#", call: "📞", legal: "§", report: "⚑" } as const;
 
 function NotificationPanel({ anchor, onClose }: { anchor: AnchorRect; onClose: () => void }) {
   const t = useT();

@@ -28,6 +28,7 @@ import { isAttentive } from "./useMarkRead";
 import { loadRoomDetails, notifyMessage } from "../lib/notify";
 import { historyPending, historyReceive } from "../crypto/history";
 import { parseHistoryPolicy } from "@tavrn/e2ee";
+import { alertText, reportCreated, type ModerationAlert, type ReportCreated } from "../moderation/realtime";
 
 /**
  * May this user commit removals of departed members in a conversation (`mls.remove_needed`)? DMs and group DMs:
@@ -250,9 +251,10 @@ export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: 
       const id = d.channel_id ?? d.conversation_id;
       if (id) useTyping.getState().mark(id, d.user_id);
     }),
-    socket.on<{ room_id: string; user: { display_name: string }; deleted: number }>("moderation.alert", (d) =>
-      useToasts.getState().push({ kind: "warning", title: t("automod.title"), detail: t("automod.spam", { name: d.user.display_name, count: d.deleted }) }),
-    ),
+    socket.on<ModerationAlert>("moderation.alert", (d) => useToasts.getState().push({ kind: "warning", title: t("automod.title"), detail: alertText(d, t) })),
+    // The moderation inbox (MODERATION.md §1.5): badges and lists follow, a new report notifies.
+    socket.on<ReportCreated>("report.create", (d) => reportCreated(d, node, queryClient)),
+    socket.on("report.update", () => void queryClient.invalidateQueries({ queryKey: ["reports"] })),
     socket.on<{ room_id: string; user_id: string; kicked?: boolean; banned?: boolean }>("member.leave", (d) => {
       invalidateRoom(d);
       void queryClient.invalidateQueries({ queryKey: ["members", d.room_id] });

@@ -52,6 +52,8 @@ export interface MessageActions {
   onPin?: (m: Message, pinned: boolean) => void;
   /** Reply to a message (the composer shows "replying to …"). */
   onReply?: (m: Message) => void;
+  /** Report a message of someone else (MODERATION.md); absent where the node takes no reports. */
+  onReport?: (m: Message) => void;
 }
 
 /** First guess of a row's height before it is measured (an ungrouped one-line message). */
@@ -143,6 +145,7 @@ export function MessageList({
   const onEdit = useCallback(async (m: Message, body: string) => actionsRef.current.onEdit?.(m, body), []);
   const onDelete = useCallback((m: Message) => actionsRef.current.onDelete?.(m), []);
   const onReply = useCallback((m: Message) => actionsRef.current.onReply?.(m), []);
+  const onReport = useCallback((m: Message) => actionsRef.current.onReport?.(m), []);
   /** Is the view at the newest messages? Updated on scroll; new messages only follow when it is. */
   const atBottom = useRef(true);
   const requested = useRef(false);
@@ -363,6 +366,7 @@ export function MessageList({
                   onEdit={actions.onEdit ? onEdit : undefined}
                   onDelete={actions.onDelete ? onDelete : undefined}
                   onReply={actions.onReply ? onReply : undefined}
+                  onReport={actions.onReport ? onReport : undefined}
                   onMarkUnread={onMarkUnread}
                   replyTo={m.reply_to_id ? (byId.get(m.reply_to_id) ?? (m.reply_deleted || (!!oldestId && m.reply_to_id >= oldestId) ? "deleted" : null)) : undefined}
                   replyAuthor={m.reply_to_id ? authors?.get(byId.get(m.reply_to_id)?.author ?? "") : undefined}
@@ -531,6 +535,7 @@ interface RowProps {
   onEdit?: (m: Message, body: string) => Promise<void>;
   onDelete?: (m: Message) => void;
   onReply?: (m: Message) => void;
+  onReport?: (m: Message) => void;
   onMarkUnread: (m: Message) => void;
   /** The message this one replies to (null: not loaded; "deleted": the original is gone; undefined: no reply). */
   replyTo?: Message | null | "deleted";
@@ -553,7 +558,7 @@ function snippet(m: Message, d: Decrypted | undefined): string | null {
  * One message. Memoized: with stable props from the list, a new message (20/s under load) renders only
  * its own row instead of every loaded one (design note 9e).
  */
-const MessageRow = memo(function MessageRow({ m, grouped, own, bot, author, replyAuthor, decrypted, signature, editing, setEditingId, canManage, canReact, canPin, roomId, customEmojis, emojiUrls, onReact, onPin, onEdit, onDelete, onReply, onMarkUnread, replyTo, replyDecrypted, mentioned, botMentions }: RowProps) {
+const MessageRow = memo(function MessageRow({ m, grouped, own, bot, author, replyAuthor, decrypted, signature, editing, setEditingId, canManage, canReact, canPin, roomId, customEmojis, emojiUrls, onReact, onPin, onEdit, onDelete, onReply, onReport, onMarkUnread, replyTo, replyDecrypted, mentioned, botMentions }: RowProps) {
   const t = useT();
   const locale = useLocale((s) => s.locale);
   const [draft, setDraft] = useState("");
@@ -599,6 +604,9 @@ const MessageRow = memo(function MessageRow({ m, grouped, own, bot, author, repl
     : (decrypted?.ok && decrypted.webhookName) || m.webhook?.name || author?.name || localName(m.author);
   // Context menu (design note 4.11): right-click, long press or the ⋯ button.
   const menu = useContextMenu();
+  // The welcome channel's entries cannot be deleted by anyone (MODERATION.md §3); no system line can be reported.
+  const welcomeEntry = c.kind === "member_event" || c.kind === "key_event" || c.kind === "bot_event";
+  const systemLine = welcomeEntry || c.kind === "call_event" || c.kind === "system";
   const startEdit = () => {
     if (c.kind !== "text") return;
     setDraft(c.body);
@@ -606,7 +614,7 @@ const MessageRow = memo(function MessageRow({ m, grouped, own, bot, author, repl
   };
   const menuEntries = menu.open
     ? messageMenu(
-        { own, text: c.kind === "text" ? c.body : null, pinned: !!m.pinned, canPin: canPin && !!onPin, canReact: canReact && !!onReact, canManage, canReply: !!onReply && (c.kind === "text" || c.kind === "cipher"), canEdit: !!onEdit, canDelete: !!onDelete },
+        { own, text: c.kind === "text" ? c.body : null, pinned: !!m.pinned, canPin: canPin && !!onPin, canReact: canReact && !!onReact, canManage, canReply: !!onReply && (c.kind === "text" || c.kind === "cipher"), canEdit: !!onEdit, canDelete: !!onDelete && !welcomeEntry, canReport: !!onReport && !systemLine && !m.author_deleted },
         {
           reply: () => onReply?.(m),
           react: (emoji) => onReact?.(m, emoji, !!m.reactions?.some((r) => r.emoji === emoji && r.me)),
@@ -617,6 +625,7 @@ const MessageRow = memo(function MessageRow({ m, grouped, own, bot, author, repl
           edit: startEdit,
           remove: () => onDelete?.(m),
           markUnread: () => onMarkUnread(m),
+          report: () => onReport?.(m),
         },
         t,
       )

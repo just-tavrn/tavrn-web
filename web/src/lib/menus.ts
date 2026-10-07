@@ -38,6 +38,8 @@ export interface MemberMenuContext {
   callsAvailable: boolean;
   /** Mentions only make sense where a composer is open. */
   canMention: boolean;
+  /** The node takes reports (`reports.v1`, MODERATION.md). */
+  canReport?: boolean;
 }
 
 export interface MemberMenuActions {
@@ -59,6 +61,7 @@ export interface MemberMenuActions {
   block: () => void;
   /** Copy the user id (voice participant menus only; the member list keeps "copy address"). */
   copyId?: () => void;
+  report?: () => void;
 }
 
 export function memberMenu(c: MemberMenuContext, a: MemberMenuActions, t: T): MenuEntry[] {
@@ -112,6 +115,7 @@ export function memberMenu(c: MemberMenuContext, a: MemberMenuActions, t: T): Me
     mod(Permission.KICK_MEMBERS, menuItem("kick", t("menu.member.kick"), a.kick, { icon: "🚪", danger: true })),
     mod(Permission.BAN_MEMBERS, menuItem("ban", t("menu.member.ban"), a.ban, { icon: "⛔", danger: true })),
     !c.self && separator("sep-block"),
+    !c.self && c.canReport && a.report && menuItem("report", t("menu.member.report"), a.report, { icon: "⚑" }),
     !c.self && menuItem("block", t("menu.member.block"), a.block, { icon: "🚫", danger: true }),
   ]);
 }
@@ -180,6 +184,8 @@ export interface MessageMenuContext {
   canReply: boolean;
   canEdit: boolean;
   canDelete: boolean;
+  /** Others' messages on nodes that take reports (MODERATION.md). */
+  canReport?: boolean;
 }
 
 export interface MessageMenuActions {
@@ -192,6 +198,7 @@ export interface MessageMenuActions {
   edit: () => void;
   remove: () => void;
   markUnread: () => void;
+  report?: () => void;
 }
 
 export function messageMenu(c: MessageMenuContext, a: MessageMenuActions, t: T): MenuEntry[] {
@@ -206,6 +213,8 @@ export function messageMenu(c: MessageMenuContext, a: MessageMenuActions, t: T):
     c.canPin && menuItem("pin", c.pinned ? t("menu.message.unpin") : t("menu.message.pin"), () => a.pin(!c.pinned), { icon: "📌" }),
     c.own && c.canEdit && c.text !== null && menuItem("edit", t("menu.message.edit"), a.edit, { icon: "✎" }),
     c.canDelete && (c.own || c.canManage) && menuItem("delete", c.own ? t("menu.message.delete") : t("menu.message.delete_mod"), a.remove, { icon: "🗑", danger: true }),
+    !c.own && c.canReport && a.report && separator("sep-report"),
+    !c.own && c.canReport && a.report && menuItem("report", t("menu.message.report"), a.report, { icon: "⚑" }),
   ]);
 }
 
@@ -339,6 +348,8 @@ export interface RoomMenuContext {
   canInvite: boolean;
   isOwner: boolean;
   notify: NotifyMenuState;
+  /** The room's node takes reports (MODERATION.md); owners do not report their own room. */
+  canReport?: boolean;
 }
 
 export interface RoomMenuActions extends NotifyMenuActions {
@@ -347,6 +358,7 @@ export interface RoomMenuActions extends NotifyMenuActions {
   settings: () => void;
   leave: () => void;
   copyId: () => void;
+  report?: () => void;
 }
 
 export function roomMenu(c: RoomMenuContext, a: RoomMenuActions, t: T): MenuEntry[] {
@@ -358,6 +370,7 @@ export function roomMenu(c: RoomMenuContext, a: RoomMenuActions, t: T): MenuEntr
     c.canInvite && menuItem("invite", t("menu.room.invite"), a.invite, { icon: "✉" }),
     menuItem("settings", t("menu.room.settings"), a.settings, { icon: "⚙" }),
     menuItem("copy-id", t("menu.copy_id"), a.copyId, { icon: "#" }),
+    !c.isOwner && c.canReport && a.report && menuItem("report", t("menu.room.report"), a.report, { icon: "⚑" }),
     separator("sep-leave"),
     menuItem("leave", t("menu.room.leave"), a.leave, { icon: "🚪", danger: true, disabled: c.isOwner, reason: c.isOwner ? t("menu.reason.owner_leave") : undefined }),
   ]);

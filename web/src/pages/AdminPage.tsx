@@ -17,11 +17,13 @@ import { SsoGroupMapTab } from "./admin/SsoGroupMapTab";
 import { LegalDocumentsTab } from "./admin/LegalDocumentsTab";
 import { NoticesTab } from "./admin/NoticesTab";
 import { DeletionsSection, UserDataActions } from "./admin/AccountRequests";
+import { ReportsInbox } from "../moderation/ReportsInbox";
+import { badgeText, useOpenAdminReports } from "../moderation/hooks";
 
-const TABS = ["overview", "users", "invites", "bans", "entitlements", "tokens", "applications", "sso", "federation", "legal", "notices", "audit"] as const;
+const TABS = ["overview", "users", "invites", "bans", "reports", "entitlements", "tokens", "applications", "sso", "federation", "legal", "notices", "audit"] as const;
 type Tab = (typeof TABS)[number];
 /** Tabs whose labels live outside `admin.tab.*`. */
-const TAB_LABEL: Partial<Record<Tab, string>> = { applications: "admin.apps.tab", sso: "admin.sso.tab", legal: "admin.legal.tab", notices: "admin.notices.tab" };
+const TAB_LABEL: Partial<Record<Tab, string>> = { applications: "admin.apps.tab", sso: "admin.sso.tab", legal: "admin.legal.tab", notices: "admin.notices.tab", reports: "reports.tab" };
 
 export function AdminPage() {
   const t = useT();
@@ -31,10 +33,14 @@ export function AdminPage() {
   // The SSO tab only exists when the node offers OIDC logins (capability `sso.oidc`, APPLICATIONS.md §8).
   const node = useQuery({ queryKey: ["node"], queryFn: () => api.node.info(), staleTime: 10 * 60_000, enabled: !!user?.is_node_admin });
   const sso = !!node.data?.capabilities?.includes("sso.oidc");
-  const tabs = TABS.filter((x) => x !== "sso" || sso);
+  // Reports (MODERATION.md) on nodes that announce them; the tab shows the open count.
+  const reports = !!node.data?.capabilities?.includes("reports.v1");
+  const tabs = TABS.filter((x) => (x !== "sso" || sso) && (x !== "reports" || reports));
+  const openReports = badgeText(useOpenAdminReports(api, !!user?.is_node_admin && reports));
   if (!user?.is_node_admin) return <Navigate to="/" replace />;
   if (!TABS.includes(tab as Tab)) return <Navigate to="/admin/overview" replace />;
   if (tab === "sso" && node.isSuccess && !sso) return <Navigate to="/admin/overview" replace />;
+  if (tab === "reports" && node.isSuccess && !reports) return <Navigate to="/admin/overview" replace />;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-4">
@@ -48,6 +54,11 @@ export function AdminPage() {
           {tabs.map((x) => (
             <NavLink key={x} to={`/admin/${x}`} data-testid={`admin-tab-${x}`} className={({ isActive }) => `whitespace-nowrap rounded-md px-3 py-2 text-sm ${isActive ? "bg-accent-soft text-fg-0" : "text-fg-1 hover:bg-bg-3/60 hover:text-fg-0"}`}>
               {t(TAB_LABEL[x] ?? `admin.tab.${x}`)}
+              {x === "reports" && openReports && (
+                <span className="ml-2 rounded-full bg-danger-solid px-1.5 text-[11px] font-semibold text-white" data-testid="admin-reports-badge">
+                  {openReports}
+                </span>
+              )}
             </NavLink>
           ))}
         </nav>
@@ -56,6 +67,7 @@ export function AdminPage() {
           {tab === "users" && <UsersTab />}
           {tab === "invites" && <InvitesTab />}
           {tab === "bans" && <BansTab />}
+          {tab === "reports" && <ReportsInbox client={api} mode={{ kind: "admin" }} meId={user?.id} />}
           {tab === "entitlements" && <EntitlementsTab />}
           {tab === "tokens" && <ApiTokensTab />}
           {tab === "applications" && <ApplicationsTab />}

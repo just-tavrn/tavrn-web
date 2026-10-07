@@ -7,7 +7,7 @@ import { AdminPage } from "../AdminPage";
 import { useAuth } from "../../stores/auth";
 import { mockFetch, renderWithProviders } from "../../test/render";
 import { adminDisabled } from "./ApplicationsTab";
-import { buildRights, formatRooms, parseRooms } from "./SsoGroupMapTab";
+import { buildRights } from "./SsoGroupMapTab";
 
 const admin = { id: "a1", username: "root", domain: "t.local", address: "root@t.local", display_name: "Root", kind: "user", is_node_admin: true, avatar_blob_id: null, created_at: "", email: null, email_verified: false, has_identity_key: true };
 const bot = { id: "b1", username: "wetter", domain: "t.local", address: "wetter@t.local", display_name: "Wetter", kind: "bot", application_id: "01J9AAAAAAAAAAAAAAAAAAAAAA", created_at: "" };
@@ -36,14 +36,9 @@ describe("admin application helpers", () => {
     expect(adminDisabled({ disabled: true, disabled_reason: "owner_disabled" })).toBe(false);
   });
 
-  it("parses and formats room grants and builds rights without unset fields", () => {
-    expect(parseRooms(`${ROOM} ${ROLE}\n\n  ${ROOM}x , ${ROLE} ${ROLE}y \n`)).toEqual([
-      { room: ROOM, roles: [ROLE] },
-      { room: `${ROOM}x`, roles: [ROLE, `${ROLE}y`] },
-    ]);
-    expect(formatRooms([{ room: ROOM, roles: [ROLE] }, { room: ROOM, roles: [] }])).toBe(`${ROOM} ${ROLE}\n${ROOM}`);
-    expect(buildRights({ nodeAdmin: false, roomCreation: "", appCreation: "", rooms: "" })).toEqual({});
-    expect(buildRights({ nodeAdmin: true, roomCreation: "3", appCreation: "0", rooms: ROOM })).toEqual({ node_admin: true, room_creation: 3, app_creation: 0, rooms: [{ room: ROOM, roles: [] }] });
+  it("builds rights without unset fields", () => {
+    expect(buildRights({ nodeAdmin: false, roomCreation: "", appCreation: "", rooms: [] })).toEqual({});
+    expect(buildRights({ nodeAdmin: true, roomCreation: "3", appCreation: "0", rooms: [{ room: ROOM, roles: [ROLE] }] })).toEqual({ node_admin: true, room_creation: 3, app_creation: 0, rooms: [{ room: ROOM, roles: [ROLE] }] });
   });
 });
 
@@ -201,6 +196,8 @@ describe("AdminPage: SSO group map tab", () => {
         if (init.method === "PUT") doc = { ...doc, map: JSON.parse(String(init.body)).map };
         return { body: doc };
       },
+      // Rooms and roles are picked by name (MODERATION.md: GET /admin/rooms).
+      "/admin/rooms": { body: [{ id: ROOM, name: "Guild", owner: "alice@t.local", members: 3, roles: [{ id: ROLE, name: "Staff", position: 1 }] }] },
     });
     renderAdmin("/admin/sso");
     expect(await screen.findByTestId("admin-tab-sso")).toBeInTheDocument();
@@ -211,14 +208,20 @@ describe("AdminPage: SSO group map tab", () => {
     await u.type(screen.getByTestId("admin-sso-group"), "devs");
     await u.click(screen.getByTestId("admin-sso-node-admin"));
     await u.type(screen.getByTestId("admin-sso-app-creation"), "2");
-    await u.type(screen.getByTestId("admin-sso-rooms"), `${ROOM} ${ROLE}`);
+    await waitFor(() => expect(within(screen.getByTestId("admin-sso-room-add")).getByRole("option", { name: /Guild/ })).toBeInTheDocument());
+    await u.selectOptions(screen.getByTestId("admin-sso-room-add"), ROOM);
+    const grant = await screen.findByTestId("admin-sso-room-grant");
+    expect(grant).toHaveTextContent("Guild");
+    await u.click(within(grant).getByLabelText("Staff"));
     await u.click(screen.getByTestId("admin-sso-add"));
     await waitFor(() => expect(within(map).getAllByTestId("admin-sso-mapping")).toHaveLength(2));
     const put = calls.filter((c) => c.init.method === "PUT").at(-1)!;
     expect(JSON.parse(String(put.init.body))).toEqual({ map: { staff: { room_creation: 5 }, devs: { node_admin: true, app_creation: 2, rooms: [{ room: ROOM, roles: [ROLE] }] } } });
     const devs = within(map).getAllByTestId("admin-sso-mapping").find((r) => r.dataset.group === "devs")!;
     expect(devs).toHaveTextContent("Knoten-Admin");
-    expect(devs).toHaveTextContent(ROLE);
+    expect(devs).toHaveTextContent("Guild");
+    expect(devs).toHaveTextContent("Staff");
+    expect(devs).not.toHaveTextContent(ROLE);
     expect(screen.getByTestId("admin-sso-group")).toHaveValue("");
 
     // Edit loads the mapping into the form; saving replaces it.
@@ -245,7 +248,6 @@ describe("AdminPage: SSO group map tab", () => {
     expect(screen.getByTestId("admin-sso-sync")).toHaveTextContent("sync");
     const u = userEvent.setup();
     await u.type(screen.getByTestId("admin-sso-group"), "devs");
-    await u.type(screen.getByTestId("admin-sso-rooms"), "x");
     await u.click(screen.getByTestId("admin-sso-add"));
     expect(await screen.findByTestId("admin-sso-error")).toHaveTextContent("is not a room id");
   });
