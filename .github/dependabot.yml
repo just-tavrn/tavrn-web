@@ -8,12 +8,11 @@ updates:
       javascript:
         patterns: ["*"]
     ignore:
+      # The @tavrn packages are git dependencies by tag during the private phase; they move with the release train.
+      - dependency-name: "@tavrn/*"
       # TypeScript 7 (the Go compiler) breaks @hey-api/openapi-ts, which generates the SDK types.
       - dependency-name: typescript
         update-types: ["version-update:semver-major"]
-    # The @tavrn packages are git dependencies by tag during the private phase; they move with the release train.
-    ignore:
-      - dependency-name: "@tavrn/*"
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
