@@ -11,6 +11,7 @@ import { signOutNodes } from "./nodes";
 import { useConversationIndex } from "./conversationIndex";
 import { rememberSsoLogout } from "../lib/sso";
 import { wipeLocalIndex } from "../search/local";
+import { usePush } from "./push";
 
 interface E2eeState {
   /** null until checked. */
@@ -79,6 +80,8 @@ export async function signOut(): Promise<void> {
     // Epoch keys not uploaded yet would be lost with the local data.
     await flushMls();
     await signOutNodes().catch(() => undefined);
+    // No more pushes to this browser (the node also drops the subscription with the device).
+    await usePush.getState().signOut().catch(() => undefined);
     // The local keys are deleted below: the device goes with them (no ghost leaves, no pile of old devices).
     const out = await api.auth.logout({ forgetDevice: true });
     // SSO session: offer "also sign out at the provider" on the login page (APPLICATIONS.md §8.6).

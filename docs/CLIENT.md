@@ -101,6 +101,14 @@ toast with a jump link, a soft sound and an entry behind the bell 🔔 next to t
 **Settings → Notifications → Desktop notifications** the browser shows them while tavrn is in the background
 (the permission is asked only after that click; encrypted messages never appear in the notification text).
 The settings are stored on the home node and fall back to this browser on nodes that do not offer them yet.
+**Settings → Notifications → Push notifications** turns on web push for this browser or installed app
+(tavrn-protocol PROTOCOL.md §6d): the client registers a service worker (`public/sw.js`, push and notification
+clicks only: it caches nothing and there is no offline mode), subscribes with the home node's VAPID key and
+registers the subscription with the home node, which pushes while no tab of the client is connected and follows
+the notification settings (rooms on other nodes push through the home node for DMs, mentions and calls). Pushes of
+encrypted conversations only name the conversation and the sender; "Show message text in push notifications" adds
+a preview of unencrypted messages. A click opens or focuses the conversation; a test button sends a push. Signing
+out removes the subscription; on iPhone and iPad push works only after adding tavrn to the home screen.
 Images open a viewer (zoom, drag, swipe or arrow keys between the images of a message, download icon, open
 original); audio attachments get an inline player and videos play inline and enlarge into the viewer.
 Downloads only start from the download icon. SVG files are never shown inline or opened, only downloaded (they
