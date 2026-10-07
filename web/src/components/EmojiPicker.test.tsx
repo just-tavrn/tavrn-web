@@ -9,6 +9,8 @@ import { mockFetch, renderWithProviders } from "../test/render";
 const ROOM_EMOJI = { id: "01J9ZK8Q4V6X3M2N1P0R5S7T8W", room_id: "r1", name: "local", mime: "image/webp", size: 10, created_at: "", animated: false };
 // The picker loads the Unicode emoji data on first open; hosted CI runners need longer than the 1 s default.
 const FIND = { timeout: 10_000 };
+// The whole test may take a while on a busy CI runner (the JSON is transformed by Vite on first import).
+const SLOW = { timeout: 30_000 };
 const PERSONAL = { id: "01J9ZK8Q4V6X3M2N1P0R5S7T9X", name: "mine", mime: "image/webp", size: 10, animated: true, created_at: "" };
 
 function setup(external: boolean) {
@@ -26,7 +28,7 @@ function setup(external: boolean) {
 describe("EmojiPicker (design note 4.13)", () => {
   beforeEach(() => localStorage.clear());
 
-  it("searches Unicode and custom emojis, applies the skin tone and remembers picks", async () => {
+  it("searches Unicode and custom emojis, applies the skin tone and remembers picks", SLOW, async () => {
     const onPick = setup(true);
     const u = userEvent.setup();
     await u.click(screen.getByRole("button", { name: "Emoji" }));
@@ -48,7 +50,7 @@ describe("EmojiPicker (design note 4.13)", () => {
     expect(onPick).toHaveBeenLastCalledWith(`<:mine:${PERSONAL.id}>`);
   });
 
-  it("greys out external emojis without use_external_emojis", async () => {
+  it("greys out external emojis without use_external_emojis", SLOW, async () => {
     const onPick = setup(false);
     const u = userEvent.setup();
     await u.click(screen.getByRole("button", { name: "Emoji" }));
