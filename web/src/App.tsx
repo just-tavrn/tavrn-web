@@ -55,13 +55,19 @@ export function App() {
         <Route path="/" element={<AppLayout />}>
           <Route index element={<HomePage />} />
           <Route path="rooms/:roomId" element={<RoomIndexRedirect />} />
-          <Route path="rooms/:roomId/channels/:channelId" element={<ChannelPage />} />
+          {/* The thread panel is part of the channel page (it stays mounted while threads open and close). */}
+          <Route path="rooms/:roomId/channels/:channelId" element={<ChannelPage />}>
+            <Route path="threads/:threadId" element={null} />
+          </Route>
           {/* The whiteboard of a conversation, full screen (design note 4.10). */}
           <Route path="rooms/:roomId/channels/:channelId/whiteboard" element={whiteboard} />
           <Route path="rooms/:roomId/settings/:tab?" element={<RoomSettingsPage />} />
           {/* Rooms of other nodes: ids are node-scoped (`<domain>/<ulid>`). */}
           <Route path="n/:node/rooms/:roomId" element={<RoomIndexRedirect />} />
-          <Route path="n/:node/rooms/:roomId/channels/:channelId" element={<ChannelPage />} />
+          {/* The thread panel is part of the channel page (it stays mounted while threads open and close). */}
+          <Route path="n/:node/rooms/:roomId/channels/:channelId" element={<ChannelPage />}>
+            <Route path="threads/:threadId" element={null} />
+          </Route>
           <Route path="n/:node/rooms/:roomId/channels/:channelId/whiteboard" element={whiteboard} />
           <Route path="n/:node/rooms/:roomId/settings/:tab?" element={<RoomSettingsPage />} />
           <Route path="conversations/:conversationId" element={<ConversationPage />} />

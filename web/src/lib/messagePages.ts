@@ -54,11 +54,20 @@ export function nextCursor<M extends WithId>(lastPage: M[]): string | undefined 
 /** The parameter of a page: older than (`before`), newer than (`after`) or around a message; none = newest page. */
 export type PageParam = { before?: string; after?: string; around?: string } | undefined;
 
-/** Fetches one page of `conversationId`, newest first (the node returns `after` pages oldest first). */
-export async function fetchPage(api: Pick<TavrnApi, "conversations">, conversationId: string, param: PageParam): Promise<Message[]> {
-  if (param?.after) return (await api.conversations.messages(conversationId, { limit: PAGE, after: param.after })).reverse();
-  if (param?.around) return api.conversations.messages(conversationId, { limit: PAGE, around: param.around });
-  return api.conversations.messages(conversationId, { limit: PAGE, before: param?.before });
+/**
+ * Fetches one page of `conversationId`, newest first (the node returns `after` pages oldest first). With `thread`,
+ * a page of that thread (PROTOCOL.md §7e); without, the channel's own messages.
+ */
+export async function fetchPage(api: Pick<TavrnApi, "conversations">, conversationId: string, param: PageParam, thread?: string): Promise<Message[]> {
+  const scope = thread ? { thread } : {};
+  if (param?.after) return (await api.conversations.messages(conversationId, { limit: PAGE, after: param.after, ...scope })).reverse();
+  if (param?.around) return api.conversations.messages(conversationId, { limit: PAGE, around: param.around, ...scope });
+  return api.conversations.messages(conversationId, { limit: PAGE, before: param?.before, ...scope });
+}
+
+/** The query key of the loaded pages of a conversation, or of one of its threads. */
+export function messagesKey(conversationId: string, thread?: string | null): unknown[] {
+  return thread ? ["messages", conversationId, "thread", thread] : ["messages", conversationId];
 }
 
 /** Parameter of the next older page, or undefined at the start of the history. */

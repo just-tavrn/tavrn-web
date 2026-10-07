@@ -13,6 +13,7 @@ import { BotsAllowedIcon, NoBotsIcon } from "../../components/Badges";
 import { botMarker } from "../../lib/botAccess";
 import { ChannelBotsAllowed } from "./BotsEncryptionSection";
 import { HistoryPolicySection } from "./HistoryPolicy";
+import { ThreadSettingsSection } from "../../threads/ThreadSettings";
 import { StorageSection } from "../../files/StorageSection";
 
 export function ChannelsTab({ room }: { room: RoomDetail }) {
@@ -184,6 +185,7 @@ function ChannelEditor({ channel, room, canManage, onChanged }: { channel: Chann
       <NoBotsToggles channel={channel} room={room} onChanged={onChanged} />
       <ChannelBotsAllowed channel={channel} room={room} onChanged={onChanged} />
       {channel.encrypted && !isVoice && channel.kind !== "system" && <HistoryPolicySection channel={channel} room={room} canManage={canManage} onChanged={onChanged} />}
+      {["text", "announcement", "forum"].includes(channel.kind) && <ThreadSettingsSection channel={channel} room={room} canManage={canManage} onChanged={onChanged} />}
       {canManageRoles && <OverridesEditor channel={channel} room={room} onChanged={onChanged} />}
       <ConfirmDialog open={confirmDelete} title={t("channels.delete")} text={t("channels.delete_text", { name: channel.name })} confirmWord={channel.name} actionLabel={t("room.delete_action")} onClose={() => setConfirmDelete(false)} onConfirm={async () => { await api.channels.delete(room.id, channel.id); setConfirmDelete(false); await onChanged(); }} />
       <ConfirmDialog open={confirmEncryption} title={t("channels.encryption_off_title")} text={t("channels.encryption_off_text")} actionLabel={t("channels.encryption_off_action")} onClose={() => setConfirmEncryption(false)} onConfirm={async () => { setConfirmEncryption(false); await save(); }} />

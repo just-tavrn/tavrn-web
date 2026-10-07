@@ -180,6 +180,10 @@ export interface MessageMenuContext {
   canReply: boolean;
   canEdit: boolean;
   canDelete: boolean;
+  /** Threads (PROTOCOL.md §7e): the message may start a thread here (absent: no thread entries). */
+  canThread?: boolean;
+  /** The message already started a thread. */
+  hasThread?: boolean;
 }
 
 export interface MessageMenuActions {
@@ -192,11 +196,15 @@ export interface MessageMenuActions {
   edit: () => void;
   remove: () => void;
   markUnread: () => void;
+  createThread?: () => void;
+  replyInThread?: () => void;
 }
 
 export function messageMenu(c: MessageMenuContext, a: MessageMenuActions, t: T): MenuEntry[] {
   return normalizeMenu([
     c.canReply && menuItem("reply", t("menu.message.reply"), a.reply, { icon: "↩" }),
+    c.canThread && !c.hasThread && a.createThread && menuItem("create-thread", t("menu.message.create_thread"), a.createThread, { icon: "🧵" }),
+    (c.hasThread || c.canThread) && a.replyInThread && menuItem("reply-in-thread", t("menu.message.reply_in_thread"), a.replyInThread, { icon: "💬" }),
     c.canReact && submenu("react", t("menu.message.react"), QUICK_REACTIONS.map((e) => menuItem(`react-${e}`, e, () => a.react(e))), { icon: "☺" }),
     c.text !== null && menuItem("copy-text", t("menu.message.copy_text"), a.copyText, { icon: "⧉" }),
     menuItem("copy-link", t("menu.message.copy_link"), a.copyLink, { icon: "🔗" }),

@@ -204,7 +204,9 @@ function SearchPanel(p: { conversationId: string; encrypted: boolean; roomId?: s
 
   const openRow = (row: SearchRow) => {
     const node = isHome(row.node) ? null : row.node;
-    const path = row.roomId ? roomPath(node, row.roomId, row.conversationId) : conversationPath(node, row.conversationId);
+    const channel = row.roomId ? roomPath(node, row.roomId, row.conversationId) : conversationPath(node, row.conversationId);
+    // A thread message opens in its thread (PROTOCOL.md §7e).
+    const path = row.threadId && row.roomId ? `${channel}/threads/${row.threadId}` : channel;
     navigate(`${path}?m=${row.messageId}`);
     if (!wide()) close();
   };

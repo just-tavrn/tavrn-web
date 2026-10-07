@@ -14,7 +14,8 @@ import { EmojiContext, useEmojiUrlMap, useRoomEmojis, type EmojiContextValue } f
 import { Permission, hasPermission } from "@tavrn/sdk";
 import { useMlsUi } from "../stores/mls";
 import { useMarkRead } from "../hooks/useMarkRead";
-import { MESSAGE_QUERY_OPTIONS, PAGE, fetchPage, flatten, isDetached, mapMessages, newerParam, olderParam, prependMessage, trimPages, type MessagePages, type PageParam } from "../lib/messagePages";
+import { MESSAGE_QUERY_OPTIONS, PAGE, fetchPage, flatten, isDetached, mapMessages, messagesKey, newerParam, olderParam, prependMessage, trimPages, type MessagePages, type PageParam } from "../lib/messagePages";
+import { useThreadMarkRead } from "../threads/useThreadMarkRead";
 import { indexEntry, indexMessages } from "../search/local";
 import { rememberRoom } from "../search/sync";
 import { SearchButton } from "../search/SearchPanel";
@@ -78,6 +79,20 @@ export interface ConversationViewProps {
   /** Room channels: the room and its members (command arguments). */
   room?: RoomDetail;
   roomMembers?: Member[];
+  /**
+   * Thread mode (PROTOCOL.md §7e): the view pages and writes this thread of the channel. Its root message (text
+   * threads) is shown first once the thread's history is loaded; pins, search and the whiteboard stay with the channel.
+   */
+  threadId?: string;
+  threadRoot?: Message | null;
+  /** Channel mode: start a thread from a message or answer in its thread (message menu, thread indicator). */
+  onThread?: (m: Message, mode: "create" | "reply", text: string) => void;
+  /** Jump to `?m=<id>` (off for the channel while a thread panel owns the link). */
+  jumpEnabled?: boolean;
+  /** The user may start threads from messages here. */
+  canStartThreads?: boolean;
+  /** Replaces the composer while sending is not possible (announcement channels, locked threads). */
+  composerNote?: string;
 }
 
 /**
@@ -97,11 +112,12 @@ export function ConversationView(p: ConversationViewProps) {
   const typing = useTyping((s) => s.byChannel[conversationId]);
   const node = useQuery({ queryKey: home ? ["well-known"] : ["well-known", domain], queryFn: () => api.node.wellKnown(), staleTime: 10 * 60_000 });
   const nodeInfo = useQuery({ queryKey: home ? ["node"] : ["node", domain], queryFn: () => api.node.info(), staleTime: 10 * 60_000 });
-  const messageKey = useMemo(() => ["messages", conversationId], [conversationId]);
+  const threadId = p.threadId;
+  const messageKey = useMemo(() => messagesKey(conversationId, threadId), [conversationId, threadId]);
   // Lazy history (design note 4.4): newest page on open, older pages on demand; dropped when closed.
   const messages = useInfiniteQuery({
     queryKey: messageKey,
-    queryFn: ({ pageParam }) => fetchPage(api, conversationId, pageParam),
+    queryFn: ({ pageParam }) => fetchPage(api, conversationId, pageParam, threadId),
     initialPageParam: undefined as PageParam,
     getNextPageParam: (last) => olderParam(last),
     // After a jump into the history (`around`): newer pages up to the live end.
@@ -109,7 +125,13 @@ export function ConversationView(p: ConversationViewProps) {
     // Kept current by the WebSocket, dropped when closed, no structural sharing (keeps message identities).
     ...MESSAGE_QUERY_OPTIONS,
   });
-  const loaded = useMemo(() => flatten(messages.data), [messages.data]);
+  const fetched = useMemo(() => flatten(messages.data), [messages.data]);
+  // A thread starts with its root message (the channel message it was started from) once its history is complete.
+  const threadRoot = p.threadRoot;
+  const loaded = useMemo(
+    () => (threadRoot && messages.data && !messages.hasNextPage ? [...fetched, threadRoot] : fetched),
+    [fetched, threadRoot, messages.data, messages.hasNextPage],
+  );
   const detached = isDetached(messages.data);
   const setPages = (fn: (d: MessagePages<Message> | undefined) => MessagePages<Message> | undefined) => queryClient.setQueryData<MessagePages<Message>>(messageKey, fn);
   const emojis = useRoomEmojis(p.roomId ?? "");
@@ -163,7 +185,7 @@ export function ConversationView(p: ConversationViewProps) {
   }, [q, p.roomId, e2ee.phase]);
 
   // Jump to a message (`?m=<id>`, a search result): load the page around it unless it is loaded already.
-  const focusParam = new URLSearchParams(location.search).get("m")?.toUpperCase() ?? null;
+  const focusParam = p.jumpEnabled === false ? null : (new URLSearchParams(location.search).get("m")?.toUpperCase() ?? null);
   const [focus, setFocus] = useState<{ id: string; n: number } | null>(null);
   useEffect(() => {
     if (!focusParam) return;
@@ -172,7 +194,7 @@ export function ConversationView(p: ConversationViewProps) {
       const current = queryClient.getQueryData<MessagePages<Message>>(messageKey);
       if (!current?.pages.some((page) => page.some((m) => m.id === focusParam))) {
         try {
-          const page = await api.conversations.messages(conversationId, { limit: PAGE, around: focusParam });
+          const page = await api.conversations.messages(conversationId, { limit: PAGE, around: focusParam, ...(threadId ? { thread: threadId } : {}) });
           if (cancelled) return;
           await queryClient.cancelQueries({ queryKey: messageKey, exact: true });
           queryClient.setQueryData<MessagePages<Message>>(messageKey, { pages: [page], pageParams: [{ around: focusParam }] });
@@ -204,6 +226,7 @@ export function ConversationView(p: ConversationViewProps) {
     for (const m of p.roomMembers) map.set(m.user.address, { name: memberName(m), color: roles ? memberColor(m, roles) : null });
     return map;
   }, [p.roomMembers, roles]);
+  const usersById = useMemo(() => (p.roomMembers ? new Map(p.roomMembers.map((m) => [m.user.id, m.user])) : undefined), [p.roomMembers]);
   const verificationBlock = !!p.direct && broken.length > 0;
 
   // History for new members (ENCRYPTION.md §7b): room channels whose policy gives members older messages.
@@ -229,10 +252,13 @@ export function ConversationView(p: ConversationViewProps) {
   }, [historyActive, historyPolicy, q, domain, conversationId, queryClient]);
 
   useEffect(() => {
+    // The channel is the open conversation; a thread panel next to it marks only its thread.
+    if (threadId) return;
     useMlsUi.setState({ open: conversationId });
     return () => useMlsUi.setState((s) => (s.open === conversationId ? { open: null } : s));
-  }, [conversationId]);
-  useMarkRead(conversationId, loaded[0]?.id);
+  }, [conversationId, threadId]);
+  useMarkRead(threadId ? "" : conversationId, fetched[0]?.id);
+  useThreadMarkRead(threadId, fetched[0]?.id);
 
   const ready = !p.encrypted || e2ee.phase === "ready" || e2ee.phase === "no_group";
   const waiting = p.encrypted && e2ee.waiting.length > 0;
@@ -329,11 +355,11 @@ export function ConversationView(p: ConversationViewProps) {
       if (!p.encrypted && e2ee.mls) {
         const files = attachmentIds.map((id) => uploads.current.get(id));
         if (files.every((f) => !!f)) {
-          signature = e2ee.mls.signPlaintext(q, { reply_to: reply, thread_id: null, mentions_everyone, mentions, attachments: signedAttachments(files as Attachment[]) }, content);
+          signature = e2ee.mls.signPlaintext(q, { reply_to: reply, thread_id: threadId ?? null, mentions_everyone, mentions, attachments: signedAttachments(files as Attachment[]) }, content);
         }
       }
       const spoilers = !p.encrypted && spoilerIds.length ? { spoilers: spoilerIds.filter((id) => attachmentIds.includes(id)) } : {};
-      const created = await api.conversations.send(conversationId, { ...sealed, attachments: attachmentIds, mentions, mentions_everyone, reply_to_id: reply, ...spoilers, ...(signature ? { signature } : {}) });
+      const created = await api.conversations.send(conversationId, { ...sealed, attachments: attachmentIds, mentions, mentions_everyone, reply_to_id: reply, ...spoilers, ...(signature ? { signature } : {}), ...(threadId ? { thread_id: threadId } : {}) });
       setReplyTo(null);
       for (const id of attachmentIds) {
         uploadKeys.current.delete(id);
@@ -379,7 +405,7 @@ export function ConversationView(p: ConversationViewProps) {
   const palette = useQuery({
     queryKey: ["commands", domain, conversationId],
     queryFn: () => api.commands.palette(conversationId),
-    enabled: commandsOffered && p.canSend && !p.readOnlyNote,
+    enabled: commandsOffered && p.canSend && !p.readOnlyNote && !p.composerNote,
     staleTime: 60_000,
   });
   const appCommands = useMemo(() => appDefinitions(palette.data), [palette.data]);
@@ -491,12 +517,16 @@ export function ConversationView(p: ConversationViewProps) {
             🔒
           </span>
         )}
-        <span className="flex-1" />
-        <SearchButton conversationId={conversationId} encrypted={p.encrypted} roomId={p.roomId} room={p.room} members={p.roomMembers} />
-        <WhiteboardButton conversationId={conversationId} encrypted={p.encrypted} />
-        <button type="button" aria-label={t("channel.pins")} aria-pressed={showPins} onClick={() => setShowPins((v) => !v)} className="min-h-10 min-w-10 rounded-md text-fg-2 hover:bg-bg-3 hover:text-fg-0 aria-pressed:bg-accent-soft aria-pressed:text-accent">
-          📌
-        </button>
+        {!threadId && (
+          <>
+            <span className="flex-1" />
+            <SearchButton conversationId={conversationId} encrypted={p.encrypted} roomId={p.roomId} room={p.room} members={p.roomMembers} />
+            <WhiteboardButton conversationId={conversationId} encrypted={p.encrypted} />
+            <button type="button" aria-label={t("channel.pins")} aria-pressed={showPins} onClick={() => setShowPins((v) => !v)} className="min-h-10 min-w-10 rounded-md text-fg-2 hover:bg-bg-3 hover:text-fg-0 aria-pressed:bg-accent-soft aria-pressed:text-accent">
+              📌
+            </button>
+          </>
+        )}
       </header>
       {showPins && (
         <div className="max-h-64 overflow-y-auto border-b border-line bg-bg-1 px-4 py-2" data-testid="pin-panel">
@@ -531,7 +561,9 @@ export function ConversationView(p: ConversationViewProps) {
         canManage={p.canManage}
         canReact={p.canReact}
         canPin={p.canPin}
-        actions={{ onDelete: remove, onEdit: edit, onReact: react, onPin: pin, onReply: p.readOnlyNote ? undefined : setReplyTo }}
+        actions={{ onDelete: remove, onEdit: edit, onReact: react, onPin: pin, onReply: p.readOnlyNote || p.composerNote ? undefined : setReplyTo, onThread: threadId ? undefined : p.onThread }}
+        usersById={usersById}
+        canStartThreads={!threadId && !!p.canStartThreads}
         currentAddress={user?.address}
         hasMore={!!messages.hasNextPage}
         loadingOlder={messages.isFetchingNextPage}
@@ -556,9 +588,9 @@ export function ConversationView(p: ConversationViewProps) {
         {typingNames.length === 1 && t("messages.typing_one")}
         {typingNames.length > 1 && t("messages.typing_many", { count: typingNames.length })}
       </div>
-      {p.readOnlyNote ? (
-        <p className="mx-4 mb-4 rounded-md border border-line bg-bg-1 px-3 py-2 text-sm text-fg-2" data-testid="read-only-note">
-          {p.readOnlyNote}
+      {p.readOnlyNote || p.composerNote ? (
+        <p className="mx-4 mb-4 rounded-md border border-line bg-bg-1 px-3 py-2 text-sm text-fg-2" data-testid={p.readOnlyNote ? "read-only-note" : "composer-note"}>
+          {p.readOnlyNote ?? p.composerNote}
         </p>
       ) : (
       <Composer

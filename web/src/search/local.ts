@@ -119,7 +119,7 @@ export function indexEntry(conversation: string, m: Message, d: Decrypted | unde
   if (!text.trim() && files.length === 0) return null;
   const ts = Date.parse(m.created_at);
   if (!Number.isFinite(ts)) return null;
-  return { conversation, id: m.id, ts, author: m.author, text, files, ...(room ? { room } : {}) };
+  return { conversation, id: m.id, ts, author: m.author, text, files, ...(room ? { room } : {}), ...(m.thread_id ? { thread: m.thread_id } : {}) };
 }
 
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
