@@ -161,6 +161,11 @@ export function setNotificationNavigator(fn: ((path: string) => void) | null) {
   navigateTo = fn;
 }
 
+/** Opens a path of the client from a notification (browser or web push, `lib/push.ts`). */
+export function navigateFromNotification(path: string): void {
+  navigateTo?.(path);
+}
+
 export function browserNotificationsSupported(): boolean {
   return typeof window !== "undefined" && "Notification" in window;
 }

@@ -14,6 +14,7 @@ import { channelName } from "../../lib/names";
 import { Button, Field } from "../../components/ui";
 import { Section, Select } from "./common";
 import { AccessibilitySection } from "./AccessibilitySection";
+import { PushSection } from "./PushSection";
 
 const MODES: NotificationMode[] = ["all", "mentions", "nothing"];
 
@@ -90,6 +91,7 @@ export function NotificationsTab() {
           {t("notify.mentions_privacy")}
         </p>
       </Section>
+      <PushSection />
       <AccessibilitySection />
       <Section title={t("notify.overrides")} description={t("notify.overrides_hint")}>
         {overrides.length === 0 && <p className="text-sm text-fg-2">{t("notify.overrides_none")}</p>}

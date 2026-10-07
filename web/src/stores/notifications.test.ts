@@ -105,3 +105,11 @@ describe("useNotifications", () => {
     expect(useNotifications.getState().entries.every((e) => e.read)).toBe(true);
   });
 });
+
+describe("push_text", () => {
+  it("is kept when on and left out when off", () => {
+    expect(normalizeSettings({ global: { mode: "all", sound: true, browser: false, push_text: true } }).global).toEqual({ mode: "all", sound: true, browser: false, push_text: true });
+    expect(normalizeSettings({ global: { mode: "all", push_text: false } }).global).not.toHaveProperty("push_text");
+    expect(normalizeSettings({ global: { mode: "all", push_text: "yes" } }).global).not.toHaveProperty("push_text");
+  });
+});

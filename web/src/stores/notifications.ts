@@ -27,7 +27,13 @@ export function normalizeSettings(raw: unknown): NotificationSettings {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const g = (r.global && typeof r.global === "object" ? r.global : {}) as Record<string, unknown>;
   const out: NotificationSettings = {
-    global: { mode: isMode(g.mode) ? g.mode : DEFAULT_SETTINGS.global.mode, sound: typeof g.sound === "boolean" ? g.sound : true, browser: g.browser === true },
+    global: {
+      mode: isMode(g.mode) ? g.mode : DEFAULT_SETTINGS.global.mode,
+      sound: typeof g.sound === "boolean" ? g.sound : true,
+      browser: g.browser === true,
+      // Web push previews of unencrypted messages (PROTOCOL.md §6d); left out while off, like the node does.
+      ...(g.push_text === true ? { push_text: true } : {}),
+    },
     rooms: {},
     channels: {},
   };

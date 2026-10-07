@@ -13,6 +13,7 @@ import { CreateRoomDialog } from "../components/CreateRoomDialog";
 import { PresenceMenu } from "../components/PresenceMenu";
 import { NotificationBell } from "../components/NotificationCenter";
 import { useNotifications } from "../stores/notifications";
+import { usePush } from "../stores/push";
 import { usePrivacy } from "../stores/privacy";
 import { setNotificationNavigator } from "../lib/notify";
 import { useE2ee } from "../stores/e2ee";
@@ -252,7 +253,13 @@ function useNotificationSetup(token: string | null, address: string | undefined)
   useEffect(() => {
     if (!token || !address) return;
     void useNotifications.getState().load({ get: () => api.users.notificationSettings(), put: (s) => api.users.putNotificationSettings(s) }, address);
-    return () => useNotifications.getState().reset();
+    // Web push of this device (PROTOCOL.md §6d): renews an enabled registration on the home node.
+    const { user, deviceId } = useAuth.getState();
+    void usePush.getState().init({ api, account: address, homeNode: user?.domain ?? location.hostname, deviceId: deviceId ?? null });
+    return () => {
+      useNotifications.getState().reset();
+      usePush.getState().reset();
+    };
   }, [token, address]);
 }
 
