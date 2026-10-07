@@ -703,7 +703,7 @@
   "automod.rule.name": "Name",
   "automod.rule.enabled": "Aktiv",
   "automod.rule.terms": "Wörter und Ausdrücke",
-  "automod.rule.terms_hint": "Einer pro Zeile, Groß- und Kleinschreibung egal. * steht für beliebige Zeichen innerhalb eines Worts (spam*, *coin).",
+  "automod.rule.terms_hint": "Einer pro Zeile, Groß- und Kleinschreibung egal. * steht für beliebige Zeichen innerhalb eines Worts (spam*, *coin); in Ausdrücken mit Leerzeichen nur am Anfang oder Ende.",
   "automod.rule.whole_word": "Nur ganze Wörter",
   "automod.rule.links": "Links",
   "automod.rule.domains": "Domains",

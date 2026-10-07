@@ -703,7 +703,7 @@
   "automod.rule.name": "Name",
   "automod.rule.enabled": "Active",
   "automod.rule.terms": "Words and phrases",
-  "automod.rule.terms_hint": "One per line, not case-sensitive. * matches any characters within a word (spam*, *coin).",
+  "automod.rule.terms_hint": "One per line, not case-sensitive. * matches any characters within a word (spam*, *coin); in phrases with spaces only at the start or end.",
   "automod.rule.whole_word": "Whole words only",
   "automod.rule.links": "Links",
   "automod.rule.domains": "Domains",
