@@ -29,6 +29,7 @@ import { loadRoomDetails, notifyMessage } from "../lib/notify";
 import { historyPending, historyReceive } from "../crypto/history";
 import { parseHistoryPolicy } from "@tavrn/e2ee";
 import { alertText, reportCreated, type ModerationAlert, type ReportCreated } from "../moderation/realtime";
+import { rememberDeleted } from "../moderation/deletedIds";
 
 /**
  * May this user commit removals of departed members in a conversation (`mls.remove_needed`)? DMs and group DMs:
@@ -209,6 +210,7 @@ export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: 
       updatePages(m.conversation_id, (d) => mapMessages(d, (page) => page.map((x) => (x.id === m.id ? m : x))));
     }),
     socket.on<{ conversation_id: string; id: string }>("message.delete", (d) => {
+      rememberDeleted(d.id);
       updatePages(d.conversation_id, (data) => mapMessages(data, (page) => page.filter((x) => x.id !== d.id)));
       // The local search index forgets it too (design note 4.4).
       void unindexMessages(qualified(d.conversation_id), [d.id]);

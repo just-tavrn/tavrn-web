@@ -46,6 +46,7 @@ import { useCapabilities } from "../moderation/hooks";
 import { ReportDialog } from "../moderation/ReportDialog";
 import { evidenceCandidates } from "../moderation/evidence";
 import { isAutomodBlock } from "../moderation/blocked";
+import { wasDeleted } from "../moderation/deletedIds";
 
 /** An error that was already shown to the user. */
 class AlreadyReported extends Error {}
@@ -352,7 +353,8 @@ export function ConversationView(p: ConversationViewProps) {
         uploadKeys.current.delete(id);
         uploads.current.delete(id);
       }
-      setPages((old) => prependMessage(old, created));
+      // Auto-moderation may have removed it already (its `message.delete` can come before this answer).
+      if (!wasDeleted(created.id)) setPages((old) => prependMessage(old, created));
     } catch (e) {
       // Auto-moderation blocks are shown in the composer itself (MODERATION.md §2.2).
       if (!isAutomodBlock(e)) toastError(e, t("messages.send_failed"));

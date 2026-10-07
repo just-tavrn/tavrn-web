@@ -5,7 +5,7 @@
  */
 import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
-import { NODE, adminAccount, confirmWithPassword, createRoomViaApi, inviteCode, loginAs, registerViaApi } from "./helpers";
+import { NODE, adminAccount, confirmWithPassword, createRoomViaApi, inviteCode, loginAs, registerViaApi, uniqueName } from "./helpers";
 
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 
@@ -79,5 +79,37 @@ test.describe("My data and deleting the account", () => {
     const login = await request.post(`${NODE}/api/v1/auth/login`, { data: { username: leaver.username, password: leaver.password, device_name: "e2e" } });
     expect(login.ok()).toBeTruthy();
     expect((await login.json()).status).toBe("enrollment_required");
+  });
+
+  test("an owner hands the room over from the deletion dialog, then the account goes (MODERATION.md §4)", async ({ page, request }) => {
+    test.setTimeout(120_000);
+    const owner = await registerViaApi(request, "owner");
+    const heir = await registerViaApi(request, "heir");
+    const name = uniqueName("Erbe");
+    const room = await createRoomViaApi(request, owner.token, name);
+    expect((await request.post(`${NODE}/api/v1/invites/${await inviteCode(request, owner.token, room.id)}/join`, { headers: auth(heir.token), data: {} })).ok()).toBeTruthy();
+
+    await loginAs(page, owner);
+    await page.goto("/settings/privacy");
+    await page.getByTestId("delete-account-open").click();
+    await page.getByTestId("delete-confirm").fill(owner.username);
+    await page.getByTestId("delete-account-confirm").click();
+    await confirmWithPassword(page, owner.password);
+    // The account still owns the room: transfer it instead of being refused.
+    const owned = page.getByTestId("delete-owned-rooms");
+    await expect(owned).toContainText(name);
+    await owned.getByTestId("delete-transfer-room").click();
+    const transfer = page.getByTestId("transfer-dialog");
+    await transfer.getByTestId("transfer-target").selectOption({ label: `${heir.username} (${heir.username}@localhost)` });
+    await transfer.getByTestId("transfer-confirm").click();
+    if (await page.getByTestId("reauth-dialog").isVisible().catch(() => false)) await confirmWithPassword(page, owner.password);
+    await expect(transfer).toHaveCount(0);
+    await expect(page.getByTestId("delete-owned-rooms")).toHaveCount(0);
+    const detail = await (await request.get(`${NODE}/api/v1/rooms/${room.id}`, { headers: auth(heir.token) })).json();
+    expect(detail.owner_id).toBe(heir.userId);
+
+    await page.getByTestId("delete-account-confirm").click();
+    if (await page.getByTestId("reauth-dialog").isVisible().catch(() => false)) await confirmWithPassword(page, owner.password);
+    await expect(page).toHaveURL(/\/login\?deleted=1/);
   });
 });
