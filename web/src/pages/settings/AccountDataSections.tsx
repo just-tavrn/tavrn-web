@@ -5,6 +5,7 @@
  * username as confirmation phrase, the option to delete messages and files, and the progress of that deletion.
  */
 import { useCallback, useState } from "react";
+import { TransferDialog } from "../../moderation/TransferOwnership";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { TavrnApiError, type AccountDeletion, type DataSummary } from "@tavrn/sdk";
@@ -14,7 +15,7 @@ import { useAuth } from "../../stores/auth";
 import { signOut } from "../../stores/e2ee";
 import { describeError } from "../../stores/toasts";
 import { Button, Dialog, ErrorText, Input } from "../../components/ui";
-import { Section } from "./common";
+import { ConfirmDialog, Section } from "./common";
 
 /** Saves a JSON value as a file download. */
 export function downloadJson(data: unknown, filename: string) {
@@ -122,6 +123,9 @@ export function DeleteAccountSection() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<AccountDeletion | null>(null);
+  // Rooms the account still owns (MODERATION.md §4): transfer each or delete it, then delete the account.
+  const [owned, setOwned] = useState<{ id: string; name: string }[]>([]);
+  const [roomAction, setRoomAction] = useState<{ kind: "transfer" | "delete"; room: { id: string; name: string } } | null>(null);
   // Stable, so the dialog keeps the focus while typing.
   const close = useCallback(() => setOpen((o) => (progress ? o : false)), [progress]);
   if (!user || remote) return null;
@@ -150,8 +154,9 @@ export function DeleteAccountSection() {
       setTimeout(() => void poll(), 500);
     } catch (e) {
       if (e instanceof TavrnApiError && e.code === "auth.reauth_required") return;
-      const rooms = e instanceof TavrnApiError && e.code === "account.owns_rooms" ? ((e.problem as { meta?: { rooms?: { name: string }[] } }).meta?.rooms ?? []) : [];
-      setError(rooms.length ? t("legal.delete.owns_rooms", { rooms: rooms.map((r) => r.name).join(", ") }) : describeError(e));
+      const rooms = e instanceof TavrnApiError && e.code === "account.owns_rooms" ? ((e.problem as { meta?: { rooms?: { id: string; name: string }[] } }).meta?.rooms ?? []) : [];
+      setOwned(rooms);
+      setError(rooms.length ? null : describeError(e));
     } finally {
       setBusy(false);
     }
@@ -161,7 +166,7 @@ export function DeleteAccountSection() {
       <Button variant="danger" onClick={() => setOpen(true)} data-testid="delete-account-open">
         {t("legal.delete.button")}
       </Button>
-      <Dialog title={t("legal.delete.title")} open={open} onClose={close}>
+      <Dialog title={t("legal.delete.title")} open={open && !roomAction} onClose={close}>
         {progress ? (
           <div className="space-y-3 text-sm" role="status" data-testid="delete-progress">
             <p>{t("legal.delete.progress", { done: progress.messages_done, total: progress.messages_total })}</p>
@@ -187,6 +192,24 @@ export function DeleteAccountSection() {
               <span className="text-xs text-fg-2">{t("legal.delete.type", { word: user.username })}</span>
               <Input value={typed} onChange={(e) => setTyped(e.target.value)} aria-label={t("common.confirmation")} autoComplete="off" data-testid="delete-confirm" />
             </label>
+            {owned.length > 0 && (
+              <div className="space-y-2 rounded-md border border-warn/50 bg-warn/10 p-3" role="alert" data-testid="delete-owned-rooms">
+                <p className="text-xs text-fg-1">{t("legal.delete.owns_rooms_intro")}</p>
+                <ul className="space-y-1">
+                  {owned.map((r) => (
+                    <li key={r.id} className="flex flex-wrap items-center gap-2">
+                      <span className="min-w-0 flex-1 break-words font-medium">{r.name}</span>
+                      <Button variant="ghost" className="min-h-9 px-2 text-xs" onClick={() => setRoomAction({ kind: "transfer", room: r })} data-testid="delete-transfer-room">
+                        {t("transfer.open")}
+                      </Button>
+                      <Button variant="ghost" className="min-h-9 px-2 text-xs text-danger" onClick={() => setRoomAction({ kind: "delete", room: r })} data-testid="delete-room-instead">
+                        {t("room.delete")}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <ErrorText>{error}</ErrorText>
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setOpen(false)}>
@@ -199,6 +222,32 @@ export function DeleteAccountSection() {
           </div>
         )}
       </Dialog>
+      {roomAction?.kind === "transfer" && (
+        <TransferDialog
+          client={api}
+          roomId={roomAction.room.id}
+          roomName={roomAction.room.name}
+          domain={user.domain}
+          meId={user.id}
+          onClose={() => setRoomAction(null)}
+          onDone={() => setOwned((list) => list.filter((r) => r.id !== roomAction.room.id))}
+        />
+      )}
+      <ConfirmDialog
+        open={roomAction?.kind === "delete"}
+        title={t("room.delete_title")}
+        text={t("room.delete_text", { name: roomAction?.room.name ?? "" })}
+        confirmWord={roomAction?.room.name}
+        actionLabel={t("room.delete_action")}
+        onClose={() => setRoomAction(null)}
+        onConfirm={async () => {
+          if (!roomAction) return;
+          await api.rooms.delete(roomAction.room.id);
+          const gone = roomAction.room.id;
+          setOwned((list) => list.filter((r) => r.id !== gone));
+          setRoomAction(null);
+        }}
+      />
     </Section>
   );
 }

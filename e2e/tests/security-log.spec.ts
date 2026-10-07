@@ -2,8 +2,9 @@
 // The welcome channel as the room's security log (design note 4.13 item 12): joins, leaves and security key changes of
 // members, visible to every member whatever the overrides say.
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { NODE, createRoomViaApi, inviteCode, openNavIfMobile, registerViaApi, registerViaUi, tokenOf } from "./helpers";
+import { NODE, createRoomViaApi, inviteCode, loginAs, openNavIfMobile, registerViaApi, registerViaUi, tokenOf } from "./helpers";
 import { freshIdentityKey } from "./crypto-helpers";
+import { openContextMenu } from "./menu-helpers";
 
 async function newPage(browser: Browser): Promise<Page> {
   const context = await browser.newContext({ ...test.info().project.use });
@@ -86,5 +87,27 @@ test.describe("Security log in the welcome channel", () => {
     await expect(page.getByTestId("read-only-note")).toContainText("Sicherheitsprotokoll des Raums");
     expect(alice.address).toContain("@");
     await bobPage.context().close();
+  });
+
+  test("its entries cannot be deleted, not even by the owner (MODERATION.md §3)", async ({ page, request }) => {
+    const owner = await registerViaApi(request, "owner");
+    const member = await registerViaApi(request, "member");
+    const room = await createRoomViaApi(request, owner.token, "Unlöschbar");
+    const wid = room.channels.find((c: { kind: string }) => c.kind === "system").id as string;
+    expect((await request.post(`${NODE}/api/v1/invites/${await inviteCode(request, owner.token, room.id)}/join`, { headers: { Authorization: `Bearer ${member.token}` }, data: {} })).ok()).toBeTruthy();
+    await loginAs(page, owner);
+    await page.goto(`/rooms/${room.id}/channels/${wid}`);
+    const entry = page.getByTestId("member-event").filter({ hasText: member.username });
+    await expect(entry).toBeVisible({ timeout: 20_000 });
+    await openContextMenu(page, entry);
+    const menu = page.getByTestId("message-menu");
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole("menuitem", { name: /löschen/ })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    const id = await entry.getAttribute("data-message-id");
+    const del = await request.delete(`${NODE}/api/v1/conversations/${wid}/messages/${id}`, { headers: { Authorization: `Bearer ${owner.token}` } });
+    expect(del.status()).toBe(403);
+    expect((await del.json()).code).toBe("message.system_protected");
+    await expect(entry).toBeVisible();
   });
 });

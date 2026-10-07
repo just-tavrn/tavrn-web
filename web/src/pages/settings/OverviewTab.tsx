@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useState } from "react";
+import { TransferSection } from "../../moderation/TransferOwnership";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { Permission, hasPermission, isBotKind, parsePermissions, type RoomDetail } from "@tavrn/sdk";
@@ -90,6 +91,8 @@ export function OverviewTab({ room }: { room: RoomDetail }) {
       <BotsInEncryptedSection room={room} canManage={canManage} />
       <UploadCategoriesSection room={room} />
       <RetentionSection room={room} />
+
+      <TransferSection room={room} />
 
       <Section title={t("settings.danger")}>
         <div className="flex flex-wrap gap-2">

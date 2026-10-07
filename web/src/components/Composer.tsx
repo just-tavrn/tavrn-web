@@ -16,6 +16,7 @@ import { useUploadPrivacy } from "./UploadPrivacy";
 import { useComposePreview } from "./ComposePreview";
 import { wrapSpoiler } from "../lib/markdown";
 import { composerGrowth, type Growth } from "../lib/composerGrowth";
+import { blockedText, isAutomodBlock } from "../moderation/blocked";
 
 export interface PendingUpload {
   key: string;
@@ -105,6 +106,8 @@ export function Composer({
   const [dismissed, setDismissed] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [commandError, setCommandError] = useState<string | undefined>();
+  /** A send refused by auto-moderation (MODERATION.md §2.2): shown here, the text stays for a correction. */
+  const [blocked, setBlocked] = useState<string | undefined>();
   /** The command picked from the palette: the selection is bound to it, not to its name (APPLICATIONS.md §5.4). */
   const [picked, setPicked] = useState<CommandDefinition | null>(null);
   const lastTyping = useRef(0);
@@ -246,14 +249,16 @@ export function Composer({
     }
     if ((!body && ready.length === 0 && !gif) || busy) return;
     setBusy(true);
+    setBlocked(undefined);
     try {
       await onSend({ body, attachmentIds: ready, gif, preview: gif ? undefined : (composePreview.preview ?? undefined), ...(spoilerIds.length ? { spoilerIds } : {}) });
       setValue("");
       composePreview.reset();
       setUploads([]);
       setGifOpen(false);
-    } catch {
-      // The caller has already reported the error; the text stays for sending again.
+    } catch (e) {
+      // The caller has already reported other errors; the text stays for sending again.
+      if (isAutomodBlock(e)) setBlocked(blockedText(e, t));
     } finally {
       setBusy(false);
     }
@@ -381,6 +386,11 @@ export function Composer({
       {helpOpen && commands && <CommandHelp items={commands.available} onClose={() => setHelpOpen(false)} />}
       {paletteOpen && <CommandList id={paletteId} items={matches} selected={selected} onPick={pickCommand} onHover={setSelected} />}
       {def && !typingName && <ArgumentHint def={def} active={active} suggestions={suggestions} selected={selected} onPick={pickSuggestion} error={commandError} />}
+      {blocked && (
+        <p className="mb-2 rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-xs text-danger" role="alert" data-testid="composer-blocked">
+          {blocked}
+        </p>
+      )}
       {!def && !typingName && commandError && (
         <p className="mb-2 rounded-lg border border-line bg-bg-1 px-3 py-2 text-xs text-danger" role="alert" data-testid="command-error">
           {commandError}
@@ -462,6 +472,7 @@ export function Composer({
           aria-autocomplete={commands ? "list" : undefined}
           onChange={(e) => {
             setValue(e.target.value);
+            setBlocked(undefined);
             if (!e.target.value.startsWith("/")) setPicked(null);
             setCommandError(undefined);
             setShrunk(false);

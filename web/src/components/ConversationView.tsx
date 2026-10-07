@@ -40,6 +40,13 @@ import { WhiteboardButton } from "../whiteboard/WhiteboardBadge";
 import { extractMentions, type MentionContext } from "../lib/mentions";
 import { fitPreview } from "../lib/linkPreview";
 import { emojiTokens } from "../lib/markdown";
+import { api as homeApi } from "../lib/api";
+import { useAuth } from "../stores/auth";
+import { useCapabilities } from "../moderation/hooks";
+import { ReportDialog } from "../moderation/ReportDialog";
+import { evidenceCandidates } from "../moderation/evidence";
+import { isAutomodBlock } from "../moderation/blocked";
+import { wasDeleted } from "../moderation/deletedIds";
 
 /** An error that was already shown to the user. */
 class AlreadyReported extends Error {}
@@ -128,6 +135,13 @@ export function ConversationView(p: ConversationViewProps) {
   const verification = useMlsUi((s) => s.verification);
   /** The message being replied to (design note 4.11, message menu "Reply"). */
   const [replyTo, setReplyTo] = useState<Message | null>(null);
+  // Reports (MODERATION.md §1.1): room channels go to the room's node, DMs and group DMs to the home node (with the
+  // hosting node named when the conversation lives elsewhere).
+  const [reporting, setReporting] = useState<Message | null>(null);
+  const homeDomain = useAuth((s) => s.user?.domain ?? "");
+  const remoteDirect = !p.roomId && !home;
+  const reportCaps = useCapabilities(home || remoteDirect ? null : domain);
+  const canReport = !!reportCaps?.includes("reports.v1");
   const navigate = useNavigate();
   const location = useLocation();
   const uploadPolicy = useQuery({ queryKey: ["upload-policy", domain, conversationId], queryFn: () => api.attachments.policy(conversationId), enabled: p.canAttach, staleTime: 60_000 });
@@ -339,9 +353,11 @@ export function ConversationView(p: ConversationViewProps) {
         uploadKeys.current.delete(id);
         uploads.current.delete(id);
       }
-      setPages((old) => prependMessage(old, created));
+      // Auto-moderation may have removed it already (its `message.delete` can come before this answer).
+      if (!wasDeleted(created.id)) setPages((old) => prependMessage(old, created));
     } catch (e) {
-      toastError(e, t("messages.send_failed"));
+      // Auto-moderation blocks are shown in the composer itself (MODERATION.md §2.2).
+      if (!isAutomodBlock(e)) toastError(e, t("messages.send_failed"));
       throw e;
     }
   };
@@ -531,7 +547,7 @@ export function ConversationView(p: ConversationViewProps) {
         canManage={p.canManage}
         canReact={p.canReact}
         canPin={p.canPin}
-        actions={{ onDelete: remove, onEdit: edit, onReact: react, onPin: pin, onReply: p.readOnlyNote ? undefined : setReplyTo }}
+        actions={{ onDelete: remove, onEdit: edit, onReact: react, onPin: pin, onReply: p.readOnlyNote ? undefined : setReplyTo, onReport: canReport ? setReporting : undefined }}
         currentAddress={user?.address}
         hasMore={!!messages.hasNextPage}
         loadingOlder={messages.isFetchingNextPage}
@@ -551,6 +567,14 @@ export function ConversationView(p: ConversationViewProps) {
         authors={authors}
       />
       </AuthorProfiles>
+      {reporting && (
+        <ReportDialog
+          subject={{ kind: "message", message: reporting, encrypted: reporting.encrypted, candidates: reporting.encrypted ? evidenceCandidates(loaded, decrypted, reporting.id) : [], remoteNode: remoteDirect ? domain : null, roomName: p.room?.name ?? null }}
+          client={remoteDirect ? homeApi : api}
+          node={remoteDirect ? homeDomain : domain}
+          onClose={() => setReporting(null)}
+        />
+      )}
       <InteractionNotices conversationId={conversationId} qualified={q} encrypted={p.encrypted} mls={e2ee.mls} />
       <div className="h-5 px-4 text-xs text-fg-2" aria-live="polite" data-testid="typing-indicator">
         {typingNames.length === 1 && t("messages.typing_one")}

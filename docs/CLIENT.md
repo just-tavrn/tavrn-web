@@ -91,7 +91,7 @@ context-menu key / Shift+F10), the ⋯ button, or a long press on phones. Member
 mention, copy address, and with the matching permission kick, ban (with a reason), timeout, roles (checkboxes),
 server mute, disconnect and "move to"; in your call a volume slider (0–200 %). Moderation items against someone
 whose highest role is not below yours stay greyed out with the reason. Messages: reply, react, copy text, link or
-id, pin, edit, delete, mark unread. Channels and rooms: mark as read, notification level (all / mentions only /
+id, pin, edit, delete, mark unread, report. Channels and rooms: mark as read, notification level (all / mentions only /
 nothing), mute for 1 h, 8 h, 24 h or until turned back on, edit/duplicate/delete with `manage_channels`, "move
 everyone here" on voice channels. DMs: close (until a new message arrives), mute, block. Logging out is the last
 item of the status menu on your avatar (with a confirmation).
@@ -118,6 +118,41 @@ larger than the node's `TAVRN_PREVIEW_AUTO_MAX_BYTES` (default 5 MiB) always wai
 with name, size and a **Load** button (and "Load all" for several in one message); nothing is fetched before. Roles with "show separately in the member list" get their own
 section there; the role list in the room settings is reordered by drag and drop (or the arrows). `@everyone`
 can never get management permissions; the editor greys them out.
+
+## Reports, auto-moderation and ownership
+
+Specified in [MODERATION.md](https://github.com/just-tavrn/tavrn-protocol/blob/main/MODERATION.md); the client shows
+these features only for nodes that announce `reports.v1` and `automod.v1`.
+
+- **Reporting.** "Report message" in the message menu (others' messages), "Report" in the member menu and "Report
+  room" in the room menu (rail and the ⋯ in the room header). The dialog asks for a category and optional details
+  and says who will read the report (the room's moderators and the node admins, or the node admins only). Reports
+  of a room go to the room's node; reports of direct messages to your home node. For an **end-to-end encrypted**
+  message nobody else can read it, so the dialog offers to release its text and up to ten messages before it: only
+  after ticking the consent box it lists exactly what would be sent (author, time, text, file names, never files)
+  and lets you untick context messages; the reported message itself is always included, and a report without any
+  text stays possible. Messages this device cannot decrypt cannot be released. Plaintext messages are linked by the
+  node instead. Reports are not anonymous to moderators; the reported person is never told.
+- **The inbox.** Room settings → **Reports** (members with `moderate_members`) and Admin → **Reports** (node admins,
+  every report of the node, filterable by who handles it) list the reports with their status. A report shows the
+  reporter, the target, the reporter's text, the plaintext message as it was when reported, or the released text
+  under the label "released by the reporter – not verified". Moderators assign reports to themselves, add a
+  resolution note, resolve or dismiss them, and act from the report: delete the message, time out (with the usual
+  durations), remove, ban (node ban for node reports) or delete the person's messages (with the count and a typed
+  confirmation). The actions run with the moderator's own permissions and are noted in the audit log with the
+  report. The ⚙ in the room header and the tabs show the number of open reports; new reports arrive in the bell
+  🔔 and as a toast (not while notifications are set to nothing or the room is muted).
+- **Auto-moderation.** Room settings → **Auto-moderation** shows the node's flood protection and edits the room's
+  content rules: words and phrases (one per line, `*` within a word, optionally whole words only), link filters
+  (block all, allow only some domains, block some domains), exempt roles and channels, and the action (block,
+  remove silently, remove and time out). Members with `moderate_members` but without `manage_room` see the rules
+  read-only. The rules never apply to end-to-end encrypted channels; the tab says so. A blocked message stays in
+  the composer with an explanation that names the rule (or the node's own filter).
+- **Welcome channel.** Its entries offer no "Delete": nobody can delete them, owners and node admins included.
+- **Ownership.** Room settings → Overview → **Transfer ownership** hands the room to another member of the room's
+  node (not a bot); the owner confirms with the password, a passkey or single sign-on. Deleting an account that still
+  owns rooms lists them in the deletion dialog with "Transfer ownership" and "Delete room" for each.
+- **Single sign-on groups.** Admin → SSO picks the rooms and their roles of a group by name.
 
 ## Translations
 

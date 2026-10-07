@@ -21,6 +21,8 @@ import { MenuButton } from "../components/ContextMenu";
 import { useChannelMenu } from "../components/menus/ChannelMenu";
 import { mutedNow, useNotifications } from "../stores/notifications";
 import { DEFAULT_EXPIRY_HOURS, expiryChoices } from "../lib/inviteExpiry";
+import { useRoomMenu } from "../components/menus/RoomMenu";
+import { badgeText, useCapabilities, useOpenRoomReports } from "../moderation/hooks";
 
 /** Room detail; its `read_states` seed the unread counts of the channels (design note 4.4). */
 export function useRoom(roomId: string) {
@@ -121,6 +123,12 @@ export function ChannelSidebar({ roomId }: { roomId: string }) {
   const node = useNode();
   const [createOpen, setCreateOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  // The room's menu in the header too (report, notifications, …) and the moderators' open reports on the ⚙ button.
+  const nodeKey = node.home ? null : node.domain;
+  const headerMenu = useRoomMenu({ id: roomId, name: room.data?.name ?? "" }, nodeKey);
+  const moderates = hasPermission(parsePermissions(room.data?.my_permissions), Permission.MODERATE_MEMBERS);
+  const reportsOffered = !!useCapabilities(nodeKey)?.includes("reports.v1");
+  const openReports = badgeText(useOpenRoomReports(node.api, nodeKey, roomId, moderates && reportsOffered));
   if (room.isPending) return <p className="p-3 text-sm text-fg-2">{t("room.loading")}</p>;
   if (room.isError) return <p className="p-3 text-sm text-danger">{describeError(room.error)}</p>;
   const r = room.data;
@@ -161,9 +169,16 @@ export function ChannelSidebar({ roomId }: { roomId: string }) {
             ✉
           </button>
         )}
-        <button type="button" aria-label={t("room.settings")} title={t("room.settings")} onClick={() => { closeNav(); navigate(node.roomPath(roomId, undefined, "settings")); }} className="min-h-10 min-w-10 rounded-md text-fg-2 hover:bg-bg-3 hover:text-fg-0">
+        <button type="button" aria-label={openReports ? `${t("room.settings")} · ${t("reports.open_count", { count: openReports })}` : t("room.settings")} title={t("room.settings")} onClick={() => { closeNav(); navigate(node.roomPath(roomId, undefined, openReports ? "settings/reports" : "settings")); }} className="relative min-h-10 min-w-10 rounded-md text-fg-2 hover:bg-bg-3 hover:text-fg-0" data-testid="room-settings-button">
           ⚙
+          {openReports && (
+            <span className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-danger-solid px-1 text-[10px] font-semibold leading-4 text-white" data-testid="room-reports-badge">
+              {openReports}
+            </span>
+          )}
         </button>
+        <MenuButton menu={headerMenu.menu} label={t("menu.label", { name: r.name })} className="min-h-10 min-w-10" testId="room-header-menu" />
+        {headerMenu.overlay}
       </div>
       <nav aria-label={t("shell.channels")} className="p-2">
         {pinned.length > 0 && (

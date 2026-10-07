@@ -4,27 +4,14 @@
  * saves the whole map at once (`PUT /admin/sso/group-map`); it takes effect at the users' next SSO login.
  * A map set by `TAVRN_OIDC_GROUP_MAP` is read-only here (`409 sso.group_map_fixed`).
  */
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { GroupMapDocument, GroupRights, RoomGrant } from "@tavrn/sdk";
+import type { AdminRoom, GroupMapDocument, GroupRights, RoomGrant } from "@tavrn/sdk";
 import { api } from "../../lib/api";
 import { useT } from "../../i18n";
 import { describeError, useToasts } from "../../stores/toasts";
 import { Button, Field, Input } from "../../components/ui";
-import { Section, Textarea } from "../settings/common";
-
-/** One room per line: the room id, then optionally role ids, separated by spaces or commas. */
-export function parseRooms(text: string): RoomGrant[] {
-  return text
-    .split("\n")
-    .map((line) => line.split(/[\s,]+/).filter(Boolean))
-    .filter((parts) => parts.length > 0)
-    .map(([room, ...roles]) => ({ room: room!, roles }));
-}
-
-export function formatRooms(rooms: RoomGrant[] | undefined): string {
-  return (rooms ?? []).map((r) => [r.room, ...(r.roles ?? [])].join(" ")).join("\n");
-}
+import { Section, Select } from "../settings/common";
 
 /** A count field: empty means "not granted by this group". */
 function toCount(value: string): number | null {
@@ -34,27 +21,35 @@ function toCount(value: string): number | null {
 }
 
 /** The rights of the form, without the unset ones (the server omits them too). */
-export function buildRights(form: { nodeAdmin: boolean; roomCreation: string; appCreation: string; rooms: string }): GroupRights {
+export function buildRights(form: { nodeAdmin: boolean; roomCreation: string; appCreation: string; rooms: RoomGrant[] }): GroupRights {
   const rights: GroupRights = {};
   if (form.nodeAdmin) rights.node_admin = true;
   const room = toCount(form.roomCreation);
   if (room !== null) rights.room_creation = room;
   const app = toCount(form.appCreation);
   if (app !== null) rights.app_creation = app;
-  const rooms = parseRooms(form.rooms);
-  if (rooms.length) rights.rooms = rooms;
+  const rooms = form.rooms.filter((r) => r.room);
+  if (rooms.length) rights.rooms = rooms.map((r) => ({ room: r.room, roles: r.roles ?? [] }));
   return rights;
 }
 
-const EMPTY = { group: "", nodeAdmin: false, roomCreation: "", appCreation: "", rooms: "" };
+type Form = { group: string; nodeAdmin: boolean; roomCreation: string; appCreation: string; rooms: RoomGrant[] };
+const EMPTY: Form = { group: "", nodeAdmin: false, roomCreation: "", appCreation: "", rooms: [] };
+
+/** Rooms of the node with their roles, by id (names for the picker and the mapping list). */
+function useAdminRooms(q: string) {
+  return useQuery({ queryKey: ["admin", "rooms", q], queryFn: () => api.admin.rooms({ q: q || undefined, limit: 100 }), staleTime: 60_000 });
+}
 
 export function SsoGroupMapTab() {
   const t = useT();
   const queryClient = useQueryClient();
   const doc = useQuery({ queryKey: ["admin", "sso-group-map"], queryFn: () => api.oidc.groupMap() });
-  const [form, setForm] = useState(EMPTY);
+  const all = useAdminRooms("");
+  const [form, setForm] = useState<Form>(EMPTY);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const rooms = useMemo(() => new Map((all.data ?? []).map((r) => [r.id, r])), [all.data]);
 
   const save = async (map: GroupMapDocument["map"]): Promise<boolean> => {
     setBusy(true);
@@ -97,11 +92,12 @@ export function SsoGroupMapTab() {
             key={name}
             name={name}
             rights={map[name]!}
+            rooms={rooms}
             readOnly={fixed}
             busy={busy}
             onEdit={() => {
               const r = map[name]!;
-              setForm({ group: name, nodeAdmin: !!r.node_admin, roomCreation: r.room_creation == null ? "" : String(r.room_creation), appCreation: r.app_creation == null ? "" : String(r.app_creation), rooms: formatRooms(r.rooms) });
+              setForm({ group: name, nodeAdmin: !!r.node_admin, roomCreation: r.room_creation == null ? "" : String(r.room_creation), appCreation: r.app_creation == null ? "" : String(r.app_creation), rooms: (r.rooms ?? []).map((g) => ({ room: g.room, roles: g.roles ?? [] })) });
             }}
             onRemove={() => {
               const next = { ...map };
@@ -137,9 +133,7 @@ export function SsoGroupMapTab() {
             <input type="checkbox" className="h-4 w-4 accent-accent" checked={form.nodeAdmin} onChange={(e) => setForm({ ...form, nodeAdmin: e.target.checked })} data-testid="admin-sso-node-admin" />
             {t("admin.sso.node_admin")}
           </label>
-          <Field label={t("admin.sso.rooms")} hint={t("admin.sso.rooms_hint")}>
-            <Textarea rows={3} value={form.rooms} onChange={(e) => setForm({ ...form, rooms: e.target.value })} spellCheck={false} className="font-mono" data-testid="admin-sso-rooms" />
-          </Field>
+          <RoomGrantsPicker grants={form.rooms} rooms={rooms} onChange={(next) => setForm({ ...form, rooms: next })} />
           {error && (
             <p className="text-sm text-danger" role="alert" data-testid="admin-sso-error">
               {error}
@@ -161,7 +155,72 @@ export function SsoGroupMapTab() {
   );
 }
 
-function MappingRow({ name, rights, readOnly, busy, onEdit, onRemove }: { name: string; rights: GroupRights; readOnly: boolean; busy: boolean; onEdit: () => void; onRemove: () => void }) {
+/** Rooms and roles of a group, picked by name (ids of rooms that are gone stay visible as ids). */
+function RoomGrantsPicker({ grants, rooms, onChange }: { grants: RoomGrant[]; rooms: Map<string, AdminRoom>; onChange: (next: RoomGrant[]) => void }) {
+  const t = useT();
+  const [q, setQ] = useState("");
+  const found = useAdminRooms(q.trim());
+  const choices = (found.data ?? []).filter((r) => !grants.some((g) => g.room === r.id));
+  return (
+    <fieldset className="space-y-2" data-testid="admin-sso-rooms">
+      <legend className="text-sm text-fg-1">{t("admin.sso.rooms")}</legend>
+      <p className="text-xs text-fg-2">{t("admin.sso.rooms_pick_hint")}</p>
+      <ul className="space-y-2">
+        {grants.map((g) => {
+          const room = rooms.get(g.room) ?? found.data?.find((r) => r.id === g.room);
+          return (
+            <li key={g.room} className="space-y-1 rounded-md border border-line p-2 text-sm" data-testid="admin-sso-room-grant" data-room={g.room}>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="min-w-0 flex-1 break-all font-medium">{room ? room.name : t("admin.sso.room_unknown", { room: g.room })}</span>
+                <Button variant="ghost" className="min-h-8 px-2 text-xs" onClick={() => onChange(grants.filter((x) => x.room !== g.room))} aria-label={t("admin.sso.room_remove", { room: room?.name ?? g.room })}>
+                  {t("admin.sso.remove")}
+                </Button>
+              </div>
+              {room && room.roles.length > 0 ? (
+                <div className="flex flex-wrap gap-x-4">
+                  {room.roles.map((role) => (
+                    <label key={role.id} className="flex min-h-9 items-center gap-2 text-xs">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4"
+                        checked={(g.roles ?? []).includes(role.id)}
+                        onChange={(e) => onChange(grants.map((x) => (x.room === g.room ? { ...x, roles: e.target.checked ? [...(x.roles ?? []), role.id] : (x.roles ?? []).filter((r) => r !== role.id) } : x)))}
+                        data-testid="admin-sso-role"
+                        data-role={role.id}
+                      />
+                      {role.name}
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-fg-2">{room ? t("admin.sso.room_no_roles") : (g.roles ?? []).join(", ")}</p>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("admin.sso.room_search")} aria-label={t("admin.sso.room_search")} data-testid="admin-sso-room-search" />
+        <Select
+          value=""
+          aria-label={t("admin.sso.room_add")}
+          onChange={(e) => e.target.value && onChange([...grants, { room: e.target.value, roles: [] }])}
+          data-testid="admin-sso-room-add"
+        >
+          <option value="">{t("admin.sso.room_add")}</option>
+          {choices.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.name}
+              {r.owner ? ` (${r.owner})` : ""}
+            </option>
+          ))}
+        </Select>
+      </div>
+    </fieldset>
+  );
+}
+
+function MappingRow({ name, rights, rooms, readOnly, busy, onEdit, onRemove }: { name: string; rights: GroupRights; rooms: Map<string, AdminRoom>; readOnly: boolean; busy: boolean; onEdit: () => void; onRemove: () => void }) {
   const t = useT();
   const parts: string[] = [];
   if (rights.node_admin) parts.push(t("admin.sso.node_admin"));
@@ -172,11 +231,17 @@ function MappingRow({ name, rights, readOnly, busy, onEdit, onRemove }: { name: 
       <div className="min-w-0 flex-1 basis-56 space-y-0.5">
         <span className="block break-all font-medium">{name}</span>
         <span className="block text-xs text-fg-1">{parts.length ? parts.join(" · ") : t("admin.sso.no_rights")}</span>
-        {(rights.rooms ?? []).map((r) => (
-          <span key={r.room} className="block break-all font-mono text-[11px] text-fg-2">
-            {r.roles?.length ? t("admin.sso.room_roles", { room: r.room, roles: r.roles.join(", ") }) : t("admin.sso.room", { room: r.room })}
-          </span>
-        ))}
+        {(rights.rooms ?? []).map((r) => {
+          // Names where the node knows the room and its roles, ids otherwise.
+          const room = rooms.get(r.room);
+          const roomName = room?.name ?? r.room;
+          const roles = (r.roles ?? []).map((id) => room?.roles.find((x) => x.id === id)?.name ?? id);
+          return (
+            <span key={r.room} className={`block break-all text-[11px] text-fg-2 ${room ? "" : "font-mono"}`} data-testid="admin-sso-mapping-room">
+              {roles.length ? t("admin.sso.room_roles", { room: roomName, roles: roles.join(", ") }) : t("admin.sso.room", { room: roomName })}
+            </span>
+          );
+        })}
       </div>
       {!readOnly && (
         <div className="flex gap-1">

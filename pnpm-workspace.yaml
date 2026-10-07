@@ -13,6 +13,6 @@ allowBuilds:
 # WebAssembly module for the client and @tavrn/e2ee). Once the packages are on npm these become version ranges.
 blockExoticSubdeps: false
 overrides:
-  "@tavrn/sdk": "github:just-tavrn/tavrn-js#d6fe2562ae39f7689402bd7a0a852f409f24a31f&path:sdk"
-  "@tavrn/e2ee": "github:just-tavrn/tavrn-js#d6fe2562ae39f7689402bd7a0a852f409f24a31f&path:e2ee"
+  "@tavrn/sdk": "github:just-tavrn/tavrn-js#b4de2e38faee762db67e8c8d61b7096d180754a1&path:sdk"
+  "@tavrn/e2ee": "github:just-tavrn/tavrn-js#b4de2e38faee762db67e8c8d61b7096d180754a1&path:e2ee"
   "@tavrn/crypto": "github:just-tavrn/tavrn-crypto#v0.1.0&path:pkg"

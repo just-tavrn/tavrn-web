@@ -117,7 +117,7 @@ export function decide(s: NotificationSettings, m: IncomingMessage, me: { id: st
 
 export interface NotificationEntry {
   id: string;
-  kind: "mention" | "dm" | "message" | "call" | "legal";
+  kind: "mention" | "dm" | "message" | "call" | "legal" | "report";
   title: string;
   body: string;
   /** Route to jump to. */
