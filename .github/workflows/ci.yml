@@ -23,6 +23,7 @@ jobs:
     if: ${{ vars.CI_ENABLED == 'true' }}
     uses: just-tavrn/.github/.github/workflows/js-ci.yml@main
     with:
+      runner: tavrn-heavy
       # SPDX headers and dependency licenses (the reusable workflow's defaults), typecheck of the web client and the
       # end-to-end suite, Vitest (unit, component and the static accessibility checks of web/src/test/a11yStatic.test.ts),
       # then the production bundle web/dist.
