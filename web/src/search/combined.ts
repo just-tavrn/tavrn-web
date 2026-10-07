@@ -36,6 +36,8 @@ export interface SearchRow {
   roomId?: string;
   conversationId: string;
   messageId: string;
+  /** The thread of a thread message (PROTOCOL.md §7e): the result opens there. */
+  threadId?: string;
   author: string;
   /** ms */
   ts: number;
@@ -113,6 +115,7 @@ export function nodeRows(node: string, roomId: string, resp: SearchResponse): Se
     roomId,
     conversationId: r.message.conversation_id,
     messageId: r.message.id,
+    ...(r.message.thread_id ? { threadId: r.message.thread_id } : {}),
     author: r.message.author,
     ts: Date.parse(r.message.created_at),
     snippet: r.snippet,
@@ -130,6 +133,7 @@ export function localRows(hits: LocalHit[]): SearchRow[] {
       ...(h.room ? { roomId: h.room } : {}),
       conversationId: h.conversation.slice(slash + 1),
       messageId: h.id,
+      ...(h.thread ? { threadId: h.thread } : {}),
       author: h.author,
       ts: h.ts,
       snippet: h.snippet,

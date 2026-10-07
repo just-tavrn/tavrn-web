@@ -2,7 +2,8 @@
 import { channelName } from "../lib/names";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
-import { isBotKind, type Message } from "@tavrn/sdk";
+import { isBotKind, type Message, type User } from "@tavrn/sdk";
+import { ThreadIndicator } from "../threads/ThreadIndicator";
 import { formatFullTime, formatTime } from "../lib/format";
 import { MAX_CACHED, PAGE } from "../lib/messagePages";
 import { configureMarkdown, handleMarkdownClick, handleMarkdownKey, markdownVersion, renderMarkdown, subscribeMarkdown } from "../lib/markdown";
@@ -54,6 +55,11 @@ export interface MessageActions {
   onReply?: (m: Message) => void;
   /** Report a message of someone else (MODERATION.md); absent where the node takes no reports. */
   onReport?: (m: Message) => void;
+  /**
+   * Threads (PROTOCOL.md §7e): start a thread from a message (`create`: ask for a title) or answer in its thread
+   * (`reply`: open the thread, starting it with a default title when there is none).
+   */
+  onThread?: (m: Message, mode: "create" | "reply", text: string) => void;
 }
 
 /** First guess of a row's height before it is measured (an ungrouped one-line message). */
@@ -92,6 +98,8 @@ export function MessageList({
   loadingNewer = false,
   onLoadNewer,
   onJumpLatest,
+  usersById,
+  canStartThreads = false,
 }: {
   /** Newest first, as delivered by the API. */
   messages: Message[];
@@ -130,6 +138,10 @@ export function MessageList({
   onLoadNewer?: () => void;
   /** Back to the newest messages after a jump (the caller reloads the newest page). */
   onJumpLatest?: () => void;
+  /** Room members by user id (avatars under messages that started a thread). */
+  usersById?: ReadonlyMap<string, User>;
+  /** The user may start threads here (`create_threads`); existing threads open either way. */
+  canStartThreads?: boolean;
 }) {
   const t = useT();
   configureMarkdown({ spoiler: t("markdown.spoiler"), copy: t("markdown.copy_code"), wrap: t("markdown.wrap_code") });
@@ -146,6 +158,7 @@ export function MessageList({
   const onDelete = useCallback((m: Message) => actionsRef.current.onDelete?.(m), []);
   const onReply = useCallback((m: Message) => actionsRef.current.onReply?.(m), []);
   const onReport = useCallback((m: Message) => actionsRef.current.onReport?.(m), []);
+  const onThread = useCallback((m: Message, mode: "create" | "reply", text: string) => actionsRef.current.onThread?.(m, mode, text), []);
   /** Is the view at the newest messages? Updated on scroll; new messages only follow when it is. */
   const atBottom = useRef(true);
   const requested = useRef(false);
@@ -367,6 +380,9 @@ export function MessageList({
                   onDelete={actions.onDelete ? onDelete : undefined}
                   onReply={actions.onReply ? onReply : undefined}
                   onReport={actions.onReport ? onReport : undefined}
+                  onThread={actions.onThread ? onThread : undefined}
+                  usersById={usersById}
+                  canStartThreads={canStartThreads}
                   onMarkUnread={onMarkUnread}
                   replyTo={m.reply_to_id ? (byId.get(m.reply_to_id) ?? (m.reply_deleted || (!!oldestId && m.reply_to_id >= oldestId) ? "deleted" : null)) : undefined}
                   replyAuthor={m.reply_to_id ? authors?.get(byId.get(m.reply_to_id)?.author ?? "") : undefined}
@@ -536,6 +552,10 @@ interface RowProps {
   onDelete?: (m: Message) => void;
   onReply?: (m: Message) => void;
   onReport?: (m: Message) => void;
+  onThread?: (m: Message, mode: "create" | "reply", text: string) => void;
+  /** Room members by user id (avatars of a thread's participants). */
+  usersById?: ReadonlyMap<string, User>;
+  canStartThreads?: boolean;
   onMarkUnread: (m: Message) => void;
   /** The message this one replies to (null: not loaded; "deleted": the original is gone; undefined: no reply). */
   replyTo?: Message | null | "deleted";
@@ -558,7 +578,7 @@ function snippet(m: Message, d: Decrypted | undefined): string | null {
  * One message. Memoized: with stable props from the list, a new message (20/s under load) renders only
  * its own row instead of every loaded one (design note 9e).
  */
-const MessageRow = memo(function MessageRow({ m, grouped, own, bot, author, replyAuthor, decrypted, signature, editing, setEditingId, canManage, canReact, canPin, roomId, customEmojis, emojiUrls, onReact, onPin, onEdit, onDelete, onReply, onReport, onMarkUnread, replyTo, replyDecrypted, mentioned, botMentions }: RowProps) {
+const MessageRow = memo(function MessageRow({ m, grouped, own, bot, author, replyAuthor, decrypted, signature, editing, setEditingId, canManage, canReact, canPin, roomId, customEmojis, emojiUrls, onReact, onPin, onEdit, onDelete, onReply, onReport, onThread, usersById, canStartThreads, onMarkUnread, replyTo, replyDecrypted, mentioned, botMentions }: RowProps) {
   const t = useT();
   const locale = useLocale((s) => s.locale);
   const [draft, setDraft] = useState("");
@@ -614,9 +634,11 @@ const MessageRow = memo(function MessageRow({ m, grouped, own, bot, author, repl
   };
   const menuEntries = menu.open
     ? messageMenu(
-        { own, text: c.kind === "text" ? c.body : null, pinned: !!m.pinned, canPin: canPin && !!onPin, canReact: canReact && !!onReact, canManage, canReply: !!onReply && (c.kind === "text" || c.kind === "cipher"), canEdit: !!onEdit, canDelete: !!onDelete && !welcomeEntry, canReport: !!onReport && !systemLine && !m.author_deleted },
+        { own, text: c.kind === "text" ? c.body : null, pinned: !!m.pinned, canPin: canPin && !!onPin, canReact: canReact && !!onReact, canManage, canReply: !!onReply && (c.kind === "text" || c.kind === "cipher"), canEdit: !!onEdit, canDelete: !!onDelete && !welcomeEntry, canReport: !!onReport && !systemLine && !m.author_deleted, canThread: !!onThread && !!canStartThreads && !m.thread_id && (c.kind === "text" || c.kind === "cipher"), hasThread: !!onThread && !!m.thread },
         {
           reply: () => onReply?.(m),
+          createThread: () => onThread?.(m, "create", body),
+          replyInThread: () => onThread?.(m, "reply", body),
           react: (emoji) => onReact?.(m, emoji, !!m.reactions?.some((r) => r.emoji === emoji && r.me)),
           copyText: () => void copyText(c.kind === "text" ? c.body : "").then((ok) => ok && useToasts.getState().push({ kind: "info", title: t("menu.copied") })),
           copyLink: () => void copyText(`${window.location.origin}${window.location.pathname}?message=${m.id}`).then((ok) => ok && useToasts.getState().push({ kind: "info", title: t("menu.copied") })),
@@ -870,6 +892,7 @@ const MessageRow = memo(function MessageRow({ m, grouped, own, bot, author, repl
             ? c.kind === "text" && !!c.files?.length && <MessageAttachments items={c.files.map((f) => fromEncrypted(f, m.attachments))} author={m.author} own={own} inRoom={!!roomId} />
             : c.kind !== "forged" && !!m.attachments?.length && <MessageAttachments items={m.attachments.map(fromPlain)} author={m.author} own={own} inRoom={!!roomId} />}
           <ReactionBar reactions={m.reactions ?? []} canReact={canReact} roomId={roomId} customEmojis={customEmojis} onToggle={onToggleReaction} />
+          {m.thread && onThread && <ThreadIndicator summary={m.thread} usersById={usersById} onOpen={() => onThread(m, "reply", body)} />}
         </div>
         {/* The hover actions float over the row's top right corner instead of taking a column of the layout (an
             invisible column cost the text a third of a phone's width). Hidden ones ignore the pointer, so a tap on

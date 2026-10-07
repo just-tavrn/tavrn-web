@@ -16,6 +16,7 @@ import { conversationPath, roomPath } from "../components/NodeScope";
 import { channelName } from "./names";
 import { apiFor } from "../stores/nodes";
 import { useUnread } from "../stores/unread";
+import { useThreads } from "../threads/store";
 
 /** Longest preview text. */
 const PREVIEW = 140;
@@ -70,14 +71,16 @@ export async function notifyMessage(m: Message, ctx: NotifyContext): Promise<voi
   // Neither a known room channel nor a known DM: nothing sensible to show.
   if (!where.room && !where.conversation) return;
   const channel = where.room?.channels.find((c) => c.id === m.conversation_id);
-  const active = useMlsUi.getState().open === m.conversation_id && isAttentive();
+  // A thread message is being read only when its thread is open (PROTOCOL.md §7e).
+  const active = (m.thread_id ? useThreads.getState().open === m.thread_id : useMlsUi.getState().open === m.conversation_id) && isAttentive();
   const state = useNotifications.getState();
   const d = decide(state.settings, { conversationId: m.conversation_id, roomId: where.room?.id ?? null, authorId: m.author_id, mentions: m.mentions ?? [], mentionsEveryone: !!m.mentions_everyone, system: channel?.kind === "system" }, ctx.me, { active });
   if (!d.notify) return;
   const author = where.conversation?.members.find((u) => u.address === m.author)?.display_name ?? m.author.split("@")[0] ?? m.author;
   const title = where.room && channel ? t("notify.in_channel", { author, channel: channelName(channel), room: where.room.name }) : where.conversation?.kind === "group" ? t("notify.in_group", { author, group: where.conversation.name || t("notify.group") }) : author;
   const body = plainPreview(m) ?? (m.encrypted ? t("notify.encrypted") : t("notify.attachment"));
-  const path = where.room ? roomPath(ctx.node, where.room.id, m.conversation_id) : conversationPath(ctx.node, m.conversation_id);
+  const channelPath = where.room ? roomPath(ctx.node, where.room.id, m.conversation_id) : conversationPath(ctx.node, m.conversation_id);
+  const path = m.thread_id && where.room ? `${channelPath}/threads/${m.thread_id}` : channelPath;
   if (d.important) useNotifications.getState().push({ kind: where.room ? "mention" : "dm", title, body, path });
   useToasts.getState().push({ kind: "info", title, detail: body, path, testId: d.important ? "notify-toast-mention" : "notify-toast" });
   if (state.settings.global.sound) playNotifySound();

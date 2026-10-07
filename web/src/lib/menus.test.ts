@@ -156,6 +156,18 @@ describe("messageMenu", () => {
     expect(ids(mod)).not.toContain("edit");
   });
 
+  it("offers threads (PROTOCOL.md §7e): create and reply in thread, or only reply once the message has one", () => {
+    const thread = { ...actions, createThread: vi.fn(), replyInThread: vi.fn() };
+    expect(ids(messageMenu({ ...base, canThread: true }, thread, t)).slice(0, 3)).toEqual(["reply", "create-thread", "reply-in-thread"]);
+    expect(ids(messageMenu({ ...base, canThread: true, hasThread: true }, thread, t))).not.toContain("create-thread");
+    expect(ids(messageMenu({ ...base, canThread: false, hasThread: true }, thread, t))).toContain("reply-in-thread");
+    expect(ids(messageMenu({ ...base, canThread: false }, thread, t))).not.toContain("reply-in-thread");
+    expect(ids(messageMenu({ ...base, canThread: true }, actions, t))).not.toContain("create-thread");
+    const entry = findEntry(messageMenu({ ...base, canThread: true }, thread, t), "create-thread");
+    if (entry?.kind === "item") entry.onSelect?.();
+    expect(thread.createThread).toHaveBeenCalled();
+  });
+
   it("toggles pin/unpin and hides text items for undecryptable messages", () => {
     const pinned = messageMenu({ ...base, pinned: true }, actions, t);
     expect(findEntry(pinned, "pin")?.label).toBe("menu.message.unpin");

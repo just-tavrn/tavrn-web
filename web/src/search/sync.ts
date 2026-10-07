@@ -119,7 +119,7 @@ export async function runJob(job: Job, deps: { mls: MlsManager; now: number; las
   if (job.direction === "forward") {
     deps.lastForward.set(job.conversation, deps.now);
     if (!cursor.f) return true;
-    const page = (await api.conversations.messages(id, { limit: SYNC_PAGE, after: cursor.f })).reverse();
+    const page = (await api.conversations.messages(id, { limit: SYNC_PAGE, after: cursor.f, threads: "all" })).reverse();
     await indexMessages(await decryptPage(deps.mls, job.conversation, page, cursor.r));
     if (page[0]) await idx.setSync(job.conversation, { cursor: JSON.stringify({ ...cursor, f: page[0].id }) });
     // More than a page arrived meanwhile: go on soon.
@@ -128,7 +128,7 @@ export async function runJob(job: Job, deps: { mls: MlsManager; now: number; las
   }
   useLocalSearch.setState((s) => ({ syncing: { ...s.syncing, [job.conversation]: true } }));
   try {
-    const page = await api.conversations.messages(id, { limit: SYNC_PAGE, before: cursor.b ?? undefined });
+    const page = await api.conversations.messages(id, { limit: SYNC_PAGE, before: cursor.b ?? undefined, threads: "all" });
     await indexMessages(await decryptPage(deps.mls, job.conversation, page, cursor.r));
     const oldest = page.at(-1);
     const next: SyncCursor = { ...cursor, b: oldest?.id ?? cursor.b, f: cursor.f ?? page[0]?.id ?? null };

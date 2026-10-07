@@ -72,6 +72,16 @@ export function applyRead(states: States, conversationId: string, messageId: str
   return { ...states, [conversationId]: { last, read, unread: caughtUp ? 0 : s.unread, mentions: caughtUp ? 0 : s.mentions } };
 }
 
+/**
+ * Changes the counts without moving the markers: messages of followed threads count towards their channel
+ * (PROTOCOL.md §7e) but are not the channel's newest message.
+ */
+export function applyBump(states: States, conversationId: string, unread: number, mentions: number): States {
+  const s = states[conversationId] ?? empty;
+  const clamp = (n: number) => Math.min(UNREAD_CAP, Math.max(0, n));
+  return { ...states, [conversationId]: { ...s, unread: clamp(s.unread + unread), mentions: clamp(s.mentions + mentions) } };
+}
+
 export function formatCount(n: number): string {
   return n >= UNREAD_CAP ? `${UNREAD_CAP}+` : String(n);
 }
@@ -93,6 +103,7 @@ interface UnreadState {
   seed: (list: ServerReadState[]) => void;
   message: (m: MessageMeta, me: { id: string; address: string }, active: boolean) => void;
   read: (conversationId: string, messageId: string) => void;
+  bump: (conversationId: string, unread: number, mentions: number) => void;
   markUnread: (conversationId: string, previousId: string | null, count: number) => void;
   release: (conversationId: string) => void;
 }
@@ -103,6 +114,7 @@ export const useUnread = create<UnreadState>((set) => ({
   seed: (list) => set((st) => ({ states: applyServer(st.states, list) })),
   message: (m, me, active) => set((st) => ({ states: applyMessage(st.states, m, me, active) })),
   read: (conversationId, messageId) => set((st) => ({ states: applyRead(st.states, conversationId, messageId) })),
+  bump: (conversationId, unread, mentions) => set((st) => ({ states: applyBump(st.states, conversationId, unread, mentions) })),
   markUnread: (conversationId, previousId, count) => set((st) => ({ states: applyUnread(st.states, conversationId, previousId, count), held: { ...st.held, [conversationId]: true } })),
   release: (conversationId) =>
     set((st) => {

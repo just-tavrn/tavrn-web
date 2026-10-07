@@ -27,6 +27,8 @@ export function useMarkRead(conversationId: string, newestId: string | undefined
   apiRef.current = api;
 
   useEffect(() => {
+    // No conversation (a thread view marks its thread instead, threads/useThreadMarkRead).
+    if (!conversationId) return;
     let opened = false;
     let pending: string | null = null;
     let timer: ReturnType<typeof setTimeout> | null = null;

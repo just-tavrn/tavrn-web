@@ -19,6 +19,7 @@ import { qualify, splitIdentity } from "@tavrn/e2ee";
 import { acceptInvite, autoAccepts } from "../lib/invites";
 import { mayManageRoom } from "../lib/rooms";
 import { mapMessages, prependMessage, type MessagePages } from "../lib/messagePages";
+import { threadHandlers, threadMessage } from "../threads/realtime";
 import { useUnread } from "../stores/unread";
 import { homeDomain, refreshNode, useNodes } from "../stores/nodes";
 import { unindexConversation, unindexMessages } from "../search/local";
@@ -177,12 +178,12 @@ interface PurgeData {
 export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: () => { id: string; address: string } | null, node: string | null = null): Array<() => void> {
   /** Updates the loaded pages of a conversation if it is open (closed ones have no cache entry). */
   const updatePages = (conversationId: string, fn: (d: MessagePages<Message> | undefined) => MessagePages<Message> | undefined) => {
-    const key = ["messages", conversationId];
-    const query = queryClient.getQueryCache().find({ queryKey: key, exact: true });
-    if (!query) return;
-    if (query.state.data) queryClient.setQueryData<MessagePages<Message>>(key, fn);
-    // Still loading the first page: load again so that the change is not lost.
-    else void queryClient.invalidateQueries({ queryKey: key, exact: true });
+    // The channel's pages and those of its open threads (PROTOCOL.md §7e).
+    for (const query of queryClient.getQueryCache().findAll({ queryKey: ["messages", conversationId] })) {
+      if (query.state.data) queryClient.setQueryData<MessagePages<Message>>(query.queryKey, fn);
+      // Still loading the first page: load again so that the change is not lost.
+      else void queryClient.invalidateQueries({ queryKey: query.queryKey, exact: true });
+    }
   };
   /** Qualified id of a conversation of this node (the local search index names conversations so). */
   const qualified = (conversationId: string) => qualify(node ?? homeDomain() ?? "", conversationId);
@@ -194,6 +195,11 @@ export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: 
   return [
     socket.on<Message>("message.create", (m) => {
       const self = me();
+      // Thread messages (PROTOCOL.md §7e): the open thread's pages; counted and notified only for followers.
+      if (m.thread_id) {
+        if (threadMessage(m, queryClient, self) && self) void notifyMessage(m, { queryClient, node, me: self, loadRooms: () => loadRoomDetails(queryClient, node) }).catch(() => undefined);
+        return;
+      }
       // Unread counts: not for the conversation the user is looking at right now.
       if (self) useUnread.getState().message(m, self, useMlsUi.getState().open === m.conversation_id && isAttentive());
       // Notifications (design note 4.11): toast, sound, notification center, browser notification.
@@ -247,6 +253,7 @@ export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: 
         );
       }
     }),
+    ...threadHandlers(socket, queryClient),
     socket.on<{ conversation_id: string; last_read_message_id: string }>("read.update", (d) => useUnread.getState().read(d.conversation_id, d.last_read_message_id)),
     // Room channels carry `channel_id`, DMs and group DMs `conversation_id`.
     socket.on<{ channel_id?: string; conversation_id?: string; user_id: string }>("typing", (d) => {

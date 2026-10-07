@@ -84,6 +84,28 @@ member or not confirmed by its user's key shows a warning and blocks sending unt
 keys are backed up encrypted on the home node so that a new device unlocked with the recovery key reads
 the history. Friends (requests, accept, block) live under "Friends" on the home view.
 
+## Threads, forum and announcement channels
+
+Threads ([PROTOCOL.md §7e](https://github.com/just-tavrn/tavrn-protocol/blob/main/PROTOCOL.md)) are
+sub-conversations of a text or announcement channel. **Create thread** in a message's menu asks for a title
+(prefilled from the message), **Reply in thread** opens the message's thread or starts one with that title. A
+message that started a thread shows "N replies · last reply …" with the most recent writers' avatars; a click
+opens the thread. The 🧵 button in the channel header lists the active and archived threads with unread counts
+and starts standalone threads. A thread opens in a panel next to the channel on tablets and desktops (drag its
+edge, or use the arrow keys on it, to resize; the width is remembered on this device) and full screen with a back
+button on phones; Esc closes it, and every thread has its own link (`…/channels/<channel>/threads/<thread>`). The
+panel is the channel's conversation in thread mode: encryption, reactions, uploads, mentions, `/me` and the other
+slash commands work there as in the channel, and in encrypted channels the title is encrypted with the channel's
+messages. Its header follows or unfollows the thread and, for its creator or members with *Manage threads*,
+renames, archives, locks or deletes it. Starting or writing in a thread follows it; only followed threads count
+towards the channel's unread badge and raise notifications (direct mentions always do).
+
+Forum channels show posts instead of messages: cards with title, tags, author, replies, last activity and the
+start of the first message, tag filter chips, "Latest activity" or "Newest posts", archived posts on demand and
+**New post** (title, message, up to five tags). Their tags and the auto-archive time of every channel's threads
+are set in the room settings under *Channels* (*Manage channels*). In announcement channels only members with
+*Manage messages* post; the others see a notice instead of the composer and react or reply in threads.
+
 ## Context menus, notifications and media
 
 Members, messages, channels, rooms in the rail and DMs have context menus: right-click (or the keyboard's
@@ -91,7 +113,7 @@ context-menu key / Shift+F10), the ⋯ button, or a long press on phones. Member
 mention, copy address, and with the matching permission kick, ban (with a reason), timeout, roles (checkboxes),
 server mute, disconnect and "move to"; in your call a volume slider (0–200 %). Moderation items against someone
 whose highest role is not below yours stay greyed out with the reason. Messages: reply, react, copy text, link or
-id, pin, edit, delete, mark unread, report. Channels and rooms: mark as read, notification level (all / mentions only /
+id, create thread, reply in thread, pin, edit, delete, mark unread, report. Channels and rooms: mark as read, notification level (all / mentions only /
 nothing), mute for 1 h, 8 h, 24 h or until turned back on, edit/duplicate/delete with `manage_channels`, "move
 everyone here" on voice channels. DMs: close (until a new message arrives), mute, block. Logging out is the last
 item of the status menu on your avatar (with a confirmation).
