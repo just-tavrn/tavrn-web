@@ -7,6 +7,8 @@ import { EmojiContext, type EmojiContextValue } from "../lib/emojis";
 import { mockFetch, renderWithProviders } from "../test/render";
 
 const ROOM_EMOJI = { id: "01J9ZK8Q4V6X3M2N1P0R5S7T8W", room_id: "r1", name: "local", mime: "image/webp", size: 10, created_at: "", animated: false };
+// The picker loads the Unicode emoji data on first open; hosted CI runners need longer than the 1 s default.
+const FIND = { timeout: 10_000 };
 const PERSONAL = { id: "01J9ZK8Q4V6X3M2N1P0R5S7T9X", name: "mine", mime: "image/webp", size: 10, animated: true, created_at: "" };
 
 function setup(external: boolean) {
@@ -28,21 +30,21 @@ describe("EmojiPicker (design note 4.13)", () => {
     const onPick = setup(true);
     const u = userEvent.setup();
     await u.click(screen.getByRole("button", { name: "Emoji" }));
-    await screen.findByRole("menuitem", { name: ":local:" });
-    await screen.findByRole("menuitem", { name: ":mine:" });
+    await screen.findByRole("menuitem", { name: ":local:" }, FIND);
+    await screen.findByRole("menuitem", { name: ":mine:" }, FIND);
     await u.selectOptions(screen.getByLabelText("Hautfarbe"), "3");
     await u.type(screen.getByLabelText("Emojis suchen"), "daumen hoch");
-    const results = await screen.findByRole("group", { name: "Suchergebnisse" });
+    const results = await screen.findByRole("group", { name: "Suchergebnisse" }, FIND);
     await u.click(within(results).getAllByRole("menuitem")[0]!);
     expect(onPick).toHaveBeenLastCalledWith("👍🏽");
     await u.click(screen.getByRole("button", { name: "Emoji" }));
-    const recent = await screen.findByRole("group", { name: "Zuletzt verwendet" });
+    const recent = await screen.findByRole("group", { name: "Zuletzt verwendet" }, FIND);
     expect(within(recent).getByRole("menuitem", { name: "👍🏽" })).toBeInTheDocument();
     // Room emojis insert by name, personal ones as tokens.
     await u.click(screen.getByRole("menuitem", { name: ":local:" }));
     expect(onPick).toHaveBeenLastCalledWith(":local:");
     await u.click(screen.getByRole("button", { name: "Emoji" }));
-    await u.click(await screen.findByRole("menuitem", { name: ":mine:" }));
+    await u.click(await screen.findByRole("menuitem", { name: ":mine:" }, FIND));
     expect(onPick).toHaveBeenLastCalledWith(`<:mine:${PERSONAL.id}>`);
   });
 
@@ -50,7 +52,7 @@ describe("EmojiPicker (design note 4.13)", () => {
     const onPick = setup(false);
     const u = userEvent.setup();
     await u.click(screen.getByRole("button", { name: "Emoji" }));
-    const mine = await screen.findByRole("menuitem", { name: ":mine:" });
+    const mine = await screen.findByRole("menuitem", { name: ":mine:" }, FIND);
     expect(mine).toHaveAttribute("aria-disabled", "true");
     expect(mine.getAttribute("title")).toContain("Externe Emojis verwenden");
     await u.click(mine);
