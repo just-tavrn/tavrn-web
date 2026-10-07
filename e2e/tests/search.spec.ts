@@ -44,11 +44,13 @@ test.describe("Search", () => {
     const room = await createRoomViaApi(request, alice.token, "Suchraum");
     const channel = room.channels.find((c: { kind: string }) => c.kind === "text");
     await say(request, alice.token, room.id, channel.id, "Der Leuchtturm steht am Kap");
-    for (let i = 1; i <= 70; i++) await say(request, alice.token, room.id, channel.id, `Füller ${String(i).padStart(2, "0")}`);
+    // Enough newer messages that the jump stays detached: the page around the hit brings 25 newer ones, and a
+    // loaded window shorter than the view is filled with one more page of 50 (grouped rows are compact).
+    for (let i = 1; i <= 160; i++) await say(request, alice.token, room.id, channel.id, `Füller ${String(i).padStart(3, "0")}`);
 
     await loginAs(page, alice);
     await page.goto(`/rooms/${room.id}/channels/${channel.id}`);
-    await expect(message(page, "Füller 70")).toBeVisible();
+    await expect(message(page, "Füller 160")).toBeVisible();
     // Lazy history: the old message is not loaded.
     await expect(message(page, "Leuchtturm")).toHaveCount(0);
 
@@ -78,9 +80,9 @@ test.describe("Search", () => {
     if (phone(page)) await expect(panel).toHaveCount(0);
     else await panel.getByTestId("search-close").click();
     // The history around the target is loaded; the newest messages come back with "jump to latest".
-    await expect(message(page, "Füller 70")).toHaveCount(0);
+    await expect(message(page, "Füller 160")).toHaveCount(0);
     await page.getByTestId("jump-latest").click();
-    await expect(message(page, "Füller 70")).toBeVisible();
+    await expect(message(page, "Füller 160")).toBeVisible();
   });
 
   test('Filter by author, scope "Überall" and empty result', async ({ page, request }) => {
