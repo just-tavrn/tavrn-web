@@ -7,6 +7,7 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { externalUrl } from "./links";
 import { runAppSession } from "./appSession";
+import { shellMembers } from "./tauriShell";
 import type { AppUpdater, HotkeyEvent, Platform, PlatformHotkeys, ResolvedNode } from "./types";
 
 interface ShellConfig {
@@ -103,6 +104,8 @@ export async function createTauriPlatform(doc: Document = document): Promise<Pla
     },
     ...(info.updater ? { updater } : {}),
     hotkeys: createHotkeys(),
+    // OS keychain, native notifications, tray (tauriShell.ts).
+    ...shellMembers(),
   };
   installLinkHandler(doc, openExternal, platform.webOrigin);
   return platform;

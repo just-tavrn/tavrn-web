@@ -9,6 +9,7 @@ import { t } from "../../i18n";
 import { conversationPath } from "../../components/NodeScope";
 import { useAuth } from "../../stores/auth";
 import { useNotifications } from "../../stores/notifications";
+import { systemNotify } from "../../lib/notify";
 import { apiFor, connectNode, isHome } from "../../stores/nodes";
 import { useToasts } from "../../stores/toasts";
 import { voiceErrorMessage } from "../errors";
@@ -75,7 +76,10 @@ export function onRingEvent(socketDomain: string, d: { conversation_id: string; 
   // A new ring (not the same call announced again by another node) goes into the notification center.
   if (!before && useCalls.getState().ringing[key]) {
     const name = d.from.split("@")[0] ?? d.from;
-    useNotifications.getState().push({ kind: "call", title: t("calls.incoming_from", { name }), body: d.group ? t("calls.notify_group") : d.from, path: conversationPath(domain, d.conversation_id) });
+    const entry = { title: t("calls.incoming_from", { name }), body: d.group ? t("calls.notify_group") : d.from, path: conversationPath(domain, d.conversation_id) };
+    useNotifications.getState().push({ kind: "call", ...entry });
+    // The desktop app in the background: a native notification (the browser's calls reach it through web push).
+    systemNotify({ ...entry, tag: key }, { browser: false });
   }
 }
 
