@@ -13,6 +13,7 @@ import { HeadphonesIcon, HeadphonesOffIcon, LeaveIcon, MicIcon, MicOffIcon, Sign
 import { useAuth } from "../../stores/auth";
 import { callTitle } from "../calls/actions";
 import { CallOverlay, openCallView } from "../calls/CallUi";
+import { QualityBadge } from "./QualityBadge";
 
 const BARS: Record<Quality, number> = { excellent: 3, good: 2, poor: 1, lost: 0, unknown: 0 };
 
@@ -99,6 +100,7 @@ export function VoiceBar() {
             <span role="img" className="text-[10px]" aria-label={t("voice.encrypted")} title={t("voice.encrypted")}>
               🔒
             </span>
+            {status === "connected" && <QualityBadge />}
           </span>
           <span className="block truncate text-[11px] text-fg-2" data-testid="voice-bar-channel">
             {names.channel}
