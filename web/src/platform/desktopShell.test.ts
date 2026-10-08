@@ -97,7 +97,7 @@ describe("startDesktopShell", () => {
 
     useVoice.setState({ muted: true, deafened: true });
     await vi.advanceTimersByTimeAsync(150);
-    expect(sent.at(-1)).toMatchObject({ state: "deafened", labels: { tooltip: "Tavrn · Lounge (Gaming) · Deafened" } });
+    expect(sent.at(-1)).toMatchObject({ state: "deafened", labels: { tooltip: "Tavrn · Lounge (Gaming) · Voices muted" } });
     stop();
     expect(sent.at(-1)).toMatchObject({ state: "disconnected", labels: { tooltip: "Tavrn" } });
   });

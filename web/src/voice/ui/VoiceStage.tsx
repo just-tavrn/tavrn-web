@@ -15,13 +15,14 @@ import { getMls, useMlsUi } from "../../stores/mls";
 import { qualify, splitIdentity, type GhostViolation } from "@tavrn/e2ee";
 import { participantsOf, useVoicePresence } from "../presence";
 import { useVoiceSettings } from "../settings";
-import { useVoice } from "../store";
+import { useVoice, watchStream } from "../store";
 import { joinVoice, loadedSession } from "../index";
 import { AvatarTile } from "./AvatarTile";
 import { ConnectionGlyph, LevelMeterBars, ParticipantFlags, ScreenBadge, SoundOverlay, levelStyle, useMemberLooks, useParticipantStatus, usePriority } from "./common";
 import { ExpandIcon, MegaphoneIcon, PipIcon, SpeakerIcon } from "./icons";
 import { FullscreenButton, FullscreenControls, exitFullscreen, useFullscreen, useFullscreenShortcut } from "./fullscreen";
 import { StageGrid } from "./StageGrid";
+import { StreamAudioControls } from "./StreamAudio";
 import { useParticipantMenu } from "./useParticipantMenu";
 import { MenuButton, type ContextMenuTrigger } from "../../components/ContextMenu";
 import { sortByRank, stableOrder } from "../order";
@@ -190,10 +191,16 @@ export function ParticipantTile({ roomId, tile, menu, overlay }: { roomId?: stri
   );
 }
 
+/**
+ * A screen share: watched while the tile is shown (its audio then stays audible while deafened, issue #20),
+ * with the stream's own volume when it carries audio.
+ */
 export function ScreenTile({ tile, focused, onFocus }: { tile: Tile; focused: boolean; onFocus: () => void }) {
   const t = useT();
   const video = useRef<HTMLVideoElement | null>(null);
   const fs = useFullscreen<HTMLDivElement>();
+  const screenAudio = useVoice((s) => !!s.media[tile.identity]?.screenAudio);
+  useEffect(() => (tile.self ? undefined : watchStream(tile.identity)), [tile.identity, tile.self]);
   const pip = async () => {
     const el = video.current;
     if (!el) return;
@@ -205,12 +212,13 @@ export function ScreenTile({ tile, focused, onFocus }: { tile: Tile; focused: bo
     }
   };
   return (
-    <div ref={fs.ref} className="relative h-full w-full overflow-hidden rounded-xl border-2 border-line bg-black [&:fullscreen]:rounded-none [&:fullscreen]:border-0" data-testid="screen-tile" data-user={tile.address} data-focused={focused || undefined}>
+    <div ref={fs.ref} className="relative h-full w-full overflow-hidden rounded-xl border-2 border-line bg-black [&:fullscreen]:rounded-none [&:fullscreen]:border-0" data-testid="screen-tile" data-user={tile.address} data-focused={focused || undefined} data-audio={(screenAudio && !tile.self) || undefined}>
       <VideoView identity={tile.identity} source="screen" fit="contain" onVideo={(el) => (video.current = el)} />
       <div className="absolute inset-x-1.5 top-1.5 flex items-center gap-1.5">
         <ScreenBadge />
         <span className="truncate rounded-md bg-black/60 px-1.5 py-0.5 text-xs text-fg-0">{tile.name}</span>
         <span className="flex-1" />
+        {screenAudio && !tile.self && <StreamAudioControls address={tile.address} name={tile.name} />}
         {"pictureInPictureEnabled" in document && document.pictureInPictureEnabled && (
           <button type="button" onClick={() => void pip()} className="min-h-8 min-w-8 rounded-md bg-black/60 text-fg-0" aria-label={t("voice.pip")} title={t("voice.pip")}>
             <PipIcon size={16} className="mx-auto" />

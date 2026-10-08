@@ -11,6 +11,7 @@ import type { BackgroundHandle } from "../../voice/background";
 import { levelToUnit } from "../../voice/gate";
 import { useVoice } from "../../voice/store";
 import type { MicPipeline } from "../../voice/audio";
+import { LOOPBACK_MAX_MS, Loopback, type LoopbackState, type LoopbackStopReason } from "../../voice/loopback";
 import { CUES, RING_LOOP, previewCue, startRingtone } from "../../voice/cues";
 import { ConnectionTestPanel } from "../../voice/ui/ConnectionTestPanel";
 
@@ -73,9 +74,16 @@ function Check({ label, checked, onChange, hint, testid }: { label: string; chec
   );
 }
 
+/** `m:ss` of a duration. */
+const clock = (ms: number) => {
+  const s = Math.floor(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+};
+
 /**
  * Live microphone check: the same pipeline as in a call (noise suppression, gate), a level meter with the
- * voice activation threshold and the "transmitting" light, and a five-second test recording.
+ * voice activation threshold and the "transmitting" light, "hear yourself" (the processed microphone played
+ * back live, `loopback.ts`) and a five-second test recording.
  */
 function MicCheck({ settings, onPermission }: { settings: VoiceSettings; onPermission: () => void }) {
   const t = useT();
@@ -84,10 +92,14 @@ function MicCheck({ settings, onPermission }: { settings: VoiceSettings; onPermi
   const [open, setOpen] = useState(false);
   const [recording, setRecording] = useState(false);
   const [playback, setPlayback] = useState<string | null>(null);
+  const [loopState, setLoopState] = useState<LoopbackState | null>(null);
+  const inVoice = useVoice((s) => s.status !== "idle");
   const audio = useRef<HTMLAudioElement>(null);
   const live = useRef<MicPipeline | null>(null);
+  const loop = useRef<Loopback | null>(null);
 
-  const stop = useCallback(async () => {
+  const stop = useCallback(async (reason: LoopbackStopReason = "user") => {
+    loop.current?.stop(reason);
     const p = live.current;
     live.current = null;
     setPipeline(null);
@@ -95,13 +107,16 @@ function MicCheck({ settings, onPermission }: { settings: VoiceSettings; onPermi
     setOpen(false);
     await p?.close();
   }, []);
-  useEffect(() => () => void stop(), [stop]);
+  // Leaving the settings ends the microphone check and the loopback.
+  useEffect(() => () => void stop("unmount"), [stop]);
   useEffect(() => {
     void pipeline?.apply(settings).catch(toastError);
   }, [pipeline, settings]);
+  useEffect(() => loop.current?.setVolume(settings.outputVolume / 100), [settings.outputVolume]);
+  useEffect(() => void loop.current?.setOutputDevice(settings.outputDeviceId), [settings.outputDeviceId]);
   useEffect(() => () => void (playback && URL.revokeObjectURL(playback)), [playback]);
 
-  const start = async () => {
+  const start = async (): Promise<MicPipeline | null> => {
     try {
       const { MicPipeline } = await import("../../voice/audio");
       const p = await MicPipeline.create(settings, (r) => {
@@ -111,6 +126,19 @@ function MicCheck({ settings, onPermission }: { settings: VoiceSettings; onPermi
       live.current = p;
       setPipeline(p);
       onPermission();
+      return p;
+    } catch (e) {
+      toastError(e);
+      return null;
+    }
+  };
+
+  const hearYourself = async () => {
+    const p = live.current ?? (await start());
+    if (!p) return;
+    loop.current ??= new Loopback(setLoopState);
+    try {
+      await loop.current.start(p.track, { outputDeviceId: settings.outputDeviceId, volume: settings.outputVolume / 100 });
     } catch (e) {
       toastError(e);
     }
@@ -141,13 +169,27 @@ function MicCheck({ settings, onPermission }: { settings: VoiceSettings; onPermi
     <div className="space-y-2" data-testid="mic-check">
       <div className="flex flex-wrap items-center gap-2">
         {pipeline ? (
-          <Button variant="ghost" onClick={() => void stop()} data-testid="mic-check-stop">
+          <Button variant="ghost" onClick={() => void stop("user")} data-testid="mic-check-stop">
             {t("voice.settings.mic_stop")}
           </Button>
         ) : (
           <Button variant="ghost" onClick={() => void start()} data-testid="mic-check-start">
             {t("voice.settings.mic_start")}
           </Button>
+        )}
+        {loopState?.running ? (
+          <Button variant="ghost" onClick={() => loop.current?.stop("user")} data-testid="mic-loopback-stop">
+            {t("voice.settings.loopback_stop")}
+          </Button>
+        ) : (
+          <Button variant="ghost" onClick={() => void hearYourself()} disabled={inVoice} data-testid="mic-loopback">
+            {t("voice.settings.loopback")}
+          </Button>
+        )}
+        {loopState?.running && (
+          <span role="timer" className="tabular-nums text-xs text-fg-1" aria-label={t("voice.settings.loopback_timer")} data-testid="loopback-timer">
+            {clock(loopState.elapsedMs)} / {clock(LOOPBACK_MAX_MS)}
+          </span>
         )}
         {pipeline && (
           <Button variant="ghost" onClick={() => void record()} disabled={recording} data-testid="mic-record">
@@ -163,6 +205,25 @@ function MicCheck({ settings, onPermission }: { settings: VoiceSettings; onPermi
         <div className="h-full rounded-full bg-accent transition-[width] duration-100" style={{ width: `${levelToUnit(level) * 100}%` }} />
         {threshold !== null && <div className="absolute inset-y-0 w-0.5 bg-warn" style={{ left: `${levelToUnit(threshold) * 100}%` }} title={t("voice.settings.threshold")} />}
       </div>
+      <p className="text-xs text-fg-2">{t("voice.settings.loopback_hint")}</p>
+      {inVoice && (
+        <p className="text-xs text-fg-2" data-testid="loopback-busy">
+          {t("voice.settings.loopback_busy")}
+        </p>
+      )}
+      {loopState?.running && loopState.feedback && (
+        <div role="alert" className="flex flex-wrap items-center gap-2 rounded-md border border-warn/40 bg-warn/10 p-2 text-xs text-fg-1" data-testid="loopback-feedback">
+          <span className="min-w-0 flex-1">{t("voice.settings.loopback_feedback")}</span>
+          <Button variant="ghost" onClick={() => loop.current?.resume()} data-testid="loopback-resume">
+            {t("voice.settings.loopback_resume")}
+          </Button>
+        </div>
+      )}
+      {!loopState?.running && (loopState?.stopped === "timeout" || loopState?.stopped === "voice") && (
+        <p role="status" className="text-xs text-fg-2" data-testid="loopback-stopped" data-reason={loopState.stopped}>
+          {t(`voice.settings.loopback_stopped_${loopState.stopped}`)}
+        </p>
+      )}
       {playback && <audio ref={audio} src={playback} controls className="w-full" data-testid="mic-playback" />}
     </div>
   );
@@ -278,6 +339,7 @@ export function VoiceSettingsTab() {
   const settings = useVoiceSettings((s) => s.settings);
   const update = useVoiceSettings((s) => s.update);
   const setUserVolume = useVoiceSettings((s) => s.setUserVolume);
+  const setStreamVolume = useVoiceSettings((s) => s.setStreamVolume);
   const autoOff = useVoice((s) => s.backgroundAutoOff);
   const [refresh, setRefresh] = useState(0);
   const [capturing, setCapturing] = useState(false);
@@ -562,15 +624,25 @@ export function VoiceSettingsTab() {
       </Section>
 
       <Section title={t("voice.settings.user_volumes")} description={t("voice.settings.user_volumes_hint")}>
-        {Object.keys(settings.userVolumes).length === 0 ? (
+        <Check label={t("voice.settings.stream_while_deafened")} hint={t("voice.settings.stream_while_deafened_hint")} checked={settings.streamWhileDeafened} onChange={(v) => update({ streamWhileDeafened: v })} testid="stream-while-deafened" />
+        {Object.keys(settings.userVolumes).length === 0 && Object.keys(settings.streamVolumes).length === 0 ? (
           <p className="text-sm text-fg-2">{t("voice.settings.user_volumes_none")}</p>
         ) : (
-          <ul className="divide-y divide-line">
+          <ul className="divide-y divide-line" data-testid="volume-list">
             {Object.entries(settings.userVolumes).map(([address, volume]) => (
-              <li key={address} className="flex min-h-10 items-center gap-3 text-sm">
+              <li key={`v-${address}`} className="flex min-h-10 items-center gap-3 text-sm">
                 <span className="min-w-0 flex-1 truncate">{address}</span>
-                <span className="tabular-nums text-fg-2">{volume} %</span>
+                <span className="tabular-nums text-fg-2">{t("voice.settings.voice_volume_entry", { volume })}</span>
                 <Button variant="ghost" onClick={() => setUserVolume(address, 100)}>
+                  {t("voice.settings.reset")}
+                </Button>
+              </li>
+            ))}
+            {Object.entries(settings.streamVolumes).map(([address, volume]) => (
+              <li key={`s-${address}`} className="flex min-h-10 items-center gap-3 text-sm" data-testid="stream-volume-entry">
+                <span className="min-w-0 flex-1 truncate">{address}</span>
+                <span className="tabular-nums text-fg-2">{t("voice.settings.stream_volume_entry", { volume })}</span>
+                <Button variant="ghost" onClick={() => setStreamVolume(address, 100)}>
                   {t("voice.settings.reset")}
                 </Button>
               </li>

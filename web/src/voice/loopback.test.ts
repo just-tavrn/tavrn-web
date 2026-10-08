@@ -25,7 +25,7 @@ function mockContext() {
   const edges: Array<[string, string]> = [];
   const disconnected: string[] = [];
   const signal = { amplitude: 0, spectrum: spectrum("silence") };
-  const node = (name: string, extra: object = {}) => ({
+  const node = <T extends object>(name: string, extra: T = {} as T) => ({
     name,
     connect(target: { name: string }) {
       edges.push([name, target.name]);

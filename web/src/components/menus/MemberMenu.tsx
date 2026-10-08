@@ -2,7 +2,7 @@
 /**
  * The context menu of a room member (design note 4.11): profile, message, call, friend request, mention, copy
  * address; for moderators kick, ban (with reason), timeout, roles, and for members in voice server mute,
- * disconnect, move and the per-user volume; block. Gated by permissions and the role hierarchy
+ * disconnect, move and the per-user voice volume (plus the stream volume while they stream); block. Gated by permissions and the role hierarchy
  * (`lib/menus.ts`); the node enforces the same rules. Voice list rows and stage tiles open the same menu
  * (design note 4.13 item 3).
  */
@@ -22,6 +22,7 @@ import { toastError, useToasts } from "../../stores/toasts";
 import { participantsOf, useVoicePresence, voiceChannelOfUser } from "../../voice/presence";
 import { useVoice } from "../../voice/store";
 import { useVoiceSettings } from "../../voice/settings";
+import { VolumeSlider } from "../../voice/ui/StreamAudio";
 import { ContextMenu, useContextMenu, type ContextMenuTrigger, type MenuEntry } from "../ContextMenu";
 import { ProfileCard } from "../ProfilePopover";
 import { useNode } from "../NodeScope";
@@ -31,34 +32,6 @@ import { ConfirmAction, copyWithToast } from "./common";
 import type { AnchorRect } from "../../lib/position";
 import { useCapabilities } from "../../moderation/hooks";
 import { ReportDialog } from "../../moderation/ReportDialog";
-
-function VolumeSlider({ address, initial }: { address: string; initial: number }) {
-  const t = useT();
-  const [value, setValue] = useState(initial);
-  const set = useVoiceSettings((s) => s.setUserVolume);
-  return (
-    <label className="block space-y-1 text-sm" data-testid="menu-volume">
-      <span className="flex justify-between text-fg-1">
-        {t("menu.member.volume")} <span className="tabular-nums text-fg-2">{value} %</span>
-      </span>
-      <input
-        type="range"
-        min={0}
-        max={200}
-        step={5}
-        value={value}
-        aria-label={t("menu.member.volume")}
-        aria-valuetext={`${value} %`}
-        className="w-full"
-        onChange={(e) => {
-          const v = Number(e.target.value);
-          setValue(v);
-          set(address, v);
-        }}
-      />
-    </label>
-  );
-}
 
 /** A voice participant the menu is opened on (voice list rows and stage tiles, design note 4.13 item 3). */
 export interface VoiceMenuTarget {
@@ -90,6 +63,10 @@ export function useMemberMenu(room: RoomDetail, member: Member | null, voiceTarg
   const inMyCall = useVoice((s) => !!voiceChannelId && s.status === "connected" && s.target?.domain === domain && s.target.channelId === voiceChannelId);
   const address = member?.user.address ?? voiceTarget?.participant.user ?? "";
   const volume = useVoiceSettings((s) => s.settings.userVolumes[address] ?? 100);
+  const streamVolume = useVoiceSettings((s) => s.settings.streamVolumes[address] ?? 100);
+  const setUserVolume = useVoiceSettings((s) => s.setUserVolume);
+  const setStreamVolume = useVoiceSettings((s) => s.setStreamVolume);
+  const streaming = !!(participant && "streaming" in participant && participant.streaming);
   const name = member ? member.nickname || member.user.display_name : localPart(address);
   const currentRoles = roles ?? member?.roles ?? [];
   // Role toggles keep the menu open; once it closes the member list is the truth again.
@@ -115,7 +92,8 @@ export function useMemberMenu(room: RoomDetail, member: Member | null, voiceTarg
     serverMute: (muted: boolean) => voiceChannelId && void run(() => api.voice.serverMute(room.id, voiceChannelId, address, muted)),
     disconnect: () => voiceChannelId && void run(() => api.voice.disconnect(room.id, voiceChannelId, address)),
     moveTo: (target: string) => voiceChannelId && void run(() => api.voice.move(room.id, voiceChannelId, address, target)),
-    volume: (v: number): MenuEntry => ({ kind: "custom", id: "volume", render: () => <VolumeSlider address={address} initial={v} /> }),
+    volume: (v: number): MenuEntry => ({ kind: "custom", id: "volume", render: () => <VolumeSlider label={t("menu.member.volume")} value={v} onChange={(p) => setUserVolume(address, p)} testid="menu-volume" /> }),
+    streamVolume: (v: number): MenuEntry => ({ kind: "custom", id: "stream-volume", render: () => <VolumeSlider label={t("menu.member.stream_volume")} value={v} onChange={(p) => setStreamVolume(address, p)} testid="menu-stream-volume" /> }),
     copyAddress: () => void copyWithToast(address, t("menu.copied")),
   };
   const copyId = voiceTarget ? () => void copyWithToast(userId, t("menu.copied")) : undefined;
@@ -123,7 +101,7 @@ export function useMemberMenu(room: RoomDetail, member: Member | null, voiceTarg
   let entries: MenuEntry[] = [];
   if (menu.open && !member) {
     entries = voiceParticipantMenu(
-      { self: userId === me?.id, perms: parsePermissions(room.my_permissions), serverMuted: !!participant?.server_muted, inMyCall, volume, channels: otherVoiceChannels },
+      { self: userId === me?.id, perms: parsePermissions(room.my_permissions), serverMuted: !!participant?.server_muted, inMyCall, volume, streaming, streamVolume, channels: otherVoiceChannels },
       { ...voiceActions, copyId: copyId ?? (() => undefined) },
       t,
     );
@@ -135,7 +113,7 @@ export function useMemberMenu(room: RoomDetail, member: Member | null, voiceTarg
         self,
         target: { address, name, isOwner: member.user.id === room.owner_id, top: topPosition(room.roles, currentRoles), roles: currentRoles, timedOut: !!member.timeout_until && Date.parse(member.timeout_until) > Date.now(), bot: isBotKind(member.user.kind) },
         room: { perms: parsePermissions(room.my_permissions), isOwner: room.is_owner, myTop: topPosition(room.roles, room.my_roles, room.is_owner), roles: room.roles },
-        voice: voiceChannelId ? { channelId: voiceChannelId, serverMuted: !!participant?.server_muted, channels: otherVoiceChannels, inMyCall, volume } : undefined,
+        voice: voiceChannelId ? { channelId: voiceChannelId, serverMuted: !!participant?.server_muted, channels: otherVoiceChannels, inMyCall, volume, streaming, streamVolume } : undefined,
         friend: !!friendList?.friends.some((f) => f.user.address === address),
         friendPending: !!friendList?.outgoing.some((r) => r.user.address === address),
         callsAvailable: false,
