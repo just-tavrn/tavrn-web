@@ -2,6 +2,10 @@
 //! What the main window may show: only the bundled client. The app never loads remote pages, so a node can never
 //! reach the native API. Navigations elsewhere are refused; web links (http, https, mailto) open in the system
 //! browser instead. The click-to-play embeds of the client (CSP `frame-src`) load in their frames.
+//!
+//! The sign-in window (`connect`, docs/DESKTOP.md "Signing in") shows the node's own `/connect` page and wherever single
+//! sign-on sends it: https pages (plain http only on this computer), never the bundled client and never `tauri:`,
+//! `file:`, `data:`, `javascript:` or `blob:` URLs. It has no capability, so no page in it reaches the native API.
 
 use tauri::Url;
 
@@ -40,6 +44,59 @@ pub fn navigation(url: &Url, dev_url: Option<&Url>) -> Navigation {
         "https" if EMBED_HOSTS.contains(&url.host_str().unwrap_or_default()) => Navigation::Allow,
         _ => external(url).map_or(Navigation::Deny, Navigation::External),
     }
+}
+
+/// Hosts reached over plain http: a node in development mode on this computer (as `node_url.rs`).
+const DEV_HOSTS: [&str; 2] = ["localhost", "127.0.0.1"];
+
+/// The decision for a navigation of the sign-in window or one of its frames.
+pub fn connect_navigation(url: &Url, dev_url: Option<&Url>) -> Navigation {
+    if is_app_url(url, dev_url) {
+        return Navigation::Deny;
+    }
+    let host = url.host_str().unwrap_or_default();
+    match url.scheme() {
+        "https" if !host.is_empty() => Navigation::Allow,
+        "http" if DEV_HOSTS.contains(&host) => Navigation::Allow,
+        "about" if matches!(url.path(), "blank" | "srcdoc") => Navigation::Allow,
+        "http" | "mailto" => Navigation::External(url.to_string()),
+        _ => Navigation::Deny,
+    }
+}
+
+/// Why `open_connect` refused a URL.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ConnectUrlError {
+    Invalid,
+    /// Not the chosen node's web client.
+    OtherOrigin,
+}
+
+/// `open_connect` command: the chosen node's sign-in page for an app session,
+/// `<web origin>/connect?session=<43 characters of base64url>[&state=…][&mode=register]`, nothing else.
+pub fn connect_url(url: &str, web: &str) -> Result<Url, ConnectUrlError> {
+    let url = Url::parse(url).map_err(|_| ConnectUrlError::Invalid)?;
+    let web = Url::parse(web).map_err(|_| ConnectUrlError::Invalid)?;
+    if url.origin() != web.origin() || !matches!(url.scheme(), "https" | "http") {
+        return Err(ConnectUrlError::OtherOrigin);
+    }
+    if url.scheme() == "http" && !DEV_HOSTS.contains(&url.host_str().unwrap_or_default()) {
+        return Err(ConnectUrlError::Invalid);
+    }
+    if url.path() != "/connect" || url.fragment().is_some() || !url.username().is_empty() || url.password().is_some() {
+        return Err(ConnectUrlError::Invalid);
+    }
+    let session_ok = |v: &str| v.len() == 43 && v.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+    let mut session = false;
+    for (key, value) in url.query_pairs() {
+        match key.as_ref() {
+            "session" if session_ok(&value) && !session => session = true,
+            "state" if (16..=128).contains(&value.len()) && value.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') => {}
+            "mode" if value == "register" => {}
+            _ => return Err(ConnectUrlError::Invalid),
+        }
+    }
+    if session { Ok(url) } else { Err(ConnectUrlError::Invalid) }
 }
 
 /// New windows (`window.open`, `target=_blank`) are never opened by the app; web links go to the system browser.
@@ -106,6 +163,65 @@ mod tests {
         assert_eq!(new_window(&u("https://example.org/")), Some("https://example.org/".into()));
         assert_eq!(new_window(&u("tauri://localhost/rooms")), None);
         assert_eq!(new_window(&u("file:///etc/passwd")), None);
+    }
+
+    #[test]
+    fn the_sign_in_window_follows_the_node_and_single_sign_on_but_never_the_app() {
+        for ok in [
+            "https://tavrn.example/connect?session=x",
+            "https://login.idp.example/authorize?client_id=x",
+            "http://127.0.0.1:8500/connect",
+            "http://localhost:8080/sso/callback",
+            "about:blank",
+        ] {
+            assert_eq!(connect_navigation(&u(ok), None), Navigation::Allow, "{ok}");
+        }
+        for bad in [
+            "tauri://localhost/",
+            "https://tauri.localhost/login",
+            "http://tauri.localhost/",
+            "file:///etc/passwd",
+            "data:text/html,hi",
+            "javascript:alert(1)",
+            "blob:https://tavrn.example/abc",
+            "ftp://x.example/",
+        ] {
+            assert_eq!(connect_navigation(&u(bad), None), Navigation::Deny, "{bad}");
+        }
+        assert_eq!(connect_navigation(&u("http://evil.example/"), None), Navigation::External("http://evil.example/".into()));
+        let dev = u("http://localhost:5173");
+        assert_eq!(connect_navigation(&u("http://localhost:5173/rooms"), Some(&dev)), Navigation::Deny, "the dev server is the app");
+    }
+
+    #[test]
+    fn open_connect_takes_only_the_nodes_sign_in_page() {
+        let s = "S".repeat(43);
+        let state = "s".repeat(22);
+        let web = "https://web.tavrn.example";
+        for ok in [
+            format!("{web}/connect?session={s}"),
+            format!("{web}/connect?session={s}&state={state}"),
+            format!("{web}/connect?session={s}&state={state}&mode=register"),
+        ] {
+            assert!(connect_url(&ok, web).is_ok(), "{ok}");
+        }
+        assert!(connect_url(&format!("http://127.0.0.1:8500/connect?session={s}"), "http://127.0.0.1:8500").is_ok());
+        for (bad, why) in [
+            (format!("https://evil.example/connect?session={s}"), ConnectUrlError::OtherOrigin),
+            (format!("https://web.tavrn.example:8443/connect?session={s}"), ConnectUrlError::OtherOrigin),
+            (format!("http://web.tavrn.example/connect?session={s}"), ConnectUrlError::OtherOrigin),
+            (format!("tauri://localhost/connect?session={s}"), ConnectUrlError::OtherOrigin),
+            (format!("{web}/login?session={s}"), ConnectUrlError::Invalid),
+            (format!("{web}/connect?session=short"), ConnectUrlError::Invalid),
+            (format!("{web}/connect"), ConnectUrlError::Invalid),
+            (format!("{web}/connect?session={s}&origin=https://evil.example"), ConnectUrlError::Invalid),
+            (format!("{web}/connect?session={s}&session={s}"), ConnectUrlError::Invalid),
+            (format!("{web}/connect?session={s}#x"), ConnectUrlError::Invalid),
+            ("javascript:alert(1)".into(), ConnectUrlError::OtherOrigin),
+        ] {
+            assert_eq!(connect_url(&bad, web).map(|_| ()), Err(why), "{bad}");
+        }
+        assert_eq!(connect_url(&format!("http://192.168.1.2/connect?session={s}"), "http://192.168.1.2").map(|_| ()), Err(ConnectUrlError::Invalid));
     }
 
     #[test]

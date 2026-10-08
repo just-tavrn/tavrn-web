@@ -70,8 +70,39 @@ fn the_capability_grants_only_the_app_commands_to_the_main_window() {
     assert_eq!(cap["windows"], serde_json::json!([crate::MAIN_WINDOW]));
     assert!(cap.get("remote").is_none(), "no remote origin may call the shell");
     let permissions: Vec<&str> = cap["permissions"].as_array().map(|p| p.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
-    assert_eq!(permissions, ["allow-get-config", "allow-set-node", "allow-app-info", "allow-open-external", "allow-check-update", "allow-install-update"]);
+    assert_eq!(
+        permissions,
+        [
+            "allow-get-config",
+            "allow-set-node",
+            "allow-app-info",
+            "allow-open-external",
+            "allow-check-update",
+            "allow-install-update",
+            "allow-resolve-node",
+            "allow-open-connect",
+            "allow-close-connect"
+        ]
+    );
     assert_eq!(conf()["app"]["security"]["capabilities"], serde_json::json!(["main"]));
+}
+
+#[test]
+fn no_capability_reaches_the_sign_in_window() {
+    // Every capability file of the shell: none may name the sign-in window (or every window), so the node's page and
+    // the identity providers shown there never reach a native command.
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("capabilities");
+    let mut files = 0;
+    for entry in std::fs::read_dir(&dir).unwrap_or_else(|e| unreachable!("{e}")).flatten() {
+        let text = std::fs::read_to_string(entry.path()).unwrap_or_default();
+        let cap: Value = serde_json::from_str(&text).unwrap_or_else(|e| unreachable!("{}: {e}", entry.path().display()));
+        files += 1;
+        let windows: Vec<&str> = cap["windows"].as_array().map(|w| w.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
+        assert!(!windows.iter().any(|w| *w == crate::CONNECT_WINDOW || w.contains('*')), "{} names {windows:?}", entry.path().display());
+        assert!(cap.get("webviews").is_none() && cap.get("remote").is_none(), "{}", entry.path().display());
+    }
+    assert!(files >= 1);
+    assert_ne!(crate::CONNECT_WINDOW, crate::MAIN_WINDOW);
 }
 
 #[test]
