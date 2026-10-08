@@ -288,8 +288,8 @@ async function main() {
   step("message sent in an encrypted channel; the node holds ciphertext only");
 
   // ---- the keychain ----
-  const address = `${username}@localhost`;
-  const fallback = await keyRecord(address);
+  const accountAddress = `${username}@localhost`;
+  const fallback = await keyRecord(accountAddress);
   if (!fallback?.hasKey || fallback.keychain) throw new Error(`without a keychain the key belongs in IndexedDB: ${JSON.stringify(fallback)}`);
   await goTo("/settings/app");
   await waitFor("[data-testid=app-keys-fallback]", 30_000);
@@ -312,8 +312,8 @@ async function main() {
   // paths outside the client.
   const shown = await shell("notify", { notice: { title: "Smoke", body: "A test notification", path: "/" } });
   if (shown?.error) throw new Error(`notify: ${shown.error}`);
-  const refused = await shell("notify", { notice: { title: "Smoke", body: "x", path: "https://evil.example/" } });
-  if (!String(refused?.error).includes("notify.invalid")) throw new Error(`notify accepted a foreign path: ${JSON.stringify(refused)}`);
+  const foreignPath = await shell("notify", { notice: { title: "Smoke", body: "x", path: "https://evil.example/" } });
+  if (!String(foreignPath?.error).includes("notify.invalid")) throw new Error(`notify accepted a foreign path: ${JSON.stringify(foreignPath)}`);
   step("notifications: shown through the shell, foreign paths refused");
 
   // Second start, now with a keychain: the key moves there and the IndexedDB copy goes.
@@ -322,10 +322,10 @@ async function main() {
   const status = await shell("keychain_status");
   if (status?.backend !== "memory" || !status.available) throw new Error(`keychain status: ${JSON.stringify(status)}`);
   const entry = await until("the keychain entry", async () => {
-    const e = await shell("keychain_get", { account: address });
+    const e = await shell("keychain_get", { account: accountAddress });
     return Array.isArray(e) && e.length === 32 ? e : null;
   });
-  const migrated = await keyRecord(address);
+  const migrated = await keyRecord(accountAddress);
   if (migrated?.hasKey || !migrated?.keychain) throw new Error(`the IndexedDB copy should be gone: ${JSON.stringify(migrated)}`);
   step(`keychain: the ${entry.length}-byte key moved from IndexedDB into the keychain`);
 
