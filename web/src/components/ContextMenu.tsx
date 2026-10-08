@@ -5,8 +5,9 @@
  * Shift+F10 on a focused trigger), by a "⋯" button ({@link MenuButton}) and by a long press on touch
  * devices. Rendered into `document.body` (never clipped by a scrolling or transformed parent), placed
  * with collision handling (`lib/position.ts`), closed by Escape, Tab, a click outside or a choice.
- * Keyboard: arrows move, Home/End jump, Enter/Space choose, → opens a submenu, ← closes it. Disabled
- * items stay focusable and carry the reason as a tooltip (and for screen readers).
+ * Keyboard: arrows move, Home/End jump, Enter/Space choose, → opens a submenu, ← closes it; ↑/↓ also reach the
+ * control of a custom entry (a slider), which keeps its own keys. Disabled items stay focusable and carry the
+ * reason as a tooltip (and for screen readers).
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type TouchEvent as ReactTouchEvent } from "react";
 import { createPortal } from "react-dom";
@@ -87,6 +88,13 @@ export function normalizeMenu(entries: Array<MenuEntry | false | null | undefine
 
 /** Entries that take keyboard focus. */
 const focusable = (e: MenuEntry): e is MenuItem | MenuSubmenu => e.kind === "item" || e.kind === "submenu";
+/** Stops of the arrow keys: the items and the custom entries (their first control). */
+type Stop = MenuItem | MenuSubmenu | MenuCustom;
+const isStop = (e: MenuEntry): e is Stop => focusable(e) || e.kind === "custom";
+/** The focusable control inside a custom entry. */
+const CONTROL = "input, select, textarea, button, [tabindex]";
+/** Keys a focused custom control handles itself (a slider moves with them). */
+const CONTROL_KEYS = new Set(["ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown", " ", "Enter"]);
 
 /** Finds an entry by id path (tests). */
 export function findEntry(entries: MenuEntry[], id: string): MenuItem | MenuSubmenu | undefined {
@@ -109,10 +117,16 @@ const SETTLE_MS = 350;
 function MenuPanel({ entries, anchor, prefer, onClose, onCloseSub, label, depth, testId }: { entries: MenuEntry[]; anchor: AnchorRect; prefer: "bottom" | "right"; onClose: () => void; onCloseSub?: () => void; label?: string; depth: number; testId?: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const style = useFloating(ref, anchor, { prefer, gap: prefer === "right" ? 0 : 2 }, [entries.length]);
-  const items = useMemo(() => entries.filter(focusable), [entries]);
+  const items = useMemo(() => entries.filter(isStop), [entries]);
   const [active, setActive] = useState(0);
   const [open, setOpen] = useState<{ id: string; anchor: AnchorRect } | null>(null);
-  const buttons = useRef<Record<string, HTMLButtonElement | null>>({});
+  const buttons = useRef<Record<string, HTMLElement | null>>({});
+  /** The element that takes focus for a stop: the item's button or the custom entry's control. */
+  const stopElement = (e: Stop | undefined): HTMLElement | null => {
+    if (!e) return null;
+    const el = buttons.current[e.id] ?? null;
+    return e.kind === "custom" ? (el?.querySelector<HTMLElement>(CONTROL) ?? null) : el;
+  };
   // A menu opened by a long press sits under the finger: the compatibility mouse move of the release would hover
   // whatever item lies there (and open its submenu). Hover counts only once the panel has settled; clicks and the
   // keyboard work right away.
@@ -129,10 +143,9 @@ function MenuPanel({ entries, anchor, prefer, onClose, onCloseSub, label, depth,
     // Focus the first enabled item once the panel is placed (hidden elements cannot take focus).
     if (focused.current || style.visibility !== "visible") return;
     focused.current = true;
-    const first = Math.max(0, items.findIndex((e) => !e.disabled));
+    const first = Math.max(0, items.findIndex((e) => e.kind !== "custom" && !e.disabled));
     setActive(first);
-    const el = items[first] && buttons.current[items[first]!.id];
-    el?.focus({ preventScroll: true });
+    stopElement(items[first])?.focus({ preventScroll: true });
     // Only when the panel becomes visible.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [style.visibility]);
@@ -142,7 +155,7 @@ function MenuPanel({ entries, anchor, prefer, onClose, onCloseSub, label, depth,
     if (!n) return;
     const next = ((i % n) + n) % n;
     setActive(next);
-    buttons.current[items[next]!.id]?.focus({ preventScroll: true });
+    stopElement(items[next])?.focus({ preventScroll: true });
   };
 
   const openSub = (entry: MenuSubmenu) => {
@@ -161,6 +174,9 @@ function MenuPanel({ entries, anchor, prefer, onClose, onCloseSub, label, depth,
   const onKeyDown = (e: ReactKeyboardEvent) => {
     // Keys inside a submenu are handled there.
     if (e.target instanceof HTMLElement && e.target.closest("[data-menu-depth]") !== ref.current) return;
+    // A custom entry's control (a slider) keeps its own keys; type-ahead does not apply there either.
+    const inCustom = e.target instanceof HTMLElement && !!e.target.closest("[data-menu-custom]");
+    if (inCustom && (CONTROL_KEYS.has(e.key) || e.key.length === 1)) return;
     const current = items[active];
     switch (e.key) {
       case "ArrowDown":
@@ -207,7 +223,8 @@ function MenuPanel({ entries, anchor, prefer, onClose, onCloseSub, label, depth,
           const k = e.key.toLowerCase();
           for (let i = 1; i <= items.length; i++) {
             const idx = (active + i) % items.length;
-            if (items[idx]!.label.toLowerCase().startsWith(k)) {
+            const candidate = items[idx]!;
+            if (candidate.kind !== "custom" && candidate.label.toLowerCase().startsWith(k)) {
               focusIndex(idx);
               break;
             }
@@ -233,8 +250,21 @@ function MenuPanel({ entries, anchor, prefer, onClose, onCloseSub, label, depth,
         {entries.map((e) => {
           if (e.kind === "separator") return <div key={e.id} role="separator" className="my-1 h-px bg-line" />;
           if (e.kind === "label") return <div key={e.id} className="px-2 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-fg-2">{e.label}</div>;
-          if (e.kind === "custom") return <div key={e.id} className="px-2 py-1" data-menu-custom={e.id}>{e.render(onClose)}</div>;
           const index = items.indexOf(e);
+          if (e.kind === "custom")
+            return (
+              <div
+                key={e.id}
+                ref={(el) => {
+                  buttons.current[e.id] = el;
+                }}
+                className="px-2 py-1"
+                data-menu-custom={e.id}
+                onFocus={() => setActive(index)}
+              >
+                {e.render(onClose)}
+              </div>
+            );
           const tone = e.disabled ? "cursor-not-allowed text-fg-2 opacity-60" : e.kind === "item" && e.danger ? "text-danger hover:bg-danger/10 focus:bg-danger/10" : "text-fg-1 hover:bg-bg-3 hover:text-fg-0 focus:bg-bg-3 focus:text-fg-0";
           const role = e.kind === "item" && e.checked !== undefined ? "menuitemcheckbox" : "menuitem";
           return (
@@ -305,15 +335,20 @@ function MenuPanel({ entries, anchor, prefer, onClose, onCloseSub, label, depth,
  * A menu at `anchor` (a point or an element's rectangle). Focus returns to the element that had it
  * before the menu opened.
  */
-export function ContextMenu({ entries, anchor, onClose, label, testId }: { entries: MenuEntry[]; anchor: AnchorRect; onClose: () => void; label?: string; testId?: string }) {
+export function ContextMenu({ entries, anchor, onClose, label, testId, trigger }: { entries: MenuEntry[]; anchor: AnchorRect; onClose: () => void; label?: string; testId?: string; trigger?: Element | null }) {
   const layer = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const triggerRef = useRef(trigger);
+  triggerRef.current = trigger;
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     const outside = (e: Event) => {
       const target = e.target as Node;
       if (layer.current?.contains(target)) return;
+      // A toggling trigger (`useContextMenu({ toggle: true })`) closes the menu itself on its next right-click.
+      const secondary = e.type === "contextmenu" || (e as PointerEvent).button === 2;
+      if (secondary && triggerRef.current?.contains(target)) return;
       onCloseRef.current();
     };
     const onKey = (e: KeyboardEvent) => {
@@ -357,6 +392,8 @@ export interface ContextMenuTrigger {
   close: () => void;
   /** Opens the menu at an element (the ⋯ button). */
   openAt: (el: Element) => void;
+  /** With `toggle`: the element whose right-click opened the menu (pass it to {@link ContextMenu} as `trigger`). */
+  trigger: Element | null;
   /** Spread onto the element that has the menu. */
   triggerProps: {
     onContextMenu: (e: ReactMouseEvent) => void;
@@ -371,10 +408,19 @@ export interface ContextMenuTrigger {
 
 /**
  * State and handlers for an element with a context menu: right-click at the pointer, the keyboard's
- * context-menu key at the element, a long press on touch (the click that follows is swallowed).
+ * context-menu key at the element, a long press on touch (the click that follows is swallowed). By default a
+ * right-click while the menu is open opens it again at the new point; with `toggle` a right-click on the same
+ * element closes it (menus that stay open after a choice: the voice device menus).
  */
-export function useContextMenu(): ContextMenuTrigger {
-  const [anchor, setAnchor] = useState<AnchorRect | null>(null);
+export function useContextMenu({ toggle = false }: { toggle?: boolean } = {}): ContextMenuTrigger {
+  const [anchor, setAnchorState] = useState<AnchorRect | null>(null);
+  // The anchor as of the last change, readable inside one event (the state updates later).
+  const current = useRef<AnchorRect | null>(null);
+  const setAnchor = useCallback((a: AnchorRect | null) => {
+    current.current = a;
+    setAnchorState(a);
+  }, []);
+  const [trigger, setTrigger] = useState<Element | null>(null);
   const press = useRef<{ x: number; y: number; timer: ReturnType<typeof setTimeout>; target: Element } | null>(null);
   const swallowClick = useRef(false);
   const cancel = useCallback(() => {
@@ -382,8 +428,8 @@ export function useContextMenu(): ContextMenuTrigger {
     press.current = null;
   }, []);
   useEffect(() => cancel, [cancel]);
-  const close = useCallback(() => setAnchor(null), []);
-  const openAt = useCallback((el: Element) => setAnchor(rectOf(el)), []);
+  const close = useCallback(() => setAnchor(null), [setAnchor]);
+  const openAt = useCallback((el: Element) => setAnchor(rectOf(el)), [setAnchor]);
   const triggerProps = useMemo<ContextMenuTrigger["triggerProps"]>(
     () => ({
       onContextMenu: (e) => {
@@ -391,6 +437,8 @@ export function useContextMenu(): ContextMenuTrigger {
         if (e.defaultPrevented || fromPortal(e)) return;
         e.preventDefault();
         e.stopPropagation();
+        if (toggle && current.current) return setAnchor(null);
+        if (toggle) setTrigger(e.currentTarget);
         // Keyboard (context-menu key, Shift+F10): no pointer position, use the element.
         if (e.clientX === 0 && e.clientY === 0) setAnchor(rectOf(e.currentTarget));
         else setAnchor(pointAnchor(e.clientX, e.clientY));
@@ -410,6 +458,7 @@ export function useContextMenu(): ContextMenuTrigger {
             press.current = null;
             if (!p) return;
             swallowClick.current = true;
+            if (toggle) setTrigger(p.target);
             setAnchor(pointAnchor(p.x, p.y));
             navigator.vibrate?.(10);
           }, LONG_PRESS_MS),
@@ -439,9 +488,9 @@ export function useContextMenu(): ContextMenuTrigger {
       },
       style: { WebkitTouchCallout: "none" },
     }),
-    [cancel],
+    [cancel, setAnchor, toggle],
   );
-  return { anchor, open: anchor !== null, close, openAt, triggerProps };
+  return { anchor, open: anchor !== null, close, openAt, trigger: toggle ? trigger : null, triggerProps };
 }
 
 /** The "⋯" button that opens a menu (touch, keyboard, discoverability). */

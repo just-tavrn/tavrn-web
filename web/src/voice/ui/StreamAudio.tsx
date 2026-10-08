@@ -9,23 +9,23 @@ import { useVoiceSettings } from "../settings";
 import { useVoice } from "../store";
 import { SpeakerIcon } from "./icons";
 
-/** A 0–200 % volume slider bound to a per-user volume of the settings. */
-export function VolumeSlider({ label, value, onChange, testid }: { label: string; value: number; onChange: (v: number) => void; testid?: string }) {
+/** A labelled range input showing its value (volumes, thresholds); it keeps the value while it is dragged. */
+export function RangeSlider({ label, value, onChange, testid, min, max, step, unit }: { label: string; value: number; onChange: (v: number) => void; testid?: string; min: number; max: number; step: number; unit: string }) {
   const [v, setV] = useState(value);
   useEffect(() => setV(value), [value]);
   return (
     <label className="block space-y-1 text-sm" data-testid={testid}>
       <span className="flex justify-between gap-2 text-fg-1">
-        {label} <span className="tabular-nums text-fg-2">{v} %</span>
+        {label} <span className="tabular-nums text-fg-2">{`${v} ${unit}`}</span>
       </span>
       <input
         type="range"
-        min={0}
-        max={200}
-        step={5}
+        min={min}
+        max={max}
+        step={step}
         value={v}
         aria-label={label}
-        aria-valuetext={`${v} %`}
+        aria-valuetext={`${v} ${unit}`}
         className="w-full"
         onChange={(e) => {
           const next = Number(e.target.value);
@@ -35,6 +35,11 @@ export function VolumeSlider({ label, value, onChange, testid }: { label: string
       />
     </label>
   );
+}
+
+/** A 0–200 % volume slider bound to a per-user volume of the settings. */
+export function VolumeSlider(props: { label: string; value: number; onChange: (v: number) => void; testid?: string }) {
+  return <RangeSlider {...props} min={0} max={200} step={5} unit="%" />;
 }
 
 /** The speaker button of a stream tile with its volume popover, and the "still audible while deafened" badge. */

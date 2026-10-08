@@ -34,7 +34,13 @@ function renderBar() {
   );
 }
 
-const rightClick = (el: HTMLElement) => fireEvent.contextMenu(el, { clientX: 30, clientY: 40 });
+/** A right-click: the right button's pointerdown, then the contextmenu event. */
+const rightClick = (el: HTMLElement) => {
+  fireEvent.pointerDown(el, { button: 2 });
+  fireEvent.contextMenu(el, { clientX: 30, clientY: 40 });
+};
+/** The menu listens for clicks outside only after the event that opened it. */
+const settle = () => act(() => new Promise((r) => setTimeout(r, 5)));
 const sinkProto = HTMLMediaElement.prototype as unknown as { setSinkId?: unknown };
 
 beforeEach(() => {
@@ -67,9 +73,13 @@ describe("VoiceBar quick menus", () => {
     expect(within(menu).getAllByRole("menuitemcheckbox").map((e) => e.getAttribute("data-menu-item"))).toEqual(["device:", "device:mic-1", "ptt"]);
     await user.click(within(menu).getByRole("menuitemcheckbox", { name: "Headset-Mikrofon" }));
     expect(useVoiceSettings.getState().settings.inputDeviceId).toBe("mic-1");
-    expect(screen.queryByRole("menu")).toBeNull();
-    // Left click still mutes.
+    // The menu stays open and moves the check mark.
+    expect(within(menu).getByRole("menuitemcheckbox", { name: "Headset-Mikrofon" })).toHaveAttribute("aria-checked", "true");
+    expect(within(menu).getByRole("menuitemcheckbox", { name: "Systemstandard" })).toHaveAttribute("aria-checked", "false");
+    // A click outside closes it (and a left click still mutes).
+    await settle();
     await user.click(screen.getByTestId("voice-bar-mute"));
+    expect(screen.queryByRole("menu")).toBeNull();
     expect(toggleMute).toHaveBeenCalledTimes(1);
   });
 
@@ -124,6 +134,57 @@ describe("VoiceBar quick menus", () => {
     const menu = screen.getByRole("menu", { name: "Ausgabe-Optionen" });
     expect(within(menu).queryAllByRole("menuitemcheckbox")).toEqual([]);
     expect(within(menu).getByRole("menuitem", { name: "Dieser Browser unterstützt keine Auswahl des Ausgabegeräts" })).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("closes on Escape and on a second right-click on the same button; a right-click on the other button switches menus", async () => {
+    const user = userEvent.setup();
+    renderBar();
+    const mic = screen.getByTestId("voice-bar-mute");
+    rightClick(mic);
+    await settle();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).toBeNull();
+    rightClick(mic);
+    await settle();
+    rightClick(mic);
+    expect(screen.queryByRole("menu")).toBeNull();
+    rightClick(mic);
+    await settle();
+    rightClick(screen.getByTestId("voice-bar-deafen"));
+    expect(screen.queryByRole("menu", { name: "Mikrofon-Optionen" })).toBeNull();
+    expect(screen.getByRole("menu", { name: "Ausgabe-Optionen" })).toBeInTheDocument();
+    expect(toggleMute).not.toHaveBeenCalled();
+    expect(toggleDeafen).not.toHaveBeenCalled();
+  });
+
+  it("the sliders change the settings live; the threshold shows only with voice activation", async () => {
+    const user = userEvent.setup();
+    useVoiceSettings.getState().update({ inputVolume: 100, vadThreshold: -55, outputVolume: 100 });
+    renderBar();
+    rightClick(screen.getByTestId("voice-bar-mute"));
+    const menu = screen.getByRole("menu", { name: "Mikrofon-Optionen" });
+    const volume = within(menu).getByRole("slider", { name: "Eingangslautstärke" });
+    expect(volume).toHaveValue("100");
+    fireEvent.change(volume, { target: { value: "135" } });
+    expect(useVoiceSettings.getState().settings.inputVolume).toBe(135);
+    expect(within(menu).getByText("135 %")).toBeInTheDocument();
+    fireEvent.change(within(menu).getByRole("slider", { name: "Aktivierungsschwelle" }), { target: { value: "-70" } });
+    expect(useVoiceSettings.getState().settings.vadThreshold).toBe(-70);
+    // Push-to-talk on: the threshold goes away, off: it comes back.
+    await user.click(within(menu).getByRole("menuitemcheckbox", { name: /Push-to-Talk/ }));
+    expect(within(menu).queryByRole("slider", { name: "Aktivierungsschwelle" })).toBeNull();
+    await user.click(within(menu).getByRole("menuitemcheckbox", { name: /Push-to-Talk/ }));
+    expect(within(menu).getByRole("slider", { name: "Aktivierungsschwelle" })).toHaveValue("-70");
+    // The keyboard reaches the volume slider from the push-to-talk item.
+    within(menu).getByRole("menuitemcheckbox", { name: /Push-to-Talk/ }).focus();
+    await user.keyboard("{ArrowDown}");
+    expect(within(menu).getByRole("slider", { name: "Eingangslautstärke" })).toHaveFocus();
+    // The headphones menu has the output volume.
+    await settle();
+    rightClick(screen.getByTestId("voice-bar-deafen"));
+    const output = screen.getByRole("menu", { name: "Ausgabe-Optionen" });
+    fireEvent.change(within(output).getByRole("slider", { name: "Ausgangslautstärke" }), { target: { value: "60" } });
+    expect(useVoiceSettings.getState().settings.outputVolume).toBe(60);
   });
 
   it("a long press opens the menu on touch devices and does not toggle deafen", () => {

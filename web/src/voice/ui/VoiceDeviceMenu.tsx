@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
  * The quick menus of the microphone and headphones buttons (voice bar and stage controls): right-click, the
- * context-menu key or a long press on touch opens them (`useContextMenu`); a click keeps muting or deafening.
+ * context-menu key or a long press on touch opens them (`useContextMenu`); a click keeps muting or deafening. They
+ * stay open after a choice and close on a click outside, Escape or a second right-click on the same button.
  * The devices are listed only while a menu is open.
  */
 import type { ReactNode } from "react";
@@ -13,9 +14,10 @@ import type { AnchorRect } from "../../lib/position";
 import { outputSelectable, useMediaDevices } from "../devices";
 import { voiceDeviceMenu, type VoiceDeviceKind } from "../deviceMenu";
 import { comboLabel } from "../hotkeys";
+import { RangeSlider } from "./StreamAudio";
 import { useVoiceSettings } from "../settings";
 
-function VoiceDeviceMenu({ kind, anchor, onClose, beforeNavigate }: { kind: VoiceDeviceKind; anchor: AnchorRect; onClose: () => void; beforeNavigate?: () => void }) {
+function VoiceDeviceMenu({ kind, anchor, trigger, onClose, beforeNavigate }: { kind: VoiceDeviceKind; anchor: AnchorRect; trigger: Element | null; onClose: () => void; beforeNavigate?: () => void }) {
   const t = useT();
   const navigate = useNavigate();
   const settings = useVoiceSettings((s) => s.settings);
@@ -29,6 +31,7 @@ function VoiceDeviceMenu({ kind, anchor, onClose, beforeNavigate }: { kind: Voic
     {
       update,
       unlock: () => void media.unlock(),
+      slider: (spec) => ({ kind: "custom", id: spec.id, render: () => <RangeSlider label={spec.label} value={spec.value} min={spec.min} max={spec.max} step={spec.step} unit={spec.unit} onChange={spec.onChange} testid={`voice-menu-${spec.id}`} /> }),
       openSettings: () => {
         beforeNavigate?.();
         navigate("/settings/voice");
@@ -36,7 +39,7 @@ function VoiceDeviceMenu({ kind, anchor, onClose, beforeNavigate }: { kind: Voic
     },
     t,
   );
-  return <ContextMenu entries={entries} anchor={anchor} onClose={onClose} label={t(kind === "input" ? "voice.menu.input_label" : "voice.menu.output_label")} testId={`voice-${kind}-menu`} />;
+  return <ContextMenu entries={entries} anchor={anchor} trigger={trigger} onClose={onClose} label={t(kind === "input" ? "voice.menu.input_label" : "voice.menu.output_label")} testId={`voice-${kind}-menu`} />;
 }
 
 /**
@@ -44,7 +47,8 @@ function VoiceDeviceMenu({ kind, anchor, onClose, beforeNavigate }: { kind: Voic
  * and render `overlay`. `beforeNavigate` runs before "Voice settings…" navigates (the voice bar closes the drawer).
  */
 export function useVoiceDeviceMenu(kind: VoiceDeviceKind, beforeNavigate?: () => void): { triggerProps: ContextMenuTrigger["triggerProps"]; overlay: ReactNode } {
-  const menu = useContextMenu();
-  const overlay = menu.open && menu.anchor ? <VoiceDeviceMenu kind={kind} anchor={menu.anchor} onClose={menu.close} beforeNavigate={beforeNavigate} /> : null;
+  // Choices keep the menu open: a second right-click on the button closes it (as do Escape and a click outside).
+  const menu = useContextMenu({ toggle: true });
+  const overlay = menu.open && menu.anchor ? <VoiceDeviceMenu kind={kind} anchor={menu.anchor} trigger={menu.trigger} onClose={menu.close} beforeNavigate={beforeNavigate} /> : null;
   return { triggerProps: menu.triggerProps, overlay };
 }

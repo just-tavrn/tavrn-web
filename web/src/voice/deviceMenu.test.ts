@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { findEntry, type MenuEntry, type MenuItem } from "../components/ContextMenu";
-import { voiceDeviceMenu, type VoiceDeviceMenuActions, type VoiceDeviceMenuContext } from "./deviceMenu";
+import { voiceDeviceMenu, type DeviceMenuSlider, type VoiceDeviceMenuActions, type VoiceDeviceMenuContext } from "./deviceMenu";
 import { DEFAULT_SETTINGS, useVoiceSettings } from "./settings";
 
 const t = (key: string, params?: Record<string, string | number>) => (params ? `${key}:${JSON.stringify(params)}` : key);
@@ -28,7 +28,20 @@ const ctx = (patch: Partial<VoiceDeviceMenuContext> = {}): VoiceDeviceMenuContex
   ...patch,
 });
 /** The store's own `update`, so choosing an item is checked against the settings that apply to the call. */
-const actions = () => ({ update: (p) => useVoiceSettings.getState().update(p), unlock: vi.fn<() => void>(), openSettings: vi.fn<() => void>() }) satisfies VoiceDeviceMenuActions;
+const actions = () => {
+  /** The sliders the menu asked for, by id (the component renders them as range inputs). */
+  const sliders: Record<string, DeviceMenuSlider> = {};
+  return {
+    update: (p) => useVoiceSettings.getState().update(p),
+    unlock: vi.fn<() => void>(),
+    openSettings: vi.fn<() => void>(),
+    slider: (spec) => {
+      sliders[spec.id] = spec;
+      return { kind: "custom", id: spec.id, render: () => null };
+    },
+    sliders,
+  } satisfies VoiceDeviceMenuActions & { sliders: Record<string, DeviceMenuSlider> };
+};
 const item = (entries: MenuEntry[], id: string) => findEntry(entries, id) as MenuItem;
 const devicesOf = (entries: MenuEntry[]) => entries.filter((e): e is MenuItem => e.kind === "item" && e.id.startsWith("device:"));
 
@@ -47,6 +60,8 @@ describe("voiceDeviceMenu: microphone", () => {
       ["Headset microphone", false],
       ["Webcam microphone", true],
     ]);
+    // Choosing a device leaves the menu open (it closes on a click outside, Escape or a second right-click).
+    expect(devicesOf(entries).every((e) => e.keepOpen)).toBe(true);
     // Never a speaker or a camera in the microphone list.
     expect(findEntry(entries, "device:out-1")).toBeUndefined();
     expect(findEntry(entries, "device:cam-1")).toBeUndefined();
@@ -98,7 +113,7 @@ describe("voiceDeviceMenu: microphone", () => {
   it("ends with the link to the voice settings, after separators", () => {
     const a = actions();
     const entries = voiceDeviceMenu("input", ctx(), a, t);
-    expect(entries.map((e) => (e.kind === "separator" ? "|" : e.id))).toEqual(["label", "device:", "device:mic-1", "device:mic-2", "|", "ptt", "|", "settings"]);
+    expect(entries.map((e) => (e.kind === "separator" ? "|" : e.id))).toEqual(["label", "device:", "device:mic-1", "device:mic-2", "|", "ptt", "input-volume", "vad-threshold", "|", "settings"]);
     const settings = item(entries, "settings");
     expect(settings.label).toBe("voice.menu.settings");
     settings.onSelect!();
@@ -115,11 +130,12 @@ describe("voiceDeviceMenu: output", () => {
       ["Speakers", false],
       ["Headphones", true],
     ]);
+    expect(devicesOf(entries).every((e) => e.keepOpen)).toBe(true);
     item(entries, "device:out-1").onSelect!();
     expect(useVoiceSettings.getState().settings.outputDeviceId).toBe("out-1");
     // No push-to-talk in the output menu.
     expect(findEntry(entries, "ptt")).toBeUndefined();
-    expect(entries.map((e) => (e.kind === "separator" ? "|" : e.id))).toEqual(["label", "device:", "device:out-1", "device:out-2", "|", "settings"]);
+    expect(entries.map((e) => (e.kind === "separator" ? "|" : e.id))).toEqual(["label", "device:", "device:out-1", "device:out-2", "|", "output-volume", "|", "settings"]);
   });
 
   it("without setSinkId shows a disabled notice instead of the list", () => {
@@ -127,12 +143,44 @@ describe("voiceDeviceMenu: output", () => {
     expect(devicesOf(entries)).toEqual([]);
     expect(findEntry(entries, "show-devices")).toBeUndefined();
     expect(item(entries, "output-unsupported")).toMatchObject({ label: "voice.menu.output_unsupported", disabled: true });
-    expect(entries.map((e) => (e.kind === "separator" ? "|" : e.id))).toEqual(["label", "output-unsupported", "|", "settings"]);
+    expect(entries.map((e) => (e.kind === "separator" ? "|" : e.id))).toEqual(["label", "output-unsupported", "|", "output-volume", "|", "settings"]);
   });
 
   it("offers “Show devices” while the names are hidden", () => {
     const entries = voiceDeviceMenu("output", ctx({ devices: HIDDEN, needsPermission: true }), actions(), t);
     expect(devicesOf(entries).map((e) => e.id)).toEqual(["device:"]);
     expect(findEntry(entries, "show-devices")).toBeDefined();
+  });
+});
+
+describe("voiceDeviceMenu: sliders", () => {
+  it("the microphone menu has the input volume and, with voice activation, the activation threshold (as in the settings tab)", () => {
+    const a = actions();
+    voiceDeviceMenu("input", ctx({ settings: { ...DEFAULT_SETTINGS, inputVolume: 80, vadThreshold: -42 } }), a, t);
+    expect(a.sliders["input-volume"]).toMatchObject({ label: "voice.settings.input_volume", value: 80, min: 0, max: 200, step: 5, unit: "%" });
+    expect(a.sliders["vad-threshold"]).toMatchObject({ label: "voice.settings.threshold", value: -42, min: -100, max: 0, step: 1, unit: "dB" });
+    a.sliders["input-volume"]!.onChange(120);
+    expect(useVoiceSettings.getState().settings.inputVolume).toBe(120);
+    a.sliders["vad-threshold"]!.onChange(-60);
+    expect(useVoiceSettings.getState().settings.vadThreshold).toBe(-60);
+  });
+
+  it("push-to-talk has no activation threshold", () => {
+    const a = actions();
+    const entries = voiceDeviceMenu("input", ctx({ settings: { ...DEFAULT_SETTINGS, inputMode: "ptt" } }), a, t);
+    expect(findEntry(entries, "vad-threshold")).toBeUndefined();
+    expect(entries.some((e) => e.id === "vad-threshold")).toBe(false);
+    expect(entries.some((e) => e.id === "input-volume")).toBe(true);
+  });
+
+  it("the output menu has the output volume, also where the device cannot be chosen", () => {
+    for (const sinkSupported of [true, false]) {
+      const a = actions();
+      voiceDeviceMenu("output", ctx({ sinkSupported, settings: { ...DEFAULT_SETTINGS, outputVolume: 150 } }), a, t);
+      expect(a.sliders["output-volume"]).toMatchObject({ label: "voice.settings.output_volume", value: 150, min: 0, max: 200, step: 5, unit: "%" });
+      expect(a.sliders["input-volume"]).toBeUndefined();
+      a.sliders["output-volume"]!.onChange(90);
+      expect(useVoiceSettings.getState().settings.outputVolume).toBe(90);
+    }
   });
 });
