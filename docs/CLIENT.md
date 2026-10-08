@@ -186,6 +186,13 @@ builders where the node lives. Flows that need the node's own origin are not off
 sign-on, the connect flow, captchas, web push); the password with TOTP or a recovery code works. The full list and
 the reasons are in DESKTOP.md "Limitations".
 
+The app keeps the key that unlocks the local key store in the OS keychain (Secret Service, Credential Manager) instead
+of IndexedDB, and moves an existing key there on its first start; without a keychain it keeps the browser's behaviour
+and says so under Settings → App. Mentions, direct messages and incoming calls become native notifications while the
+window is not in front (a click opens the conversation; Settings → Notifications switches them off for this device),
+and a tray icon shows the voice state (in a channel, speaking, muted, deafened) with mute, deafen, leave voice,
+show/hide and quit in its menu; closing the window keeps the app in the tray (Settings → App).
+
 ## Translations
 
 The web client ships English (default) and German. To add a language, copy `web/src/i18n/en.json` to

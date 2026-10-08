@@ -7,6 +7,14 @@
  * encryption core in the webview) and sends a message in an end-to-end encrypted channel, which the node stores as
  * ciphertext only.
  *
+ * Keychain, tray and notifications: the first start runs without a keychain (`TAVRN_DESKTOP_KEYCHAIN=unavailable`, a
+ * session without a Secret Service), so the key stays in IndexedDB and Settings → App warns. The app is then started
+ * again with the keyring crate's in-memory mock store (`TAVRN_DESKTOP_KEYCHAIN=memory`; xvfb has no Secret Service):
+ * the key moves into the keychain, the IndexedDB copy is removed, and a reload opens the store from the keychain
+ * alone. The tray's state is read through the shell's `tray_status` command: the client reports "disconnected" after
+ * sign-in, and the shell maps a state it is given to its icon and tooltip (voice itself needs WebRTC, which the
+ * distributions' WebKitGTK lacks; the Playwright spec desktop-shell.spec.ts drives the tray with real voice).
+ *
  * Plain WebDriver over HTTP (no client library): tauri-driver (`cargo install tauri-driver --locked`) drives the app
  * through WebKitWebDriver (Linux packages `webkit2gtk-driver` or `webkitgtk-webdriver`). Linux only; under `xvfb-run`
  * without a display.
@@ -96,6 +104,28 @@ const waitFor = (css, timeoutMs) => until(`element ${css}`, () => find(css), tim
 const step = (name) => console.log(`desktop smoke: ${name}`);
 const xpath = async (path) => (await wd("POST", `/session/${session}/element`, { using: "xpath", value: path }))[ELEMENT];
 const script = (body, args = []) => wd("POST", `/session/${session}/execute/sync`, { script: body, args });
+/** Runs `body` (which ends by calling `done(value)`) in the page; failures come back as `{ error }`. */
+const scriptAsync = (body, args = []) =>
+  wd("POST", `/session/${session}/execute/async`, {
+    script: `const done = arguments[arguments.length - 1]; (async () => { ${body} })().then(done, (e) => done({ error: String(e) }));`,
+    args,
+  });
+/** A command of the shell, called like the bundled client calls it. */
+const shell = (cmd, args = {}) => scriptAsync("return await window.__TAURI_INTERNALS__.invoke(arguments[0], arguments[1]);", [cmd, args]);
+/** The account's record in the local key store (IndexedDB): is the local key persisted there, or in the keychain? */
+const keyRecord = (account) =>
+  scriptAsync(
+    `return await new Promise((resolve, reject) => {
+       const req = indexedDB.open("tavrn-crypto", 1);
+       req.onerror = () => reject(req.error);
+       req.onsuccess = () => {
+         const get = req.result.transaction("accounts").objectStore("accounts").get(arguments[0]);
+         get.onsuccess = () => resolve(get.result ? { hasKey: !!get.result.key, keychain: !!get.result.keychain } : null);
+       };
+     });`,
+    [account],
+  );
+const goTo = (path) => script("history.pushState({}, '', arguments[0]); dispatchEvent(new PopStateEvent('popstate'));", [path]);
 
 // ---- the node's API (the account is registered there, like the Playwright helpers do) ----
 async function api(method, path, body, token) {
@@ -145,15 +175,9 @@ async function main() {
   await until("the node", async () => (await fetch(`${nodeUrl}/healthz`)).ok, 120_000);
   step(`node at ${nodeUrl}`);
 
-  // The app's settings and web storage go to the scratch directory (a clean first start).
-  const xdg = { XDG_CONFIG_HOME: join(scratch, "config"), XDG_DATA_HOME: join(scratch, "data"), XDG_CACHE_HOME: join(scratch, "cache") };
-  for (const d of Object.values(xdg)) mkdirSync(d, { recursive: true });
-  start(driverBin, ["--port", String(driverPort), "--native-port", String(driverPort + 1)], xdg);
-  await until("tauri-driver", async () => (await fetch(`${driver}/status`)).ok);
-
-  const created = await wd("POST", "/session", { capabilities: { alwaysMatch: { browserName: "wry", "tauri:options": { application: app } } } });
-  session = created.sessionId;
-  step("app started");
+  // The first start has no keychain (a session without a Secret Service).
+  await startApp("unavailable");
+  step("app started (no keychain)");
 
   const input = await waitFor("input[name=node]", 60_000);
   step("node picker shown");
@@ -225,6 +249,89 @@ async function main() {
   if (JSON.stringify(stored).includes(sent)) throw new Error("the node stored the message in plaintext");
   if (!list.some((m) => m.encrypted === true && m.author === `${username}@localhost`)) throw new Error(`no encrypted message of the account: ${JSON.stringify(stored).slice(0, 300)}`);
   step("message sent in an encrypted channel; the node holds ciphertext only");
+
+  // ---- the keychain ----
+  const address = `${username}@localhost`;
+  const fallback = await keyRecord(address);
+  if (!fallback?.hasKey || fallback.keychain) throw new Error(`without a keychain the key belongs in IndexedDB: ${JSON.stringify(fallback)}`);
+  await goTo("/settings/app");
+  await waitFor("[data-testid=app-keys-fallback]", 30_000);
+  step("no keychain: the key stays in IndexedDB, Settings → App warns");
+
+  // The tray: the client reported its voice state; the shell maps a state to its icon and tooltip.
+  const tray = await until("the client's tray state", async () => {
+    const s = await shell("tray_status");
+    return s?.state === "disconnected" && s.tooltip === "Tavrn" ? s : null;
+  });
+  if (tray.close_to_tray !== true) throw new Error(`close to tray is on by default: ${JSON.stringify(tray)}`);
+  const labels = { tooltip: "Tavrn · Lounge (Smoke) · Microphone muted", show: "Show Tavrn", hide: "Hide Tavrn", mute: "Mute microphone", deafen: "Deafen", leave: "Leave voice channel", quit: "Quit Tavrn" };
+  const set = await shell("tray_set", { state: "muted", labels });
+  if (set?.error) throw new Error(`tray_set: ${set.error}`);
+  const muted = await shell("tray_status");
+  if (muted.state !== "muted" || muted.tooltip !== labels.tooltip) throw new Error(`the tray did not take the state: ${JSON.stringify(muted)}`);
+  step(`tray: client state "disconnected", then "muted" (tray icon ${tray.available ? "shown" : "not available on this display"})`);
+
+  // Notifications: the shell shows valid ones (no notification server under xvfb: nothing visible) and refuses
+  // paths outside the client.
+  const shown = await shell("notify", { notice: { title: "Smoke", body: "A test notification", path: "/" } });
+  if (shown?.error) throw new Error(`notify: ${shown.error}`);
+  const refused = await shell("notify", { notice: { title: "Smoke", body: "x", path: "https://evil.example/" } });
+  if (!String(refused?.error).includes("notify.invalid")) throw new Error(`notify accepted a foreign path: ${JSON.stringify(refused)}`);
+  step("notifications: shown through the shell, foreign paths refused");
+
+  // Second start, now with a keychain: the key moves there and the IndexedDB copy goes.
+  await restartApp("memory");
+  await waitFor("[data-testid=app-shell]", 60_000);
+  const status = await shell("keychain_status");
+  if (status?.backend !== "memory" || !status.available) throw new Error(`keychain status: ${JSON.stringify(status)}`);
+  const entry = await until("the keychain entry", async () => {
+    const e = await shell("keychain_get", { account: address });
+    return Array.isArray(e) && e.length === 32 ? e : null;
+  });
+  const migrated = await keyRecord(address);
+  if (migrated?.hasKey || !migrated?.keychain) throw new Error(`the IndexedDB copy should be gone: ${JSON.stringify(migrated)}`);
+  step(`keychain: the ${entry.length}-byte key moved from IndexedDB into the keychain`);
+
+  // A reload opens the local key store from the keychain alone (no unlock prompt).
+  await script("location.reload()");
+  await sleep(1000);
+  await waitFor("[data-testid=app-shell]", 60_000);
+  await sleep(1500);
+  const banners = await wd("POST", `/session/${session}/elements`, { using: "css selector", value: "[data-testid=e2ee-banner]" });
+  if (banners.length) throw new Error("after the reload the local key store is locked");
+  await goTo("/settings/app");
+  const keys = await waitFor("[data-testid=app-keys][data-protection=keychain]", 30_000);
+  step(`reload: unlocked from the keychain; Settings → App: ${(await text(keys)).slice(0, 60)}…`);
+}
+
+/** Starts tauri-driver and the app with the keychain backend `keychain` (TAVRN_DESKTOP_KEYCHAIN). */
+let driverProcess = null;
+async function startApp(keychain) {
+  // The app's settings and web storage go to the scratch directory (a clean first start, kept for restarts).
+  const xdg = { XDG_CONFIG_HOME: join(scratch, "config"), XDG_DATA_HOME: join(scratch, "data"), XDG_CACHE_HOME: join(scratch, "cache") };
+  for (const d of Object.values(xdg)) mkdirSync(d, { recursive: true });
+  driverProcess = start(driverBin, ["--port", String(driverPort), "--native-port", String(driverPort + 1)], { ...xdg, TAVRN_DESKTOP_KEYCHAIN: keychain });
+  await until("tauri-driver", async () => (await fetch(`${driver}/status`)).ok);
+  const created = await wd("POST", "/session", { capabilities: { alwaysMatch: { browserName: "wry", "tauri:options": { application: app } } } });
+  session = created.sessionId;
+}
+
+/** Quits the app and starts it again (same settings and web storage) with another keychain backend. */
+async function restartApp(keychain) {
+  await wd("DELETE", `/session/${session}`).catch(() => undefined);
+  session = null;
+  driverProcess?.kill("SIGTERM");
+  await until("tauri-driver to stop", async () => {
+    try {
+      await fetch(`${driver}/status`);
+      return false;
+    } catch {
+      return true;
+    }
+  });
+  await sleep(500);
+  await startApp(keychain);
+  step(`app restarted (keychain: ${keychain})`);
 }
 
 async function cleanup(failed) {
