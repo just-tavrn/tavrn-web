@@ -21,9 +21,13 @@ export interface Note {
   type: OscillatorType;
   /** Relative loudness 0…1 (multiplied with the cue volume). */
   gain: number;
+  /** Hz at the end of the note: the pitch glides there (a single rising or falling tone). */
+  to?: number;
 }
 
 const n = (freq: number, at: number, dur: number, gain = 1, type: OscillatorType = "sine"): Note => ({ freq, at, dur, type, gain });
+/** One soft sine gliding from `from` to `to` Hz. */
+const glide = (from: number, to: number, dur: number, gain: number): Note => ({ ...n(from, 0, dur, gain), to });
 
 /** The notes of every cue (C major, mid register, nothing shrill). */
 export const PATTERNS: Record<Cue, Note[]> = {
@@ -42,6 +46,12 @@ export const PATTERNS: Record<Cue, Note[]> = {
   // A muted tone, as the plug glyph.
   connection_lost: [n(311.13, 0, 0.24, 0.6, "triangle")],
   connection_restored: [n(392, 0, 0.12, 0.6, "triangle"), n(523.25, 0.11, 0.16, 0.6, "triangle")],
+  // Push-to-talk (issue #37): one short, soft tone gliding up when the microphone opens and down when it closes; the
+  // priority speaker's sit a fourth higher.
+  ptt_on: [glide(440, 587.33, 0.09, 0.5)],
+  ptt_off: [glide(587.33, 440, 0.09, 0.45)],
+  priority_on: [glide(587.33, 783.99, 0.09, 0.5)],
+  priority_off: [glide(783.99, 587.33, 0.09, 0.45)],
 };
 
 /** Total length of a cue in seconds. */
@@ -111,6 +121,7 @@ export function scheduleCue(ctx: CueContext, cue: Cue, volume: number, target: S
     const gain = ctx.createGain();
     osc.type = note.type;
     osc.frequency.setValueAtTime(note.freq, t0 + note.at);
+    if (note.to) osc.frequency.exponentialRampToValueAtTime(note.to, t0 + note.at + note.dur);
     gain.gain.setValueAtTime(0, t0 + note.at);
     gain.gain.linearRampToValueAtTime(peak * note.gain, t0 + note.at + ATTACK);
     gain.gain.exponentialRampToValueAtTime(0.0001, t0 + note.at + note.dur);

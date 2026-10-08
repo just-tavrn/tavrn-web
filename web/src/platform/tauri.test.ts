@@ -41,11 +41,13 @@ function backend(state: { node: string | null; web?: string | null; domain?: str
         return null;
       case "register_hotkey": {
         const { combo } = args as { combo: string };
-        if (combo === "KeyM") throw "hotkey.typing_key";
+        if (combo === "Ctrl+KeyQ+KeyM") throw "hotkey.invalid";
         return combo.replace("control", "Ctrl");
       }
       case "unregister_hotkey":
         return null;
+      case "set_hotkeys_enabled":
+        return (args as { enabled: boolean }).enabled;
     }
     throw `unknown command ${cmd}`;
   });
@@ -232,9 +234,17 @@ describe("global hotkeys (platform.hotkeys)", () => {
     const p = await createTauriPlatform(detached());
     await expect(p.hotkeys?.register("toggle_mute", "control+Shift+KeyM")).resolves.toBe("Ctrl+Shift+KeyM");
     expect(calls.find((c) => c.cmd === "register_hotkey")?.args).toEqual({ action: "toggle_mute", combo: "control+Shift+KeyM" });
-    await expect(p.hotkeys?.register("push_to_talk", "KeyM")).rejects.toBe("hotkey.typing_key");
+    await expect(p.hotkeys?.register("push_to_talk", "Ctrl+KeyQ+KeyM")).rejects.toBe("hotkey.invalid");
     await p.hotkeys?.unregister("toggle_mute");
     expect(calls.find((c) => c.cmd === "unregister_hotkey")?.args).toEqual({ action: "toggle_mute" });
+  });
+
+  it("switches the shell's key listener with the sign-in", async () => {
+    const calls = backend({ node: "https://tavrn.example" });
+    const p = await createTauriPlatform(detached());
+    await expect(p.hotkeys?.setEnabled(true)).resolves.toBe(true);
+    await expect(p.hotkeys?.setEnabled(false)).resolves.toBe(false);
+    expect(calls.filter((c) => c.cmd === "set_hotkeys_enabled").map((c) => c.args)).toEqual([{ enabled: true }, { enabled: false }]);
   });
 
   it("hands the shell's presses and releases to every subscriber until it unsubscribes", async () => {

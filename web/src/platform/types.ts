@@ -163,17 +163,26 @@ export interface HotkeyEvent {
 }
 
 /**
- * Global hotkeys of the desktop app. The shell validates a combination (`Ctrl+Alt+Shift+Super+<KeyboardEvent.code>`),
- * refuses one that another action uses and grabs it through the OS; the client keeps the bindings in its voice
- * settings and registers them at start.
+ * System-wide hotkeys of the desktop app (issue #36). The shell validates a binding (`Ctrl+Alt+Shift+Super+<code>`,
+ * a key alone, a modifier alone), refuses one that another action uses and observes the bound keys with a system-wide
+ * key listener (never a grab: other programs still get them); the client keeps the bindings in its voice settings
+ * and registers them at start.
  */
 export interface PlatformHotkeys {
-  /** Binds `combo` to `action`; resolves to its canonical spelling, rejects with a `hotkey.*` code. */
+  /**
+   * Binds `combo` to `action`; resolves to its canonical spelling, rejects with a `hotkey.*` code
+   * (`hotkey.unavailable`: kept, but this system has no key listener).
+   */
   register(action: HotkeyAction, combo: string): Promise<string>;
   /** Removes the binding of `action`. */
   unregister(action: HotkeyAction): Promise<void>;
-  /** Presses and releases of the bound combinations; returns the unsubscriber. */
+  /** Presses and releases of the bound actions; returns the unsubscriber. */
   subscribe(handler: (event: HotkeyEvent) => void): () => void;
+  /**
+   * Signed in or out: the key listener runs only while signed in and bindings exist. Resolves whether it runs now,
+   * rejects with `hotkey.unavailable` when it should but cannot.
+   */
+  setEnabled(enabled: boolean): Promise<boolean>;
 }
 
 /* Extension points: their members are defined by the steps that implement them. */

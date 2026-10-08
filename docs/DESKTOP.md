@@ -23,7 +23,7 @@ Tauri CLI) and the Rust crate `tavrn-desktop` in `apps/desktop/src-tauri` with a
 |---|---|
 | The main window shows only the bundled client: `tauri://localhost` (Linux), `https://tauri.localhost` (Windows), in development the Vite dev server. Every other navigation is refused; web links (http, https, mailto) open in the system browser, new windows are never opened. The click-to-play embeds load in their frames. | `src-tauri/src/guard.rs`, `src/lib.rs` |
 | Content Security Policy: scripts only from the bundle (`script-src 'self' 'wasm-unsafe-eval'`, no eval, no inline scripts, no third-party scripts), `connect-src` https and wss to any node plus plain http/ws to `localhost` and `127.0.0.1` (development nodes), images and media from https, frames only for the embed providers. | `tauri.conf.json` `app.security.csp` |
-| One capability for the main window: the app's commands, nothing else (no `remote` origins, no plugin or core permissions, no global Tauri object). The global-shortcut plugin is used from Rust only; its JavaScript commands are not granted. No capability names the sign-in window (a test checks every capability file). | `src-tauri/capabilities/main.json`, `build.rs`, `src-tauri/src/conf_tests.rs` |
+| One capability for the main window: the app's commands, nothing else (no `remote` origins, no plugin or core permissions, no global Tauri object). No capability names the sign-in window (a test checks every capability file). | `src-tauri/capabilities/main.json`, `build.rs`, `src-tauri/src/conf_tests.rs` |
 | The sign-in window (`connect`) shows only the chosen node's `/connect?session=…` page (`open_connect` checks origin, path and parameters) and follows https pages from there (identity providers redirect), plain http only on this computer; it never loads the bundled client or `tauri:`, `file:`, `data:`, `javascript:` or `blob:` URLs, and new windows go to the system browser. The node's web client there runs as a plain web client: only the main window counts as the app (`platform/tauriDetect.ts`). | `src-tauri/src/guard.rs`, `src/lib.rs` |
 | The microphone and the camera are granted to the main window without a prompt of the webview (it shows only the bundled client); screen capture and every other permission keep the webview's default. | `src-tauri/src/media.rs` |
 | The node URL is validated twice: in the client and again in the shell before it is stored. | `web/src/platform/nodeUrl.ts`, `src-tauri/src/node_url.rs` |
@@ -46,7 +46,7 @@ runs Tauri code. Everything that imports Tauri APIs lives under `platform/tauri*
 | `node` | — | the chosen node with its identity domain and web origin; `set(url, details)` validates and persists them (shell command `set_node`), `resolve(domain)` finds the node of an address (shell command `resolve_node`) |
 | `auth` | the connect flow with this origin (redirect to `<web>/connect`, back at `/connect/callback`) | the sign-in on the node's page: an app session, the page in the sign-in window (`open_connect`), polling, the exchange with the PKCE verifier, `close_connect` |
 | `updater` | — | signed updates (absent while the build has no updater key) |
-| `hotkeys` | — | global hotkeys: `register(action, combo)`, `unregister(action)`, `subscribe(handler)` (shell commands `register_hotkey`, `unregister_hotkey`, `listen_hotkeys`) |
+| `hotkeys` | — | system-wide hotkeys: `register(action, combo)`, `unregister(action)`, `subscribe(handler)`, `setEnabled(signedIn)` (shell commands `register_hotkey`, `unregister_hotkey`, `listen_hotkeys`, `set_hotkeys_enabled`) |
 | `keystore` | — | the OS keychain for the key of the local key store (commands `keychain_get`, `keychain_set`, `keychain_delete`, `keychain_status`) |
 | `notifications` | — | native notifications and their clicks (`notify`, `shell_events`) |
 | `tray` | — | the tray icon with the voice state, close to tray, quit (`tray_set`, `tray_status`, `set_close_to_tray`, `quit_app`) |
@@ -145,8 +145,11 @@ events on desktop and would replace the webview's `Notification` with an IPC bri
 
 ## Tray and close to tray
 
-The tray icon is the logo with a badge for the voice state; the badges are drawn at start from the bundled logo
-(`icons/32x32.png`), each with a dark outline, so they stand out on light and dark panels and against the teal logo:
+The tray icon is the logo with a badge for the voice state; the icons are drawn at start from the bundled logo
+(`icons/128x128@2x.png`): the logo is cropped to its visible mark and scaled to fill the 32 px canvas with at most 1 px
+of margin (a unit test checks at 16, 22 and 32 px that the mark covers at least 85 % of the canvas), so it is as large
+as its neighbours in the tray. Each badge has a dark outline, so it stands out on light and dark panels and against the
+teal logo:
 
 | State | Icon |
 |---|---|
@@ -168,10 +171,19 @@ extension; without it, start the app again to get the window back.
 
 ## Icons
 
-The app icons are generated from the project logo: `pnpm --filter @tavrn/desktop tauri icon ../../web/public/icon-512.png`
-writes `src-tauri/icons/` (32, 64, 128 and 256 pixel PNGs and `icon.png` for Linux and the window, `icon.ico` for the
-Windows installer, taskbar and window, `icon.icns` for macOS later); delete the generated `android/`, `ios/` and
-Windows Store images, the app does not use them. A unit test checks that every icon of `tauri.conf.json` exists. The
+The app icons are generated from the project logo, cropped first (the web icon keeps a wide margin for the browser's
+masks; a window, taskbar or tray icon should fill its canvas):
+
+```sh
+magick web/public/icon-512.png -trim +repage -set option:side "%[fx:round(max(w,h)*32/30)]" -background none \
+  -gravity center -extent "%[side]x%[side]" -resize 512x512 /tmp/tavrn-icon.png
+pnpm --filter @tavrn/desktop tauri icon /tmp/tavrn-icon.png
+```
+
+This writes `src-tauri/icons/` (32, 64, 128 and 256 pixel PNGs and `icon.png` for Linux and the window, `icon.ico` for
+the Windows installer, taskbar and window, `icon.icns` for macOS later); delete the generated `android/`, `ios/` and
+Windows Store images, the app does not use them. Unit tests check that every icon of `tauri.conf.json` exists and that
+the PNG icons fill at least 85 % of their canvas. The
 logo and the icons are not covered by the Apache License ([TRADEMARK.md](../TRADEMARK.md)).
 
 ## Licence and terms in the installers
@@ -238,34 +250,61 @@ Nodes without `connect.app` keep password and TOTP in the app; their passkeys, S
 in the sign-in window keeps its own sign-in on the node's origin (like a browser tab), so the next handoff only asks for
 the confirmation.
 
-## Global hotkeys
+## Hotkeys
 
-Push-to-talk and the priority speaker (while held), mute and deafen (toggles) work while the app is in the background
-or minimized, for example during a game. **Settings → Voice & video → Global hotkeys** has a recorder per action:
-"Change", then press the combination; Escape cancels, Backspace removes the binding. The browser shows a hint instead.
+Push-to-talk and the priority speaker (while held), mute and deafen (toggles) have **one binding each**, and it works
+in the window and system-wide, also while the app is in the background or minimized and a game has the focus. The
+push-to-talk key is recorded under **Settings → Voice & video → Input mode**, the priority key under **Priority
+speaker**, mute and deafen under **More hotkeys**. Each recorder: "Change", then press a key, a modifier alone or a
+combination; Escape cancels, Backspace removes the binding. While an action is held its key lights up in the settings,
+which also tests the binding (in the background too).
 
-- **Combinations** are modifiers and one key, written as the client captures them: `Ctrl+Alt+Shift+Super+<KeyboardEvent.code>`
-  in this order, e.g. `Ctrl+Shift+KeyM`, `F13`, `Alt+Numpad1`. `Super` is the Windows key on Windows, Cmd on macOS and
-  Super/Meta on Linux; the recorder shows these names. A modifier alone (only Ctrl, for example) cannot be bound.
-- **A global grab takes the key from every other program.** So a key that types text (letters, digits, punctuation,
-  Space, Enter, Tab, arrows, Delete) needs Ctrl, Alt or Super as well; function keys F1–F24, the numpad and Insert, Home,
-  End, Page Up/Down, Pause, Scroll Lock and Print Screen may stand alone. Escape and Backspace are the recorder's keys.
-- **Conflicts** are refused with a message: the same combination for two actions (the shell refuses it as well), and a
-  global combination equal to the push-to-talk or priority key of the window (Settings → Voice & video, the keys that
-  work while the window has focus) — in both directions, since both would fire. A combination the system refuses
-  (another program holds it) is reported and the old binding stays.
-- **Where they live:** with the voice settings of the client (`desktopHotkeys` in `tavrn.voice.settings`); the shell
-  keeps only the registry of the running app (`src-tauri/src/hotkeys.rs`). At every start the client hands the stored
-  bindings to the shell; a combination that cannot be registered then stays stored and is reported once.
-- **How they reach the call:** the shell grabs the combination through
-  [tauri-plugin-global-shortcut](https://v2.tauri.app/plugin/global-shortcut/) and reports presses and releases over a
-  channel the client opened (`listen_hotkeys`); `web/src/voice/hotkeys.ts` drives push-to-talk (the gate opens while
-  held, with the release delay of the settings), the priority speaker, mute and deafen. Push-to-talk needs the input
-  mode "Push to talk". Focus changes of the window do not release a global hold. Outside a call a toggle shows what
-  the next voice channel gets.
-- **Platforms:** Windows (`RegisterHotKey`) and Linux on X11 (`XGrabKey`). In a Wayland session the grab works only
-  through XWayland, i.e. while an X11 window (many games, Wine and Proton included) has the focus; native Wayland has no
-  global shortcuts for applications yet.
+- **Bindings** are written as the client captures them: modifiers in the order `Ctrl+Alt+Shift+Super+` and one key as
+  `KeyboardEvent.code` names it: `KeyV`, `F13`, `Ctrl+Shift+KeyM`, or a modifier alone as its own code: `ControlLeft`,
+  `ShiftRight` (recorded when it is released without another key). A modifier in a combination means either side; a
+  modifier alone is exactly that key. `Super` is the Windows key on Windows, Cmd on macOS and Super/Meta on Linux; the
+  recorder shows these names ("Ctrl links" in German). Any key of the shell's table may be bound (letters, digits,
+  punctuation, F1–F24, the numpad, navigation and media keys, every modifier); a plain key or a lone modifier is fine,
+  because the keys are observed, not reserved. Escape and Backspace alone are the recorder's keys.
+- **Matching:** an action is pressed when its key goes down while its modifiers are held (more may be held, e.g. Shift to
+  run while holding push-to-talk; of `Ctrl+KeyM` and `Ctrl+Shift+KeyM` the more specific one wins) and released when its
+  key or one of its modifiers goes up. Key repeat changes nothing. A key typed into a text field of the app never
+  triggers (a character without Ctrl, Alt or Super).
+- **Conflicts:** two actions never share a binding (the client refuses it with a message, the shell refuses it as well).
+- **Where they live:** with the voice settings of the client (`hotkeys` in `tavrn.voice.settings`); settings from
+  before (the window's `pttKey` and `priorityKey`, the separate `desktopHotkeys`) are migrated once: the window's key
+  is the binding, a global one fills an empty or untouched key, mute and deafen come from the global ones. The shell
+  keeps only the registry of the running app (`src-tauri/src/hotkeys.rs`); at every start the client hands it the
+  stored bindings.
+- **How they reach the call:** in the window the client's own key events (`web/src/voice/hotkeys.ts`, also the browser);
+  in the desktop app also the shell's key listener, which reports presses and releases of the bound actions over a
+  channel the client opened (`listen_hotkeys`). While the window has focus both see the same key; the client counts the
+  window's events then and the shell's only while the window is in the background (`voice/hotkeyHolds.ts`), so a tap
+  toggles once, and a key held while switching to the game stays held. Push-to-talk opens the gate while held (with the
+  release delay of the settings) and needs the input mode "Push to talk"; the priority key also opens it there.
+  Outside a call a toggle shows what the next voice channel gets.
+
+### The key listener: observe, never grab, never log
+
+The shell's listener (`src-tauri/src/keywatch/`) **observes** keys: it never takes a key away from the program that has
+the focus, so a game still receives the push-to-talk key it also uses (a grab, as `RegisterHotKey`/`XGrabKey` do, would
+take it away, and the system refuses grabs of a modifier alone).
+
+| Platform | How | Notes |
+|---|---|---|
+| Windows | a low-level keyboard hook (`SetWindowsHookExW(WH_KEYBOARD_LL)`) on a thread of its own, which always passes the key on (`CallNextHookEx`); the scan code tells the physical key | Keys going to a window of a program that runs elevated (as administrator) are not seen by an app that is not elevated (UIPI): push-to-talk does not react in such a game. A release the hook misses (Ctrl+Alt+Del, an elevated window in front) is caught by a check every 500 ms (`GetAsyncKeyState`), so push-to-talk cannot stay open. |
+| Linux, X11 | the X RECORD extension on two X connections of its own ([x11rb](https://crates.io/crates/x11rb), pure Rust); the keycode tells the physical key | The releases of X11's key repeat are dropped (the key is still down in the server's key map). |
+| Linux, Wayland | the same through XWayland | Only keys going to X11 programs (many games, Wine and Proton) are seen, not those of native Wayland windows; without an X display the settings say that the keys work while the window has focus. |
+| macOS | not yet | the keys work while the window has focus |
+
+**Privacy:** the listener runs only while bindings exist and the client is signed in (`set_hotkeys_enabled`; signing
+out stops it and releases what is held). The platform callback drops every key that is not part of a binding at once
+(a 256-bit set of the bound keys and their modifiers); what passes becomes a press or release of an action, and only
+that reaches the client. Nothing is stored, logged or sent anywhere: no key codes, no text, no timing.
+
+**Anti-cheat:** the listener reads keys and injects nothing (no input is sent, no process is touched). Low-level
+keyboard hooks are what voice chat programs commonly use for push-to-talk and are not known to be flagged by the
+common anti-cheat systems; if one ever objects, removing the bindings stops the hook (no binding, no listener).
 
 ## Voice on Linux
 
@@ -300,7 +339,7 @@ What the browser gets from "the client is served by the node" and what the app d
 | Captcha on login or registration | on the node's page in the sign-in window | the widget is a third-party script (CSP `script-src 'self'`) bound to the node's host name; the node's page loads it. Without `connect.app`: a notice, use the browser for that step. |
 | Web push | not offered | there is no service worker in the app (its pages are not served by the node). The app shows native notifications instead while it runs (also from the tray); nothing reaches a device where the app is not running. |
 | Desktop notifications of the browser | replaced | native notifications ("Notifications" above). |
-| Voice and video | Windows (WebView2, Chromium): expected to work as in Chromium (to be confirmed by hand); Linux: not available with the distributions' WebKitGTK | end-to-end encrypted media needs WebRTC with encoded transforms. The app switches WebRTC on, but the WebKitGTK of Ubuntu 24.04 and 26.04 is built without it (no `RTCPeerConnection`, checked in the built app; "Voice on Linux"), so the client refuses to join, as in browsers that lack it. Global hotkeys work regardless. Screen and window sharing through the platform APIs is a later step. |
+| Voice and video | Windows (WebView2, Chromium): expected to work as in Chromium (to be confirmed by hand); Linux: not available with the distributions' WebKitGTK | end-to-end encrypted media needs WebRTC with encoded transforms. The app switches WebRTC on, but the WebKitGTK of Ubuntu 24.04 and 26.04 is built without it (no `RTCPeerConnection`, checked in the built app; "Voice on Linux"), so the client refuses to join, as in browsers that lack it. Hotkeys work regardless. Screen and window sharing through the platform APIs is a later step. |
 | Popping out the whiteboard, "open original" in the media viewer | not offered | the app opens no window for content (only the sign-in window); maximize and the download icon cover it. |
 | The terms and other pages that open in a new tab | open on the node's web client in the system browser | the app opens no window for content. |
 | Updates while the repository is private | do not download | the updater fetches `latest.json` and the installers from the public release URLs. |
@@ -330,17 +369,21 @@ picker accepts `http://127.0.0.1:8080`).
 
 - Rust: `cargo test` in `apps/desktop/src-tauri` (node URL validation, settings file, navigation guards of both windows,
   the sign-in page URL, the resolver with a fake fetcher and SRV lookup for every step and error plus the real fetcher
-  against a local server, updater key, the hotkey registry: combinations, Super/Cmd/Win, typing keys, duplicates,
-  refused grabs; the media permissions; the security properties of `tauri.conf.json` and the capabilities, the `.deb`
+  against a local server, updater key, the hotkeys: bindings (single keys, lone modifiers, combinations, Super/Cmd/Win,
+  duplicates), the matcher (most specific binding, release by a modifier, key repeat), the key table of both platforms,
+  the key filter and the listener's lifecycle (only while signed in with bindings, holds released when it stops); the
+  media permissions; the security properties of `tauri.conf.json` and the capabilities, the `.deb`
   dependencies, the keychain with the in-memory mock store of keyring-core and its entry names, notification
   validation, the tray's states, icons and labels, the installer licence and the icons of the bundle).
   `cargo test -- --ignored os_keychain` writes, reads and deletes an entry in the real keychain of the machine;
-  desktop.yml runs it with gnome-keyring in a D-Bus session.
+  desktop.yml runs it with gnome-keyring in a D-Bus session. `xvfb-run -a cargo test -- --ignored x11_` drives the X11
+  key listener with `xdotool` (a lone modifier, an unwatched key, key repeat).
 - Vitest, with the other tests of the client (`just test`): the platform detection and both implementations (Tauri
   mocked with `@tauri-apps/api/mocks`), the node picker, Settings → App, the API base plumbing, the flows the app
   does not offer, the key store with the keychain (migration, fallback, lock on close, sign-out), the routing of
-  notifications, the notification settings of the app, the tray wiring; the global hotkeys (settings, conflict check,
-  recorder, the bridge to the shell, the voice session's reaction to presses and releases).
+  notifications, the notification settings of the app, the tray wiring; the hotkeys (the settings and their migration,
+  conflict check, recorder with lone modifiers, matching the window's keys, merging them with the shell's, the bridge to
+  the shell and its listener switch, the voice session's reaction to presses and releases).
 - `node --test` of the update manifest script and of the installer licence (`pnpm --filter @tavrn/desktop test`).
 - Playwright (`e2e/tests/desktop.spec.ts`, simulated shell): the node picker with address first and the advanced URL,
   Settings → App, the sign-in on the node's page with the page in a second browser context, "Unlock with a passkey" and
@@ -359,7 +402,10 @@ picker accepts `http://127.0.0.1:8080`).
   test checks the tray state the client reported (`tray_status`), gives the shell a state, and shows a notification.
   The app then starts again with the keyring crates' in-memory mock store (`TAVRN_DESKTOP_KEYCHAIN=memory`, because
   xvfb has no Secret Service): the key moves into the keychain, the IndexedDB copy is gone, and a reload unlocks from
-  the keychain alone. Both values of `TAVRN_DESKTOP_KEYCHAIN` only ever store less (in memory, or nothing). Last, signed
+  the keychain alone. Both values of `TAVRN_DESKTOP_KEYCHAIN` only ever store less (in memory, or nothing). Last, the
+  hotkeys: Settings → Voice binds Ctrl+Alt+M to mute and the left Ctrl alone to push-to-talk, the window is minimized
+  and real key presses of the X server (`xdotool`) reach the client through the shell's key listener: Ctrl+Alt+M
+  toggles mute and back, holding the left Ctrl holds push-to-talk until it is released. Last, signed
   out, the passkey button opens the sign-in window with `method=passkey` and the app's key in the fragment; WebKitGTK
   has no WebAuthn, so the ceremony is simulated (a software passkey registered over the API with a PRF entry, and the
   test seals the PRF output to the key the page kept), and the built app opens the box and unlocks without the

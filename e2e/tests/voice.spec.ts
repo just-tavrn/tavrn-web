@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { expect, test, type APIRequestContext, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { NODE, createRoomViaApi, inviteCode, loginAs, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, type Account } from "./helpers";
+import { hideDeviceNamesUntilAsked } from "./voice-helpers";
 
 /** An animated GIF (profile.spec.ts fixture) for the avatar animation on the stage. */
 const ANIMATED_GIF = resolve(dirname(new URL(import.meta.url).pathname), "../fixtures/animated.gif");
@@ -467,7 +468,12 @@ test.describe("Voice channels", () => {
     await expect(page.getByTestId("vad-indicator")).not.toHaveAttribute("data-open", "true", { timeout: 10_000 });
     await page.getByTestId("ptt-capture").click();
     await page.keyboard.press("KeyB");
-    await expect(page.getByTestId("ptt-key")).toHaveText("KeyB");
+    await expect(page.getByTestId("ptt-key")).toHaveText("B");
+    // A modifier alone (released without another key) is a push-to-talk key as well.
+    await page.getByTestId("ptt-capture").click();
+    await page.keyboard.down("ShiftRight");
+    await page.keyboard.up("ShiftRight");
+    await expect(page.getByTestId("ptt-key")).toHaveText("Shift rechts");
     await page.getByTestId("mode-vad").check();
     await expect(page.getByTestId("ptt-settings")).toHaveCount(0);
     await page.getByTestId("mic-check-stop").click();
@@ -479,6 +485,10 @@ test.describe("Voice channels", () => {
     await page.getByTestId("cues-off").uncheck();
     await expect(page.getByTestId("cue-leave")).toBeChecked();
     await expect(page.getByTestId("cue-join")).not.toBeChecked();
+    // Push-to-talk and priority speaker tones (issue #37): a switch each, on by default; the preview plays.
+    for (const cue of ["ptt_on", "ptt_off", "priority_on", "priority_off"]) await expect(page.getByTestId(`cue-${cue}`)).toBeChecked();
+    await page.getByRole("button", { name: "Abspielen: Push-to-Talk: Mikrofon geht auf", exact: true }).click();
+    await expect.poll(async () => (await scheduledCues(page)).some((c) => c.cue === "ptt_on")).toBe(true);
 
     // Settings persist per device.
     await page.reload();
@@ -506,6 +516,25 @@ test.describe("Voice channels", () => {
     await page.getByRole("button", { name: "Gong löschen" }).click();
     await expect(page.getByTestId("soundboard-list")).not.toContainText("Gong");
   });
+  test("Device lists: filled without the microphone test (the browser asks once through “Show devices”)", async ({ browser, request }) => {
+    const { owner } = await setup(request);
+    const context = await browser.newContext({ ...test.info().project.use, permissions: [] });
+    opened.push(context);
+    const page = await context.newPage();
+    // Chromium's test flags reveal the device names at once; a browser without them hides them until it is asked.
+    await page.addInitScript(hideDeviceNamesUntilAsked);
+    await loginAs(page, owner);
+    await page.goto("/settings/voice");
+    await expect(page.getByTestId("devices-hidden")).toBeVisible();
+    await expect(page.getByTestId("mic-select").locator("option")).toHaveCount(1);
+    await page.getByTestId("devices-unlock").click();
+    await expect.poll(async () => page.getByTestId("mic-select").locator("option").count(), { timeout: 10_000 }).toBeGreaterThan(1);
+    await expect(page.getByTestId("devices-hidden")).toHaveCount(0);
+    // The microphone test never ran.
+    await expect(page.getByTestId("mic-check-start")).toBeVisible();
+    await expect(page.getByTestId("mic-meter")).toHaveAttribute("data-level", "-100");
+  });
+
   test("Hear yourself: the live loopback starts, shows its timer and stops next to record and play back; leaving the settings ends it", async ({ page, request }) => {
     test.setTimeout(90_000);
     const { owner } = await setup(request);

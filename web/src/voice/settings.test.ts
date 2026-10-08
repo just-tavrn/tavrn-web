@@ -21,19 +21,40 @@ describe("voice & video settings (design note 4.9)", () => {
     expect(s.userVolumes).toEqual({ "a@n": 50, "b@n": 0 });
   });
 
-  it("the priority speaker key defaults to none and keeps a key code (design note 4.13 item 3)", () => {
-    expect(DEFAULT_SETTINGS.priorityKey).toBe("");
-    expect(normalizeSettings({ priorityKey: "KeyV" }).priorityKey).toBe("KeyV");
-    expect(normalizeSettings({ priorityKey: 5 }).priorityKey).toBe("");
-    expect(normalizeSettings({ priorityKey: "x".repeat(65) }).priorityKey).toBe("");
+  it("one binding per action: push-to-talk defaults to `, the others to none; bindings in the canonical spelling (issue #36)", () => {
+    expect(DEFAULT_SETTINGS.hotkeys).toEqual({ push_to_talk: "Backquote", priority: "", toggle_mute: "", toggle_deafen: "" });
+    const s = normalizeSettings({ hotkeys: { push_to_talk: "ControlLeft", priority: "KeyV", toggle_mute: "Ctrl+Shift+KeyM", toggle_deafen: "<script>", shutdown: "F1" } });
+    expect(s.hotkeys).toEqual({ push_to_talk: "ControlLeft", priority: "KeyV", toggle_mute: "Ctrl+Shift+KeyM", toggle_deafen: "" });
+    expect(normalizeSettings({ hotkeys: { toggle_mute: `Ctrl+${"K".repeat(70)}` } }).hotkeys.toggle_mute).toBe("");
+    expect(normalizeSettings({ hotkeys: { priority: 5 } }).hotkeys.priority).toBe("");
+    // Push-to-talk may be removed (then push-to-talk mode has no key until one is recorded).
+    expect(normalizeSettings({ hotkeys: { push_to_talk: "" } }).hotkeys.push_to_talk).toBe("");
+    // Older spellings of the Windows/Super key become MetaLeft/MetaRight.
+    expect(normalizeSettings({ hotkeys: { push_to_talk: "OSLeft", priority: "Ctrl+OSRight" } }).hotkeys).toMatchObject({ push_to_talk: "MetaLeft", priority: "Ctrl+MetaRight" });
+    // Two actions never share a binding: the later one is dropped.
+    expect(normalizeSettings({ hotkeys: { push_to_talk: "F13", toggle_mute: "F13" } }).hotkeys).toMatchObject({ push_to_talk: "F13", toggle_mute: "" });
+    expect(Object.keys(normalizeSettings({}))).not.toEqual(expect.arrayContaining(["pttKey", "priorityKey", "desktopHotkeys"]));
   });
 
-  it("keeps the global hotkeys of the desktop app per action, in the canonical spelling (docs/DESKTOP.md)", () => {
-    expect(DEFAULT_SETTINGS.desktopHotkeys).toEqual({ push_to_talk: "", priority: "", toggle_mute: "", toggle_deafen: "" });
-    const s = normalizeSettings({ desktopHotkeys: { push_to_talk: "F13", toggle_mute: "Ctrl+Shift+KeyM", toggle_deafen: "<script>", priority: 5, shutdown: "F1" } });
-    expect(s.desktopHotkeys).toEqual({ push_to_talk: "F13", priority: "", toggle_mute: "Ctrl+Shift+KeyM", toggle_deafen: "" });
-    expect(normalizeSettings({ desktopHotkeys: { toggle_mute: `Ctrl+${"K".repeat(70)}` } }).desktopHotkeys.toggle_mute).toBe("");
-    expect(normalizeSettings({ desktopHotkeys: "F13" }).desktopHotkeys).toEqual(DEFAULT_SETTINGS.desktopHotkeys);
+  it("migrates the keys of the window and the separate global hotkeys into one binding per action (issue #36)", () => {
+    // The window's keys are the bindings now; mute and deafen come from the global hotkeys.
+    const both = normalizeSettings({ pttKey: "ControlLeft", priorityKey: "KeyV", desktopHotkeys: { push_to_talk: "F13", priority: "F14", toggle_mute: "Ctrl+Shift+KeyM", toggle_deafen: "F12" } });
+    expect(both.hotkeys).toEqual({ push_to_talk: "ControlLeft", priority: "KeyV", toggle_mute: "Ctrl+Shift+KeyM", toggle_deafen: "F12" });
+    // A global push-to-talk wins over the untouched default key of the window, and fills an empty priority key.
+    const global = normalizeSettings({ pttKey: "Backquote", priorityKey: "", desktopHotkeys: { push_to_talk: "F13", priority: "F14", toggle_mute: "", toggle_deafen: "" } });
+    expect(global.hotkeys).toEqual({ push_to_talk: "F13", priority: "F14", toggle_mute: "", toggle_deafen: "" });
+    // Only the window's keys (the browser): kept as they were.
+    expect(normalizeSettings({ pttKey: "KeyB", priorityKey: "" }).hotkeys).toEqual({ push_to_talk: "KeyB", priority: "", toggle_mute: "", toggle_deafen: "" });
+    expect(normalizeSettings({ inputMode: "ptt" }).hotkeys).toEqual(DEFAULT_SETTINGS.hotkeys);
+    // A migrated conflict (the same key for two actions) keeps the first action's binding.
+    expect(normalizeSettings({ pttKey: "F12", desktopHotkeys: { toggle_deafen: "F12" } }).hotkeys).toMatchObject({ push_to_talk: "F12", toggle_deafen: "" });
+    // Once migrated, the old fields are gone from what is stored.
+    useVoiceSettings.setState({ settings: normalizeSettings({ pttKey: "KeyB", desktopHotkeys: { toggle_mute: "F13" } }) });
+    useVoiceSettings.getState().update({ inputMode: "ptt" });
+    const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}");
+    expect(stored.hotkeys).toEqual({ push_to_talk: "KeyB", priority: "", toggle_mute: "F13", toggle_deafen: "" });
+    expect(stored).not.toHaveProperty("pttKey");
+    expect(stored).not.toHaveProperty("desktopHotkeys");
   });
 
   it("only keeps a background image that is a data: URL of an image", () => {

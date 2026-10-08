@@ -1,18 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
+import { fireEvent } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetPlatform, setPlatform, type HotkeyAction, type HotkeyEvent, type Platform, type PlatformHotkeys } from "../platform";
 import { browserPlatform } from "../platform/browser";
 import { DEFAULT_SETTINGS, useVoiceSettings } from "./settings";
 import { useToasts } from "../stores/toasts";
+import { useAuth } from "../stores/auth";
 import { IDLE, useVoice } from "./store";
 
 const voice = vi.hoisted(() => ({ pushToTalk: vi.fn(), setPrioritySpeaker: vi.fn(), toggleMute: vi.fn(async () => {}), toggleDeafen: vi.fn(async () => {}) }));
 vi.mock("./index", () => voice);
 
-import { bindHotkey, browserKeyConflict, clearHotkey, comboFromEvent, comboLabel, desktopHeld, handleHotkey, hotkeyConflict, keyOs, resetHotkeysForTest, restoreHotkeys, startDesktopHotkeys } from "./hotkeys";
+import { actionOfKeyDown, bindHotkey, clearHotkey, comboLabel, handleHotkey, hotkeyConflict, hotkeyHeld, keyLabel, keyOs, releasesBinding, resetHotkeysForTest, restoreHotkeys, setRecording, startHotkeys, useHotkeyState } from "./hotkeys";
 
-/** A fake shell: canonical spelling, typing keys refused, events through `emit`. */
-function fakeShell(refuse: Record<string, string> = {}) {
+/** A fake shell: canonical spelling, refusals by binding, events through `emit`, the listener's switch. */
+function fakeShell(refuse: Record<string, string> = {}, opts: { listener?: "ok" | "unavailable" } = {}) {
   const handlers = new Set<(e: HotkeyEvent) => void>();
   const bound = new Map<HotkeyAction, string>();
   const hotkeys: PlatformHotkeys = {
@@ -28,6 +30,10 @@ function fakeShell(refuse: Record<string, string> = {}) {
       handlers.add(h);
       return () => handlers.delete(h);
     },
+    setEnabled: vi.fn(async (enabled: boolean) => {
+      if (enabled && bound.size && opts.listener === "unavailable") throw "hotkey.unavailable";
+      return enabled && bound.size > 0;
+    }),
   };
   const platform: Platform = { ...browserPlatform, kind: "desktop", isDesktop: true, hotkeys };
   setPlatform(platform);
@@ -35,39 +41,43 @@ function fakeShell(refuse: Record<string, string> = {}) {
 }
 
 const settings = () => useVoiceSettings.getState().settings;
+const bindings = (patch: Partial<typeof DEFAULT_SETTINGS.hotkeys>) => useVoiceSettings.getState().update({ hotkeys: { ...settings().hotkeys, ...patch } });
+const key = (code: string, mods: Partial<Record<"ctrlKey" | "altKey" | "shiftKey" | "metaKey", boolean>> = {}) => ({ code, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...mods });
+const signIn = () => useAuth.setState({ token: "t" } as never);
+const signOut = () => useAuth.setState({ token: null } as never);
+
+let stop: (() => void) | null = null;
 
 beforeEach(() => {
   localStorage.clear();
   useVoiceSettings.setState({ settings: DEFAULT_SETTINGS });
   useToasts.setState({ toasts: [] } as never);
+  signOut();
   resetHotkeysForTest();
   vi.clearAllMocks();
 });
 
-afterEach(() => resetPlatform());
+afterEach(() => {
+  stop?.();
+  stop = null;
+  vi.restoreAllMocks();
+  resetPlatform();
+});
 
-describe("combinations from the keyboard", () => {
-  const key = (code: string, mods: Partial<Record<"ctrlKey" | "altKey" | "shiftKey" | "metaKey", boolean>> = {}) => ({ code, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...mods });
-
-  it("builds the canonical spelling in a fixed order", () => {
-    expect(comboFromEvent(key("KeyM", { shiftKey: true, ctrlKey: true }))).toBe("Ctrl+Shift+KeyM");
-    expect(comboFromEvent(key("F13"))).toBe("F13");
-    expect(comboFromEvent(key("Digit1", { metaKey: true, altKey: true, ctrlKey: true, shiftKey: true }))).toBe("Ctrl+Alt+Shift+Super+Digit1");
-  });
-
-  it("waits while only modifiers are held", () => {
-    for (const code of ["ControlLeft", "ShiftRight", "AltLeft", "MetaLeft", "OSLeft", "CapsLock", ""]) expect(comboFromEvent(key(code, { ctrlKey: true }))).toBeNull();
-  });
-
-  it("shows the platform's key names", () => {
+describe("key names", () => {
+  it("shows the platform's names, a lone modifier with its side", () => {
     expect(comboLabel("Ctrl+Shift+KeyM", "linux")).toBe("Ctrl + Shift + M");
-    expect(comboLabel("Super+Digit1", "linux")).toBe("Super + 1");
     expect(comboLabel("Super+Digit1", "windows")).toBe("Win + 1");
     expect(comboLabel("Ctrl+Alt+Super+KeyK", "mac")).toBe("Control + Option + Cmd + K");
     expect(comboLabel("Alt+Numpad5", "windows")).toBe("Alt + Num 5");
-    expect(comboLabel("Ctrl+Backquote", "linux")).toBe("Ctrl + `");
-    expect(comboLabel("F13", "linux")).toBe("F13");
     expect(comboLabel("Ctrl+ArrowUp", "linux")).toBe("Ctrl + ↑");
+    expect(comboLabel("Backquote", "linux")).toBe("`");
+    expect(comboLabel("KeyV", "linux")).toBe("V");
+    expect(keyLabel("ControlLeft", "windows")).toBe("Ctrl links");
+    expect(keyLabel("ShiftRight", "linux")).toBe("Shift rechts");
+    expect(keyLabel("MetaLeft", "windows")).toBe("Win links");
+    expect(keyLabel("AltRight", "mac")).toBe("Option rechts");
+    expect(comboLabel("Shift+ControlLeft", "linux")).toBe("Shift + Ctrl links");
   });
 
   it("recognizes the operating system for the key names", () => {
@@ -77,96 +87,170 @@ describe("combinations from the keyboard", () => {
   });
 });
 
-describe("conflict check", () => {
-  it("refuses a combination of another global action", () => {
-    const s = { ...DEFAULT_SETTINGS, desktopHotkeys: { ...DEFAULT_SETTINGS.desktopHotkeys, toggle_mute: "Ctrl+Shift+KeyM" } };
-    expect(hotkeyConflict(s, "toggle_deafen", "Ctrl+Shift+KeyM")).toEqual({ key: "voice.hotkeys.conflict_desktop", action: "toggle_mute" });
-    expect(hotkeyConflict(s, "toggle_mute", "Ctrl+Shift+KeyM")).toBeNull();
-    expect(hotkeyConflict(s, "toggle_deafen", "Ctrl+Shift+KeyD")).toBeNull();
+describe("matching the window's keys", () => {
+  const b = { ...DEFAULT_SETTINGS.hotkeys, push_to_talk: "ControlLeft", priority: "KeyV", toggle_mute: "Ctrl+KeyM", toggle_deafen: "Ctrl+Shift+KeyM" };
+
+  it("a single key, a lone modifier, a combination; the most specific binding wins", () => {
+    expect(actionOfKeyDown(b, key("ControlLeft", { ctrlKey: true }))).toBe("push_to_talk");
+    expect(actionOfKeyDown(b, key("ControlRight", { ctrlKey: true }))).toBeNull();
+    expect(actionOfKeyDown(b, key("KeyV"))).toBe("priority");
+    expect(actionOfKeyDown(b, key("KeyV", { shiftKey: true }))).toBe("priority");
+    expect(actionOfKeyDown(b, key("KeyM", { ctrlKey: true }))).toBe("toggle_mute");
+    expect(actionOfKeyDown(b, key("KeyM", { ctrlKey: true, shiftKey: true }))).toBe("toggle_deafen");
+    expect(actionOfKeyDown(b, key("KeyM"))).toBeNull();
   });
 
-  it("refuses a global binding equal to a key of the window (push-to-talk, priority speaker)", () => {
-    const s = { ...DEFAULT_SETTINGS, pttKey: "F13", priorityKey: "F14" };
-    expect(hotkeyConflict(s, "toggle_mute", "F13")).toEqual({ key: "voice.hotkeys.conflict_browser" });
-    expect(hotkeyConflict(s, "push_to_talk", "F14")).toEqual({ key: "voice.hotkeys.conflict_browser" });
-    expect(hotkeyConflict(s, "push_to_talk", "Ctrl+F13")).toBeNull();
-  });
-
-  it("refuses a key of the window equal to a global binding", () => {
-    const s = { ...DEFAULT_SETTINGS, desktopHotkeys: { ...DEFAULT_SETTINGS.desktopHotkeys, push_to_talk: "F13", toggle_mute: "Ctrl+KeyM" } };
-    expect(browserKeyConflict(s, "F13")).toBe(true);
-    expect(browserKeyConflict(s, "KeyM")).toBe(false);
-    expect(browserKeyConflict(s, "F14")).toBe(false);
+  it("the key or one of its modifiers going up ends the hold", () => {
+    expect(releasesBinding("ControlLeft", key("ControlLeft"))).toBe(true);
+    expect(releasesBinding("Ctrl+KeyM", key("ControlLeft", {}))).toBe(true);
+    expect(releasesBinding("Ctrl+KeyM", key("ShiftLeft", { ctrlKey: true }))).toBe(false);
+    expect(releasesBinding("KeyV", key("KeyB"))).toBe(false);
   });
 });
 
-describe("binding through the shell", () => {
-  it("stores the shell's canonical spelling in the voice settings", async () => {
-    const shell = fakeShell();
-    await expect(bindHotkey("toggle_mute", "Ctrl+Shift+KeyM")).resolves.toBeNull();
-    expect(settings().desktopHotkeys.toggle_mute).toBe("Ctrl+Shift+KeyM");
-    expect(shell.hotkeys.register).toHaveBeenCalledWith("toggle_mute", "Ctrl+Shift+KeyM");
+describe("conflict check", () => {
+  it("refuses a binding of another action, the same one for the same action is fine", () => {
+    const b = { ...DEFAULT_SETTINGS.hotkeys, toggle_mute: "Ctrl+Shift+KeyM" };
+    expect(hotkeyConflict(b, "toggle_deafen", "Ctrl+Shift+KeyM")).toBe("toggle_mute");
+    expect(hotkeyConflict(b, "toggle_mute", "Ctrl+Shift+KeyM")).toBeNull();
+    expect(hotkeyConflict(b, "priority", "Backquote")).toBe("push_to_talk");
+    expect(hotkeyConflict(b, "toggle_deafen", "Ctrl+Shift+KeyD")).toBeNull();
+  });
+});
+
+describe("binding", () => {
+  it("in the browser: stored for the window, no shell", async () => {
+    await expect(bindHotkey("toggle_mute", "KeyM")).resolves.toBeNull();
+    expect(settings().hotkeys.toggle_mute).toBe("KeyM");
+    expect(await bindHotkey("toggle_deafen", "KeyM")).toMatch(/Stummschalten/);
     await clearHotkey("toggle_mute");
-    expect(settings().desktopHotkeys.toggle_mute).toBe("");
-    expect(shell.hotkeys.unregister).toHaveBeenCalledWith("toggle_mute");
+    expect(settings().hotkeys.toggle_mute).toBe("");
+  });
+
+  it("in the desktop app: the shell's canonical spelling is stored, its listener starts for a signed-in user", async () => {
+    const shell = fakeShell();
+    signIn();
+    await expect(bindHotkey("push_to_talk", "ControlLeft")).resolves.toBeNull();
+    expect(settings().hotkeys.push_to_talk).toBe("ControlLeft");
+    expect(shell.hotkeys.register).toHaveBeenCalledWith("push_to_talk", "ControlLeft");
+    expect(useHotkeyState.getState().listener).toBe("on");
+    await clearHotkey("push_to_talk");
+    expect(settings().hotkeys.push_to_talk).toBe("");
+    expect(shell.hotkeys.unregister).toHaveBeenCalledWith("push_to_talk");
+    expect(useHotkeyState.getState().listener).toBe("off");
   });
 
   it("refuses conflicts before the shell sees them and translates the shell's refusals", async () => {
-    const shell = fakeShell({ "Shift+KeyM": "hotkey.typing_key", F20: "hotkey.unavailable" });
-    useVoiceSettings.getState().update({ pttKey: "F13" });
-    expect(await bindHotkey("toggle_mute", "F13")).toMatch(/Push-to-Talk|Fenster/);
+    const shell = fakeShell({ "Ctrl+KeyQ": "hotkey.invalid" });
+    bindings({ push_to_talk: "F13" });
+    expect(await bindHotkey("toggle_mute", "F13")).toMatch(/Push-to-Talk/);
     expect(shell.hotkeys.register).not.toHaveBeenCalled();
-    expect(await bindHotkey("toggle_mute", "Shift+KeyM")).toMatch(/Strg|Ctrl/);
-    expect(await bindHotkey("toggle_mute", "F20")).toMatch(/System/);
-    expect(settings().desktopHotkeys.toggle_mute).toBe("");
+    expect(await bindHotkey("toggle_mute", "Ctrl+KeyQ")).toMatch(/kein Tastenkürzel/);
+    expect(settings().hotkeys.toggle_mute).toBe("");
   });
 
-  it("restores the stored bindings at start and clears the actions without one", async () => {
-    const shell = fakeShell({ F20: "hotkey.unavailable" });
-    useVoiceSettings.getState().update({ desktopHotkeys: { push_to_talk: "F13", priority: "", toggle_mute: "F20", toggle_deafen: "Ctrl+KeyD" } });
+  it("without a key listener on this system the binding is kept for the window and the settings say so", async () => {
+    fakeShell({ KeyV: "hotkey.unavailable" });
+    await expect(bindHotkey("push_to_talk", "KeyV")).resolves.toBeNull();
+    expect(settings().hotkeys.push_to_talk).toBe("KeyV");
+    expect(useHotkeyState.getState().listener).toBe("unavailable");
+  });
+
+  it("restores the stored bindings at start, clears the actions without one and switches the listener with the sign-in", async () => {
+    const shell = fakeShell({ F20: "hotkey.invalid" });
+    bindings({ push_to_talk: "ControlLeft", toggle_mute: "F20", toggle_deafen: "Ctrl+KeyD" });
+    signIn();
     await restoreHotkeys();
-    expect(shell.hotkeys.register).toHaveBeenCalledWith("push_to_talk", "F13");
+    expect(shell.hotkeys.register).toHaveBeenCalledWith("push_to_talk", "ControlLeft");
     expect(shell.hotkeys.register).toHaveBeenCalledWith("toggle_deafen", "Ctrl+KeyD");
     expect(shell.hotkeys.unregister).toHaveBeenCalledWith("priority");
-    // A combination the system refuses stays in the settings (another program may free it) and is reported once.
-    expect(settings().desktopHotkeys.toggle_mute).toBe("F20");
+    expect(shell.hotkeys.setEnabled).toHaveBeenLastCalledWith(true);
+    // A binding the shell refuses stays in the settings and is reported once.
+    expect(settings().hotkeys.toggle_mute).toBe("F20");
     expect(useToasts.getState().toasts).toHaveLength(1);
   });
 
-  it("does nothing in the browser", async () => {
-    resetPlatform();
-    await restoreHotkeys();
-    expect(startDesktopHotkeys()).toBeTypeOf("function");
-    expect(await bindHotkey("toggle_mute", "F13")).not.toBeNull();
+  it("signing out stops the shell's listener and ends what is held; signing in starts it again", async () => {
+    const shell = fakeShell();
+    bindings({ push_to_talk: "ControlLeft" });
+    signIn();
+    stop = startHotkeys();
+    await vi.waitFor(() => expect(useHotkeyState.getState().listener).toBe("on"));
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    shell.emit({ action: "push_to_talk", pressed: true });
+    expect(voice.pushToTalk).toHaveBeenLastCalledWith(true);
+    signOut();
+    expect(voice.pushToTalk).toHaveBeenLastCalledWith(false);
+    await vi.waitFor(() => expect(shell.hotkeys.setEnabled).toHaveBeenLastCalledWith(false));
+    expect(useHotkeyState.getState().listener).toBe("off");
+    signIn();
+    await vi.waitFor(() => expect(shell.hotkeys.setEnabled).toHaveBeenLastCalledWith(true));
   });
 });
 
 describe("the voice session reacts to presses and releases", () => {
-  it("push-to-talk and the priority speaker follow press and release, once per hold", () => {
+  it("push-to-talk and the priority speaker follow press and release, once per hold (key repeat)", () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
     handleHotkey({ action: "push_to_talk", pressed: true });
     handleHotkey({ action: "push_to_talk", pressed: true });
-    expect(desktopHeld("push_to_talk")).toBe(true);
+    expect(hotkeyHeld("push_to_talk")).toBe(true);
+    expect(useHotkeyState.getState().held.push_to_talk).toBe(true);
     handleHotkey({ action: "push_to_talk", pressed: false });
     expect(voice.pushToTalk.mock.calls).toEqual([[true], [false]]);
-    expect(desktopHeld("push_to_talk")).toBe(false);
+    expect(hotkeyHeld("push_to_talk")).toBe(false);
     handleHotkey({ action: "priority", pressed: true });
     handleHotkey({ action: "priority", pressed: false });
     handleHotkey({ action: "priority", pressed: false });
     expect(voice.setPrioritySpeaker.mock.calls).toEqual([[true], [false]]);
   });
 
+  it("the window's keys act in the browser, not while a recorder listens or while typing a character into a field", () => {
+    bindings({ push_to_talk: "ControlLeft", toggle_mute: "KeyM" });
+    stop = startHotkeys();
+    fireEvent.keyDown(window, { code: "ControlLeft", key: "Control", ctrlKey: true });
+    fireEvent.keyDown(window, { code: "ControlLeft", key: "Control", ctrlKey: true, repeat: true });
+    fireEvent.keyUp(window, { code: "ControlLeft", key: "Control" });
+    expect(voice.pushToTalk.mock.calls).toEqual([[true], [false]]);
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    fireEvent.keyDown(input, { code: "KeyM", key: "m" });
+    expect(voice.toggleMute).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { code: "KeyM", key: "m" });
+    fireEvent.keyUp(window, { code: "KeyM", key: "m" });
+    expect(voice.toggleMute).toHaveBeenCalledTimes(1);
+    setRecording(true);
+    fireEvent.keyDown(window, { code: "KeyM", key: "m" });
+    expect(voice.toggleMute).toHaveBeenCalledTimes(1);
+    setRecording(false);
+    input.remove();
+  });
+
+  it("in the desktop app a key both the window and the shell see toggles once", () => {
+    const shell = fakeShell();
+    bindings({ toggle_mute: "KeyM" });
+    stop = startHotkeys();
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    shell.emit({ action: "toggle_mute", pressed: true });
+    fireEvent.keyDown(window, { code: "KeyM", key: "m" });
+    shell.emit({ action: "toggle_mute", pressed: false });
+    fireEvent.keyUp(window, { code: "KeyM", key: "m" });
+    expect(voice.toggleMute).toHaveBeenCalledTimes(1);
+  });
+
   it("a binding that changes or goes away while held is released", async () => {
     fakeShell();
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
     handleHotkey({ action: "push_to_talk", pressed: true });
     await bindHotkey("push_to_talk", "F14");
     expect(voice.pushToTalk.mock.calls).toEqual([[true], [false]]);
     handleHotkey({ action: "priority", pressed: true });
     await clearHotkey("priority");
     expect(voice.setPrioritySpeaker.mock.calls).toEqual([[true], [false]]);
-    expect(desktopHeld("priority")).toBe(false);
+    expect(hotkeyHeld("priority")).toBe(false);
   });
 
   it("mute and deafen toggle on the press only", () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
     handleHotkey({ action: "toggle_mute", pressed: true });
     handleHotkey({ action: "toggle_mute", pressed: false });
     handleHotkey({ action: "toggle_deafen", pressed: true });
@@ -176,19 +260,21 @@ describe("the voice session reacts to presses and releases", () => {
   });
 
   it("outside a call a toggle says what the next voice channel gets (no other feedback there)", async () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
     useVoice.setState({ ...IDLE });
     voice.toggleMute.mockImplementationOnce(async () => useVoice.setState({ muted: true }));
     handleHotkey({ action: "toggle_mute", pressed: true });
     await vi.waitFor(() => expect(useToasts.getState().toasts.map((x) => x.testId)).toEqual(["hotkey-voice-state"]));
     expect(useToasts.getState().toasts[0]!.title).toMatch(/stumm/i);
+    handleHotkey({ action: "toggle_mute", pressed: false });
     voice.toggleDeafen.mockImplementationOnce(async () => useVoice.setState({ deafened: true, muted: true }));
     handleHotkey({ action: "toggle_deafen", pressed: true });
     await vi.waitFor(() => expect(useToasts.getState().toasts).toHaveLength(2));
     expect(useToasts.getState().toasts[1]!.title).toMatch(/Ton aus/);
+    handleHotkey({ action: "toggle_deafen", pressed: false });
     // In a call the cues and the controls show it.
     useToasts.setState({ toasts: [] } as never);
     useVoice.setState({ status: "connected" });
-    handleHotkey({ action: "toggle_mute", pressed: false });
     handleHotkey({ action: "toggle_mute", pressed: true });
     await Promise.resolve();
     await Promise.resolve();
@@ -196,12 +282,13 @@ describe("the voice session reacts to presses and releases", () => {
     useVoice.setState({ ...IDLE });
   });
 
-  it("listens to the shell from the start until it stops", async () => {
+  it("listens to the shell from the start until it stops", () => {
     const shell = fakeShell();
-    const stop = startDesktopHotkeys();
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    const off = startHotkeys();
     shell.emit({ action: "toggle_mute", pressed: true });
     expect(voice.toggleMute).toHaveBeenCalledTimes(1);
-    stop();
+    off();
     shell.emit({ action: "toggle_mute", pressed: false });
     shell.emit({ action: "toggle_mute", pressed: true });
     expect(voice.toggleMute).toHaveBeenCalledTimes(1);

@@ -78,7 +78,10 @@ tiles and controls as voice channels, end-to-end encrypted with the conversation
 
 Media is end-to-end encrypted with keys from the channel's MLS group: the client never publishes before
 LiveKit confirmed encryption and refuses to join in browsers without insertable streams. **Settings →
-Voice & video** (kept per device, applied live): microphone and speaker with a level meter, two microphone
+Voice & video** (kept per device, applied live): microphone and speaker with a level meter (browsers name
+the devices only once the page may use the microphone: the desktop app asks for it when the tab opens, the
+browser offers **Show devices**, also on the first click into a list, and the lists follow devices plugged in or
+out), two microphone
 tests with the same processing as in a call (**Hear yourself** plays the microphone back live with a timer
 and stops after one minute, when you leave the settings or when you join a voice channel, and is not available
 while you are in one; it asks for headphones and mutes itself while the sound is loud and concentrated on one
@@ -88,8 +91,9 @@ five seconds), a test tone, input/output volume, automatic gain, echo cancellati
 with a live "transmitting" light or push-to-talk (key and release delay), camera with preview, resolution and
 frame rate within the node's limits, mirroring and background blur (strength slider, quality fast/balanced/high
 with mask smoothing) or an image (MediaPipe served by the node, turned off automatically on machines that cannot
-keep up, with the measured numbers), soft notification sounds (join, leave, mute, deafen, streams, connection;
-volume and a switch per sound), the ringtone volume, and a **connection test** that tries every path to the
+keep up, with the measured numbers), soft notification sounds (join, leave, mute, deafen, streams, connection, and a soft rising and falling
+tone when push-to-talk or the priority key opens and closes the microphone, heard only by you, never while the server
+keeps the microphone closed; volume and a switch per sound), the ringtone volume, and a **connection test** that tries every path to the
 node's media server (UDP per address, TCP, TURN) and says what to fix when one fails. Room owners upload soundboard clips under room
 settings → Soundboard; members with `use_soundboard` play them from the call controls into their own
 (encrypted) microphone track. LiveKit, RNNoise and the background effects are only loaded once voice is used.
@@ -235,13 +239,12 @@ window is not in front (a click opens the conversation; Settings → Notificatio
 and a tray icon shows the voice state (in a channel, speaking, muted, deafened) with mute, deafen, leave voice,
 show/hide and quit in its menu; closing the window keeps the app in the tray (Settings → App).
 
-**Global hotkeys** (app only): Settings → Voice & video → Global hotkeys binds push-to-talk and the priority speaker
-(held), mute and deafen (toggles) to key combinations that also work while the app is in the background or minimized,
-for example during a game. A recorder per action takes the combination (Escape cancels, Backspace removes it) and
-shows the key names of the platform (Super, Win or Cmd). The bindings are kept with the voice settings, apart from the
-push-to-talk and priority keys of the window, and are handed to the shell at every start; a combination that another
-action or a key of the window already uses is refused. The browser shows a hint instead (DESKTOP.md "Global
-hotkeys").
+**Hotkeys:** push-to-talk (Settings → Voice & video → Input mode), the priority speaker and, under **More hotkeys**,
+mute and deafen have one binding each: a single key, a modifier alone (left Ctrl, right Shift, …) or a combination,
+taken by a recorder (Escape cancels, Backspace removes the binding) that shows the key names of the platform (Super,
+Win or Cmd) and lights the key up while it is held. In the browser they work while the tab has focus; the desktop app
+also observes them system-wide, while a game has the focus, without taking the keys away from it (DESKTOP.md
+"Hotkeys"). A key of another action is refused; a character typed into a text field never triggers.
 
 ## Translations
 

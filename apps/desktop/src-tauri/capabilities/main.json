@@ -25,6 +25,7 @@
     "allow-quit-app",
     "allow-register-hotkey",
     "allow-unregister-hotkey",
-    "allow-listen-hotkeys"
+    "allow-listen-hotkeys",
+    "allow-set-hotkeys-enabled"
   ]
 }

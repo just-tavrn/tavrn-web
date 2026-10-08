@@ -53,6 +53,7 @@ function createHotkeys(): PlatformHotkeys {
       handlers.add(handler);
       return () => handlers.delete(handler);
     },
+    setEnabled: (enabled) => invoke<boolean>("set_hotkeys_enabled", { enabled }),
   };
 }
 

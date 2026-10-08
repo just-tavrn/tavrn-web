@@ -11,6 +11,7 @@ pub mod events;
 pub mod guard;
 pub mod hotkeys;
 pub mod keychain;
+pub mod keywatch;
 pub mod media;
 pub mod node_url;
 pub mod notify;
@@ -74,9 +75,6 @@ pub fn run() {
         if cfg!(windows) || session_bus() { builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| events::show_main(app))) } else { builder };
     let result = builder
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(
-            tauri_plugin_global_shortcut::Builder::new().with_handler(|app, shortcut, event| app.state::<hotkeys::Hotkeys>().dispatch(shortcut, event)).build(),
-        )
         .manage(hotkeys::Hotkeys::default())
         .invoke_handler(tauri::generate_handler![
             commands::get_config,
@@ -101,6 +99,7 @@ pub fn run() {
             hotkeys::register_hotkey,
             hotkeys::unregister_hotkey,
             hotkeys::listen_hotkeys,
+            hotkeys::set_hotkeys_enabled,
         ])
         .on_window_event(|window, event| {
             if window.label() != MAIN_WINDOW {
