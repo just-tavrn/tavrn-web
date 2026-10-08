@@ -19,17 +19,10 @@
 name: Desktop
 
 on:
-  # Draft pull requests get the quick checks only (ci.yml); the Linux build with its smoke test and the NSIS
-  # cross-build run once a pull request is marked ready for review, on every push after that, and on pushes to main.
-  # The .msi (windows-latest) only by hand (workflow_dispatch) and on release tags.
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - apps/desktop/**
-      - web/**
-      - pnpm-lock.yaml
-      - pnpm-workspace.yaml
-      - .github/workflows/desktop.yml
+  # Development phase (2026-10-08): pull requests run the quick checks of ci.yml only. The Linux build with its
+  # smoke test and the NSIS cross-build run on pushes to main that touch the app or the client, and by hand
+  # (`gh workflow run desktop.yml --ref <branch>` for a pull request branch). The .msi (windows-latest) only by
+  # hand with `windows: true` and on release tags. Changes to this file alone start nothing: dispatch to verify.
   push:
     branches: [main]
     paths:
@@ -37,7 +30,6 @@ on:
       - web/**
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
-      - .github/workflows/desktop.yml
   workflow_dispatch:
     inputs:
       windows:
@@ -63,7 +55,7 @@ permissions:
 
 concurrency:
   group: desktop-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -72,7 +64,7 @@ env:
 jobs:
   linux:
     name: Desktop (Linux)
-    if: ${{ vars.CI_ENABLED == 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    if: ${{ vars.CI_ENABLED == 'true' }}
     # tavrn-heavy for trusted events (the trust rule of the organization's rust-ci.yml: never forks or Dependabot,
     # whose code would run in the runner VM); release builds stay GitHub-hosted, since they carry the updater key and
     # no long-lived secret besides TAVRN_READ_PAT belongs on the self-hosted runners.
@@ -222,7 +214,6 @@ jobs:
     name: Desktop (Windows NSIS, cross-compiled)
     if: >-
       ${{ vars.CI_ENABLED == 'true' && !inputs.release-tag &&
-          (github.event_name != 'pull_request' || !github.event.pull_request.draft) &&
           github.event_name != 'pull_request_target' && github.actor != 'dependabot[bot]' &&
           (github.event_name != 'pull_request' ||
            (github.event.pull_request.head.repo.full_name == github.repository &&
