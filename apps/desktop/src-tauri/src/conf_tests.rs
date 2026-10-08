@@ -70,7 +70,20 @@ fn the_capability_grants_only_the_app_commands_to_the_main_window() {
     assert_eq!(cap["windows"], serde_json::json!([crate::MAIN_WINDOW]));
     assert!(cap.get("remote").is_none(), "no remote origin may call the shell");
     let permissions: Vec<&str> = cap["permissions"].as_array().map(|p| p.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
-    assert_eq!(permissions, ["allow-get-config", "allow-set-node", "allow-app-info", "allow-open-external", "allow-check-update", "allow-install-update"]);
+    assert_eq!(
+        permissions,
+        [
+            "allow-get-config",
+            "allow-set-node",
+            "allow-app-info",
+            "allow-open-external",
+            "allow-check-update",
+            "allow-install-update",
+            "allow-register-hotkey",
+            "allow-unregister-hotkey",
+            "allow-listen-hotkeys"
+        ]
+    );
     assert_eq!(conf()["app"]["security"]["capabilities"], serde_json::json!(["main"]));
 }
 
@@ -95,4 +108,13 @@ fn updates_come_from_the_github_releases_and_are_signed() {
 #[test]
 fn installers_for_linux_and_windows() {
     assert_eq!(conf()["bundle"]["targets"], serde_json::json!(["deb", "appimage", "msi", "nsis"]));
+}
+
+#[test]
+fn the_deb_brings_the_gstreamer_plugins_of_webrtc() {
+    let depends: Vec<String> =
+        conf()["bundle"]["linux"]["deb"]["depends"].as_array().map(|d| d.iter().filter_map(Value::as_str).map(str::to_string).collect()).unwrap_or_default();
+    for plugin in ["gstreamer1.0-plugins-bad", "gstreamer1.0-plugins-good", "gstreamer1.0-gl", "gstreamer1.0-pipewire | gstreamer1.0-pulseaudio"] {
+        assert!(depends.contains(&plugin.to_string()), "the .deb lacks {plugin} (voice on Linux, docs/DESKTOP.md)");
+    }
 }

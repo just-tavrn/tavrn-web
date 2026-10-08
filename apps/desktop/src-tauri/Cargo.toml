@@ -26,6 +26,11 @@ tauri-plugin-updater = "2.13"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# WebRTC and media streams of the WebKitGTK webview (src/media.rs); the version wry uses.
+[target.'cfg(target_os = "linux")'.dependencies]
+webkit2gtk = { version = "2.0", features = ["v2_40"] }
+tauri-plugin-global-shortcut = "2"
+
 [lints.clippy]
 unwrap_used = "deny"
 expect_used = "warn"

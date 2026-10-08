@@ -7,6 +7,8 @@
 pub mod commands;
 pub mod config;
 pub mod guard;
+pub mod hotkeys;
+pub mod media;
 pub mod node_url;
 pub mod updater;
 
@@ -22,6 +24,10 @@ pub const MAIN_WINDOW: &str = "main";
 pub fn run() {
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new().with_handler(|app, shortcut, event| app.state::<hotkeys::Hotkeys>().dispatch(shortcut, event)).build(),
+        )
+        .manage(hotkeys::Hotkeys::default())
         .invoke_handler(tauri::generate_handler![
             commands::get_config,
             commands::set_node,
@@ -29,6 +35,9 @@ pub fn run() {
             commands::open_external,
             commands::check_update,
             commands::install_update,
+            hotkeys::register_hotkey,
+            hotkeys::unregister_hotkey,
+            hotkeys::listen_hotkeys,
         ])
         .setup(|app| {
             let handle = app.handle();
@@ -36,7 +45,8 @@ pub fn run() {
             let window = app.config().app.windows.iter().find(|w| w.label == MAIN_WINDOW).cloned().ok_or("tauri.conf.json defines no main window")?;
             let dev_url: Option<Url> = if cfg!(dev) { app.config().build.dev_url.clone() } else { None };
             let nav_dev_url = dev_url.clone();
-            WebviewWindowBuilder::from_config(handle, &window)?
+            #[cfg_attr(not(target_os = "linux"), allow(unused_variables))]
+            let main = WebviewWindowBuilder::from_config(handle, &window)?
                 .on_navigation(move |url| match guard::navigation(url, nav_dev_url.as_ref()) {
                     guard::Navigation::Allow => true,
                     guard::Navigation::External(link) => {
@@ -51,7 +61,10 @@ pub fn run() {
                     }
                     NewWindowResponse::Deny
                 })
+                .on_permission_request(|_, kind| media::permission(kind))
                 .build()?;
+            #[cfg(target_os = "linux")]
+            media::enable_webrtc(&main)?;
             Ok(())
         })
         .run(tauri::generate_context!());
