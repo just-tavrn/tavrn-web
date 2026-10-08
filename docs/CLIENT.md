@@ -57,6 +57,16 @@ once from a voice channel's menu (with a confirmation; the target's user limit h
 per-person volume there. A dropped connection rejoins by itself; others see an amber plug on your avatar
 meanwhile instead of you vanishing.
 
+**Voice and stream audio are separate.** A participant's voice (microphone) and their screen share's audio
+each have their own volume (0–200 %, kept per device): the voice volume in the participant's menu, the stream
+volume behind the speaker button on the stream tile and, while they stream, in the menu next to the voice
+volume. The output volume of the settings multiplies with both; the priority speaker still ducks the others'
+voices and streams as before. Deafen mutes voices and the notification sounds about others, but a stream you
+are watching (its tile is on screen) keeps playing: the tile shows a speaker badge and the voice bar says
+"Voices muted, the stream keeps playing". A stream that is not on screen (you opened a text channel or the
+settings) goes silent while deafened. The switch "Streams stay audible while deafened" in the voice settings
+(on by default) turns this off, so that deafen silences everything.
+
 **Calls in DMs and group DMs:** the call button in the conversation header rings the others (a banner with a
 soft synthesized ringtone on all their devices, also across nodes); accepting opens the call view with the same
 tiles and controls as voice channels, end-to-end encrypted with the conversation's keys. Nobody answering within
@@ -64,8 +74,12 @@ tiles and controls as voice channels, end-to-end encrypted with the conversation
 
 Media is end-to-end encrypted with keys from the channel's MLS group: the client never publishes before
 LiveKit confirmed encryption and refuses to join in browsers without insertable streams. **Settings →
-Voice & video** (kept per device, applied live): microphone and speaker with a level meter, a five-second
-test recording and a test tone, input/output volume, automatic gain, echo cancellation, noise suppression
+Voice & video** (kept per device, applied live): microphone and speaker with a level meter, two microphone
+tests with the same processing as in a call (**Hear yourself** plays the microphone back live with a timer
+and stops after one minute, when you leave the settings or when you join a voice channel, and is not available
+while you are in one; it asks for headphones and mutes itself while the sound is loud and concentrated on one
+frequency, the howl of speakers feeding the microphone, until you unmute it; **Record and play back** records
+five seconds), a test tone, input/output volume, automatic gain, echo cancellation, noise suppression
 (off, the browser's, or RNNoise running locally as a WASM audio worklet), a noise gate, voice activation
 with a live "transmitting" light or push-to-talk (key and release delay), camera with preview, resolution and
 frame rate within the node's limits, mirroring and background blur (strength slider, quality fast/balanced/high

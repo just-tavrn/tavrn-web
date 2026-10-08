@@ -506,6 +506,46 @@ test.describe("Voice channels", () => {
     await page.getByRole("button", { name: "Gong löschen" }).click();
     await expect(page.getByTestId("soundboard-list")).not.toContainText("Gong");
   });
+  test("Hear yourself: the live loopback starts, shows its timer and stops next to record and play back; leaving the settings ends it", async ({ page, request }) => {
+    test.setTimeout(90_000);
+    const { owner } = await setup(request);
+    await loginAs(page, owner);
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.goto("/settings/voice");
+    await expect(page.getByTestId("voice-settings")).toBeVisible();
+
+    // One click starts the microphone pipeline (the chain a call publishes) and plays it back live, with a timer.
+    await page.getByTestId("mic-loopback").click();
+    await expect(page.getByTestId("mic-loopback-stop")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("loopback-timer")).toContainText("0:00 / 1:00");
+    await expect(page.getByTestId("loopback-timer")).toContainText(/0:0[2-9] \/ 1:00/, { timeout: 10_000 });
+    await expect.poll(async () => Number(await page.getByTestId("mic-meter").getAttribute("data-level")), { timeout: 15_000 }).toBeGreaterThan(-90);
+    // Record and play back stays, next to it.
+    await page.getByTestId("mic-record").click();
+    await expect(page.getByTestId("mic-playback")).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("mic-loopback-stop").click();
+    await expect(page.getByTestId("loopback-timer")).toHaveCount(0);
+    await expect(page.getByTestId("mic-loopback")).toBeEnabled();
+
+    // Leaving the settings ends it; it is off when the user comes back.
+    await page.getByTestId("mic-loopback").click();
+    await expect(page.getByTestId("loopback-timer")).toBeVisible({ timeout: 15_000 });
+    await page.evaluate(() => {
+      history.pushState({}, "", "/settings/profile");
+      dispatchEvent(new PopStateEvent("popstate"));
+    });
+    await expect(page.getByTestId("voice-settings")).toHaveCount(0);
+    await page.evaluate(() => {
+      history.pushState({}, "", "/settings/voice");
+      dispatchEvent(new PopStateEvent("popstate"));
+    });
+    await expect(page.getByTestId("voice-settings")).toBeVisible();
+    await expect(page.getByTestId("loopback-timer")).toHaveCount(0);
+    await expect(page.getByTestId("mic-loopback")).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+
   test("Moving: drag onto another channel, move everyone with confirmation; animated avatar only while speaking", async ({ browser, request }) => {
     test.setTimeout(240_000);
     const { owner, roomId, voiceId, code } = await setup(request);

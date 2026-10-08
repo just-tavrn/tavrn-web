@@ -31,7 +31,7 @@ export interface MemberMenuContext {
     roles: { id: string; name: string; position: number; is_everyone: boolean; color?: string | null }[];
   };
   /** The voice channel the target is in (this room), with the other voice channels. */
-  voice?: { channelId: string; serverMuted: boolean; channels: { id: string; name: string }[]; inMyCall: boolean; volume: number };
+  voice?: { channelId: string; serverMuted: boolean; channels: { id: string; name: string }[]; inMyCall: boolean; volume: number; streaming?: boolean; streamVolume?: number };
   friend: boolean;
   friendPending: boolean;
   /** DM/group calls exist (phase 4E track V); until then the item is disabled. */
@@ -58,6 +58,8 @@ export interface MemberMenuActions {
   moveTo: (channelId: string) => void;
   toggleRole: (roleId: string, on: boolean) => void;
   volume: (percent: number) => MenuEntry;
+  /** The stream volume slider (issue #20), shown while the target streams. */
+  streamVolume?: (percent: number) => MenuEntry;
   block: () => void;
   /** Copy the user id (voice participant menus only; the member list keeps "copy address"). */
   copyId?: () => void;
@@ -98,6 +100,7 @@ export function memberMenu(c: MemberMenuContext, a: MemberMenuActions, t: T): Me
     a.copyId && menuItem("copy-id", t("menu.copy_id"), a.copyId, { icon: "#" }),
     voice && voice.inMyCall && !c.self && separator("sep-volume"),
     voice && voice.inMyCall && !c.self && a.volume(voice.volume),
+    voice && voice.inMyCall && !c.self && voice.streaming && a.streamVolume?.(voice.streamVolume ?? 100),
     separator("sep-roles"),
     roleItems.length > 0 && submenu("roles", t("menu.member.roles"), roleItems, { icon: "🏷", ...(c.self || ranked ? {} : { disabled: true, reason: hierarchyReason }) }),
     voice && separator("sep-voice"),
@@ -130,12 +133,16 @@ export interface VoiceParticipantMenuContext {
   /** The participant is in the viewer's own call (per-user volume). */
   inMyCall: boolean;
   volume: number;
+  /** The participant streams (stream volume, issue #20). */
+  streaming?: boolean;
+  streamVolume?: number;
   /** The room's other voice channels. */
   channels: { id: string; name: string }[];
 }
 
 export interface VoiceParticipantMenuActions {
   volume: (percent: number) => MenuEntry;
+  streamVolume?: (percent: number) => MenuEntry;
   serverMute: (muted: boolean) => void;
   disconnect: () => void;
   moveTo: (channelId: string) => void;
@@ -152,6 +159,7 @@ export function voiceParticipantMenu(c: VoiceParticipantMenuContext, a: VoicePar
   const mod = (bit: bigint) => !c.self && hasPermission(c.perms, bit);
   return normalizeMenu([
     c.inMyCall && !c.self && a.volume(c.volume),
+    c.inMyCall && !c.self && c.streaming && a.streamVolume?.(c.streamVolume ?? 100),
     separator("sep-voice"),
     mod(Permission.MUTE_MEMBERS) && menuItem("server-mute", c.serverMuted ? t("menu.member.server_unmute") : t("menu.member.server_mute"), () => a.serverMute(!c.serverMuted), { icon: "🎙" }),
     mod(Permission.MUTE_MEMBERS) && menuItem("server-deafen", t("menu.member.server_deafen"), undefined, { icon: "🎧", disabled: true, reason: t("menu.reason.not_supported") }),

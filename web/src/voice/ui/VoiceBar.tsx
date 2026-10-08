@@ -7,7 +7,8 @@ import { roomPath } from "../../components/NodeScope";
 import { useShell } from "../../components/AppShell";
 import { channelName } from "../../lib/names";
 import { leaveVoice, toggleDeafen, toggleMute } from "../index";
-import { useVoice, type Quality } from "../store";
+import { isWatched, useVoice, useWatchedStreams, type Quality } from "../store";
+import { useVoiceSettings } from "../settings";
 import { HeadphonesIcon, HeadphonesOffIcon, LeaveIcon, MicIcon, MicOffIcon, SignalBars } from "./icons";
 import { useAuth } from "../../stores/auth";
 import { callTitle } from "../calls/actions";
@@ -67,6 +68,11 @@ export function VoiceBar() {
   const muted = useVoice((s) => s.muted);
   const deafened = useVoice((s) => s.deafened);
   const quality = useVoice((s) => s.quality);
+  // Deafened while a watched stream with audio keeps playing (issue #20).
+  const watched = useWatchedStreams();
+  const media = useVoice((s) => s.media);
+  const streamPlays = deafened && Object.entries(media).some(([id, m]) => m.screenAudio && isWatched(watched, id));
+  const keepsStreams = useVoiceSettings((s) => s.settings.streamWhileDeafened);
   const names = useCallNames();
   const navigate = useNavigate();
   const { closeNav } = useShell();
@@ -100,6 +106,11 @@ export function VoiceBar() {
             {names.channel}
             {names.room && ` / ${names.room}`}
           </span>
+          {deafened && (
+            <span className="block truncate text-[11px] text-warn" data-testid="voice-bar-deafened">
+              {streamPlays && keepsStreams ? t("voice.bar.deafened_stream") : t("voice.bar.deafened")}
+            </span>
+          )}
         </button>
         {status === "reconnecting" && (
           <button type="button" className="min-h-10 rounded-md px-2 text-xs font-medium text-warn hover:bg-bg-3" onClick={() => void leaveVoice()} data-testid="voice-bar-cancel" title={t("voice.bar.cancel_hint")}>

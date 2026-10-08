@@ -15,7 +15,7 @@
     "dev": "tauri dev",
     "build": "tauri build",
     "e2e": "node e2e/smoke.mjs",
-    "test": "node --test scripts/latest-json.test.mjs scripts/license-txt.test.mjs",
+    "test": "node --test scripts/latest-json.test.mjs scripts/license-txt.test.mjs e2e/smoke-lib.test.mjs",
     "license-txt": "node scripts/license-txt.mjs"
   },
   "devDependencies": {

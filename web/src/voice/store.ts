@@ -29,6 +29,8 @@ export interface ParticipantMedia {
   screen: boolean;
   /** Microphone track muted (LiveKit's view; the node's `muted` flag is reported by the client). */
   micMuted: boolean;
+  /** The screen share carries audio (its own volume, issue #20). */
+  screenAudio?: boolean;
 }
 
 export interface VoiceState {
@@ -101,6 +103,33 @@ export const useSpeaking = create<{ levels: Record<string, number> }>(() => ({ l
  * the sender's tile for the clip's duration. `key` changes with every clip (restarts the animation).
  */
 export const useSoundOverlays = create<{ overlays: Record<string, { emoji: string; key: number }> }>(() => ({ overlays: {} }));
+
+/**
+ * Streams (screen shares) on screen, counted per identity (issue #20): a stream tile registers while it is
+ * mounted. A watched stream stays audible while the user is deafened (`volume.ts`).
+ */
+export const useWatchedStreams = create<{ watching: Record<string, number> }>(() => ({ watching: {} }));
+
+export const isWatched = (s: { watching: Record<string, number> }, identity: string): boolean => (s.watching[identity] ?? 0) > 0;
+
+/** Marks the stream of `identity` as watched; the returned function releases it (once). */
+export function watchStream(identity: string): () => void {
+  const change = (by: number) =>
+    useWatchedStreams.setState((s) => {
+      const watching = { ...s.watching };
+      const n = (watching[identity] ?? 0) + by;
+      if (n > 0) watching[identity] = n;
+      else delete watching[identity];
+      return { watching };
+    });
+  change(1);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    change(-1);
+  };
+}
 
 /** Levels below this count as silence (LiveKit's audio levels are 0…1). */
 const SILENT = 0.01;
