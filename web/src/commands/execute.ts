@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import type { Member, RoomDetail, TavrnApi } from "@tavrn/sdk";
+import type { InvokeRequest, Member, RoomDetail, TavrnApi } from "@tavrn/sdk";
 import { parseDuration, parsePurgeAmount } from "./parse";
 import type { ArgValue, CommandDefinition } from "./types";
 
@@ -35,6 +35,11 @@ export function resolveMember(raw: string, members: Member[]): Member {
   const named = members.filter((m) => m.user.display_name.toLowerCase() === q || (m.nick ?? m.nickname ?? "").toLowerCase() === q);
   if (named.length === 1) return named[0]!;
   throw new CommandError(named.length > 1 ? "cmd.error.user_ambiguous" : "cmd.error.user_unknown");
+}
+
+/** The invocation of an application command (APPLICATIONS.md §5.5), in the thread it is typed in (§7e). */
+export function invokeRequest(command: string, sealed: Pick<InvokeRequest, "args" | "args_ciphertext" | "epoch">, threadId: string | null | undefined): InvokeRequest {
+  return { command, ...sealed, ...(threadId ? { thread_id: threadId } : {}) };
 }
 
 /**

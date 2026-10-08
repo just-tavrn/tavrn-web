@@ -26,7 +26,7 @@ import { MessageList, type AuthorLook } from "./MessageList";
 import { memberColor, memberName } from "../lib/memberGroups";
 import { Composer, type ComposerCommands, type SendPayload } from "./Composer";
 import { availableCommands, builtinRegistry } from "../commands/registry";
-import { CommandError, executeBuiltin, resolveAppArgs } from "../commands/execute";
+import { CommandError, executeBuiltin, invokeRequest, resolveAppArgs } from "../commands/execute";
 import { appDefinitions, mergePalette } from "../commands/merge";
 import type { ArgValue, CommandDefinition } from "../commands/types";
 import { useInteractions } from "../stores/interactions";
@@ -437,7 +437,7 @@ export function ConversationView(p: ConversationViewProps) {
     } else {
       sealed = { args };
     }
-    const res = await api.commands.invoke(conversationId, { command: def.ref, ...sealed });
+    const res = await api.commands.invoke(conversationId, invokeRequest(def.ref, sealed, threadId));
     const notices = useInteractions.getState();
     if (res.message) {
       const m = res.message;
