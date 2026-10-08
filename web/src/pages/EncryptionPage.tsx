@@ -18,6 +18,7 @@ import { RecoveryKeyView } from "../components/auth/RecoveryKeyView";
 import { useNewRecoveryKey } from "../components/auth/useRecoveryKey";
 import { Textarea } from "./settings/common";
 import { hasReauthToken, startSso, takeReauthToken, withReauthToken } from "../lib/sso";
+import { useNodePageUnlock } from "../components/auth/NodePageHandoff";
 
 /** Set in sessionStorage when the user chose to continue without decryption in this tab. */
 export const SKIP_UNLOCK_KEY = "tavrn.e2ee.skip";
@@ -177,7 +178,18 @@ function UnlockView({ busy, error, onRun, onReset, onSkip }: { busy: boolean; er
   const [text, setText] = useState("");
   const remoteHome = useAuth((s) => s.home?.domain ?? null);
   const entries = useQuery({ queryKey: ["secret-storage", "passkeys"], queryFn: () => passkeyEntryIds(api), enabled: !remoteHome });
-  const canPasskey = !remoteHome && passkeysSupported() && (entries.data?.length ?? 0) > 0;
+  // The desktop app has no WebAuthn of the node's domain: the passkey runs on the node's page (an unlock session).
+  const onNodePage = useNodePageUnlock();
+  const canPasskey = !remoteHome && (passkeysSupported() || onNodePage.available) && (entries.data?.length ?? 0) > 0;
+  const unlockWith = (r: { credentialId: string; prf: Uint8Array }) =>
+    onRun(async () => {
+      try {
+        await unlockWithPasskeyPrf(await e2eeContext(), r.credentialId, r.prf);
+      } finally {
+        r.prf.fill(0);
+      }
+    });
+  if (onNodePage.view) return <>{onNodePage.view}</>;
   return (
     <div className="space-y-4">
       <p className="text-sm text-fg-1">{t("e2ee.unlock_intro")}</p>
@@ -201,7 +213,7 @@ function UnlockView({ busy, error, onRun, onReset, onSkip }: { busy: boolean; er
           <span className="text-fg-1">{t("e2ee.recovery_key_label")}</span>
           <Textarea name="recovery_key" rows={4} autoComplete="off" spellCheck={false} value={text} onChange={(e) => setText(e.target.value)} placeholder={t("e2ee.recovery_key_placeholder")} data-testid="recovery-key-input" required />
         </label>
-        <ErrorText>{error}</ErrorText>
+        <ErrorText>{error ?? onNodePage.error}</ErrorText>
         <Button type="submit" className="w-full" disabled={busy || !text.trim()}>
           {busy ? t("e2ee.unlocking") : t("e2ee.unlock")}
         </Button>
@@ -212,15 +224,17 @@ function UnlockView({ busy, error, onRun, onReset, onSkip }: { busy: boolean; er
           className="w-full border border-line"
           disabled={busy}
           onClick={() =>
-            onRun(async () => {
-              const r = await evaluatePrf(entries.data ?? []);
-              if (!r) throw Object.assign(new Error("no prf"), { name: "E2eeError", code: "passkey_wrong" });
-              try {
-                await unlockWithPasskeyPrf(await e2eeContext(), r.credentialId, r.prf);
-              } finally {
-                r.prf.fill(0);
-              }
-            })
+            onNodePage.available
+              ? onNodePage.start(unlockWith)
+              : onRun(async () => {
+                  const r = await evaluatePrf(entries.data ?? []);
+                  if (!r) throw Object.assign(new Error("no prf"), { name: "E2eeError", code: "passkey_wrong" });
+                  try {
+                    await unlockWithPasskeyPrf(await e2eeContext(), r.credentialId, r.prf);
+                  } finally {
+                    r.prf.fill(0);
+                  }
+                })
           }
         >
           {t("e2ee.use_passkey")}

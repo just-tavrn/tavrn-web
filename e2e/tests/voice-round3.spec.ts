@@ -228,13 +228,13 @@ test.describe("Voice, round 3", () => {
     const user = await registerViaApi(request, "r3set");
     await loginAs(page, user);
     await page.goto("/settings/voice");
-    await expect(page.getByTestId("priority-key")).toHaveText("keine");
+    await expect(page.getByTestId("priority-key")).toHaveText("keins");
     if (!isTouch()) {
       await page.getByTestId("priority-capture").click();
       await page.keyboard.press("KeyV");
-      await expect(page.getByTestId("priority-key")).toHaveText("KeyV");
+      await expect(page.getByTestId("priority-key")).toHaveText("V");
       await page.getByTestId("priority-clear").click();
-      await expect(page.getByTestId("priority-key")).toHaveText("keine");
+      await expect(page.getByTestId("priority-key")).toHaveText("keins");
     }
 
     await page.goto("/settings/profile");
