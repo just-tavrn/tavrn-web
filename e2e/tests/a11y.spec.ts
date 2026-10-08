@@ -368,6 +368,8 @@ test.describe("Accessibility (axe, WCAG 2.2 AA)", () => {
   });
 
   test("admin page", async ({ page, request }) => {
+    // Nine admin tabs plus the account menu and the settings navigation: more than the default 30 s on phones.
+    test.setTimeout(90_000);
     const admin = await adminAccount(request);
     await loginAs(page, admin);
     // The account menu of a node admin (with the node administration) and the settings navigation with its link.
