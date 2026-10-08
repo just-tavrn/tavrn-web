@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SpeakingBatcher, useSpeaking } from "./store";
+import { SpeakingBatcher, isWatched, useSpeaking, useWatchedStreams, watchStream } from "./store";
 
 describe("speaking levels (design note 4.5 item 6)", () => {
   beforeEach(() => {
@@ -55,5 +55,24 @@ describe("speaking levels (design note 4.5 item 6)", () => {
     expect(useSpeaking.getState().levels).toEqual({ "c@n/1": 0.05 });
     b.clear();
     expect(useSpeaking.getState().levels).toEqual({});
+  });
+});
+
+describe("watched streams (issue #20)", () => {
+  beforeEach(() => useWatchedStreams.setState({ watching: {} }));
+
+  it("counts the tiles showing a stream; released by the last one", () => {
+    expect(isWatched(useWatchedStreams.getState(), "bob@n/1")).toBe(false);
+    const first = watchStream("bob@n/1");
+    const second = watchStream("bob@n/1");
+    expect(isWatched(useWatchedStreams.getState(), "bob@n/1")).toBe(true);
+    first();
+    expect(isWatched(useWatchedStreams.getState(), "bob@n/1")).toBe(true);
+    // Releasing twice does not count down twice.
+    first();
+    expect(isWatched(useWatchedStreams.getState(), "bob@n/1")).toBe(true);
+    second();
+    expect(isWatched(useWatchedStreams.getState(), "bob@n/1")).toBe(false);
+    expect(useWatchedStreams.getState().watching).toEqual({});
   });
 });

@@ -53,8 +53,12 @@ export interface VoiceSettings {
   /** Blur strength in percent (0–100). */
   blurStrength: number;
   backgroundQuality: BackgroundQuality;
-  /** Per-user playback volume in percent (absent = 100). */
+  /** Per-user playback volume of the voice (microphone) in percent (absent = 100). */
   userVolumes: Record<string, number>;
+  /** Per-streamer playback volume of the screen share audio in percent (absent = 100). */
+  streamVolumes: Record<string, number>;
+  /** A stream the user is watching stays audible while deafened (deafen then silences voices only). */
+  streamWhileDeafened: boolean;
   /** Volume of the notification sounds in percent. */
   cueVolume: number;
   /** All notification sounds off. */
@@ -94,6 +98,8 @@ export const DEFAULT_SETTINGS: VoiceSettings = {
   blurStrength: 60,
   backgroundQuality: "balanced",
   userVolumes: {},
+  streamVolumes: {},
+  streamWhileDeafened: true,
   cueVolume: 40,
   cuesOff: false,
   cuesDisabled: [],
@@ -120,6 +126,16 @@ function oneOf<T extends string>(v: unknown, allowed: readonly T[], fallback: T)
   return allowed.includes(v as T) ? (v as T) : fallback;
 }
 
+/** Per-address volumes in percent (0–200); anything else is dropped. */
+function volumeMap(raw: unknown): Record<string, number> {
+  const volumes: Record<string, number> = {};
+  if (!raw || typeof raw !== "object") return volumes;
+  for (const [address, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v === "number" && Number.isFinite(v) && address.length <= 320) volumes[address] = clamp(Math.round(v), 0, 200);
+  }
+  return volumes;
+}
+
 /** Modifiers in the fixed order and one `KeyboardEvent.code`; the shell validates the key itself. */
 const COMBO = /^(Ctrl\+)?(Alt\+)?(Shift\+)?(Super\+)?[A-Za-z][A-Za-z0-9]{0,23}$/;
 
@@ -140,12 +156,6 @@ export function normalizeSettings(raw: unknown): VoiceSettings {
   const image = typeof r.backgroundImage === "string" && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(r.backgroundImage) ? r.backgroundImage : null;
   let background = oneOf(r.background, ["none", "blur", "image"] as const, d.background);
   if (background === "image" && !image) background = "none";
-  const volumes: Record<string, number> = {};
-  if (r.userVolumes && typeof r.userVolumes === "object") {
-    for (const [address, v] of Object.entries(r.userVolumes as Record<string, unknown>)) {
-      if (typeof v === "number" && Number.isFinite(v) && address.length <= 320) volumes[address] = clamp(Math.round(v), 0, 200);
-    }
-  }
   return {
     inputDeviceId: str(r.inputDeviceId, d.inputDeviceId),
     outputDeviceId: str(r.outputDeviceId, d.outputDeviceId),
@@ -169,7 +179,9 @@ export function normalizeSettings(raw: unknown): VoiceSettings {
     backgroundImage: image,
     blurStrength: num(r.blurStrength, d.blurStrength, 0, 100),
     backgroundQuality: oneOf(r.backgroundQuality, ["fast", "balanced", "high"] as const, d.backgroundQuality),
-    userVolumes: volumes,
+    userVolumes: volumeMap(r.userVolumes),
+    streamVolumes: volumeMap(r.streamVolumes),
+    streamWhileDeafened: bool(r.streamWhileDeafened, d.streamWhileDeafened),
     cueVolume: num(r.cueVolume, d.cueVolume, 0, 100),
     cuesOff: bool(r.cuesOff, d.cuesOff),
     cuesDisabled: Array.isArray(r.cuesDisabled) ? CUE_NAMES.filter((c) => (r.cuesDisabled as unknown[]).includes(c)) : [],
@@ -195,10 +207,19 @@ function save(settings: VoiceSettings): void {
   }
 }
 
+/** A copy of `volumes` with `address` set to `percent` (100 % removes the entry). */
+function withVolume(volumes: Record<string, number>, address: string, percent: number): Record<string, number> {
+  const next = { ...volumes };
+  if (Math.round(percent) === 100) delete next[address];
+  else next[address] = percent;
+  return next;
+}
+
 interface SettingsStore {
   settings: VoiceSettings;
   update: (patch: Partial<VoiceSettings>) => void;
   setUserVolume: (address: string, percent: number) => void;
+  setStreamVolume: (address: string, percent: number) => void;
   reload: () => void;
 }
 
@@ -209,12 +230,8 @@ export const useVoiceSettings = create<SettingsStore>((set, get) => ({
     save(settings);
     set({ settings });
   },
-  setUserVolume: (address, percent) => {
-    const userVolumes = { ...get().settings.userVolumes };
-    if (Math.round(percent) === 100) delete userVolumes[address];
-    else userVolumes[address] = percent;
-    get().update({ userVolumes });
-  },
+  setUserVolume: (address, percent) => get().update({ userVolumes: withVolume(get().settings.userVolumes, address, percent) }),
+  setStreamVolume: (address, percent) => get().update({ streamVolumes: withVolume(get().settings.streamVolumes, address, percent) }),
   reload: () => set({ settings: load() }),
 }));
 
