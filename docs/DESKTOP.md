@@ -7,9 +7,10 @@ Tauri CLI) and the Rust crate `tavrn-desktop` in `apps/desktop/src-tauri` with a
 
 ## What the app is
 
-- **It bundles the client.** The app ships `web/dist` (built by Vite, exactly what a node embeds) and never loads
-  remote pages. Only the bundled client may call the shell's native commands; a node can never reach them. This
-  matters for the next steps (keys in the OS keychain).
+- **It bundles the client.** The app ships `web/dist` (built by Vite, exactly what a node embeds) and its main window
+  never loads remote pages. Only the bundled client may call the shell's native commands; a node can never reach them.
+  This matters for the next steps (keys in the OS keychain). The one remote page the app shows is the node's own
+  sign-in page, in a second window without any capability ("Signing in").
 - **It talks to the home node you choose.** The first start shows the node picker; the client then uses that node's
   API, WebSocket and media over https and wss. Rooms and conversations of other nodes work as in the browser
   (federated sessions, [CLIENT.md](CLIENT.md) "Several nodes in one client").
@@ -22,7 +23,8 @@ Tauri CLI) and the Rust crate `tavrn-desktop` in `apps/desktop/src-tauri` with a
 |---|---|
 | The main window shows only the bundled client: `tauri://localhost` (Linux), `https://tauri.localhost` (Windows), in development the Vite dev server. Every other navigation is refused; web links (http, https, mailto) open in the system browser, new windows are never opened. The click-to-play embeds load in their frames. | `src-tauri/src/guard.rs`, `src/lib.rs` |
 | Content Security Policy: scripts only from the bundle (`script-src 'self' 'wasm-unsafe-eval'`, no eval, no inline scripts, no third-party scripts), `connect-src` https and wss to any node plus plain http/ws to `localhost` and `127.0.0.1` (development nodes), images and media from https, frames only for the embed providers. | `tauri.conf.json` `app.security.csp` |
-| One capability for the main window: the app's six commands, nothing else (no `remote` origins, no plugin permissions, no global Tauri object). | `src-tauri/capabilities/main.json`, `build.rs` |
+| One capability for the main window: the app's commands, nothing else (no `remote` origins, no plugin permissions, no global Tauri object). No capability names the sign-in window (a test checks every capability file). | `src-tauri/capabilities/main.json`, `build.rs`, `src-tauri/src/conf_tests.rs` |
+| The sign-in window (`connect`) shows only the chosen node's `/connect?session=…` page (`open_connect` checks origin, path and parameters) and follows https pages from there (identity providers redirect), plain http only on this computer; it never loads the bundled client or `tauri:`, `file:`, `data:`, `javascript:` or `blob:` URLs, and new windows go to the system browser. The node's web client there runs as a plain web client: only the main window counts as the app (`platform/tauriDetect.ts`). | `src-tauri/src/guard.rs`, `src/lib.rs` |
 | The node URL is validated twice: in the client and again in the shell before it is stored. | `web/src/platform/nodeUrl.ts`, `src-tauri/src/node_url.rs` |
 
 Unit tests in `src-tauri/src/conf_tests.rs` keep these properties of `tauri.conf.json` and the capability from eroding.
@@ -40,7 +42,8 @@ runs Tauri code. Everything that imports Tauri APIs lives under `platform/tauri*
 | `webOrigin()` | `location.origin` | the chosen node (links for other people: invites, messages, channels) |
 | `openExternal(url)` | new tab | system browser (shell command `open_external`, http/https/mailto only) |
 | `appVersion()` | `web/package.json` | the installed app |
-| `node` | — | the chosen node, `set(url)` validates and persists it (shell command `set_node`) |
+| `node` | — | the chosen node with its identity domain and web origin; `set(url, details)` validates and persists them (shell command `set_node`), `resolve(domain)` finds the node of an address (shell command `resolve_node`) |
+| `auth` | the connect flow with this origin (redirect to `<web>/connect`, back at `/connect/callback`) | the sign-in on the node's page: an app session, the page in the sign-in window (`open_connect`), polling, the exchange with the PKCE verifier, `close_connect` |
 | `updater` | — | signed updates (absent while the build has no updater key) |
 | `hotkeys`, `keystore`, `notifications`, `tray` | — | extension points of the next steps (global hotkeys; keychain, notifications, tray) |
 
@@ -50,8 +53,25 @@ of `platform/index.ts` are the single place the API client (`lib/api.ts`), the W
 
 ## The node picker
 
-On the first start every path shows the node picker (`/node`): the address of the home node as you open it in the
-browser (`https://tavrn.example`; without a scheme https is assumed). Rules:
+On the first start every path shows the node picker (`/node`). It asks for **your address** (`alice@tavrn.example`, or
+just the domain `tavrn.example`): the shell finds the node of that identity domain as FEDERATION.md §1.4 says, the app
+keeps the identity domain and the endpoints (they may live on another host: delegation) and continues on the login
+page with the username filled in. The resolution runs in the shell (`src-tauri/src/resolve.rs`; a browser cannot query
+DNS, and before the first sign-in there is no node to ask):
+
+1. `https://<domain>/.well-known/tavrn`, validated (`tavrn` = 1, `domain` equal, endpoints https/wss without
+   credentials, query or fragment, `api` ending in `/api/v1`);
+2. after a `404` or without an HTTPS server: the `_tavrn._tcp.<domain>` SRV records (system resolver, at most 3
+   targets, lowest priority first, then highest weight), whose document must name the domain;
+3. after a `404` only: `https://<domain>/api/v1`.
+
+Errors are distinct and name the step that failed: "no node found for <domain>", "the node's document is invalid",
+"cannot reach <domain>" (DNS or TLS failure, nothing listening). A development node on this computer is asked over
+plain http (`alice@localhost:8080`). The login page of the app takes an address as well and switches the node when the
+domain is another one.
+
+**Advanced: node URL** is the picker of the earlier versions, for development nodes and special setups: the address of
+the home node as you open it in the browser (`https://tavrn.example`; without a scheme https is assumed). Rules:
 
 - https only; plain http only for a node in development mode on this computer: `http://localhost:<port>` and
   `http://127.0.0.1:<port>`;
@@ -65,6 +85,31 @@ browser (`https://tavrn.example`; without a scheme https is assumed). Rules:
 **Settings → App** (only in the app) shows the version, the node with "Change node" (the picker again; changing the
 node signs out of the old one first) and the updates.
 
+## Signing in
+
+Passkeys are bound to the node's domain, the captcha to its host names and single sign-on to its web client: none of
+them can run on the app's own origin. On nodes that announce `connect.app` (app sessions of the connect flow,
+FEDERATION.md §8 step 3) the app signs in on the **node's own page** instead:
+
+1. The login page offers "Sign in on <node>'s page" and takes it by itself for "Sign in with a passkey", the SSO button
+   and whenever the node asks for a captcha (login or registration: the registration then happens on the node's page).
+2. The app creates an app session with a PKCE challenge (`POST /auth/connect/session`) and the shell opens
+   `<web>/connect?session=…` in the sign-in window, which has no native API at all.
+3. The user signs in there with any method (password and second factor, passkey, SSO, registration with captcha) and
+   confirms "Sign in to the Tavrn app?" with the app's device name; the page says "return to the app". The page never
+   creates device keys and skips the encryption step.
+4. The app polls the session every 2 seconds, gets the one-time code once, exchanges it with its verifier
+   (`POST /auth/connect/token`) for a session of its own device, closes the window and continues like after any
+   sign-in: device keys are created in the app, the recovery key unlocks the encrypted messages (or sets them up for
+   a new account).
+
+While it waits the app offers "Open the page again", **"Open in the browser instead"** (the same page in the system
+browser; the app keeps polling) and "Cancel". On Linux the sign-in window cannot use passkeys (WebKitGTK has no
+WebAuthn) and the app says so: passkeys work through the browser there; on Windows (WebView2) they work in the window.
+Nodes without `connect.app` keep password and TOTP in the app; their passkeys, SSO and captcha need a browser. The page
+in the sign-in window keeps its own sign-in on the node's origin (like a browser tab), so the next handoff only asks for
+the confirmation.
+
 ## Limitations
 
 What the browser gets from "the client is served by the node" and what the app does instead:
@@ -73,15 +118,15 @@ What the browser gets from "the client is served by the node" and what the app d
 |---|---|---|
 | Password with the second factor (TOTP, recovery code) | works | ordinary API calls with bearer tokens (the node allows every origin, without cookies) |
 | Registration, account settings, encryption, rooms, DMs, federation | work | same |
-| Sign-in with an account of another node | password with TOTP or a recovery code works; the connect flow is not offered | the connect flow returns the one-time code to the visiting web client's origin, and the node accepts only `https://<domain>` origins (FEDERATION.md §8): the app's origin is `tauri://localhost`. Choosing the home node in the node picker is the way in the app. |
-| Passkeys (WebAuthn) as second factor or sign-in | not offered | passkeys are bound to the node's domain; the app's origin is not the node's (and WebKitGTK has no WebAuthn). TOTP or a recovery code is required in the app. |
-| Single sign-on (OpenID Connect) | not offered; an SSO-only node shows a notice | the node sends the browser back to its own web client (`<web>/sso/callback`); the app cannot receive that callback without a node-side loopback or app-scheme redirect (RFC 8252). A later step can add it with the node. |
-| Captcha on login or registration | not shown (notice instead) | the widget is a third-party script (CSP `script-src 'self'`) bound to the node's host name. Use the browser for that step, or the operator turns the captcha off for logins. |
+| Sign-in with an account of another node | the app signs in at the account's own node instead: the address (`alice@home.example`) switches the app to that node; "Sign in with an account of another node" keeps password with TOTP or a recovery code | the origin connect flow returns the code to an `https://<domain>` origin, which the app does not have; the sign-in window is bound to the app's own node. |
+| Passkeys (WebAuthn) as second factor or sign-in | on the node's page in the sign-in window ("Signing in"); on Linux through the system browser | passkeys are bound to the node's domain; the app's origin is not the node's (and WebKitGTK has no WebAuthn). Without `connect.app` on the node: not offered, TOTP or a recovery code is required. |
+| Single sign-on (OpenID Connect) | on the node's page in the sign-in window | the node sends the browser back to its own web client (`<web>/sso/callback`), which is the page in the sign-in window. Without `connect.app`: not offered, an SSO-only node shows a notice. A later step may add an app-scheme callback (RFC 8252) as an accelerator. |
+| Captcha on login or registration | on the node's page in the sign-in window | the widget is a third-party script (CSP `script-src 'self'`) bound to the node's host name; the node's page loads it. Without `connect.app`: a notice, use the browser for that step. |
 | Web push | not offered | there is no service worker in the app (its pages are not served by the node). Native notifications come with the next step. |
 | Desktop notifications of the browser | as far as the webview supports them | native notifications come with the next step. |
 | Voice and video | Windows (WebView2, Chromium): expected to work as in Chromium (to be confirmed by hand); Linux: not available with the distributions' WebKitGTK | end-to-end encrypted media needs WebRTC with encoded transforms. The WebKitGTK of Ubuntu 26.04 ships without WebRTC (no `RTCPeerConnection`, checked in the built app), so the client refuses to join, as in browsers that lack it. Screen and window sharing through the platform APIs is a later step. |
-| Popping out the whiteboard, "open original" in the media viewer | not offered | the app opens no second window; maximize and the download icon cover it. |
-| The terms and other pages that open in a new tab | open on the node's web client in the system browser | the app opens no second window. |
+| Popping out the whiteboard, "open original" in the media viewer | not offered | the app opens no window for content (only the sign-in window); maximize and the download icon cover it. |
+| The terms and other pages that open in a new tab | open on the node's web client in the system browser | the app opens no window for content. |
 | Updates while the repository is private | do not download | the updater fetches `latest.json` and the installers from the public release URLs. |
 
 ## Development
@@ -106,17 +151,24 @@ picker accepts `http://127.0.0.1:8080`).
 
 ### Tests
 
-- Rust: `cargo test` in `apps/desktop/src-tauri` (node URL validation, settings file, navigation guard, updater key,
-  the security properties of `tauri.conf.json` and the capability).
+- Rust: `cargo test` in `apps/desktop/src-tauri` (node URL validation, settings file, navigation guards of both windows,
+  the sign-in page URL, the resolver with a fake fetcher and SRV lookup for every step and error plus the real fetcher
+  against a local server, updater key, the security properties of `tauri.conf.json` and the capabilities).
 - Vitest, with the other tests of the client (`just test`): the platform detection and both implementations (Tauri
   mocked with `@tauri-apps/api/mocks`), the node picker, Settings → App, the API base plumbing, the flows the app
   does not offer.
 - `node --test` of the update manifest script (`pnpm --filter @tavrn/desktop test`).
+- Playwright (`e2e/tests/desktop.spec.ts`, simulated shell): the node picker with address first and the advanced URL,
+  Settings → App, the sign-in on the node's page with the page in a second browser context; `desktop-connect.spec.ts`:
+  the node's `/connect` page in session mode with password and TOTP, registration with a passkey, a passkey-only
+  sign-in and single sign-on.
 - WebDriver smoke test of the built Linux app (`apps/desktop/e2e/smoke.mjs`, plain WebDriver over HTTP): the app
-  starts, shows the node picker, refuses `http://evil`, accepts a development node and reaches the login page; an
-  account with TOTP (registered over the API) signs in with password and code, sets up its recovery key (the
+  starts, shows the node picker, the shell's resolver reports a domain without a node, the advanced URL refuses
+  `http://evil`, the address of an account (registered over the API with TOTP) on a development node finds the node
+  and its login page; the account signs in on the node's page in the sign-in window (password and code there, a
+  native command from that page is refused), the main window takes over the session, sets up its recovery key (the
   encryption core runs in the webview) and sends a message in an end-to-end encrypted channel, which the node stores
-  as ciphertext only. It needs `tauri-driver` (`cargo install tauri-driver --locked`) and a built app:
+  as ciphertext only. The node needs the web client bundle (a node built with `web/dist`). It needs `tauri-driver` (`cargo install tauri-driver --locked`) and a built app:
 
   ```sh
   just desktop-build

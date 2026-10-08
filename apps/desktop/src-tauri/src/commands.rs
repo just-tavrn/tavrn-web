@@ -9,7 +9,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Manager, Runtime, State};
 use tauri_plugin_updater::UpdaterExt;
 
-use crate::{config, guard, node_url, updater};
+use crate::{config, guard, node_url, resolve, updater};
 
 /// The settings file and its current content.
 pub struct Settings {
@@ -43,16 +43,26 @@ pub fn get_config(settings: State<'_, Settings>) -> Result<config::Config, Strin
     settings.config.lock().map(|c| c.clone()).map_err(|_| "config.unavailable".to_string())
 }
 
-/// Validates and persists the home node; returns its normalized origin.
+/// Validates and persists the home node (with the origin of its web client and its identity domain when the client
+/// knows them from the node's document); returns its normalized origin.
 #[tauri::command]
-pub fn set_node(settings: State<'_, Settings>, url: String) -> Result<String, String> {
-    set_node_in(&settings, &url)
+pub fn set_node(settings: State<'_, Settings>, url: String, web: Option<String>, domain: Option<String>) -> Result<String, String> {
+    set_node_with(&settings, &url, web.as_deref(), domain.as_deref())
 }
 
 pub fn set_node_in(settings: &Settings, url: &str) -> Result<String, String> {
+    set_node_with(settings, url, None, None)
+}
+
+pub fn set_node_with(settings: &Settings, url: &str, web: Option<&str>, domain: Option<&str>) -> Result<String, String> {
     let node = node_url::validate(url).map_err(|e| e.code().to_string())?;
+    let web = web.map(node_url::validate).transpose().map_err(|e| e.code().to_string())?;
+    let domain = domain.map(|d| d.trim().to_ascii_lowercase());
+    if domain.as_deref().is_some_and(|d| !config::valid_identity_domain(d)) {
+        return Err("node_url.domain".into());
+    }
     let mut current = settings.config.lock().map_err(|_| "config.unavailable".to_string())?;
-    let next = config::Config { node: Some(node.clone()) };
+    let next = config::Config { node: Some(node.clone()), web, domain };
     config::save(&settings.path, &next).map_err(|e| format!("config.write_failed: {e}"))?;
     *current = next;
     Ok(node)
@@ -68,6 +78,35 @@ pub fn app_info<R: Runtime>(app: AppHandle<R>) -> AppInfo {
 pub fn open_external(url: String) -> Result<(), String> {
     let url = guard::external_str(&url).ok_or_else(|| "link.refused".to_string())?;
     tauri_plugin_opener::open_url(url, None::<&str>).map_err(|e| e.to_string())
+}
+
+/// Address first: the node of an identity domain (FEDERATION.md §1.4: well-known, SRV, direct), `resolve.rs`.
+#[tauri::command]
+pub async fn resolve_node<R: Runtime>(app: AppHandle<R>, domain: String) -> Result<resolve::Resolved, resolve::Failure> {
+    let fetcher = resolve::HttpFetcher::new(&app.package_info().version.to_string())
+        .map_err(|_| resolve::Failure::new(resolve::UNREACHABLE, resolve::Step::WellKnown, &domain))?;
+    resolve::resolve(&domain, &fetcher, &resolve::SystemSrv).await
+}
+
+/// Opens (or shows again) the sign-in window with the chosen node's `/connect` page of an app session
+/// (docs/DESKTOP.md "Signing in"). Async: windows must not be created from a synchronous command (Windows).
+#[tauri::command]
+pub async fn open_connect<R: Runtime>(app: AppHandle<R>, settings: State<'_, Settings>, url: String) -> Result<(), String> {
+    let web = {
+        let config = settings.config.lock().map_err(|_| "config.unavailable".to_string())?;
+        config.web.clone().or_else(|| config.node.clone())
+    };
+    let web = web.ok_or_else(|| "connect.no_node".to_string())?;
+    let url = guard::connect_url(&url, &web).map_err(|e| format!("connect.url_refused: {e:?}"))?;
+    crate::open_connect_window(&app, url).map_err(|e| e.to_string())
+}
+
+/// Closes the sign-in window (the app has its session, or the user cancelled).
+#[tauri::command]
+pub fn close_connect<R: Runtime>(app: AppHandle<R>) {
+    if let Some(window) = app.get_webview_window(crate::CONNECT_WINDOW) {
+        let _ = window.close();
+    }
 }
 
 /// The newest signed release when it is newer than this app.
@@ -123,6 +162,24 @@ mod tests {
         assert_eq!(set_node_in(&s, "http://evil"), Err("node_url.insecure".into()));
         assert_eq!(set_node_in(&s, "https://x.example/path"), Err("node_url.path".into()));
         assert_eq!(config::load(&s.path).node.as_deref(), Some("https://tavrn.example"));
+        let _ = std::fs::remove_dir_all(s.path.parent().unwrap_or(&s.path));
+    }
+
+    #[test]
+    fn set_node_keeps_the_web_origin_and_the_identity_domain_of_a_delegated_node() {
+        let s = settings("delegated");
+        assert_eq!(
+            set_node_with(&s, "https://app.tavrn.example", Some("https://Web.Tavrn.Example/"), Some("Tavrn.Example")),
+            Ok("https://app.tavrn.example".into())
+        );
+        let c = config::load(&s.path);
+        assert_eq!((c.web.as_deref(), c.domain.as_deref()), (Some("https://web.tavrn.example"), Some("tavrn.example")));
+        assert_eq!(set_node_with(&s, "https://x.example", Some("http://evil.example"), None), Err("node_url.insecure".into()));
+        assert_eq!(set_node_with(&s, "https://x.example", None, Some("not a domain")), Err("node_url.domain".into()));
+        assert_eq!(config::load(&s.path).domain.as_deref(), Some("tavrn.example"), "refusals keep the old settings");
+        // The node URL alone (the advanced picker) forgets the old node's details.
+        assert!(set_node_in(&s, "https://other.example").is_ok());
+        assert_eq!(config::load(&s.path), config::Config { node: Some("https://other.example".into()), web: None, domain: None });
         let _ = std::fs::remove_dir_all(s.path.parent().unwrap_or(&s.path));
     }
 

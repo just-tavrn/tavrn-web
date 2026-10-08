@@ -5,37 +5,91 @@
  * the explicit node base and Settings → App run against the real node. The built app itself is covered by the
  * WebDriver smoke test (apps/desktop/e2e/smoke.mjs).
  */
-import { expect, test, type Page } from "@playwright/test";
-import { NODE, loginAs, registerViaApi } from "./helpers";
+import { expect, test, type Browser, type Page } from "@playwright/test";
+import { NODE, loginAs, nextTotpCode, registerViaApi, type Account } from "./helpers";
 
-/** A fake shell: the chosen node lives in sessionStorage (survives reloads like the app's config file). */
+/**
+ * A fake shell: the chosen node (with its web origin and domain) lives in sessionStorage (survives reloads like the
+ * app's config file). `resolve_node` asks the test node's well-known (the real shell runs FEDERATION.md §1.4);
+ * `open_connect` records the sign-in page instead of opening a window, `close_connect` records that it closed.
+ */
 async function asDesktopApp(page: Page, node: string | null = null) {
-  await page.addInitScript((initial) => {
-    const KEY = "e2e.desktop.node";
-    if (initial && sessionStorage.getItem(KEY) === null) sessionStorage.setItem(KEY, initial);
-    const w = window as unknown as Record<string, unknown>;
-    w.isTauri = true;
-    w.__TAURI_INTERNALS__ = {
-      invoke: async (cmd: string, args: { url?: string }) => {
-        switch (cmd) {
-          case "get_config":
-            return { node: sessionStorage.getItem(KEY) };
-          case "app_info":
-            return { version: "0.2.0", updater: false };
-          case "set_node": {
-            const url = String(args.url);
-            if (!/^https:\/\/|^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(url)) throw "node_url.insecure";
-            sessionStorage.setItem(KEY, url);
-            return url;
+  await page.addInitScript(
+    ({ initial, testNode }) => {
+      const KEY = "e2e.desktop.node";
+      if (initial && sessionStorage.getItem(KEY) === null) sessionStorage.setItem(KEY, initial);
+      const w = window as unknown as Record<string, unknown>;
+      w.isTauri = true;
+      w.__TAURI_INTERNALS__ = {
+        invoke: async (cmd: string, args: { url?: string; web?: string | null; domain?: string | null }) => {
+          switch (cmd) {
+            case "get_config":
+              return { node: sessionStorage.getItem(KEY), web: sessionStorage.getItem(`${KEY}.web`), domain: sessionStorage.getItem(`${KEY}.domain`) };
+            case "app_info":
+              return { version: "0.2.0", updater: false };
+            case "set_node": {
+              const url = String(args.url);
+              if (!/^https:\/\/|^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(url)) throw "node_url.insecure";
+              sessionStorage.setItem(KEY, url);
+              for (const k of ["web", "domain"] as const) {
+                const v = args[k];
+                if (v) sessionStorage.setItem(`${KEY}.${k}`, v);
+                else sessionStorage.removeItem(`${KEY}.${k}`);
+              }
+              return url;
+            }
+            case "resolve_node": {
+              const domain = String((args as { domain?: string }).domain);
+              if (domain !== "localhost") throw { code: "resolve.not_found", step: "direct", domain };
+              const doc = await (await fetch(`${testNode}/.well-known/tavrn`)).json();
+              return { domain: doc.domain, api: `${testNode}/api/v1`, ws: `${testNode.replace(/^http/, "ws")}/api/v1/ws`, web: doc.web, source: "well_known" };
+            }
+            case "open_connect": {
+              const opened = JSON.parse(sessionStorage.getItem("e2e.desktop.connect") ?? "[]") as string[];
+              sessionStorage.setItem("e2e.desktop.connect", JSON.stringify([...opened, String(args.url)]));
+              return null;
+            }
+            case "close_connect":
+              sessionStorage.setItem("e2e.desktop.connect.closed", "1");
+              return null;
+            case "open_external":
+              return null;
           }
-          case "open_external":
-            return null;
-        }
-        throw `unknown command ${cmd}`;
-      },
-      transformCallback: () => 0,
-    };
-  }, node);
+          throw `unknown command ${cmd}`;
+        },
+        transformCallback: () => 0,
+      };
+    },
+    { initial: node, testNode: NODE },
+  );
+}
+
+/** The sign-in page the app asked the shell to open. */
+async function openedConnectPage(page: Page): Promise<string> {
+  let url = "";
+  await expect
+    .poll(async () => {
+      url = await page.evaluate(() => (JSON.parse(sessionStorage.getItem("e2e.desktop.connect") ?? "[]") as string[]).at(-1) ?? "");
+      return url;
+    })
+    .toMatch(/\/connect\?session=[A-Za-z0-9_-]{43}&state=/);
+  return url;
+}
+
+/** The node's page in a window of its own (another browser context: its own storage, like the shell's second webview). */
+async function signInOnNodePage(browser: Browser, url: string, account: Account) {
+  const context = await browser.newContext({ locale: "de-DE" });
+  const page = await context.newPage();
+  await page.goto(url);
+  await page.getByLabel("Benutzername", { exact: true }).fill(account.username);
+  await page.getByLabel("Passwort", { exact: true }).fill(account.password);
+  await page.getByRole("button", { name: "Anmelden", exact: true }).click();
+  await page.getByLabel("6-stelliger Code", { exact: true }).fill(await nextTotpCode(account));
+  await page.getByRole("button", { name: "Bestätigen", exact: true }).click();
+  await expect(page.getByTestId("connect-text")).toContainText("Desktop app");
+  await page.getByTestId("connect-allow").click();
+  await expect(page.getByTestId("connect-done")).toBeVisible();
+  await context.close();
 }
 
 test.describe("Desktop app (simulated shell)", () => {
@@ -43,6 +97,7 @@ test.describe("Desktop app (simulated shell)", () => {
     await asDesktopApp(page);
     await page.goto("/rooms/x/channels/y");
     await expect(page.getByRole("heading", { name: "Wähle deinen Heimatknoten" })).toBeVisible();
+    await page.getByRole("button", { name: "Erweitert: Knoten-URL" }).click();
     const input = page.getByLabel("Adresse des Knotens", { exact: true });
     await input.fill("http://evil");
     await page.getByRole("button", { name: "Verbinden", exact: true }).click();
@@ -51,8 +106,8 @@ test.describe("Desktop app (simulated shell)", () => {
     await page.getByRole("button", { name: "Verbinden", exact: true }).click();
     await expect(page).toHaveURL(/\/login$/);
     await expect(page.getByTestId("node-name")).toHaveText(/tavrn \(localhost\)/);
-    // Passkeys need the node's origin: the app offers password and second factor only.
-    await expect(page.getByRole("button", { name: "Mit Passkey anmelden" })).toHaveCount(0);
+    // Passkeys need the node's origin: the app signs in on the node's page for them.
+    await expect(page.getByTestId("node-page-signin")).toBeVisible();
     // The picker fits the phone width without horizontal scrolling.
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   });
@@ -71,6 +126,43 @@ test.describe("Desktop app (simulated shell)", () => {
     await expect(page.getByTestId("node-picker-warning")).toBeVisible();
     await page.getByRole("link", { name: "Abbrechen" }).click();
     await expect(page).toHaveURL(/\/settings\/app$/);
+  });
+
+  test("address first: the picker finds the node of the account and the login continues with the username", async ({ page, request }) => {
+    const account = await registerViaApi(request, "addr");
+    await asDesktopApp(page);
+    await page.goto("/");
+    await page.getByLabel("Deine Adresse", { exact: true }).fill("someone@nowhere.example");
+    await page.getByRole("button", { name: "Verbinden", exact: true }).click();
+    await expect(page.getByTestId("node-picker-error")).toContainText("Kein Knoten für nowhere.example gefunden");
+    await page.getByLabel("Deine Adresse", { exact: true }).fill(`${account.username}@localhost`);
+    await page.getByRole("button", { name: "Verbinden", exact: true }).click();
+    await expect(page).toHaveURL(/\/login\?username=/);
+    await expect(page.getByLabel("Benutzername oder Adresse", { exact: true })).toHaveValue(account.username);
+    await page.getByLabel("Passwort", { exact: true }).fill(account.password);
+    await page.getByRole("button", { name: "Anmelden", exact: true }).click();
+    await page.getByLabel("6-stelliger Code", { exact: true }).fill(await nextTotpCode(account));
+    await page.getByRole("button", { name: "Bestätigen", exact: true }).click();
+    await expect(page.getByTestId("encryption-title")).toHaveText("Dein Wiederherstellungsschlüssel", { timeout: 20_000 });
+  });
+
+  test("sign-in on the node's page: the app waits, the page confirms, the app continues signed in", async ({ page, request, browser }) => {
+    test.setTimeout(90_000);
+    const account = await registerViaApi(request, "hand");
+    await asDesktopApp(page, NODE);
+    await page.goto("/login");
+    await page.getByTestId("node-page-signin").click();
+    await expect(page.getByTestId("handoff-waiting")).toBeVisible();
+    const url = await openedConnectPage(page);
+    await signInOnNodePage(browser, url, account);
+    // The app polled the code, exchanged it with its verifier and closed the window; its own device sets up encryption.
+    await expect(page.getByTestId("encryption-title")).toHaveText("Dein Wiederherstellungsschlüssel", { timeout: 20_000 });
+    expect(await page.evaluate(() => sessionStorage.getItem("e2e.desktop.connect.closed"))).toBe("1");
+    const token = await page.evaluate(() => JSON.parse(localStorage.getItem("tavrn.auth") ?? "{}").token as string);
+    const devices = await (await request.get(`${NODE}/api/v1/users/me/devices`, { headers: { Authorization: `Bearer ${token}` } })).json();
+    expect(devices.find((d: { current: boolean }) => d.current)?.name).toBe("Desktop app");
+    // The waiting panel fits the phone width.
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   });
 
   test("the browser has neither the picker nor Settings → App", async ({ page, request }) => {
