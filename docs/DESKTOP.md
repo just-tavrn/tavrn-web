@@ -198,19 +198,42 @@ FEDERATION.md §8 step 3) the app signs in on the **node's own page** instead:
 
 1. The login page offers "Sign in on <node>'s page" and takes it by itself for "Sign in with a passkey", the SSO button
    and whenever the node asks for a captcha (login or registration: the registration then happens on the node's page).
-2. The app creates an app session with a PKCE challenge (`POST /auth/connect/session`) and the shell opens
-   `<web>/connect?session=…` in the sign-in window, which has no native API at all.
+2. The app creates an app session with a PKCE challenge (`POST /auth/connect/session`) and a fresh X25519 key pair,
+   and the shell opens `<web>/connect?session=…[&method=passkey|sso]#k=<public key>` in the sign-in window, which has
+   no native API at all. The passkey and SSO buttons add `method=`: the page starts that method at once and shows only
+   "Signing in with a passkey…" with "Use another method". The key is in the URL fragment, which never reaches a
+   server; the page keeps it for the window's session and removes it from the address bar.
 3. The user signs in there with any method (password and second factor, passkey, SSO, registration with captcha) and
    confirms "Sign in to the Tavrn app?" with the app's device name; the page says "return to the app". The page never
-   creates device keys and skips the encryption step.
-4. The app polls the session every 2 seconds, gets the one-time code once, exchanges it with its verifier
-   (`POST /auth/connect/token`) for a session of its own device, closes the window and continues like after any
-   sign-in: device keys are created in the app, the recovery key unlocks the encrypted messages (or sets them up for
-   a new account).
+   creates device keys and skips the encryption step. After a passkey ceremony with the PRF extension (the passkey
+   login, a passkey as second factor, or, when the app asked for the passkey and the page was already signed in, an
+   assertion at the confirmation) the page seals the credential id and the PRF output to the app's key and sends the
+   box with the confirmation ("sealed unlock material", FEDERATION.md §8 step 3).
+4. The app polls the session every 2 seconds, gets the one-time code (and the sealed box) once, exchanges the code
+   with its verifier (`POST /auth/connect/token`) for a session of its own device, closes the window and continues like
+   after any sign-in: device keys are created in the app, and **the passkey unlocks the encrypted messages exactly as in
+   the browser** (the app opens the box and unwraps the master secret from the secret storage entry of that passkey).
+   Without a box (another method, a passkey without PRF, a node or page without the feature) or when it does not open,
+   the recovery key unlocks them (or sets them up for a new account).
+
+**Unlock with a passkey later.** An app that is signed in but locked (signed in with password and TOTP, a missing
+keychain entry, lock on close) offers "Unlock with a passkey" on its unlock screen when the account has a passkey
+entry and the node announces `connect.app`. The app creates an *unlock* session with its own session (`purpose:
+"unlock"`), checks with one poll that the node knows it (otherwise it says so and keeps the recovery key), and opens
+the sign-in window with `method=passkey`. The page asks only for the passkey ("Unlock the Tavrn app?"; after a passkey
+sign-in there it needs no second ceremony) and returns the sealed box without a code; the node accepts it only from
+the account the app is signed in with. The app unlocks and stores the master secret in its (keychain-protected) local
+key store.
+
+The node only ever holds the sealed box, which it cannot open, hands it out once and never logs it. The trust is the
+browser's: the node's web client in the window sees the PRF output, as it does in a browser tab. The box is libsodium's
+sealed box (the construction of the webhook inbox keys), through the functions `@tavrn/crypto` already has
+(`web/src/crypto/sealedUnlock.ts`).
 
 While it waits the app offers "Open the page again", **"Open in the browser instead"** (the same page in the system
-browser; the app keeps polling) and "Cancel". On Linux the sign-in window cannot use passkeys (WebKitGTK has no
-WebAuthn) and the app says so: passkeys work through the browser there; on Windows (WebView2) they work in the window.
+browser; the app keeps polling) and "Cancel" instead of its own form. On Linux the sign-in window cannot use passkeys (WebKitGTK has no
+WebAuthn) and the app says so: passkeys work through the browser there (the key in the fragment goes along, so the
+passkey unlocks the app from the browser too); on Windows (WebView2) they work in the window.
 Nodes without `connect.app` keep password and TOTP in the app; their passkeys, SSO and captcha need a browser. The page
 in the sign-in window keeps its own sign-in on the node's origin (like a browser tab), so the next handoff only asks for
 the confirmation.
@@ -272,7 +295,7 @@ What the browser gets from "the client is served by the node" and what the app d
 | Password with the second factor (TOTP, recovery code) | works | ordinary API calls with bearer tokens (the node allows every origin, without cookies) |
 | Registration, account settings, encryption, rooms, DMs, federation | work | same |
 | Sign-in with an account of another node | the app signs in at the account's own node instead: the address (`alice@home.example`) switches the app to that node; "Sign in with an account of another node" keeps password with TOTP or a recovery code | the origin connect flow returns the code to an `https://<domain>` origin, which the app does not have; the sign-in window is bound to the app's own node. |
-| Passkeys (WebAuthn) as second factor or sign-in | on the node's page in the sign-in window ("Signing in"); on Linux through the system browser | passkeys are bound to the node's domain; the app's origin is not the node's (and WebKitGTK has no WebAuthn). Without `connect.app` on the node: not offered, TOTP or a recovery code is required. |
+| Passkeys (WebAuthn) as second factor or sign-in | on the node's page in the sign-in window ("Signing in"), which also unlocks the encrypted messages (sealed unlock material); on Linux through the system browser | passkeys are bound to the node's domain; the app's origin is not the node's (and WebKitGTK has no WebAuthn). Without `connect.app` on the node: not offered, TOTP or a recovery code is required. |
 | Single sign-on (OpenID Connect) | on the node's page in the sign-in window | the node sends the browser back to its own web client (`<web>/sso/callback`), which is the page in the sign-in window. Without `connect.app`: not offered, an SSO-only node shows a notice. A later step may add an app-scheme callback (RFC 8252) as an accelerator. |
 | Captcha on login or registration | on the node's page in the sign-in window | the widget is a third-party script (CSP `script-src 'self'`) bound to the node's host name; the node's page loads it. Without `connect.app`: a notice, use the browser for that step. |
 | Web push | not offered | there is no service worker in the app (its pages are not served by the node). The app shows native notifications instead while it runs (also from the tray); nothing reaches a device where the app is not running. |
@@ -320,9 +343,10 @@ picker accepts `http://127.0.0.1:8080`).
   recorder, the bridge to the shell, the voice session's reaction to presses and releases).
 - `node --test` of the update manifest script and of the installer licence (`pnpm --filter @tavrn/desktop test`).
 - Playwright (`e2e/tests/desktop.spec.ts`, simulated shell): the node picker with address first and the advanced URL,
-  Settings → App, the sign-in on the node's page with the page in a second browser context; `desktop-connect.spec.ts`:
-  the node's `/connect` page in session mode with password and TOTP, registration with a passkey, a passkey-only
-  sign-in and single sign-on; `desktop-shell.spec.ts`: the keychain fallback and migration, native notifications and
+  Settings → App, the sign-in on the node's page with the page in a second browser context, "Unlock with a passkey" and
+  a passkey sign-in through the page that unlocks the app; `desktop-connect.spec.ts`: the node's `/connect` page in
+  session mode with password and TOTP, registration with a passkey, a passkey-only sign-in and single sign-on,
+  `method=passkey` with the sealed unlock material (opened with libsodium in the test) and an unlock session; `desktop-shell.spec.ts`: the keychain fallback and migration, native notifications and
   their click, close to tray and quit, and the tray following a real voice connection.
 - WebDriver smoke test of the built Linux app (`apps/desktop/e2e/smoke.mjs`, plain WebDriver over HTTP): the app
   starts, shows the node picker, the shell's resolver reports a domain without a node, the advanced URL refuses
@@ -335,7 +359,11 @@ picker accepts `http://127.0.0.1:8080`).
   test checks the tray state the client reported (`tray_status`), gives the shell a state, and shows a notification.
   The app then starts again with the keyring crates' in-memory mock store (`TAVRN_DESKTOP_KEYCHAIN=memory`, because
   xvfb has no Secret Service): the key moves into the keychain, the IndexedDB copy is gone, and a reload unlocks from
-  the keychain alone. Both values of `TAVRN_DESKTOP_KEYCHAIN` only ever store less (in memory, or nothing). It needs
+  the keychain alone. Both values of `TAVRN_DESKTOP_KEYCHAIN` only ever store less (in memory, or nothing). Last, signed
+  out, the passkey button opens the sign-in window with `method=passkey` and the app's key in the fragment; WebKitGTK
+  has no WebAuthn, so the ceremony is simulated (a software passkey registered over the API with a PRF entry, and the
+  test seals the PRF output to the key the page kept), and the built app opens the box and unlocks without the
+  recovery key. A real passkey ceremony in the sign-in window is checked by hand on Windows. It needs
   `tauri-driver` (`cargo install tauri-driver --locked`) and a built app:
 
   ```sh

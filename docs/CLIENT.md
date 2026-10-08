@@ -30,7 +30,11 @@ home node's own web client (the connect flow with PKCE, needed for passkeys and 
 the recovery key unlocks the encrypted messages. The same `/connect` page also confirms the sign-in of the
 desktop app (`/connect?session=…`, app sessions of FEDERATION.md §8 step 3): sign in there with any method, the page
 names the app's device and, after "Sign in to the app", says "return to the app" instead of redirecting; a sign-in on
-the page for such a confirmation skips the encryption step, because the app creates its own device keys. Encryption works across nodes: the MLS group of a
+the page for such a confirmation skips the encryption step, because the app creates its own device keys. `method=passkey`
+(or `sso`) starts that method at once with only "Signing in with a passkey…" and "Use another method". After a passkey
+ceremony with the PRF extension the page seals the passkey's unlock secret to the app's key from the URL fragment
+(`#k=`, never sent to a server) and sends it with the confirmation, so the passkey unlocks the app's encrypted messages
+as it does in the browser; an *unlock* request of a signed-in app ("Unlock the Tavrn app?") asks only for the passkey. Encryption works across nodes: the MLS group of a
 conversation lives on the node that hosts it, while every user's keys are checked against that user's own
 home node. Friends and DMs work by full address (`bob@other.example`); a DM lives on the home node of the
 person who starts it and shows its node's domain in the DM list; DMs started by a friend on another node
@@ -218,7 +222,9 @@ node over https and wss. The client's platform layer (`src/platform/`) tells the
 builders where the node lives. The node picker and the login page take the account's address first
 (`alice@home.example`): the shell finds the node of that domain (well-known, SRV, direct) and the app switches to it.
 Flows that need the node's own origin (passkeys, single sign-on, the captcha) run on the node's own page in a window of
-the app without any native API ("Sign in on <node>'s page"), and the app takes over the session; on nodes without
+the app without any native API ("Sign in on <node>'s page"), and the app takes over the session; a passkey used there
+also unlocks the encrypted messages, and "Unlock with a passkey" on the app's unlock screen runs just the passkey on
+that page; on nodes without
 app sessions the password with TOTP or a recovery code is what works. Web push is not offered. Details in DESKTOP.md
 "Signing in" and "Limitations".
 
