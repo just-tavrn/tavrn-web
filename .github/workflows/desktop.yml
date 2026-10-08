@@ -75,8 +75,11 @@ jobs:
       - name: System packages (WebKitGTK, WebDriver, xvfb)
         run: |
           sudo apt-get update
+          # The WebKit WebDriver is webkit2gtk-driver up to Ubuntu 24.04 and webkitgtk-webdriver from 26.04 on.
+          driver=webkit2gtk-driver
+          apt-cache show webkitgtk-webdriver >/dev/null 2>&1 && driver=webkitgtk-webdriver
           sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
-            librsvg2-dev patchelf xdg-utils webkit2gtk-driver xvfb
+            librsvg2-dev patchelf xdg-utils "$driver" xvfb
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -120,7 +123,7 @@ jobs:
           extra=()
           [ -n "$RELEASE_TAG" ] && extra=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
           pnpm --filter @tavrn/desktop tauri build --bundles deb,appimage "${extra[@]}"
-      - name: WebDriver smoke test (node picker, login page)
+      - name: WebDriver smoke test (node picker, sign-in with TOTP, encrypted message)
         run: |
           echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
           image="${{ vars.TAVRN_NODE_IMAGE || 'ghcr.io/just-tavrn/tavrn-node:edge' }}"
@@ -137,12 +140,12 @@ jobs:
           cp apps/desktop/src-tauri/target/release/bundle/deb/*.deb dist-desktop/
           cp apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage* dist-desktop/
           ls -l dist-desktop
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: desktop-linux
           path: dist-desktop/
           retention-days: 7
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         if: ${{ failure() }}
         with:
           name: desktop-smoke-screenshot
@@ -199,7 +202,7 @@ jobs:
           cp apps/desktop/src-tauri/target/release/bundle/msi/*.msi* dist-desktop/
           cp apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe* dist-desktop/
           ls -l dist-desktop
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: desktop-windows
           path: dist-desktop/
@@ -218,7 +221,7 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.release-tag }}
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           pattern: desktop-*
           path: installers
