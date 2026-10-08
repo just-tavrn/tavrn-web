@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 import { TavrnApiError, type AuthResponse, type PreAuthResponse } from "@tavrn/sdk";
 import { publicApi } from "../lib/api";
@@ -22,7 +22,9 @@ import { SecondFactorEnroll, type EnrollResult } from "../components/auth/Second
 import { SecondFactorVerify } from "../components/auth/SecondFactorVerify";
 import { RecoveryCodesView } from "../components/auth/RecoveryCodes";
 import { SsoButton, SsoOnlyLogin } from "../components/auth/SsoButton";
-import { deviceName } from "../platform";
+import { deviceName, platform } from "../platform";
+import { NodePageRequired, useNodePageHandoff } from "../components/auth/NodePageHandoff";
+import { parseAppAddress, resolveErrorMessage, switchToNodeOf } from "../lib/nodeAddress";
 
 type Mode = "login" | "register";
 
@@ -113,12 +115,12 @@ export function LoginPage() {
   return <PasswordStep onPreauth={(resp, k, username) => useAuthFlow.getState().startPreauth(resp, k, username)} onSession={(s, passkey) => finish(s, { passkey })} />;
 }
 
-function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthResponse, kind: FlowKind, username: string) => void; onSession: (s: AuthResponse, passkey: { credentialId: string; prf: Uint8Array | null }) => void }) {
+function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthResponse, kind: FlowKind, username: string) => void; onSession: (s: AuthResponse, passkey?: { credentialId: string; prf: Uint8Array | null }) => void }) {
   const t = useT();
   const [params] = useSearchParams();
   const [mode, setMode] = useState<Mode>(params.get("invite") || params.get("mode") === "register" ? "register" : "login");
   const [invite, setInvite] = useState(params.get("invite") ?? "");
-  const [username, setUsername] = useState("");
+  const [username, setUsername] = useState(params.get("username") ?? "");
   const [password, setPassword] = useState("");
   const [passwordRepeat, setPasswordRepeat] = useState("");
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
@@ -134,6 +136,10 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
   const navigate = useNavigate();
   const next = params.get("next") || "/";
   const node = useQuery({ queryKey: ["node", "origin"], queryFn: () => publicApi.node.info() });
+  const queryClient = useQueryClient();
+  const desktop = platform().isDesktop;
+  // Desktop app: passkeys, single sign-on and the captcha run on the node's own page (FEDERATION.md §8 step 3).
+  const handoff = useNodePageHandoff({ next, onSession: (s) => onSession(s) });
   const captcha = node.data?.captcha ?? null;
   const captchaNeeded = !!captcha && (mode === "login" ? captcha.login : captcha.register);
   // Published terms are accepted at registration, in the version shown (design note 4.14 item 2).
@@ -156,9 +162,29 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
     }
     setBusy(true);
     try {
-      const name = username.trim();
+      let name = username.trim();
+      let domain = node.data?.domain;
+      // Desktop app, address first: `alice@home.example` names the account and its node (FEDERATION.md §1.4).
+      const address = desktop && name.includes("@") ? parseAppAddress(name) : null;
+      if (desktop && name.includes("@") && !address) {
+        setError(t("node_picker.address_invalid"));
+        return;
+      }
+      if (address) {
+        if (address.domain !== domain) {
+          try {
+            const found = await switchToNodeOf(address.domain);
+            domain = found.domain;
+            await queryClient.invalidateQueries({ queryKey: ["node"] });
+          } catch (err) {
+            setError(resolveErrorMessage(err, address.domain) ?? describeError(err));
+            return;
+          }
+        }
+        name = address.username;
+        setUsername(name);
+      }
       // A login on a browser that still holds a device of this account continues that device (PROTOCOL.md §5b).
-      const domain = node.data?.domain;
       const account = name.includes("@") ? name.toLowerCase() : domain ? `${name.toLowerCase()}@${domain}` : null;
       const device = mode === "login" ? await deviceProofFor(publicApi, account) : null;
       const resp =
@@ -214,7 +240,12 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
     );
   }
 
-  if (node.data?.sso?.only && !breakGlass) return <SsoOnlyLogin next={next} onAdmin={() => setBreakGlass(true)} />;
+  if (handoff.view) return <AuthCard>{handoff.view}</AuthCard>;
+  const toNodePage = handoff.available ? () => handoff.start("login") : undefined;
+  // The captcha is bound to the node's host: in the app this step happens on the node's page.
+  const captchaOnNodePage = desktop && handoff.available && captchaNeeded;
+
+  if (node.data?.sso?.only && !breakGlass) return <SsoOnlyLogin next={next} onAdmin={() => setBreakGlass(true)} onHandoff={toNodePage} />;
 
   return (
     <AuthCard>
@@ -223,7 +254,7 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
           {t("legal.delete.done")}
         </p>
       )}
-      {mode === "login" && <SsoButton next={next} />}
+      {mode === "login" && <SsoButton next={next} onHandoff={toNodePage} />}
       <div role="tablist" aria-label={t("a11y.auth_mode")} onKeyDown={tabListKeyDown} className={`grid grid-cols-2 rounded-md bg-bg-0 p-1 text-sm ${mode === "login" && node.data?.sso ? "mt-4" : ""}`}>
         {(["login", "register"] as Mode[]).map((m) => (
           <button
@@ -249,8 +280,17 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
           <Steps current={1} />
         </div>
       )}
+      {captchaOnNodePage ? (
+        <div id="auth-panel" role="tabpanel" aria-labelledby={`auth-tab-${mode}`}>
+          <NodePageRequired handoff={handoff} mode={mode} />
+        </div>
+      ) : (
       <form onSubmit={submit} className="mt-4 space-y-3" id="auth-panel" role="tabpanel" aria-labelledby={`auth-tab-${mode}`}>
-        <Field label={t("auth.username")} hint={mode === "register" ? t("auth.username_hint") : undefined} errorId={error ? "auth-error" : undefined}>
+        <Field
+          label={desktop && mode === "login" ? t("auth.username_or_address") : t("auth.username")}
+          hint={mode === "register" ? t("auth.username_hint") : desktop ? t("auth.username_or_address_hint") : undefined}
+          errorId={error ? "auth-error" : undefined}
+        >
           <Input name="username" autoComplete="username webauthn" value={username} onChange={(e) => setUsername(e.target.value)} required autoFocus />
         </Field>
         <Field label={t("auth.password")} hint={mode === "register" ? t("auth.password_hint") : undefined} errorId={error ? "auth-error" : undefined}>
@@ -294,10 +334,18 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
         </Button>
         {mode === "login" && (
           <>
-            {passkeysSupported() && (
-              <Button variant="ghost" className="w-full border border-line" disabled={busy} onClick={() => void passkeyOnly()}>
+            {(passkeysSupported() || toNodePage) && (
+              <Button variant="ghost" className="w-full border border-line" disabled={busy} onClick={() => (desktop && toNodePage ? toNodePage() : void passkeyOnly())}>
                 {t("auth.passkey_login")}
               </Button>
+            )}
+            {desktop && toNodePage && (
+              <div className="space-y-1">
+                <Button variant="ghost" className="w-full border border-line" disabled={busy} onClick={toNodePage} data-testid="node-page-signin">
+                  {t("handoff.signin", { node: handoff.domain })}
+                </Button>
+                <p className="text-xs text-fg-2">{t("handoff.hint")}</p>
+              </div>
             )}
             <Link to="/forgot-password" className="block text-center text-sm text-fg-2 hover:text-fg-0">
               {t("auth.forgot")}
@@ -308,6 +356,7 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
           </>
         )}
       </form>
+      )}
     </AuthCard>
   );
 }

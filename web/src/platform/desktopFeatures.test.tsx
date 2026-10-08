@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
- * Flows that rely on the node's own origin are not offered in the desktop app (docs/DESKTOP.md "Limitations"):
- * passkeys, single sign-on, the connect flow, the captcha, web push. The password with TOTP or a recovery
- * code keeps working.
+ * Flows that rely on the node's own origin do not run inside the desktop app (docs/DESKTOP.md "Limitations"):
+ * passkeys, single sign-on, the captcha, web push. On nodes with app sessions (`connect.app`) the app hands them off
+ * to the node's page (LoginPage.desktop.test.tsx); here the node offers none, so password with TOTP or a recovery
+ * code is what works.
  */
 import { render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

@@ -14,22 +14,29 @@ import { describeError } from "../../stores/toasts";
 import { Button, ErrorText } from "../ui";
 import { AuthCard } from "./AuthCard";
 
-/** The node's SSO settings (`GET /node`), null without a provider and in the desktop app (no SSO there yet). */
-export function useSso(): SsoInfo | null {
+/**
+ * The node's SSO settings (`GET /node`), null without a provider and in the desktop app unless it signs in on the
+ * node's page (`handoff`).
+ */
+export function useSso(handoff = false): SsoInfo | null {
   const node = useQuery({ queryKey: ["node", "origin"], queryFn: () => publicApi.node.info() });
-  return ssoAvailable() ? (node.data?.sso ?? null) : null;
+  return ssoAvailable() || handoff ? (node.data?.sso ?? null) : null;
 }
 
-/** "Sign in with SSO" plus a divider; renders nothing on nodes without a provider. */
-export function SsoButton({ next, divider = true }: { next: string; divider?: boolean }) {
+/**
+ * "Sign in with SSO" plus a divider; renders nothing on nodes without a provider. `onHandoff` (desktop app): SSO
+ * runs on the node's page instead (FEDERATION.md §8 step 3).
+ */
+export function SsoButton({ next, divider = true, onHandoff }: { next: string; divider?: boolean; onHandoff?: () => void }) {
   const t = useT();
-  const sso = useSso();
+  const sso = useSso(!!onHandoff);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [logoutUrl, setLogoutUrl] = useState(() => peekSsoLogout());
   if (!sso) return null;
   const label = sso.label || t("sso.button");
   const go = async () => {
+    if (onHandoff) return onHandoff();
     setBusy(true);
     setError(null);
     try {
@@ -75,19 +82,19 @@ export function SsoButton({ next, divider = true }: { next: string; divider?: bo
  * `TAVRN_OIDC_ONLY`: the login page shows only the provider. Operators listed in `TAVRN_ADMIN_USERS`
  * open the password form with "Administrator sign-in" (break-glass when the provider is down).
  */
-export function SsoOnlyLogin({ next, onAdmin }: { next: string; onAdmin: () => void }) {
+export function SsoOnlyLogin({ next, onAdmin, onHandoff }: { next: string; onAdmin: () => void; onHandoff?: () => void }) {
   const t = useT();
   return (
     <AuthCard>
       <p className="mb-4 text-sm text-fg-1" data-testid="sso-only">
         {t("sso.only_hint")}
       </p>
-      {!ssoAvailable() && (
+      {!ssoAvailable() && !onHandoff && (
         <p role="status" className="mb-4 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-fg-1" data-testid="sso-desktop">
           {t("desktop.sso_unavailable")}
         </p>
       )}
-      <SsoButton next={next} divider={false} />
+      <SsoButton next={next} divider={false} onHandoff={onHandoff} />
       <button type="button" className="mt-4 block min-h-9 w-full border-t border-line pt-3 text-center text-sm text-fg-2 hover:text-fg-0" onClick={onAdmin} data-testid="sso-break-glass">
         {t("sso.admin_login")}
       </button>

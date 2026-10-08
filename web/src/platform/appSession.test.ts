@@ -42,7 +42,7 @@ describe("app sessions of the connect flow (FEDERATION.md §8 step 3)", () => {
 
   it("creates a session, opens the page, polls until ready and exchanges the code with the verifier", async () => {
     const { api, calls } = node([pending, pending, ready]);
-    const open = vi.fn(async () => {});
+    const open = vi.fn(async (_url: string) => {});
     const close = vi.fn(async () => {});
     const onPage = vi.fn();
     const device = vi.fn(async () => ({ id: "D0", nonce: "n", proof: "p" }));
@@ -53,7 +53,7 @@ describe("app sessions of the connect flow (FEDERATION.md §8 step 3)", () => {
     const exchange = calls.find((c) => c.url.endsWith("/auth/connect/token"))!;
     expect(exchange.body).toMatchObject({ code: "c0de", device: { id: "D0" } });
     expect(await pkceChallenge(String(exchange.body!.code_verifier))).toBe(created.body!.code_challenge);
-    const url = new URL(open.mock.calls[0]![0] as unknown as string);
+    const url = new URL(open.mock.calls[0]![0]);
     expect(url.searchParams.get("session")).toBe("S".repeat(43));
     expect(onPage).toHaveBeenCalledWith(url.toString());
     expect(calls.filter((c) => c.url.includes("/auth/connect/session/"))).toHaveLength(3);

@@ -30,7 +30,7 @@ export function parseNodeUrl(input: string): ParsedNodeUrl {
   return { ok: true, url: url.origin };
 }
 
-export type NodeCheck = { ok: true; domain: string } | { ok: false; reason: "unreachable" | "not_a_node" };
+export type NodeCheck = { ok: true; domain: string; web?: string } | { ok: false; reason: "unreachable" | "not_a_node" };
 
 /** Asks the node for its discovery document: a tavrn node answers with its identity domain. */
 export async function checkNode(base: string): Promise<NodeCheck> {
@@ -40,8 +40,11 @@ export async function checkNode(base: string): Promise<NodeCheck> {
   } catch (e) {
     return { ok: false, reason: e instanceof TypeError ? "unreachable" : "not_a_node" };
   }
-  const domain = (doc as { domain?: unknown } | null)?.domain;
+  const { domain, web } = (doc ?? {}) as { domain?: unknown; web?: unknown };
   // A node in development mode (plain http on this computer) is called `localhost`.
   const valid = typeof domain === "string" && (isNodeDomain(domain) || (base.startsWith("http:") && domain === "localhost"));
-  return valid ? { ok: true, domain } : { ok: false, reason: "not_a_node" };
+  if (!valid) return { ok: false, reason: "not_a_node" };
+  // The origin of its web client (the sign-in page of the desktop app), when the document names a usable one.
+  const webOrigin = typeof web === "string" ? parseNodeUrl(web) : null;
+  return webOrigin?.ok ? { ok: true, domain, web: webOrigin.url } : { ok: true, domain };
 }
