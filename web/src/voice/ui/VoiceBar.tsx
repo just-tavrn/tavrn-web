@@ -85,6 +85,9 @@ export function VoiceBar() {
   const overlay = <CallOverlay />;
   if (status === "idle" || !target) return overlay;
   const color = status === "connected" ? "text-ok" : "text-warn";
+  const level = status === "connected" ? BARS[quality] : 0;
+  // Voice is never sent unencrypted (VOICE.md), so the padlock is always there; the text names the quality.
+  const signal = t(status === "connected" ? `voice.signal.${quality}` : "voice.signal.connecting");
   return (
     <div className="border-t border-line bg-bg-0 px-2 py-1.5" data-testid="voice-bar" data-status={status} data-call={target.call || undefined}>
       {overlay}
@@ -100,11 +103,11 @@ export function VoiceBar() {
           title={t("voice.bar.open")}
         >
           <span className={`flex items-center gap-1.5 text-xs font-semibold ${color}`}>
-            <SignalBars level={status === "connected" ? BARS[quality] : 0} />
-            <span data-testid="voice-bar-status">{t(`voice.status.${status}`)}</span>
-            <span role="img" className="text-[10px]" aria-label={t("voice.encrypted")} title={t("voice.encrypted")}>
-              🔒
+            {/* Encryption and connection quality in one glyph: the padlock sits in the signal bars. */}
+            <span role="img" aria-label={signal} title={signal} className="inline-flex" data-testid="voice-bar-signal" data-level={level}>
+              <SignalBars level={level} locked />
             </span>
+            <span data-testid="voice-bar-status">{t(`voice.status.${status}`)}</span>
             {status === "connected" && <QualityBadge />}
           </span>
           <span className="block truncate text-[11px] text-fg-2" data-testid="voice-bar-channel">
