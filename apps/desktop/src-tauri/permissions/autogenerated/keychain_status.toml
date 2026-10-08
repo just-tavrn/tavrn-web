@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-keychain-status"
+description = "Enables the keychain_status command without any pre-configured scope."
+commands.allow = ["keychain_status"]
+
+[[permission]]
+identifier = "deny-keychain-status"
+description = "Denies the keychain_status command without any pre-configured scope."
+commands.deny = ["keychain_status"]

@@ -4,6 +4,7 @@ import { resetPlatform, setPlatform, type HotkeyAction, type HotkeyEvent, type P
 import { browserPlatform } from "../platform/browser";
 import { DEFAULT_SETTINGS, useVoiceSettings } from "./settings";
 import { useToasts } from "../stores/toasts";
+import { IDLE, useVoice } from "./store";
 
 const voice = vi.hoisted(() => ({ pushToTalk: vi.fn(), setPrioritySpeaker: vi.fn(), toggleMute: vi.fn(async () => {}), toggleDeafen: vi.fn(async () => {}) }));
 vi.mock("./index", () => voice);
@@ -161,6 +162,27 @@ describe("the voice session reacts to presses and releases", () => {
     handleHotkey({ action: "toggle_deafen", pressed: false });
     expect(voice.toggleMute).toHaveBeenCalledTimes(1);
     expect(voice.toggleDeafen).toHaveBeenCalledTimes(1);
+  });
+
+  it("outside a call a toggle says what the next voice channel gets (no other feedback there)", async () => {
+    useVoice.setState({ ...IDLE });
+    voice.toggleMute.mockImplementationOnce(async () => useVoice.setState({ muted: true }));
+    handleHotkey({ action: "toggle_mute", pressed: true });
+    await vi.waitFor(() => expect(useToasts.getState().toasts.map((x) => x.testId)).toEqual(["hotkey-voice-state"]));
+    expect(useToasts.getState().toasts[0]!.title).toMatch(/stumm/i);
+    voice.toggleDeafen.mockImplementationOnce(async () => useVoice.setState({ deafened: true, muted: true }));
+    handleHotkey({ action: "toggle_deafen", pressed: true });
+    await vi.waitFor(() => expect(useToasts.getState().toasts).toHaveLength(2));
+    expect(useToasts.getState().toasts[1]!.title).toMatch(/Ton aus/);
+    // In a call the cues and the controls show it.
+    useToasts.setState({ toasts: [] } as never);
+    useVoice.setState({ status: "connected" });
+    handleHotkey({ action: "toggle_mute", pressed: false });
+    handleHotkey({ action: "toggle_mute", pressed: true });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(useToasts.getState().toasts).toHaveLength(0);
+    useVoice.setState({ ...IDLE });
   });
 
   it("listens to the shell from the start until it stops", async () => {

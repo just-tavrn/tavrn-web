@@ -11,6 +11,7 @@ import { t } from "../i18n";
 import { useToasts } from "../stores/toasts";
 import { pushToTalk, setPrioritySpeaker, toggleDeafen, toggleMute } from "./index";
 import { useVoiceSettings, type VoiceSettings } from "./settings";
+import { useVoice } from "./store";
 
 export const HOTKEY_ACTIONS: readonly HotkeyAction[] = ["push_to_talk", "priority", "toggle_mute", "toggle_deafen"];
 
@@ -186,12 +187,20 @@ export function handleHotkey(e: HotkeyEvent): void {
       setPrioritySpeaker(e.pressed);
       break;
     case "toggle_mute":
-      if (e.pressed) void toggleMute();
+      if (e.pressed) void toggleMute().then(announceOutsideCall);
       break;
     case "toggle_deafen":
-      if (e.pressed) void toggleDeafen();
+      if (e.pressed) void toggleDeafen().then(announceOutsideCall);
       break;
   }
+}
+
+/** Outside a call nothing shows the toggled state (in a call the cues and the controls do): say what the next join gets. */
+function announceOutsideCall(): void {
+  const { status, muted, deafened } = useVoice.getState();
+  if (status !== "idle") return;
+  const key = deafened ? "voice.hotkeys.idle_deafened" : muted ? "voice.hotkeys.idle_muted" : "voice.hotkeys.idle_live";
+  useToasts.getState().push({ kind: "info", title: t(key), testId: "hotkey-voice-state" });
 }
 
 /** At start of the desktop app: listen to the shell and restore the bindings. Returns the stopper. */

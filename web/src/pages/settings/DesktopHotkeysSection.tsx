@@ -60,45 +60,47 @@ export function DesktopHotkeysSection() {
 
   return (
     <Section title={t("voice.hotkeys.title")} description={t("voice.hotkeys.description")}>
-      <ul className="space-y-2" data-testid="desktop-hotkeys">
-        {HOTKEY_ACTIONS.map((action) => {
-          const active = recording === action;
-          const bound = bindings[action];
-          const shown = active ? (partial ? comboLabel(`${partial}…`) : t("voice.hotkeys.recording")) : bound ? comboLabel(bound) : t("voice.hotkeys.none");
-          return (
-            <li key={action} className="flex flex-wrap items-center gap-2 text-sm" data-testid={`hotkey-${action}`}>
-              <span className="min-w-0 flex-1 basis-48 text-fg-1">{t(`voice.hotkeys.action.${action}`)}</span>
-              <kbd className={`rounded border bg-bg-0 px-2 py-1 font-mono text-xs ${active ? "border-accent" : "border-line"}`} data-testid={`hotkey-${action}-key`} aria-live="polite">
-                {shown}
-              </kbd>
-              <Button
-                variant="ghost"
-                aria-pressed={active}
-                onClick={() => {
-                  setError(null);
-                  setPartial("");
-                  setRecording(active ? null : action);
-                }}
-                data-testid={`hotkey-${action}-change`}
-              >
-                {active ? t("voice.hotkeys.recording") : t("voice.hotkeys.change")}
-              </Button>
-              {bound && !active && (
-                <Button variant="ghost" onClick={() => void clearHotkey(action).catch(() => undefined)} data-testid={`hotkey-${action}-remove`}>
-                  {t("voice.hotkeys.remove")}
+      <div className="space-y-3" data-testid="desktop-hotkeys">
+        <ul className="space-y-2">
+          {HOTKEY_ACTIONS.map((action) => {
+            const active = recording === action;
+            const bound = bindings[action];
+            const shown = active ? (partial ? comboLabel(`${partial}…`) : t("voice.hotkeys.recording")) : bound ? comboLabel(bound) : t("voice.hotkeys.none");
+            return (
+              <li key={action} className="flex flex-wrap items-center gap-2 text-sm" data-testid={`hotkey-${action}`}>
+                <span className="min-w-0 flex-1 basis-48 text-fg-1">{t(`voice.hotkeys.action.${action}`)}</span>
+                <kbd className={`rounded border bg-bg-0 px-2 py-1 font-mono text-xs ${active ? "border-accent" : "border-line"}`} data-testid={`hotkey-${action}-key`} aria-live="polite">
+                  {shown}
+                </kbd>
+                <Button
+                  variant="ghost"
+                  aria-pressed={active}
+                  onClick={() => {
+                    setError(null);
+                    setPartial("");
+                    setRecording(active ? null : action);
+                  }}
+                  data-testid={`hotkey-${action}-change`}
+                >
+                  {active ? t("voice.hotkeys.recording") : t("voice.hotkeys.change")}
                 </Button>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-      {recording && <p className="text-xs text-fg-2">{t("voice.hotkeys.recording_hint")}</p>}
-      {bindings.push_to_talk && inputMode !== "ptt" && (
-        <p className="text-xs text-fg-2" data-testid="hotkey-ptt-mode">
-          {t("voice.hotkeys.ptt_mode_hint")}
-        </p>
-      )}
-      <ErrorText>{error}</ErrorText>
+                {bound && !active && (
+                  <Button variant="ghost" onClick={() => void clearHotkey(action).catch(() => undefined)} data-testid={`hotkey-${action}-remove`}>
+                    {t("voice.hotkeys.remove")}
+                  </Button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+        {recording && <p className="text-xs text-fg-2">{t("voice.hotkeys.recording_hint")}</p>}
+        {bindings.push_to_talk && inputMode !== "ptt" && (
+          <p className="text-xs text-fg-2" data-testid="hotkey-ptt-mode">
+            {t("voice.hotkeys.ptt_mode_hint")}
+          </p>
+        )}
+        <ErrorText>{error}</ErrorText>
+      </div>
     </Section>
   );
 }
