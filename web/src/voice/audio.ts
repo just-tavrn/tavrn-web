@@ -10,6 +10,8 @@
  * only rewires the nodes in front of the gate. Voice activation, noise gate and push-to-talk are the gate
  * (an AudioWorklet, `gate.worklet.ts`); RNNoise is the WASM worklet of `@sapphi-red/web-noise-suppressor`.
  * The worklet reports the level about ten times per second; nothing runs per frame on the main thread.
+ * Music mode (VOICE.md §4a) captures without the microphone processing and RNNoise and keeps two channels
+ * when the device delivers them (`quality.ts`); the gate then also guards against a one-sided capture.
  * Loaded lazily (voice session and settings tab only).
  */
 import gateWorkletUrl from "./gate.worklet.ts?worker&url";
@@ -17,7 +19,8 @@ import rnnoiseWorkletUrl from "@sapphi-red/web-noise-suppressor/rnnoiseWorklet.j
 import rnnoiseWasmUrl from "@sapphi-red/web-noise-suppressor/rnnoise.wasm?url";
 import rnnoiseSimdWasmUrl from "@sapphi-red/web-noise-suppressor/rnnoise_simd.wasm?url";
 import { RnnoiseWorkletNode, loadRnnoise } from "@sapphi-red/web-noise-suppressor";
-import { captureConstraints, gateThreshold, type VoiceSettings } from "./settings";
+import { gateThreshold, type VoiceSettings } from "./settings";
+import { captureFor, stereoCapture } from "./quality";
 
 export interface LevelReport {
   /** dBFS of the loudest block of the last ~100 ms (before the gate). */
@@ -46,9 +49,13 @@ export class MicPipeline {
   /** Push-to-talk holds the gate open (key down or within the release delay). */
   private pttOpen = false;
   private closed = false;
+  /** Music mode: no microphone processing, two channels when the device has them. */
+  private readonly music: boolean;
+  private stereoCapture = false;
 
-  private constructor(ctx: AudioContext, gate: AudioWorkletNode, settings: VoiceSettings, onLevel: (r: LevelReport) => void) {
+  private constructor(ctx: AudioContext, gate: AudioWorkletNode, settings: VoiceSettings, onLevel: (r: LevelReport) => void, music: boolean) {
     this.ctx = ctx;
+    this.music = music;
     this.settings = settings;
     this.input = ctx.createGain();
     this.gate = gate;
@@ -63,12 +70,13 @@ export class MicPipeline {
   }
 
   /** Opens the microphone with the settings (asks for permission). */
-  static async create(settings: VoiceSettings, onLevel: (r: LevelReport) => void = () => undefined): Promise<MicPipeline> {
+  static async create(settings: VoiceSettings, onLevel: (r: LevelReport) => void = () => undefined, opts: { music?: boolean } = {}): Promise<MicPipeline> {
     const ctx = new AudioContext({ sampleRate: 48000, latencyHint: "interactive" });
+    const music = !!opts.music;
     try {
       await ctx.audioWorklet.addModule(gateWorkletUrl);
-      const gate = new AudioWorkletNode(ctx, "tavrn-gate", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
-      const pipeline = new MicPipeline(ctx, gate, settings, onLevel);
+      const gate = new AudioWorkletNode(ctx, "tavrn-gate", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [music ? 2 : 1] });
+      const pipeline = new MicPipeline(ctx, gate, settings, onLevel, music);
       await pipeline.apply(settings);
       if (ctx.state === "suspended") await ctx.resume().catch(() => undefined);
       return pipeline;
@@ -83,6 +91,11 @@ export class MicPipeline {
     return this.dest.stream.getAudioTracks()[0]!;
   }
 
+  /** The published track carries two independent channels (music mode with a two-channel device). */
+  get stereo(): boolean {
+    return this.stereoCapture;
+  }
+
   /** The raw input track (device label, settings). */
   get inputTrack(): MediaStreamTrack | null {
     return this.stream?.getAudioTracks()[0] ?? null;
@@ -91,7 +104,7 @@ export class MicPipeline {
   /** Applies changed settings live: device and constraints, RNNoise, gate, input volume. */
   async apply(settings: VoiceSettings): Promise<void> {
     this.settings = settings;
-    const constraints = captureConstraints(settings);
+    const constraints = captureFor(settings, this.music);
     if (!this.constraints || !sameConstraints(constraints, this.constraints)) {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: constraints, video: false });
       if (this.closed) {
@@ -103,11 +116,13 @@ export class MicPipeline {
       this.stream = stream;
       this.source = this.ctx.createMediaStreamSource(stream);
       this.constraints = constraints;
+      this.stereoCapture = stereoCapture(this.music, stream.getAudioTracks()[0]?.getSettings());
+      this.gate.port.postMessage({ stereo: this.stereoCapture });
       this.rnnoise?.disconnect();
       this.rnnoise?.destroy();
       this.rnnoise = null;
     }
-    await this.wire(settings.noiseSuppression === "rnnoise");
+    await this.wire(!this.music && settings.noiseSuppression === "rnnoise");
     this.input.gain.value = settings.inputVolume / 100;
     this.gate.port.postMessage({ threshold: gateThreshold(settings), holdMs: settings.inputMode === "ptt" ? 0 : 300 });
     if (settings.inputMode !== "ptt") this.pttOpen = false;

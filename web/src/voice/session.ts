@@ -40,6 +40,7 @@ import { qualify, splitIdentity, type MlsManager } from "@tavrn/e2ee";
 import { useToasts } from "../stores/toasts";
 import { t } from "../i18n";
 import { MicPipeline } from "./audio";
+import { isMusic, micPublishOptions } from "./quality";
 import { markWeakDevice } from "./frames";
 import { TavrnKeyProvider } from "./keyProvider";
 import { VoiceError, voiceErrorMessage } from "./errors";
@@ -386,12 +387,11 @@ async function publishMic(s: Session) {
   if (!canPublish(s.room, Track.Source.Microphone) || s.room.localParticipant.getTrackPublication(Track.Source.Microphone)) return;
   // Never publish before encryption is confirmed for this device (VOICE.md §6).
   if (!s.room.isE2EEEnabled || !s.room.localParticipant.isE2EEEnabled) throw new VoiceError("e2ee_failed");
+  // Quality presets and music mode (VOICE.md §4a): stereo only for a real two-channel capture.
+  const kbps = s.info.limits.audio_bitrate_kbps;
   const pub = await s.room.localParticipant.publishTrack(s.pipeline.track, {
     source: Track.Source.Microphone,
-    audioPreset: { maxBitrate: s.info.limits.audio_bitrate_kbps * 1000 },
-    dtx: true,
-    red: false,
-    stopMicTrackOnMute: false,
+    ...micPublishOptions(kbps, { music: isMusic(kbps), stereo: s.pipeline.stereo }),
   });
   if (useVoice.getState().muted) {
     await pub.mute();
@@ -686,7 +686,7 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
   try {
     if (info.epoch != null && (mls.epoch(q) ?? -1) < info.epoch) await mls.catchUp(q);
     const s0 = settings();
-    pipeline = await MicPipeline.create(s0, onLevel);
+    pipeline = await MicPipeline.create(s0, onLevel, { music: isMusic(info.limits.audio_bitrate_kbps) });
     const keyProvider = new TavrnKeyProvider();
     const vk = mls.voiceKey(q);
     if (!vk) throw new VoiceError("e2ee_failed");
