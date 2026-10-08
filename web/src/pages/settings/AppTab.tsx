@@ -133,15 +133,19 @@ function TraySection() {
   const queryClient = useQueryClient();
   const status = useQuery({ queryKey: ["app-tray"], queryFn: () => tray!.status(), enabled: !!tray });
   const [error, setError] = useState<string | null>(null);
+  // The switch follows the click at once; the shell's answer (or its refusal) settles it.
+  const [pending, setPending] = useState<boolean | null>(null);
   if (!tray) return null;
   const toggle = async (on: boolean) => {
     setError(null);
+    setPending(on);
     try {
       await tray.setCloseToTray(on);
     } catch (e) {
       setError(describeError(e));
     }
     await queryClient.invalidateQueries({ queryKey: ["app-tray"] });
+    setPending(null);
   };
   return (
     <Section title={t("desktop.tray")}>
@@ -151,7 +155,7 @@ function TraySection() {
         </p>
       ) : (
         <label className="flex items-start gap-2 text-sm">
-          <input type="checkbox" className="mt-0.5 h-4 w-4" checked={!!status.data?.closeToTray} disabled={!status.data} onChange={(e) => void toggle(e.target.checked)} data-testid="app-close-to-tray" />
+          <input type="checkbox" className="mt-0.5 h-4 w-4" checked={pending ?? !!status.data?.closeToTray} disabled={!status.data} onChange={(e) => void toggle(e.target.checked)} data-testid="app-close-to-tray" />
           <span>
             {t("desktop.close_to_tray")}
             <span className="block text-xs text-fg-2">
