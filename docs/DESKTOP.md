@@ -213,7 +213,8 @@ picker accepts `http://127.0.0.1:8080`).
 - Rust: `cargo test` in `apps/desktop/src-tauri` (node URL validation, settings file, navigation guard, updater key,
   the security properties of `tauri.conf.json` and the capability, the keychain with the in-memory mock store of
   keyring-core and its entry names, notification validation, the tray's states, icons and labels, the installer
-  licence and the icons of the bundle).
+  licence and the icons of the bundle). `cargo test -- --ignored os_keychain` writes, reads and deletes an entry in
+  the real keychain of the machine; desktop.yml runs it with gnome-keyring in a D-Bus session.
 - Vitest, with the other tests of the client (`just test`): the platform detection and both implementations (Tauri
   mocked with `@tauri-apps/api/mocks`), the node picker, Settings → App, the API base plumbing, the flows the app
   does not offer, the key store with the keychain (migration, fallback, lock on close, sign-out), the routing of

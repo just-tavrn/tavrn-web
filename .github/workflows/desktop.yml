@@ -4,7 +4,8 @@
 # WebKit). Gated by CI_ENABLED (docs/GITHUB.md). Minutes matter: no matrix on pull requests, no scheduled runs.
 #
 # - Pull requests that touch the app or the client: Linux build with cargo fmt, clippy, tests, cargo deny (licenses),
-#   the WebDriver smoke test of the built app under xvfb, the .deb and .AppImage as artifacts for 7 days.
+#   a round trip through the real Secret Service (gnome-keyring), the WebDriver smoke test of the built app under
+#   xvfb, the .deb and .AppImage as artifacts for 7 days.
 # - By hand (workflow_dispatch): the same for any branch; `windows: true` adds the Windows installers (.msi, NSIS).
 # - Release tags: release.yml calls this workflow with `release-tag` after it created the GitHub release; Linux and
 #   Windows installers, their updater signatures and latest.json are attached to that release (never a second one).
@@ -112,6 +113,11 @@ jobs:
           cargo clippy --all-targets --locked -- -D warnings
           cargo test --locked
           cargo deny check licenses
+      - name: The real Linux keychain (gnome-keyring in a D-Bus session)
+        working-directory: apps/desktop/src-tauri
+        run: |
+          sudo apt-get install -y --no-install-recommends gnome-keyring
+          dbus-run-session -- bash -c 'echo ci-keyring | gnome-keyring-daemon --components=secrets --daemonize --unlock >/dev/null && cargo test --locked -- --ignored os_keychain'
       - name: Update manifest script
         run: pnpm --filter @tavrn/desktop test
       - name: Build (.deb, .AppImage)

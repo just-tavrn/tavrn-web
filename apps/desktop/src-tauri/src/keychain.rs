@@ -361,6 +361,22 @@ mod tests {
         assert_eq!(KeychainError::Unavailable.code(), "keychain.unavailable");
     }
 
+    /// The real keychain of this machine: desktop.yml runs it with gnome-keyring in a D-Bus session
+    /// (`cargo test -- --ignored os_keychain`).
+    #[test]
+    #[ignore = "needs an unlocked keychain (desktop.yml starts gnome-keyring)"]
+    fn os_keychain_round_trip() {
+        let k = Keychain::os();
+        assert_ne!(k.backend(), Backend::None, "no keychain could be opened");
+        assert!(k.status().available, "the keychain does not answer");
+        let user = format!("local-key/https://tavrn.example/test-{}@tavrn.example", std::process::id());
+        assert_eq!(k.get(&user), Ok(None));
+        assert_eq!(k.set(&user, &KEY), Ok(()));
+        assert_eq!(k.get(&user), Ok(Some(KEY.to_vec())));
+        assert_eq!(k.delete(&user), Ok(()));
+        assert_eq!(k.get(&user), Ok(None));
+    }
+
     #[test]
     fn the_setting_selects_the_test_backends() {
         assert_eq!(Keychain::for_setting(Some("memory")).backend(), Backend::Memory);
