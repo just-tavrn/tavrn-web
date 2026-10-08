@@ -6,7 +6,7 @@ import { useAuth } from "./auth";
 import { ensureDevice, localStatus, syncIdentity, wipeLocal, type E2eeContext } from "../crypto/e2ee";
 import { cryptoStore, type CryptoStatus } from "../crypto/store";
 import { useAuthFlow } from "./authFlow";
-import { flushMls, ownIdentityRotated, resetMls } from "./mls";
+import { flushMls, getMls, ownIdentityRotated, resetMls } from "./mls";
 import { signOutNodes } from "./nodes";
 import { useConversationIndex } from "./conversationIndex";
 import { rememberSsoLogout } from "../lib/sso";
@@ -49,7 +49,8 @@ export const useE2ee = create<E2eeState>((set) => ({
       const ctx = await e2eeContext();
       // A rotation on another device (ENCRYPTION.md §9a): take the new key first; the session manager reopens with it.
       if ((await syncIdentity(ctx)) === "rotated") await ownIdentityRotated();
-      await ensureDevice(ctx);
+      // KeyPackages are created in the open session manager's state (in the tab that owns it), not next to it.
+      await ensureDevice({ ...ctx, keyPackages: async (n) => (await getMls())?.createKeyPackages(n) ?? null });
     } catch {
       /* best effort: retried on the next start */
     }
