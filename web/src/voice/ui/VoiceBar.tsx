@@ -104,15 +104,18 @@ export function VoiceBar() {
         >
           <span className={`flex items-center gap-1.5 text-xs font-semibold ${color}`}>
             {/* Encryption and connection quality in one glyph: the padlock sits in the signal bars. */}
-            <span role="img" aria-label={signal} title={signal} className="inline-flex" data-testid="voice-bar-signal" data-level={level}>
+            <span role="img" aria-label={signal} title={signal} className="inline-flex shrink-0" data-testid="voice-bar-signal" data-level={level}>
               <SignalBars level={level} locked />
             </span>
-            <span data-testid="voice-bar-status">{t(`voice.status.${status}`)}</span>
-            {status === "connected" && <QualityBadge />}
+            <span className="min-w-0" data-testid="voice-bar-status">{t(`voice.status.${status}`)}</span>
           </span>
-          <span className="block truncate text-[11px] text-fg-2" data-testid="voice-bar-channel">
-            {names.channel}
-            {names.room && ` / ${names.room}`}
+          {/* The quality badge leads the channel line: next to the status it ran into the controls of a narrow sidebar. */}
+          <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-fg-2">
+            {status === "connected" && <QualityBadge />}
+            <span className="min-w-0 truncate" data-testid="voice-bar-channel">
+              {names.channel}
+              {names.room && ` / ${names.room}`}
+            </span>
           </span>
           {deafened && (
             <span className="block truncate text-[11px] text-warn" data-testid="voice-bar-deafened">

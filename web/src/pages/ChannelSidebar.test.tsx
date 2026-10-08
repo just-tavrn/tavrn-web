@@ -78,6 +78,12 @@ describe("room header", () => {
     await within(menu).findByRole("menuitem", { name: "Leute einladen" });
     await user.keyboard("{ArrowDown}");
     expect(within(menu).getByTestId("room-settings-button")).toHaveFocus();
+    // Escape closes it and gives the focus back; Space opens it again.
+    await user.keyboard("{Escape}");
+    expect(screen.queryByTestId("room-menu")).toBeNull();
+    expect(header).toHaveFocus();
+    await user.keyboard(" ");
+    expect(await screen.findByTestId("room-menu")).toBeInTheDocument();
   });
 
   it("moderators see the open reports on the chevron and as the hint of the settings entry, which opens the inbox", async () => {
