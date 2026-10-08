@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
- * The own presence on the footer user card (design note 4.9): avatar with the status dot, a menu to pick
- * online / idle / do not disturb / invisible, a custom status (text, emoji, expiry) and an activity.
+ * The own presence on the account bar (design note 4.9): avatar with the status dot, a menu to pick
+ * online / idle / do not disturb / invisible, a custom status (text, emoji, expiry) and an activity; node admins also
+ * reach the node administration here.
  * Mounting it keeps the presence in sync on every node with a session and runs the idle detection.
  */
 import { useEffect, useRef, useState } from "react";
@@ -20,6 +21,7 @@ import { UserAvatar } from "./Avatar";
 import { useShell } from "./AppShell";
 import { Button, Dialog, Field, Input } from "./ui";
 import { rovingKeyDown } from "../lib/a11y";
+import { WrenchIcon } from "./icons";
 
 /** Expiry choices of a custom status, in minutes (0 = never; "today" = until midnight). */
 const EXPIRY = ["never", "30m", "1h", "4h", "today"] as const;
@@ -62,6 +64,7 @@ export function PresenceMenu() {
   const t = useT();
   usePresenceSync();
   const user = useAuth((s) => s.user);
+  const remoteHome = useAuth((s) => !!s.home);
   const mine = usePresence((s) => s.mine);
   const [open, setOpen] = useState(false);
   const [dialog, setDialog] = useState<"custom" | "activity" | "logout" | null>(null);
@@ -132,8 +135,15 @@ export function PresenceMenu() {
             <span aria-hidden="true">🎮</span>
             <span className="min-w-0 flex-1 truncate">{mine?.activity ? t(`presence.type.${mine.activity.type}`, { name: mine.activity.name }) : t("presence.activity")}</span>
           </button>
+          {/* Node administration: node admins of the home node only (an account of another node administers nothing here). */}
+          {user.is_node_admin && !remoteHome && (
+            <button type="button" role="menuitem" tabIndex={-1} onClick={() => { setOpen(false); closeNav(); navigate("/admin"); }} className="flex min-h-10 w-full items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-bg-3" data-testid="presence-admin">
+              <WrenchIcon size={16} />
+              <span className="min-w-0 flex-1 truncate">{t("admin.link")}</span>
+            </button>
+          )}
           {/* Legal pages, terms and the own data (design note 4.14). */}
-          <button type="button" role="menuitem" onClick={() => { setOpen(false); closeNav(); navigate("/settings/legal"); }} className="flex min-h-10 w-full items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-bg-3" data-testid="presence-legal">
+          <button type="button" role="menuitem" tabIndex={-1} onClick={() => { setOpen(false); closeNav(); navigate("/settings/legal"); }} className="flex min-h-10 w-full items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-bg-3" data-testid="presence-legal">
             <span aria-hidden="true">§</span>
             <span className="min-w-0 flex-1 truncate">{t("legal.menu")}</span>
           </button>
