@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearMocks, mockIPC, mockWindows } from "@tauri-apps/api/mocks";
+import type { Channel } from "@tauri-apps/api/core";
 import { createTauriPlatform, installLinkHandler } from "./tauri";
+import type { HotkeyEvent } from "./types";
 import { detectTauri } from "./tauriDetect";
 
 const detached = () => document.implementation.createHTMLDocument("app");
 
 type Calls = Array<{ cmd: string; args: unknown }>;
 
-function backend(state: { node: string | null; updater?: boolean; update?: unknown }): Calls {
+function backend(state: { node: string | null; updater?: boolean; update?: unknown; channel?: Channel<HotkeyEvent> }): Calls {
   const calls: Calls = [];
   mockWindows("main");
   mockIPC((cmd, args) => {
@@ -29,6 +31,16 @@ function backend(state: { node: string | null; updater?: boolean; update?: unkno
         return null;
       case "check_update":
         return state.update ?? null;
+      case "listen_hotkeys":
+        state.channel = (args as { onEvent: Channel<HotkeyEvent> }).onEvent;
+        return null;
+      case "register_hotkey": {
+        const { combo } = args as { combo: string };
+        if (combo === "KeyM") throw "hotkey.typing_key";
+        return combo.replace("control", "Ctrl");
+      }
+      case "unregister_hotkey":
+        return null;
     }
     throw `unknown command ${cmd}`;
   });
@@ -62,7 +74,7 @@ describe("createTauriPlatform", () => {
     expect(p.webOrigin()).toBe("https://tavrn.example");
     expect(p.node?.current()).toBe("https://tavrn.example");
     await expect(p.appVersion()).resolves.toBe("0.2.0");
-    expect(calls.map((c) => c.cmd).sort()).toEqual(["app_info", "get_config"]);
+    expect(calls.map((c) => c.cmd).sort()).toEqual(["app_info", "get_config", "listen_hotkeys"]);
   });
 
   it("has no node before the first start's choice", async () => {
@@ -112,6 +124,43 @@ describe("createTauriPlatform", () => {
     backend({ node: "https://tavrn.example", updater: true, update: null });
     const p = await createTauriPlatform(detached());
     await expect(p.updater?.check()).resolves.toBeNull();
+  });
+});
+
+describe("global hotkeys (platform.hotkeys)", () => {
+  it("registers and unregisters bindings through the shell, which canonicalizes or refuses them", async () => {
+    const calls = backend({ node: "https://tavrn.example" });
+    const p = await createTauriPlatform(detached());
+    await expect(p.hotkeys?.register("toggle_mute", "control+Shift+KeyM")).resolves.toBe("Ctrl+Shift+KeyM");
+    expect(calls.find((c) => c.cmd === "register_hotkey")?.args).toEqual({ action: "toggle_mute", combo: "control+Shift+KeyM" });
+    await expect(p.hotkeys?.register("push_to_talk", "KeyM")).rejects.toBe("hotkey.typing_key");
+    await p.hotkeys?.unregister("toggle_mute");
+    expect(calls.find((c) => c.cmd === "unregister_hotkey")?.args).toEqual({ action: "toggle_mute" });
+  });
+
+  it("hands the shell's presses and releases to every subscriber until it unsubscribes", async () => {
+    const state: Parameters<typeof backend>[0] = { node: "https://tavrn.example" };
+    backend(state);
+    const p = await createTauriPlatform(detached());
+    expect(state.channel).toBeDefined();
+    const seen: HotkeyEvent[] = [];
+    const other = vi.fn();
+    const off = p.hotkeys!.subscribe((e) => seen.push(e));
+    p.hotkeys!.subscribe(other);
+    state.channel!.onmessage({ action: "push_to_talk", pressed: true });
+    state.channel!.onmessage({ action: "push_to_talk", pressed: false });
+    off();
+    state.channel!.onmessage({ action: "toggle_deafen", pressed: true });
+    expect(seen).toEqual([
+      { action: "push_to_talk", pressed: true },
+      { action: "push_to_talk", pressed: false },
+    ]);
+    expect(other).toHaveBeenCalledTimes(3);
+  });
+
+  it("the browser has no global hotkeys", async () => {
+    const { browserPlatform } = await import("./browser");
+    expect(browserPlatform.hotkeys).toBeUndefined();
   });
 });
 

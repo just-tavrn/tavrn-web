@@ -4,9 +4,9 @@
  * (`src-tauri/src/commands.rs`): the chosen node, opening links in the system browser, the updater. This module
  * is loaded only inside the app (platform/index.ts); nothing here runs in a browser.
  */
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { externalUrl } from "./links";
-import type { AppUpdater, Platform } from "./types";
+import type { AppUpdater, HotkeyEvent, Platform, PlatformHotkeys } from "./types";
 
 interface ShellConfig {
   node: string | null;
@@ -31,6 +31,26 @@ const updater: AppUpdater = {
   },
 };
 
+/**
+ * Global hotkeys: the shell reports presses and releases over one channel (a reloaded page opens a new one, the
+ * shell keeps the newest); the bindings themselves are restored by the client (`voice/hotkeys.ts`).
+ */
+function createHotkeys(): PlatformHotkeys {
+  const handlers = new Set<(event: HotkeyEvent) => void>();
+  const channel = new Channel<HotkeyEvent>((event) => {
+    for (const handler of handlers) handler(event);
+  });
+  void invoke<void>("listen_hotkeys", { onEvent: channel }).catch((e: unknown) => console.warn("hotkeys: no channel to the shell", e));
+  return {
+    register: (action, combo) => invoke<string>("register_hotkey", { action, combo }),
+    unregister: (action) => invoke<void>("unregister_hotkey", { action }),
+    subscribe: (handler) => {
+      handlers.add(handler);
+      return () => handlers.delete(handler);
+    },
+  };
+}
+
 /** The desktop platform; `doc` receives the link handler (tests pass a detached document). */
 export async function createTauriPlatform(doc: Document = document): Promise<Platform> {
   const [config, info] = await Promise.all([invoke<ShellConfig>("get_config"), invoke<AppInfo>("app_info")]);
@@ -53,6 +73,7 @@ export async function createTauriPlatform(doc: Document = document): Promise<Pla
       },
     },
     ...(info.updater ? { updater } : {}),
+    hotkeys: createHotkeys(),
   };
   installLinkHandler(doc, openExternal, platform.webOrigin);
   return platform;

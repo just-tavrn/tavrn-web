@@ -27,7 +27,7 @@ export interface Platform {
   readonly node?: NodeChoice;
   /** Desktop: signed updates of the app (absent while the build has no updater key). */
   readonly updater?: AppUpdater;
-  /** Desktop, later: global hotkeys (push-to-talk, mute, deafen) that work while the app is in the background. */
+  /** Desktop: global hotkeys (push-to-talk, priority speaker, mute, deafen) that work while the app is in the background. */
   readonly hotkeys?: PlatformHotkeys;
   /** Desktop, later: device keys and the local key store in the OS keychain. */
   readonly keystore?: PlatformKeystore;
@@ -56,8 +56,30 @@ export interface AvailableUpdate {
   install(): Promise<void>;
 }
 
+/** What a global hotkey does in the voice client (the shell's `hotkeys.rs` uses the same names). */
+export type HotkeyAction = "push_to_talk" | "priority" | "toggle_mute" | "toggle_deafen";
+
+/** A press or release of a bound combination, reported by the shell. */
+export interface HotkeyEvent {
+  action: HotkeyAction;
+  pressed: boolean;
+}
+
+/**
+ * Global hotkeys of the desktop app. The shell validates a combination (`Ctrl+Alt+Shift+Super+<KeyboardEvent.code>`),
+ * refuses one that another action uses and grabs it through the OS; the client keeps the bindings in its voice
+ * settings and registers them at start.
+ */
+export interface PlatformHotkeys {
+  /** Binds `combo` to `action`; resolves to its canonical spelling, rejects with a `hotkey.*` code. */
+  register(action: HotkeyAction, combo: string): Promise<string>;
+  /** Removes the binding of `action`. */
+  unregister(action: HotkeyAction): Promise<void>;
+  /** Presses and releases of the bound combinations; returns the unsubscriber. */
+  subscribe(handler: (event: HotkeyEvent) => void): () => void;
+}
+
 /* Extension points: their members are defined by the steps that implement them. */
-export interface PlatformHotkeys {}
 export interface PlatformKeystore {}
 export interface PlatformNotifications {}
 export interface PlatformTray {}

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useT } from "../../i18n";
 import { publicApi } from "../../lib/api";
-import { Button, Field } from "../../components/ui";
+import { Button, ErrorText, Field } from "../../components/ui";
 import { toastError } from "../../stores/toasts";
 import { Section, Select } from "./common";
 import { gateThreshold, limitResolution, resolutionSize, useVoiceSettings, type BackgroundMode, type BackgroundQuality, type NoiseSuppression, type Resolution, type VoiceSettings } from "../../voice/settings";
@@ -13,6 +13,9 @@ import { useVoice } from "../../voice/store";
 import type { MicPipeline } from "../../voice/audio";
 import { CUES, RING_LOOP, previewCue, startRingtone } from "../../voice/cues";
 import { ConnectionTestPanel } from "../../voice/ui/ConnectionTestPanel";
+import { browserKeyConflict } from "../../voice/hotkeys";
+import { platform } from "../../platform";
+import { DesktopHotkeysSection } from "./DesktopHotkeysSection";
 
 /** Devices of one kind, refreshed when devices change (labels need a granted permission). */
 function useDevices(kind: MediaDeviceKind, refresh: number): MediaDeviceInfo[] {
@@ -282,6 +285,19 @@ export function VoiceSettingsTab() {
   const [refresh, setRefresh] = useState(0);
   const [capturing, setCapturing] = useState(false);
   const [capturingPriority, setCapturingPriority] = useState(false);
+  // A key of the window equal to a global hotkey of the desktop app is refused (both would fire).
+  const [keyError, setKeyError] = useState<"ptt" | "priority" | null>(null);
+  const takeKey = useCallback(
+    (field: "pttKey" | "priorityKey", code: string) => {
+      if (platform().hotkeys && browserKeyConflict(useVoiceSettings.getState().settings, code)) {
+        setKeyError(field === "pttKey" ? "ptt" : "priority");
+        return;
+      }
+      setKeyError(null);
+      update({ [field]: code });
+    },
+    [update],
+  );
   const [bgNote, setBgNote] = useState<string | null>(null);
   const node = useQuery({ queryKey: ["node", "origin"], queryFn: () => publicApi.node.info(), staleTime: 10 * 60_000 });
   const camera = node.data?.voice?.camera ?? { enabled: true, max_resolution: "720p", max_fps: 30 };
@@ -293,23 +309,23 @@ export function VoiceSettingsTab() {
     if (!capturing) return;
     const on = (e: KeyboardEvent) => {
       e.preventDefault();
-      if (e.code !== "Escape") update({ pttKey: e.code });
+      if (e.code !== "Escape") takeKey("pttKey", e.code);
       setCapturing(false);
     };
     window.addEventListener("keydown", on, { once: true });
     return () => window.removeEventListener("keydown", on);
-  }, [capturing, update]);
+  }, [capturing, takeKey]);
   // The priority speaker key (design note 4.13 item 3): captured like the push-to-talk key, Escape cancels.
   useEffect(() => {
     if (!capturingPriority) return;
     const on = (e: KeyboardEvent) => {
       e.preventDefault();
-      if (e.code !== "Escape") update({ priorityKey: e.code });
+      if (e.code !== "Escape") takeKey("priorityKey", e.code);
       setCapturingPriority(false);
     };
     window.addEventListener("keydown", on, { once: true });
     return () => window.removeEventListener("keydown", on);
-  }, [capturingPriority, update]);
+  }, [capturingPriority, takeKey]);
 
   const levels: { id: NoiseSuppression; label: string; hint: string }[] = [
     { id: "off", label: t("voice.settings.ns_off"), hint: t("voice.settings.ns_off_hint") },
@@ -392,6 +408,7 @@ export function VoiceSettingsTab() {
             </div>
             <Slider label={t("voice.settings.ptt_release")} value={settings.pttReleaseMs} min={0} max={2000} step={50} unit="ms" onChange={(v) => update({ pttReleaseMs: v })} />
             <p className="text-xs text-fg-2">{t("voice.settings.ptt_hint")}</p>
+            {keyError === "ptt" && <ErrorText>{t("voice.settings.key_conflict_desktop")}</ErrorText>}
           </div>
         )}
       </Section>
@@ -411,7 +428,10 @@ export function VoiceSettingsTab() {
             </Button>
           )}
         </div>
+        {keyError === "priority" && <ErrorText>{t("voice.settings.key_conflict_desktop")}</ErrorText>}
       </Section>
+
+      <DesktopHotkeysSection />
 
       <Section title={t("voice.settings.video")} description={camera.enabled ? t("voice.settings.video_hint", { resolution: camera.max_resolution, fps: camera.max_fps }) : t("voice.settings.camera_disabled")}>
         <div className="grid gap-3 md:grid-cols-3">

@@ -9,7 +9,7 @@ import { browserPlatform } from "./browser";
 import { detectTauri } from "./tauriDetect";
 import type { Platform } from "./types";
 
-export type { AvailableUpdate, AppUpdater, NodeChoice, Platform, PlatformKind } from "./types";
+export type { AvailableUpdate, AppUpdater, HotkeyAction, HotkeyEvent, NodeChoice, Platform, PlatformHotkeys, PlatformKind } from "./types";
 
 let current: Platform = browserPlatform;
 
