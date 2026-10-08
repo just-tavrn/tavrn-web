@@ -340,8 +340,15 @@ picker accepts `http://127.0.0.1:8080`).
 
   ```sh
   just desktop-build
-  E2E_NODE_BIN=/path/to/tavrn-node E2E_NODE_PORT=8300 just desktop-e2e    # xvfb-run without a display
+  E2E_NODE_BIN=/path/to/tavrn-node E2E_NODE_PORT=8300 just desktop-e2e    # always under xvfb-run
   ```
+
+  The app always renders on xvfb's X display (the test forces GTK to X11 and drops `WAYLAND_DISPLAY`, which WSLg sets),
+  so no window appears on the desktop. The node must serve its web client: a release build or the container image (a
+  debug tavrn-node reads `web/dist` from its build tree at run time; the test refuses a node that serves the
+  placeholder instead). The app is a single instance: the test waits for a quit app to exit before starting it again
+  and refuses to start while the same binary runs; an installed Tavrn that is running takes over the test's start too,
+  so quit it first.
 
 ## Builds and releases
 
