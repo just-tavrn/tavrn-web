@@ -8,8 +8,10 @@
  * TOTP, app sessions of the connect flow), the main window picks up the session, sets up its recovery key (the
  * encryption core in the webview) and sends a message in an end-to-end encrypted channel, which the node stores as
  * ciphertext only. Then voice on Linux: media streams are on, and WebRTC is on whenever the system's WebKitGTK is
- * built with it; and a global hotkey: the recorder of Settings → Voice binds Ctrl+Alt+M to "mute", the window is
- * minimized and a real key press of the X server (xdotool) toggles mute through the shell's global grab.
+ * built with it; and the system-wide hotkeys: the recorders of Settings → Voice bind Ctrl+Alt+M to "mute" and the left
+ * Ctrl alone to push-to-talk, the window is minimized and real key presses of the X server (xdotool) reach the client
+ * through the shell's key listener (X RECORD, observed and never grabbed): Ctrl+Alt+M toggles mute and back, holding
+ * the left Ctrl holds push-to-talk (its key lights up in the settings) until it is released.
  *
  * Keychain, tray and notifications: the first start runs without a keychain (`TAVRN_DESKTOP_KEYCHAIN=unavailable`, a
  * session without a Secret Service), so the key stays in IndexedDB and Settings → App warns. The app is then started
@@ -375,13 +377,22 @@ async function main() {
     step("getUserMedia present; this system's WebKitGTK is built without WebRTC (no RTCPeerConnection, docs/DESKTOP.md)");
   }
 
-  // A global hotkey: bound in Settings → Voice, pressed through the X server while the window is minimized.
+  // System-wide hotkeys: bound in Settings → Voice, pressed through the X server while the window is minimized.
   await script("history.pushState({}, '', '/settings/voice'); dispatchEvent(new PopStateEvent('popstate'));");
   await click(await waitFor("[data-testid=hotkey-toggle_mute-change]", 30_000));
-  // The combination goes in like typed input (WebKitWebDriver's keyboard does not reach the page under xvfb).
-  await script(`window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyM", key: "m", ctrlKey: true, altKey: true, bubbles: true, cancelable: true }));`);
+  // The keys go in like typed input (WebKitWebDriver's keyboard does not reach the page under xvfb).
+  const key = (type, init) => script(`window.dispatchEvent(new KeyboardEvent(arguments[0], { ...arguments[1], bubbles: true, cancelable: true }));`, [type, init]);
+  await key("keydown", { code: "KeyM", key: "m", ctrlKey: true, altKey: true });
   await until("the bound combination", async () => (await text(await find("[data-testid=hotkey-toggle_mute-key]"))) === "Ctrl + Alt + M");
   step("Ctrl+Alt+M bound to mute through the shell");
+  // Push-to-talk on the left Ctrl alone: recorded when it is released without another key.
+  await click(await waitFor("[data-testid=mode-ptt]"));
+  await click(await waitFor("[data-testid=ptt-capture]"));
+  await key("keydown", { code: "ControlLeft", key: "Control", ctrlKey: true });
+  await key("keyup", { code: "ControlLeft", key: "Control" });
+  const pttBinding = () => script("return JSON.parse(localStorage.getItem('tavrn.voice.settings') || '{}').hotkeys?.push_to_talk;");
+  await until("the push-to-talk binding", async () => (await pttBinding()) === "ControlLeft");
+  step(`push-to-talk bound to the left Ctrl alone (${await text(await find("[data-testid=ptt-key]"))})`);
   const minimized = await wd("POST", `/session/${session}/window/minimize`, {}).then(
     () => true,
     () => false,
@@ -397,6 +408,12 @@ async function main() {
   await pressAndExpect(/muted|stummgeschaltet/i);
   await pressAndExpect(/Microphone on|Mikrofon an/i);
   step(`a real Ctrl+Alt+M of the X server toggled mute and back${minimized ? " while the window was minimized" : " (the window could not be minimized)"}`);
+  const pttHeld = () => script("return document.querySelector('[data-testid=ptt-key]')?.getAttribute('data-held') === 'true';");
+  execFileSync("xdotool", ["keydown", "Control_L"]);
+  await until("push-to-talk held by the left Ctrl", pttHeld, 10_000);
+  execFileSync("xdotool", ["keyup", "Control_L"]);
+  await until("push-to-talk released with the left Ctrl", async () => !(await pttHeld()), 10_000);
+  step(`a real press and release of the left Ctrl alone held and released push-to-talk${minimized ? " while the window was minimized" : ""}`);
 }
 
 /** Starts tauri-driver and the app with the keychain backend `keychain` (TAVRN_DESKTOP_KEYCHAIN). */

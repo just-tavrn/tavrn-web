@@ -467,7 +467,12 @@ test.describe("Voice channels", () => {
     await expect(page.getByTestId("vad-indicator")).not.toHaveAttribute("data-open", "true", { timeout: 10_000 });
     await page.getByTestId("ptt-capture").click();
     await page.keyboard.press("KeyB");
-    await expect(page.getByTestId("ptt-key")).toHaveText("KeyB");
+    await expect(page.getByTestId("ptt-key")).toHaveText("B");
+    // A modifier alone (released without another key) is a push-to-talk key as well.
+    await page.getByTestId("ptt-capture").click();
+    await page.keyboard.down("ShiftRight");
+    await page.keyboard.up("ShiftRight");
+    await expect(page.getByTestId("ptt-key")).toHaveText("Shift rechts");
     await page.getByTestId("mode-vad").check();
     await expect(page.getByTestId("ptt-settings")).toHaveCount(0);
     await page.getByTestId("mic-check-stop").click();

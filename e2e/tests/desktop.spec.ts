@@ -65,13 +65,16 @@ async function asDesktopApp(page: Page, node: string | null = null) {
               w.__e2eHotkey = (action: string, pressed: boolean) => args.onEvent?.onmessage({ action, pressed });
               return null;
             case "register_hotkey":
-              // Like hotkeys.rs: a key that types text needs Ctrl, Alt or Super.
-              if (/^(Shift\+)?Key[A-Z]$/.test(String(args.combo))) throw "hotkey.typing_key";
+              // Like hotkeys.rs: any known key, a modifier alone or a combination (observed, never grabbed).
+              if (String(args.combo).includes("Escape")) throw "hotkey.invalid";
               log(`register ${args.action} ${args.combo}`);
               return args.combo;
             case "unregister_hotkey":
               log(`unregister ${args.action}`);
               return null;
+            case "set_hotkeys_enabled":
+              log(`enabled ${(args as { enabled?: boolean }).enabled}`);
+              return !!(args as { enabled?: boolean }).enabled;
           }
           throw `unknown command ${cmd}`;
         },
@@ -188,71 +191,80 @@ test.describe("Desktop app (simulated shell)", () => {
     await loginAs(page, account);
     await page.goto("/settings/profile");
     await expect(page.getByRole("link", { name: "App", exact: true })).toHaveCount(0);
-    // Global hotkeys only in the app: the browser shows the hint.
+    // The browser has the hotkeys for its window; system-wide ones are the desktop app's.
     await page.goto("/settings/voice");
-    await expect(page.getByTestId("desktop-hotkeys-hint")).toContainText("Desktop-App");
-    await expect(page.getByTestId("desktop-hotkeys")).toHaveCount(0);
+    await expect(page.getByTestId("more-hotkeys")).toBeVisible();
+    await expect(page.getByText("die Desktop-App beobachtet sie auch systemweit")).toBeVisible();
   });
 });
 
-test.describe("Desktop app: global hotkeys (simulated shell)", () => {
+test.describe("Desktop app: hotkeys (simulated shell)", () => {
   const hotkeyLog = (page: Page) => page.evaluate(() => JSON.parse(sessionStorage.getItem("e2e.desktop.hotkeys") ?? "[]") as string[]);
 
-  test("recorder with conflict check, restored at start, a press of the shell mutes the call", async ({ page, request }) => {
+  test("one binding per action: lone modifiers and plain keys, conflict check, restored at start, presses of the shell and of the window", async ({ page, request }) => {
     test.setTimeout(180_000);
     await asDesktopApp(page, NODE);
     await registerViaUi(page, { prefix: "hotk" });
     await page.goto("/settings/voice");
-    const section = page.getByTestId("desktop-hotkeys");
-    await expect(section.getByTestId("hotkey-toggle_mute-key")).toHaveText("keins");
+    const more = page.getByTestId("more-hotkeys");
+    await expect(page.getByText("Weitere Tastenkürzel", { exact: true })).toBeVisible();
+    await expect(more.getByTestId("hotkey-toggle_mute-key")).toHaveText("keins");
+    // Signed in: the shell's key listener is switched on.
+    await expect.poll(() => hotkeyLog(page)).toContain("enabled true");
 
     // Ctrl+Shift+M for mute: the platform's key names, the shell's canonical spelling.
-    await section.getByTestId("hotkey-toggle_mute-change").click();
-    await expect(section.getByTestId("hotkey-toggle_mute-key")).toHaveText("Kombination drücken …");
+    await more.getByTestId("hotkey-toggle_mute-change").click();
+    await expect(more.getByTestId("hotkey-toggle_mute-key")).toHaveText("Taste oder Kombination drücken …");
     await page.keyboard.press("Control+Shift+KeyM");
-    await expect(section.getByTestId("hotkey-toggle_mute-key")).toHaveText("Ctrl + Shift + M");
+    await expect(more.getByTestId("hotkey-toggle_mute-key")).toHaveText("Ctrl + Shift + M");
     expect(await hotkeyLog(page)).toContain("register toggle_mute Ctrl+Shift+KeyM");
 
-    // The same combination for deafen is refused with a message, so is a key that types text.
-    await section.getByTestId("hotkey-toggle_deafen-change").click();
+    // The same binding for deafen is refused with a message; a plain key is fine (observed, not reserved).
+    await more.getByTestId("hotkey-toggle_deafen-change").click();
     await page.keyboard.press("Control+Shift+KeyM");
-    await expect(section.getByRole("alert")).toContainText("Stummschalten");
-    await section.getByTestId("hotkey-toggle_deafen-change").click();
+    await expect(more.getByRole("alert")).toContainText("Stummschalten");
+    await more.getByTestId("hotkey-toggle_deafen-change").click();
     await page.keyboard.press("KeyD");
-    await expect(section.getByRole("alert")).toContainText("Alt");
-    await expect(section.getByTestId("hotkey-toggle_deafen-key")).toHaveText("keins");
-    // Escape cancels; F12 for deafen, then Backspace removes it again.
-    await section.getByTestId("hotkey-toggle_deafen-change").click();
+    await expect(more.getByTestId("hotkey-toggle_deafen-key")).toHaveText("D");
+    expect(await hotkeyLog(page)).toContain("register toggle_deafen KeyD");
+    // Escape cancels, Backspace removes the binding.
+    await more.getByTestId("hotkey-toggle_deafen-change").click();
     await page.keyboard.press("Escape");
-    await expect(section.getByTestId("hotkey-toggle_deafen-key")).toHaveText("keins");
-    await section.getByTestId("hotkey-toggle_deafen-change").click();
-    await page.keyboard.press("F12");
-    await expect(section.getByTestId("hotkey-toggle_deafen-key")).toHaveText("F12");
-    // The other direction: the push-to-talk key of the window may not be a global binding either.
+    await expect(more.getByTestId("hotkey-toggle_deafen-key")).toHaveText("D");
+    await more.getByTestId("hotkey-toggle_deafen-change").click();
+    await page.keyboard.press("Backspace");
+    await expect(more.getByTestId("hotkey-toggle_deafen-key")).toHaveText("keins");
+    expect(await hotkeyLog(page)).toContain("unregister toggle_deafen");
+
+    // Push-to-talk under "Input mode" is the one binding, in the window and system-wide: the left Ctrl alone.
     await page.getByTestId("mode-ptt").check();
     await page.getByTestId("ptt-capture").click();
-    await page.keyboard.press("F12");
-    await expect(page.getByTestId("ptt-settings").getByRole("alert")).toContainText("globales Tastenkürzel");
-    await expect(page.getByTestId("ptt-key")).toHaveText("Backquote");
-    await page.getByTestId("mode-vad").check();
-    await section.getByTestId("hotkey-toggle_deafen-change").click();
-    await page.keyboard.press("Backspace");
-    await expect(section.getByTestId("hotkey-toggle_deafen-key")).toHaveText("keins");
-    expect(await hotkeyLog(page)).toContain("unregister toggle_deafen");
-    // The push-to-talk key of the window may not be a global binding.
-    await section.getByTestId("hotkey-push_to_talk-change").click();
-    await page.keyboard.press("Backquote");
-    await expect(section.getByRole("alert")).toContainText("Push-to-Talk");
+    await page.keyboard.down("ControlLeft");
+    await page.keyboard.up("ControlLeft");
+    await expect(page.getByTestId("ptt-key")).toHaveText("Ctrl links");
+    expect(await hotkeyLog(page)).toContain("register push_to_talk ControlLeft");
+    // Another action's key is refused there too.
+    await page.getByTestId("ptt-capture").click();
+    await page.keyboard.press("Control+Shift+KeyM");
+    await expect(page.getByTestId("ptt-settings").getByRole("alert")).toContainText("Stummschalten");
+    await expect(page.getByTestId("ptt-key")).toHaveText("Ctrl links");
+    // Holding the key lights it up (the window's key events).
+    await page.keyboard.down("ControlLeft");
+    await expect(page.getByTestId("ptt-key")).toHaveAttribute("data-held", "true");
+    await page.keyboard.up("ControlLeft");
+    await expect(page.getByTestId("ptt-key")).not.toHaveAttribute("data-held");
     // The phone layout keeps the page within the screen.
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
-    // A new start hands the stored bindings to the shell again.
+    // A new start hands the stored bindings to the shell again and switches its listener on.
     await page.evaluate(() => sessionStorage.setItem("e2e.desktop.hotkeys", "[]"));
     await page.reload();
-    await expect(page.getByTestId("desktop-hotkeys").getByTestId("hotkey-toggle_mute-key")).toHaveText("Ctrl + Shift + M");
-    await expect.poll(() => hotkeyLog(page)).toEqual(expect.arrayContaining(["register toggle_mute Ctrl+Shift+KeyM", "unregister push_to_talk", "unregister toggle_deafen"]));
+    await expect(page.getByTestId("more-hotkeys").getByTestId("hotkey-toggle_mute-key")).toHaveText("Ctrl + Shift + M");
+    await expect
+      .poll(() => hotkeyLog(page))
+      .toEqual(expect.arrayContaining(["register toggle_mute Ctrl+Shift+KeyM", "register push_to_talk ControlLeft", "unregister priority", "unregister toggle_deafen", "enabled true"]));
 
-    // In a voice channel the shell's press toggles mute, the release does nothing, the next press unmutes.
+    // In a voice channel, with the window in the background, the shell's press toggles mute, the release does nothing.
     const room = await createRoomViaApi(request, await tokenOf(page), "Hotkeys");
     const voiceId = (room.channels as { id: string; kind: string }[]).find((c) => c.kind === "voice")!.id;
     await page.goto(`/rooms/${room.id}/channels/${voiceId}`);
@@ -261,11 +273,22 @@ test.describe("Desktop app: global hotkeys (simulated shell)", () => {
     const mute = page.getByTestId("voice-mute");
     await expect(mute).toHaveAttribute("aria-pressed", "false");
     const shell = (action: string, pressed: boolean) => page.evaluate(([a, p]) => (window as unknown as { __e2eHotkey: (a: string, p: boolean) => void }).__e2eHotkey(a as string, p as boolean), [action, pressed] as const);
+    const focus = (on: boolean) => page.evaluate((f) => (document.hasFocus = () => f), on);
+    await focus(false);
     await shell("toggle_mute", true);
     await expect(mute).toHaveAttribute("aria-pressed", "true");
     await shell("toggle_mute", false);
     await expect(mute).toHaveAttribute("aria-pressed", "true");
     await shell("toggle_mute", true);
+    await expect(mute).toHaveAttribute("aria-pressed", "false");
+    await shell("toggle_mute", false);
+    // With the window in front its own key events act; the shell sees the same key and it still toggles once.
+    await focus(true);
+    await shell("toggle_mute", true);
+    await page.keyboard.press("Control+Shift+KeyM");
+    await shell("toggle_mute", false);
+    await expect(mute).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("Control+Shift+KeyM");
     await expect(mute).toHaveAttribute("aria-pressed", "false");
     await page.getByTestId("voice-leave").click();
   });

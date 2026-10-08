@@ -57,7 +57,7 @@ import type { LevelReport } from "./audio";
 import { DEFAULT_GRACE_MS, RejoinSchedule } from "./reconnect";
 import { playCue, type Cue } from "./cues";
 import { setIcePolicy } from "./ice";
-import { desktopHeld } from "./hotkeys";
+import { hotkeyHeld } from "./hotkeys";
 import type { BackgroundHandle } from "./background";
 
 /** LiveKit must confirm encryption for this device within this time, else nothing is published. */
@@ -99,6 +99,8 @@ interface Session {
   keyProvider: TavrnKeyProvider;
   info: JoinInfo;
   offs: Array<() => void>;
+  /** The push-to-talk key (or the hold button) is held. */
+  pttHeld: boolean;
   leaving: boolean;
   /** Mute state to restore when undeafening. */
   mutedBeforeDeafen: boolean;
@@ -543,33 +545,6 @@ function follow(s: Session) {
       if (current === s && useVoice.getState().deafened) applyVolumes(s);
     }),
   );
-  const editable = (e: KeyboardEvent) => {
-    const el = e.target as HTMLElement | null;
-    return !!el && (el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName)) && e.key.length === 1;
-  };
-  const down = (e: KeyboardEvent) => {
-    if (e.repeat || editable(e)) return;
-    if (settings().inputMode === "ptt" && e.code === settings().pttKey) s.pipeline.setPtt(true);
-    // The priority key (design note 4.13 item 3): held = priority; with push-to-talk it also opens the mic.
-    if (settings().priorityKey && e.code === settings().priorityKey) void setPriority(true);
-  };
-  const up = (e: KeyboardEvent) => {
-    if (settings().inputMode === "ptt" && e.code === settings().pttKey) s.pipeline.setPtt(false);
-    if (settings().priorityKey && e.code === settings().priorityKey) void setPriority(false);
-  };
-  // Leaving the window releases the keys of the window, not a global hotkey of the desktop app that is still held.
-  const blur = () => {
-    if (!desktopHeld("push_to_talk")) s.pipeline.setPtt(false);
-    if (useVoice.getState().prioritySelf && !desktopHeld("priority")) void setPriority(false);
-  };
-  window.addEventListener("keydown", down);
-  window.addEventListener("keyup", up);
-  window.addEventListener("blur", blur);
-  s.offs.push(() => {
-    window.removeEventListener("keydown", down);
-    window.removeEventListener("keyup", up);
-    window.removeEventListener("blur", blur);
-  });
 }
 
 async function applySettings(s: Session, next: VoiceSettings, prev: VoiceSettings) {
@@ -735,6 +710,8 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
       keyProvider,
       info,
       offs: [],
+      // A hotkey held while joining keeps transmitting from the start.
+      pttHeld: hotkeyHeld("push_to_talk"),
       leaving: false,
       mutedBeforeDeafen: false,
       clips: new Map(),
@@ -750,6 +727,7 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
       signals: new SignalLimiter(),
     };
     current = s;
+    if (s.pttHeld) applyPtt(s);
     // Re-key on every epoch change of the group from now on; an epoch that changed since the key above was
     // derived is picked up right away.
     s.offs.push(
@@ -1033,7 +1011,7 @@ export async function setPriority(on: boolean): Promise<void> {
   if (useVoice.getState().prioritySelf === on) return;
   set({ prioritySelf: on });
   publishPriority(s);
-  if (settings().inputMode === "ptt") s.pipeline.setPtt(on);
+  applyPtt(s);
   try {
     await local.setAttributes({ priority: on ? "1" : "" });
   } catch (e) {
@@ -1045,9 +1023,20 @@ export async function setPriority(on: boolean): Promise<void> {
   }
 }
 
-/** Push-to-talk from an on-screen button (phones). */
+/**
+ * Push-to-talk mode: the microphone transmits while the push-to-talk key (or the hold button of phones) or the
+ * priority key is held; releasing one keeps it open while the other is still held.
+ */
+function applyPtt(s: Session): void {
+  s.pipeline.setPtt(s.pttHeld || useVoice.getState().prioritySelf);
+}
+
+/** Push-to-talk held or released (the hotkey, the hold button of phones). */
 export function pushToTalk(pressed: boolean): void {
-  current?.pipeline.setPtt(pressed);
+  const s = current;
+  if (!s) return;
+  s.pttHeld = pressed;
+  applyPtt(s);
 }
 
 /** Attaches a participant's camera or screen video to an element; returns the detach function. */
