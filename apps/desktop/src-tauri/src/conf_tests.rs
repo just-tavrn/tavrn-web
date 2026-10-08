@@ -92,6 +92,9 @@ fn the_capability_grants_only_the_app_commands_to_the_main_window() {
             "allow-tray-status",
             "allow-set-close-to-tray",
             "allow-quit-app",
+            "allow-register-hotkey",
+            "allow-unregister-hotkey",
+            "allow-listen-hotkeys",
         ]
     );
     assert!(permissions.iter().all(|p| p.starts_with("allow-")), "no plugin or core permissions: the shell's own commands only");
@@ -164,5 +167,14 @@ fn the_icons_of_the_bundle_exist() {
     }
     for kind in [".png", ".ico", ".icns"] {
         assert!(icons.iter().any(|i| i.as_str().is_some_and(|i| i.ends_with(kind))), "no {kind} icon");
+    }
+}
+
+#[test]
+fn the_deb_brings_the_gstreamer_plugins_of_webrtc() {
+    let depends: Vec<String> =
+        conf()["bundle"]["linux"]["deb"]["depends"].as_array().map(|d| d.iter().filter_map(Value::as_str).map(str::to_string).collect()).unwrap_or_default();
+    for plugin in ["gstreamer1.0-plugins-bad", "gstreamer1.0-plugins-good", "gstreamer1.0-gl", "gstreamer1.0-pipewire | gstreamer1.0-pulseaudio"] {
+        assert!(depends.contains(&plugin.to_string()), "the .deb lacks {plugin} (voice on Linux, docs/DESKTOP.md)");
     }
 }

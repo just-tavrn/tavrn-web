@@ -4,6 +4,7 @@
  * call. Pure helpers (validation, constraints, limits) are exported for the session and the settings tab.
  */
 import { create } from "zustand";
+import type { HotkeyAction } from "../platform";
 
 export type NoiseSuppression = "off" | "browser" | "rnnoise";
 export type InputMode = "vad" | "ptt";
@@ -15,6 +16,9 @@ export type Resolution = "360p" | "720p" | "1080p" | "1440p" | "4k";
 /** Notification sounds (`cues.ts`). */
 export const CUE_NAMES = ["join", "leave", "mute", "unmute", "deafen", "undeafen", "stream_on", "stream_off", "connection_lost", "connection_restored"] as const;
 export type Cue = (typeof CUE_NAMES)[number];
+
+/** Global hotkeys of the desktop app per action (`voice/hotkeys.ts`); `""` = none. */
+export type DesktopHotkeys = Record<HotkeyAction, string>;
 
 export interface VoiceSettings {
   /** Empty = the system default device. */
@@ -59,6 +63,11 @@ export interface VoiceSettings {
   cuesDisabled: Cue[];
   /** Volume of the ringtone of incoming calls in percent (0 = silent, the banner still shows). */
   ringVolume: number;
+  /**
+   * Desktop app: global hotkeys in the shell's canonical spelling (`Ctrl+Alt+Shift+Super+<KeyboardEvent.code>`), kept
+   * apart from the keys of the window above (`pttKey`, `priorityKey`); restored at start (docs/DESKTOP.md).
+   */
+  desktopHotkeys: DesktopHotkeys;
 }
 
 export const DEFAULT_SETTINGS: VoiceSettings = {
@@ -89,6 +98,7 @@ export const DEFAULT_SETTINGS: VoiceSettings = {
   cuesOff: false,
   cuesDisabled: [],
   ringVolume: 60,
+  desktopHotkeys: { push_to_talk: "", priority: "", toggle_mute: "", toggle_deafen: "" },
 };
 
 export const SETTINGS_KEY = "tavrn.voice.settings";
@@ -108,6 +118,19 @@ const bool = (v: unknown, fallback: boolean) => (typeof v === "boolean" ? v : fa
 const str = (v: unknown, fallback: string, max = 256) => (typeof v === "string" && v.length <= max ? v : fallback);
 function oneOf<T extends string>(v: unknown, allowed: readonly T[], fallback: T): T {
   return allowed.includes(v as T) ? (v as T) : fallback;
+}
+
+/** Modifiers in the fixed order and one `KeyboardEvent.code`; the shell validates the key itself. */
+const COMBO = /^(Ctrl\+)?(Alt\+)?(Shift\+)?(Super\+)?[A-Za-z][A-Za-z0-9]{0,23}$/;
+
+function desktopHotkeys(raw: unknown): DesktopHotkeys {
+  const r = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const out = { ...DEFAULT_SETTINGS.desktopHotkeys };
+  for (const action of Object.keys(out) as HotkeyAction[]) {
+    const v = r[action];
+    if (typeof v === "string" && v.length <= 64 && COMBO.test(v)) out[action] = v;
+  }
+  return out;
 }
 
 /** Validates stored or edited settings; anything unknown falls back to the default. */
@@ -151,6 +174,7 @@ export function normalizeSettings(raw: unknown): VoiceSettings {
     cuesOff: bool(r.cuesOff, d.cuesOff),
     cuesDisabled: Array.isArray(r.cuesDisabled) ? CUE_NAMES.filter((c) => (r.cuesDisabled as unknown[]).includes(c)) : [],
     ringVolume: num(r.ringVolume, d.ringVolume, 0, 100),
+    desktopHotkeys: desktopHotkeys(r.desktopHotkeys),
   };
 }
 

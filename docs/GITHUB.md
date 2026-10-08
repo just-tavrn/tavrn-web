@@ -11,8 +11,9 @@ configured in the repository and what has to be set by hand.
 | `ci.yml` → `Publication hygiene` | same | `scripts/publish-check.sh`: no private files, domains or secrets |
 | `e2e.yml` → `End-to-end` | push to `main`, pull requests from branches of this repository (never from forks), by hand | the organization's `e2e.yml` on the self-hosted runner `tavrn-e2e`: pulls the node image (`TAVRN_NODE_IMAGE`, default `ghcr.io/just-tavrn/tavrn-node:edge`), copies `tavrn-node`, `livekit-server` and `ffmpeg` out of it and runs the full Playwright suite on `chromium`, `mobile-android` and `tablet-chromium` with two workers; a manual run can pass another image or other Playwright arguments; during the development phase it runs every night at 03:17 UTC against the current node image, by hand, and on pull requests labelled `full-ci` only (merges do not wait for it) |
 | `release.yml` | tag `v*.*.*` | checks that the tag equals `web/package.json`'s version, runs the checks, builds `web/dist` and attaches `tavrn-web-X.Y.Z.tar.gz` and its `.sha256` to a GitHub release; then its job `desktop` calls `desktop.yml` for the desktop installers of the same release; draft pull requests skip it, the run starts when the pull request is marked ready for review |
-| `desktop.yml` → `Desktop (Linux)` | pull requests touching `apps/desktop/**`, `web/**`, the lockfile, the workspace or the workflow; by hand; release tags (through `release.yml`) | the desktop app on `ubuntu-latest`: web client build, `cargo fmt`, `clippy`, `cargo test`, `cargo deny check licenses`, the update manifest test, `tauri build` (`.deb`, `.AppImage`), the WebDriver smoke test under xvfb against the node image; the installers as artifacts for 7 days ([DESKTOP.md](DESKTOP.md)) |
-| `desktop.yml` → `Desktop (Windows)` | by hand with `windows: true`; release tags | the `.msi` and NSIS installers on `windows-latest`, as artifacts for 7 days |
+| `desktop.yml` → `Desktop (Linux)` | pull requests touching `apps/desktop/**`, `web/**`, the lockfile, the workspace or the workflow (once ready for review); push to `main` (same paths); by hand; release tags (through `release.yml`) | the desktop app on the self-hosted runner `tavrn-heavy` (`ubuntu-latest` for forks, Dependabot and release tags): web client build, `cargo fmt`, `clippy`, `cargo test`, `cargo deny check licenses`, the Secret Service round trip, the update manifest test, `tauri build` (`.deb`, `.AppImage`), the WebDriver smoke test under xvfb against the node image's `tavrn-node`; the installers as artifact `desktop-linux` for 7 days ([DESKTOP.md](DESKTOP.md)) |
+| `desktop.yml` → `Desktop (Windows NSIS, cross-compiled)` | as `Desktop (Linux)`, except release tags; never for forks or Dependabot | the NSIS installer cross-compiled with cargo-xwin on `tavrn-heavy`, the Windows SDK from the runner's cache; artifact `desktop-windows-nsis` for 7 days |
+| `desktop.yml` → `Desktop (Windows)` | by hand with `windows: true`; release tags | the `.msi` and NSIS installers on `windows-latest`, as artifact `desktop-windows` for 7 days |
 | `desktop.yml` → `Release assets` | release tags | attaches the installers, their updater signatures (`.sig`) and `latest.json` to the release `release.yml` created |
 | `gitleaks.yml` | push to `main`, pull requests, by hand | the organization's `gitleaks.yml`: secret scan of the full history (`.gitleaks.toml`) |
 | `dependency-review.yml` | pull requests | refuses vulnerable dependencies and licenses outside the allow-list |
@@ -61,18 +62,27 @@ repository is public, also require approval for workflows from outside collabora
 
 ## Desktop builds
 
-Pull requests that touch the app or the client build the Linux app on GitHub-hosted runners (the self-hosted runner
-image has no WebKit); each push to such a pull request is one Linux build, so push in batches while the repository
-is private. The Windows installers are built by hand for any branch (the owner tests them by hand) and on release tags:
+The desktop builds run on the organization's self-hosted runner `tavrn-heavy` (`runs-on: [self-hosted, linux, x64,
+tavrn-heavy]`; the runner stack and its image are described in `just-tavrn/.github`, `runner/README.md` "Desktop
+builds"): the Linux build with its checks and smoke test, and the Windows NSIS installer cross-compiled with cargo-xwin.
+Self-hosted only for trusted events, with the expression of the organization's `rust-ci.yml`: pushes, manual runs and
+pull requests from branches of this repository; pull requests from forks and Dependabot build Linux on `ubuntu-latest`
+and skip the cross-compiled installer. Release tags build on GitHub-hosted runners (Linux, and `windows-latest` for
+the `.msi`), since they carry the updater key. Before `CI_ENABLED=true`, the runner group of `tavrn-heavy` must serve
+`tavrn-web`, and the node image must grant `tavrn-web` read access (the smoke test copies `tavrn-node` out of it).
+
+A pull request is built once it is ready for review and on every push after that; every push to `main` that touches
+the app builds again, so the artifacts `desktop-linux` and `desktop-windows-nsis` of the latest `main` run are the
+current installers. The `.msi` (and a natively built NSIS installer as a cross-check) by hand for any branch:
 
 ```sh
 gh workflow run desktop.yml --ref <branch> -f windows=true
-gh run list --workflow desktop.yml --limit 3      # then download the artifacts desktop-linux / desktop-windows
+gh run list --workflow desktop.yml --limit 3      # then download desktop-linux / desktop-windows-nsis / desktop-windows
 ```
 
 GitHub dispatches a workflow by hand only once the workflow file exists on the default branch; before that, a pull
-request's branch gets the Linux build only. The installers are not signed with an OS certificate (Windows SmartScreen
-warns once); the updater signature is the only signature. macOS builds come later.
+request's branch gets the automatic builds only. The installers are not signed with an OS certificate (Windows
+SmartScreen warns once); the updater signature is the only signature. macOS builds come later.
 
 ## Settings applied through the API
 

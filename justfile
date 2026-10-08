@@ -61,9 +61,11 @@ desktop-e2e:
 
 # Extra arguments go to `playwright test` (default: chromium and the phone emulation, two workers).
 # Playwright against real nodes: set E2E_NODE_BIN (a tavrn-node binary) or E2E_NODE_IMAGE (its container image)
+# (each argument is passed on as it is, so a grep pattern like -g "a|b" stays one argument)
+[positional-arguments]
 e2e *args: install
     @[ -n "${E2E_NODE_BIN:-}${E2E_NODE_IMAGE:-}" ] || { echo "set E2E_NODE_BIN to a tavrn-node binary or E2E_NODE_IMAGE to its container image (README.md)" >&2; exit 1; }
-    cd e2e && pnpm exec playwright test {{ if args == "" { "--project chromium --project mobile-android --workers=2" } else { args } }}
+    cd e2e && if [ "$#" -eq 0 ]; then set -- --project chromium --project mobile-android --workers=2; fi && pnpm exec playwright test "$@"
 
 # Install the Playwright browser (Chromium) and its system dependencies
 e2e-install: install
