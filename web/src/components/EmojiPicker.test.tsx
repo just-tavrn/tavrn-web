@@ -37,7 +37,8 @@ describe("EmojiPicker (design note 4.13)", () => {
     await u.selectOptions(screen.getByLabelText("Hautfarbe"), "3");
     await u.type(screen.getByLabelText("Emojis suchen"), "daumen hoch");
     const results = await screen.findByRole("group", { name: "Suchergebnisse" }, FIND);
-    await u.click(within(results).getAllByRole("menuitem")[0]!);
+    // The section appears at once; the Unicode hits follow when the emoji data has loaded.
+    await u.click((await within(results).findAllByRole("menuitem", {}, FIND))[0]!);
     expect(onPick).toHaveBeenLastCalledWith("👍🏽");
     await u.click(screen.getByRole("button", { name: "Emoji" }));
     const recent = await screen.findByRole("group", { name: "Zuletzt verwendet" }, FIND);
