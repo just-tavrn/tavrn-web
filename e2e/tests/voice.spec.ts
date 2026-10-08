@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { expect, test, type APIRequestContext, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { NODE, createRoomViaApi, inviteCode, loginAs, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, type Account } from "./helpers";
+import { hideDeviceNamesUntilAsked } from "./voice-helpers";
 
 /** An animated GIF (profile.spec.ts fixture) for the avatar animation on the stage. */
 const ANIMATED_GIF = resolve(dirname(new URL(import.meta.url).pathname), "../fixtures/animated.gif");
@@ -517,10 +518,11 @@ test.describe("Voice channels", () => {
   });
   test("Device lists: filled without the microphone test (the browser asks once through “Show devices”)", async ({ browser, request }) => {
     const { owner } = await setup(request);
-    // A context without a granted permission: the browser lists the devices without names until it is asked.
     const context = await browser.newContext({ ...test.info().project.use, permissions: [] });
     opened.push(context);
     const page = await context.newPage();
+    // Chromium's test flags reveal the device names at once; a browser without them hides them until it is asked.
+    await page.addInitScript(hideDeviceNamesUntilAsked);
     await loginAs(page, owner);
     await page.goto("/settings/voice");
     await expect(page.getByTestId("devices-hidden")).toBeVisible();

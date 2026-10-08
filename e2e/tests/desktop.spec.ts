@@ -7,7 +7,7 @@
  */
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { NODE, createRoomViaApi, loginAs, nextTotpCode, registerViaApi, registerViaUi, tokenOf, type Account } from "./helpers";
-import { FAKE_MEDIA, cues } from "./voice-helpers";
+import { FAKE_MEDIA, cues, hideDeviceNamesUntilAsked } from "./voice-helpers";
 
 // The hotkey test joins a voice channel: Chromium's fake microphone, no permission prompts.
 test.use({ launchOptions: { args: FAKE_MEDIA }, permissions: ["microphone", "camera"] });
@@ -204,8 +204,14 @@ test.describe("Desktop app: hotkeys (simulated shell)", () => {
   test("one binding per action: lone modifiers and plain keys, conflict check, restored at start, presses of the shell and of the window", async ({ page, request }) => {
     test.setTimeout(180_000);
     await asDesktopApp(page, NODE);
+    // Device names stay hidden until the page asks for the microphone (as outside Chromium's test flags).
+    await page.addInitScript(hideDeviceNamesUntilAsked);
     await registerViaUi(page, { prefix: "hotk" });
     await page.goto("/settings/voice");
+    // The app asks for the microphone by itself: the lists are filled without the microphone test (issue #34).
+    await expect.poll(async () => page.getByTestId("mic-select").locator("option").count(), { timeout: 10_000 }).toBeGreaterThan(1);
+    await expect(page.getByTestId("devices-hidden")).toHaveCount(0);
+    expect(await page.evaluate(() => (window as unknown as { __e2eAsked: number }).__e2eAsked)).toBe(1);
     const more = page.getByTestId("more-hotkeys");
     await expect(page.getByText("Weitere Tastenkürzel", { exact: true })).toBeVisible();
     await expect(more.getByTestId("hotkey-toggle_mute-key")).toHaveText("keins");
@@ -292,6 +298,8 @@ test.describe("Desktop app: hotkeys (simulated shell)", () => {
     await expect(mute).toHaveAttribute("aria-pressed", "false");
     // Push-to-talk (the left Ctrl alone): a rising tone when the microphone opens, a falling one when it closes.
     const pttTones = async () => (await cues(page)).filter((c) => c.cue === "ptt_on" || c.cue === "ptt_off").length;
+    // The left Ctrl of the presses above opened the microphone too: wait until it closed (the release delay).
+    await expect.poll(async () => (await pttTones()) % 2).toBe(0);
     const before = await pttTones();
     await page.keyboard.down("ControlLeft");
     await page.waitForTimeout(150);
