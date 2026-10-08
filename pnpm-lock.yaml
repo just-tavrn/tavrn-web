@@ -163,8 +163,8 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@tavrn/sdk': github:just-tavrn/tavrn-js#44a30b398875ee3c8e2fbf2c4ccff618175b552c&path:sdk
-  '@tavrn/e2ee': github:just-tavrn/tavrn-js#99633ae748c75f07881b7cc98a122ea559b407ab&path:e2ee
+  '@tavrn/sdk': file:/home/baton/tavrn-split/tavrn-js/.claude/worktrees/web-client-round/sdk
+  '@tavrn/e2ee': file:/home/baton/tavrn-split/tavrn-js/.claude/worktrees/web-client-round/e2ee
   '@tavrn/crypto': github:just-tavrn/tavrn-crypto#v0.1.0&path:pkg
 
 importers:
@@ -186,17 +186,17 @@ importers:
         specifier: ^1.56.0
         version: 1.63.0
       '@tavrn/bot':
-        specifier: github:just-tavrn/tavrn-js#99633ae748c75f07881b7cc98a122ea559b407ab&path:bot
-        version: git+https://github.com/just-tavrn/tavrn-js.git#99633ae748c75f07881b7cc98a122ea559b407ab&path:bot
+        specifier: file:/home/baton/tavrn-split/tavrn-js/.claude/worktrees/web-client-round/bot
+        version: file:../../../../tavrn-js/.claude/worktrees/web-client-round/bot
       '@tavrn/crypto':
         specifier: github:just-tavrn/tavrn-crypto#v0.1.0&path:pkg
         version: git+https://github.com/just-tavrn/tavrn-crypto.git#5b5929a573fd573ed1417132b26b8fe72c1027b5&path:pkg
       '@tavrn/e2ee':
-        specifier: github:just-tavrn/tavrn-js#99633ae748c75f07881b7cc98a122ea559b407ab&path:e2ee
-        version: git+https://github.com/just-tavrn/tavrn-js.git#99633ae748c75f07881b7cc98a122ea559b407ab&path:e2ee
+        specifier: file:/home/baton/tavrn-split/tavrn-js/.claude/worktrees/web-client-round/e2ee
+        version: file:../../../../tavrn-js/.claude/worktrees/web-client-round/e2ee
       '@tavrn/sdk':
-        specifier: github:just-tavrn/tavrn-js#44a30b398875ee3c8e2fbf2c4ccff618175b552c&path:sdk
-        version: git+https://github.com/just-tavrn/tavrn-js.git#44a30b398875ee3c8e2fbf2c4ccff618175b552c&path:sdk
+        specifier: file:/home/baton/tavrn-split/tavrn-js/.claude/worktrees/web-client-round/sdk
+        version: file:../../../../tavrn-js/.claude/worktrees/web-client-round/sdk
       '@types/libsodium-wrappers':
         specifier: ^0.8.2
         version: 0.8.2
@@ -237,11 +237,11 @@ importers:
         specifier: github:just-tavrn/tavrn-crypto#v0.1.0&path:pkg
         version: git+https://github.com/just-tavrn/tavrn-crypto.git#5b5929a573fd573ed1417132b26b8fe72c1027b5&path:pkg
       '@tavrn/e2ee':
-        specifier: github:just-tavrn/tavrn-js#99633ae748c75f07881b7cc98a122ea559b407ab&path:e2ee
-        version: git+https://github.com/just-tavrn/tavrn-js.git#99633ae748c75f07881b7cc98a122ea559b407ab&path:e2ee
+        specifier: file:/home/baton/tavrn-split/tavrn-js/.claude/worktrees/web-client-round/e2ee
+        version: file:../../../../tavrn-js/.claude/worktrees/web-client-round/e2ee
       '@tavrn/sdk':
-        specifier: github:just-tavrn/tavrn-js#44a30b398875ee3c8e2fbf2c4ccff618175b552c&path:sdk
-        version: git+https://github.com/just-tavrn/tavrn-js.git#44a30b398875ee3c8e2fbf2c4ccff618175b552c&path:sdk
+        specifier: file:/home/baton/tavrn-split/tavrn-js/.claude/worktrees/web-client-round/sdk
+        version: file:../../../../tavrn-js/.claude/worktrees/web-client-round/sdk
       dompurify:
         specifier: ^3.4.16
         version: 3.4.16
@@ -1243,22 +1243,19 @@ packages:
     engines: {node: '>= 10'}
     hasBin: true
 
-  '@tavrn/bot@git+https://github.com/just-tavrn/tavrn-js.git#99633ae748c75f07881b7cc98a122ea559b407ab&path:bot':
-    resolution: {commit: 99633ae748c75f07881b7cc98a122ea559b407ab, path: bot, repo: https://github.com/just-tavrn/tavrn-js.git, type: git}
-    version: 0.2.1
+  '@tavrn/bot@file:../../../../tavrn-js/.claude/worktrees/web-client-round/bot':
+    resolution: {directory: ../../../../tavrn-js/.claude/worktrees/web-client-round/bot, type: directory}
     engines: {node: '>=20'}
 
   '@tavrn/crypto@git+https://github.com/just-tavrn/tavrn-crypto.git#5b5929a573fd573ed1417132b26b8fe72c1027b5&path:pkg':
     resolution: {commit: 5b5929a573fd573ed1417132b26b8fe72c1027b5, path: pkg, repo: https://github.com/just-tavrn/tavrn-crypto.git, type: git}
     version: 0.1.0
 
-  '@tavrn/e2ee@git+https://github.com/just-tavrn/tavrn-js.git#99633ae748c75f07881b7cc98a122ea559b407ab&path:e2ee':
-    resolution: {commit: 99633ae748c75f07881b7cc98a122ea559b407ab, path: e2ee, repo: https://github.com/just-tavrn/tavrn-js.git, type: git}
-    version: 0.2.1
+  '@tavrn/e2ee@file:../../../../tavrn-js/.claude/worktrees/web-client-round/e2ee':
+    resolution: {directory: ../../../../tavrn-js/.claude/worktrees/web-client-round/e2ee, type: directory}
 
-  '@tavrn/sdk@git+https://github.com/just-tavrn/tavrn-js.git#44a30b398875ee3c8e2fbf2c4ccff618175b552c&path:sdk':
-    resolution: {commit: 44a30b398875ee3c8e2fbf2c4ccff618175b552c, path: sdk, repo: https://github.com/just-tavrn/tavrn-js.git, type: git}
-    version: 0.2.1
+  '@tavrn/sdk@file:../../../../tavrn-js/.claude/worktrees/web-client-round/sdk':
+    resolution: {directory: ../../../../tavrn-js/.claude/worktrees/web-client-round/sdk, type: directory}
 
   '@testing-library/dom@10.4.2':
     resolution: {integrity: sha512-yzr2S9HyAIdhz2/6qHgbs665Q7PKVcDF05vsOlHPxG1mo36gKVesdYVeDLnXgfjJ03CrKRk08knc6+E/9m8v2Q==}
@@ -3465,20 +3462,20 @@ snapshots:
       '@tauri-apps/cli-win32-ia32-msvc': 2.12.1
       '@tauri-apps/cli-win32-x64-msvc': 2.12.1
 
-  '@tavrn/bot@git+https://github.com/just-tavrn/tavrn-js.git#99633ae748c75f07881b7cc98a122ea559b407ab&path:bot':
+  '@tavrn/bot@file:../../../../tavrn-js/.claude/worktrees/web-client-round/bot':
     dependencies:
       '@tavrn/crypto': git+https://github.com/just-tavrn/tavrn-crypto.git#5b5929a573fd573ed1417132b26b8fe72c1027b5&path:pkg
-      '@tavrn/e2ee': git+https://github.com/just-tavrn/tavrn-js.git#99633ae748c75f07881b7cc98a122ea559b407ab&path:e2ee
-      '@tavrn/sdk': git+https://github.com/just-tavrn/tavrn-js.git#44a30b398875ee3c8e2fbf2c4ccff618175b552c&path:sdk
+      '@tavrn/e2ee': file:../../../../tavrn-js/.claude/worktrees/web-client-round/e2ee
+      '@tavrn/sdk': file:../../../../tavrn-js/.claude/worktrees/web-client-round/sdk
 
   '@tavrn/crypto@git+https://github.com/just-tavrn/tavrn-crypto.git#5b5929a573fd573ed1417132b26b8fe72c1027b5&path:pkg': {}
 
-  '@tavrn/e2ee@git+https://github.com/just-tavrn/tavrn-js.git#99633ae748c75f07881b7cc98a122ea559b407ab&path:e2ee':
+  '@tavrn/e2ee@file:../../../../tavrn-js/.claude/worktrees/web-client-round/e2ee':
     dependencies:
       '@tavrn/crypto': git+https://github.com/just-tavrn/tavrn-crypto.git#5b5929a573fd573ed1417132b26b8fe72c1027b5&path:pkg
-      '@tavrn/sdk': git+https://github.com/just-tavrn/tavrn-js.git#44a30b398875ee3c8e2fbf2c4ccff618175b552c&path:sdk
+      '@tavrn/sdk': file:../../../../tavrn-js/.claude/worktrees/web-client-round/sdk
 
-  '@tavrn/sdk@git+https://github.com/just-tavrn/tavrn-js.git#44a30b398875ee3c8e2fbf2c4ccff618175b552c&path:sdk': {}
+  '@tavrn/sdk@file:../../../../tavrn-js/.claude/worktrees/web-client-round/sdk': {}
 
   '@testing-library/dom@10.4.2':
     dependencies:

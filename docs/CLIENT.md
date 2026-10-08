@@ -11,7 +11,9 @@ Every password account has a second factor: registration is a short wizard (acco
 via QR code or a passkey → ten recovery codes shown once → recovery key), and sign-in asks for the TOTP
 code, a recovery code or a passkey; "Sign in with a passkey" skips the password. The **recovery key**
 (24 words or a compact string, generated in the browser and never sent anywhere) unlocks the encrypted
-messages on a new device or browser; passkeys with the PRF extension can do the same. Local keys live in
+messages on a new device or browser; passkeys with the PRF extension can do the same (the client's own PRF
+assertions name the relying party id the node publishes, `webauthn.rp_id`, so they also work when passkeys belong
+to a parent domain of the web client's host). Local keys live in
 IndexedDB, encrypted under a device key derived from the master secret; the security settings manage
 factors, recovery codes, the recovery key and the optional "require the recovery key every time" lock.
 Without the recovery key the client offers a degraded mode (plaintext channels only, encrypted
