@@ -11,7 +11,9 @@ Every password account has a second factor: registration is a short wizard (acco
 via QR code or a passkey → ten recovery codes shown once → recovery key), and sign-in asks for the TOTP
 code, a recovery code or a passkey; "Sign in with a passkey" skips the password. The **recovery key**
 (24 words or a compact string, generated in the browser and never sent anywhere) unlocks the encrypted
-messages on a new device or browser; passkeys with the PRF extension can do the same. Local keys live in
+messages on a new device or browser; passkeys with the PRF extension can do the same (the client's own PRF
+assertions name the relying party id the node publishes, `webauthn.rp_id`, so they also work when passkeys belong
+to a parent domain of the web client's host). Local keys live in
 IndexedDB, encrypted under a device key derived from the master secret; the security settings manage
 factors, recovery codes, the recovery key and the optional "require the recovery key every time" lock.
 Without the recovery key the client offers a degraded mode (plaintext channels only, encrypted
@@ -154,6 +156,17 @@ Locks or BroadcastChannel every tab works alone (a second tab may then have to r
 before). The desktop app has one window, which always owns the state. New KeyPackages (topped up at every start)
 are created in the owner's state too.
 
+History is lazy: a conversation's pages are dropped when it closes, and the local search index keeps text and file
+names of the last 90 days. **Keep the full history on this device** (the menu of an encrypted channel, DM or group DM;
+default off) keeps the conversation's whole history here instead: the background sync pages it back to the start, the
+search index keeps all of it, and the messages with their decrypted content stay in an encrypted local archive
+(IndexedDB `tavrn-history`, sealed with keys derived from this device's local storage key, so it locks with the device
+and reveals no ids or text; `web/src/history/`). The message list then uses the archived content instead of
+decrypting again and reads from the archive while the node cannot be reached. Each conversation may take up to the
+space set under Settings → Privacy → Local search index (default 50 MB; the oldest messages go first); the menu entry
+shows what it takes, the settings the total. Turning the setting off, clearing the index or signing out (which wipes the
+device) deletes the archive.
+
 ## Threads, forum and announcement channels
 
 Threads ([PROTOCOL.md §7e](https://github.com/just-tavrn/tavrn-protocol/blob/main/PROTOCOL.md)) are
@@ -168,7 +181,10 @@ panel is the channel's conversation in thread mode: encryption, reactions, uploa
 slash commands work there as in the channel, and in encrypted channels the title is encrypted with the channel's
 messages. Its header follows or unfollows the thread and, for its creator or members with *Manage threads*,
 renames, archives, locks or deletes it. Starting or writing in a thread follows it; only followed threads count
-towards the channel's unread badge and raise notifications (direct mentions always do).
+towards the channel's unread badge and raise notifications (direct mentions always do). The client loads the
+followed threads of every room once it is connected (one room after the other in the background, at most 100 rooms per
+node, again after a reconnect at most once a minute) and keeps them current over the WebSocket, so this works for rooms
+not opened since the start as well; a thread started on another device is followed here at once.
 
 Forum channels show posts instead of messages: cards with title, tags, author, replies, last activity and the
 start of the first message, tag filter chips, "Latest activity" or "Newest posts", archived posts on demand and

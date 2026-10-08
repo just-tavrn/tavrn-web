@@ -297,6 +297,8 @@ export interface ChannelMenuContext {
   notify: NotifyMenuState;
   /** "Keep the full history on this device" (encrypted conversations, unlocked device); absent = not offered. */
   fullHistory?: boolean | null;
+  /** While "keep the full history" is on: what the conversation takes on this device, e.g. "3.2 MB / 50.0 MB". */
+  fullHistoryUsage?: string | null;
 }
 
 export interface ChannelMenuActions extends NotifyMenuActions {
@@ -314,9 +316,10 @@ export interface ChannelMenuActions extends NotifyMenuActions {
 }
 
 /** The device-local "keep the full history on this device" toggle (design note 4.4, local search index). */
-function fullHistoryEntries(on: boolean | null | undefined, toggle: (() => void) | undefined, t: T): MenuEntry[] {
+function fullHistoryEntries(on: boolean | null | undefined, toggle: (() => void) | undefined, t: T, usage?: string | null): MenuEntry[] {
   if (on === null || on === undefined || !toggle) return [];
-  return [separator("sep-history"), menuItem("full-history", t("menu.full_history"), toggle, { icon: "🗄", checked: on })];
+  const label = on && usage ? t("menu.full_history_usage", { usage }) : t("menu.full_history");
+  return [separator("sep-history"), menuItem("full-history", label, toggle, { icon: "🗄", checked: on })];
 }
 
 export function channelMenu(c: ChannelMenuContext, a: ChannelMenuActions, t: T): MenuEntry[] {
@@ -326,7 +329,7 @@ export function channelMenu(c: ChannelMenuContext, a: ChannelMenuActions, t: T):
     menuItem("mark-read", t("menu.mark_read"), a.markRead, { icon: "✓", disabled: !c.unread, reason: c.unread ? undefined : t("menu.reason.nothing_unread") }),
     separator("sep-notify"),
     ...notifyEntries("channel", c.notify, a, t),
-    ...fullHistoryEntries(c.fullHistory, a.toggleFullHistory, t),
+    ...fullHistoryEntries(c.fullHistory, a.toggleFullHistory, t, c.fullHistoryUsage),
     move && separator("sep-voice"),
     move &&
       menuItem("move-here", t("menu.channel.move_here_count", { count: move.elsewhere }), a.moveEveryoneHere, {
@@ -407,6 +410,8 @@ export interface DmMenuContext {
   notify: NotifyMenuState;
   /** "Keep the full history on this device"; absent = not offered (locked device). */
   fullHistory?: boolean | null;
+  /** While "keep the full history" is on: what the conversation takes on this device, e.g. "3.2 MB / 50.0 MB". */
+  fullHistoryUsage?: string | null;
 }
 
 export interface DmMenuActions extends NotifyMenuActions {
@@ -425,7 +430,7 @@ export function dmMenu(c: DmMenuContext, a: DmMenuActions, t: T): MenuEntry[] {
     c.peer && menuItem("copy-address", t("menu.copy_address"), a.copyAddress, { icon: "⧉" }),
     separator("sep-notify"),
     ...notifyEntries("dm", c.notify, a, t),
-    ...fullHistoryEntries(c.fullHistory, a.toggleFullHistory, t),
+    ...fullHistoryEntries(c.fullHistory, a.toggleFullHistory, t, c.fullHistoryUsage),
     separator("sep-close"),
     menuItem("close", t("menu.dm.close"), a.close, { icon: "✕" }),
     c.peer && menuItem("block", t("menu.member.block"), a.block, { icon: "🚫", danger: true }),

@@ -16,6 +16,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import type { DeviceInfo } from "@tavrn/sdk";
 import { Link, Navigate, useLocation, useNavigate, useSearchParams } from "react-router";
 import { api, publicApi } from "../lib/api";
 import { useAuth } from "../stores/auth";
@@ -27,6 +28,9 @@ import { deviceProofFor, forgetPrf, hasPendingPrf, passkeyEntryIds, takePrf } fr
 import { parseUnlockKey, sealForApp } from "../crypto/sealedUnlock";
 import { evaluatePrf, passkeysSupported } from "../lib/passkeys";
 import { checkCallback, completeRemoteSignIn, homeClient, hostOf, takePendingConnect, type PendingConnect } from "../lib/remoteSignIn";
+import { signOutAfterHandoff } from "../lib/handoffSignOut";
+import { inSignInWindow } from "../platform/tauriDetect";
+import { signOut } from "../stores/e2ee";
 
 /** `https://<host>` (and `http://<host>[:port]` for development clients served over plain HTTP). */
 export function validConnectOrigin(origin: string, allowHttp: boolean): boolean {
@@ -90,6 +94,14 @@ function appKeyFor(id: string, hash: string): string | null {
   } catch {
     return fromHash;
   }
+}
+
+/**
+ * In the desktop app's sign-in window the page signs its own session out once the handoff is done (no orphan device;
+ * a browser tab keeps it). `before`: the device list before a sign-in's confirmation; null for an unlock.
+ */
+function cleanUpAfterHandoff(before: DeviceInfo[] | null, waitForExchange: boolean): void {
+  void signOutAfterHandoff({ before, waitForExchange, devices: () => api.users.devices(), signOut });
 }
 
 /** A sign-in method the app asked the page to start at once (`method=`). */
@@ -229,10 +241,14 @@ function AppSessionConnect() {
       }
       const sealed = passkey && appKey ? await sealForApp(appKey, { sessionId: id, credentialId: passkey.credentialId, prf: passkey.prf }) : null;
       passkey?.prf.fill(0);
+      // The sign-in window: the device list before the code, to see the app's exchange in it afterwards.
+      const windowMode = inSignInWindow();
+      const before = windowMode ? await api.users.devices().catch(() => null) : null;
       await api.auth.connectCode(sealed ? { session_id: id, sealed_unlock: sealed } : { session_id: id });
       const done = sealed ? "signed_in_unlock" : "signed_in";
       markSessionDone(id, done);
       setOutcome(done);
+      if (windowMode) cleanUpAfterHandoff(before, true);
     } catch (e) {
       setError(describeError(e));
     } finally {
@@ -296,6 +312,7 @@ function UnlockConfirm({ id, appKey, deviceName, address, onDone, onCancel }: { 
       if (!sealed) throw Object.assign(new Error("sealing failed"), { problem: { code: "connect.sealed_unlock_invalid" } });
       await api.auth.connectUnlock({ session_id: id, sealed_unlock: sealed });
       onDone();
+      if (inSignInWindow()) cleanUpAfterHandoff(null, false);
     } catch (e) {
       setError(describeError(e));
     } finally {

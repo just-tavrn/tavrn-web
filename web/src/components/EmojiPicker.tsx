@@ -262,7 +262,7 @@ function PickerPanel({ onPick, customEmojis }: { onPick: (emoji: string) => void
           }}
           placeholder={t("emoji_picker.search")}
           aria-label={t("emoji_picker.search")}
-          className="min-h-9 min-w-0 flex-1 rounded-md border border-line bg-bg-0 px-2 text-sm text-fg-0 outline-none focus:border-accent"
+          className="min-h-9 min-w-0 flex-1 rounded-md border border-line-strong bg-bg-0 px-2 text-sm text-fg-0 outline-none focus:border-accent"
           data-testid="emoji-search"
         />
         <select
@@ -274,7 +274,7 @@ function PickerPanel({ onPick, customEmojis }: { onPick: (emoji: string) => void
           }}
           aria-label={t("emoji_picker.skin_tone")}
           title={t("emoji_picker.skin_tone")}
-          className="min-h-9 rounded-md border border-line bg-bg-0 px-1 text-lg"
+          className="min-h-9 rounded-md border border-line-strong bg-bg-0 px-1 text-lg"
           data-testid="emoji-skin-tone"
         >
           {TONE_GLYPHS.map((g, i) => (

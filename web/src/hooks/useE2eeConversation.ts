@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useEffect, useMemo, useRef, useState } from "react";
+import { archivedDecrypted } from "../history/local";
 import type { Message } from "@tavrn/sdk";
 import { useE2ee } from "../stores/e2ee";
 import { getMls, useMlsUi } from "../stores/mls";
@@ -162,11 +163,21 @@ export function useDecrypted(conversationId: string, messages: Message[] | undef
   const [map, setMap] = useState<Record<string, Decrypted>>({});
   const encrypted = useMemo(() => (messages ?? []).filter((m) => m.encrypted), [messages]);
   useEffect(() => {
-    if (!mls || encrypted.length === 0) return;
+    if (encrypted.length === 0) return;
     let cancelled = false;
     void (async () => {
+      // "Keep the full history on this device" (#4): content this device archived is used as it is (also offline,
+      // before the session manager is there); the rest is decrypted.
+      const archived = await archivedDecrypted(conversationId, encrypted);
+      if (!mls && archived.size === 0) return;
       const next: Record<string, Decrypted> = {};
       for (const m of encrypted) {
+        const kept = archived.get(m.id);
+        if (kept) {
+          next[m.id] = kept;
+          continue;
+        }
+        if (!mls) continue;
         try {
           next[m.id] = await mls.decrypt(conversationId, m);
         } catch {

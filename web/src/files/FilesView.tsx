@@ -369,7 +369,7 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
           onChange={(e) => setQuery(e.target.value)}
           placeholder={t("files.search")}
           aria-label={t("files.search")}
-          className="h-8 w-28 min-w-0 rounded-md border border-line bg-bg-0 px-2 text-sm outline-none focus:border-accent sm:w-48"
+          className="h-8 w-28 min-w-0 rounded-md border border-line-strong bg-bg-0 px-2 text-sm outline-none focus:border-accent sm:w-48"
           data-testid="files-search"
         />
       </header>
@@ -409,7 +409,7 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
               setSort({ key, dir });
             }}
             aria-label={t("files.sort")}
-            className="h-8 rounded-md border border-line bg-bg-0 px-1 text-xs"
+            className="h-8 rounded-md border border-line-strong bg-bg-0 px-1 text-xs"
             data-testid="files-sort"
           >
             {(["name", "size", "modified", "type"] as SortKey[]).flatMap((k) =>

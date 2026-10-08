@@ -225,6 +225,9 @@ describe("notification and list menus", () => {
     const dmActions = { ...notifyActions, markRead: vi.fn(), profile: vi.fn(), close: vi.fn(), block: vi.fn(), copyAddress: vi.fn(), toggleFullHistory };
     expect(ids(dmMenu({ unread: false, kind: "dm", peer: null, notify, fullHistory: true }, dmActions, t))).toContain("full-history");
     expect(ids(dmMenu({ unread: false, kind: "dm", peer: null, notify }, dmActions, t))).not.toContain("full-history");
+    // While on, the label shows how much the conversation takes on this device (#4).
+    expect(findEntry(channelMenu({ kind: "text", unread: false, canManage: false, system: false, notify, fullHistory: true, fullHistoryUsage: "3.2 MB / 50.0 MB" }, actions, t), "full-history")).toMatchObject({ checked: true, label: 'menu.full_history_usage:{"usage":"3.2 MB / 50.0 MB"}' });
+    expect(findEntry(dmMenu({ unread: false, kind: "dm", peer: null, notify, fullHistory: true, fullHistoryUsage: "1.0 KB / 50.0 MB" }, dmActions, t), "full-history")).toMatchObject({ label: 'menu.full_history_usage:{"usage":"1.0 KB / 50.0 MB"}' });
   });
 
   it("gates channel management and voice moving", () => {

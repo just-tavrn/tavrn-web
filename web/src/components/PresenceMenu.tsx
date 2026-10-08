@@ -241,7 +241,7 @@ function CustomStatusDialog({ open, onClose }: { open: boolean; onClose: () => v
           </div>
         </div>
         <Field label={t("presence.custom_expires")}>
-          <select name="custom_expires" value={expiry} onChange={(e) => setExpiry(e.target.value as (typeof EXPIRY)[number])} className="min-h-10 w-full rounded-md border border-line bg-bg-0 px-3 text-sm">
+          <select name="custom_expires" value={expiry} onChange={(e) => setExpiry(e.target.value as (typeof EXPIRY)[number])} className="min-h-10 w-full rounded-md border border-line-strong bg-bg-0 px-3 text-sm">
             {EXPIRY.map((x) => (
               <option key={x} value={x}>
                 {t(`presence.expires.${x}`)}
@@ -301,7 +301,7 @@ function ActivityDialog({ open, onClose }: { open: boolean; onClose: () => void 
         }}
       >
         <Field label={t("presence.activity_type")}>
-          <select name="activity_type" value={type} onChange={(e) => setType(e.target.value)} className="min-h-10 w-full rounded-md border border-line bg-bg-0 px-3 text-sm">
+          <select name="activity_type" value={type} onChange={(e) => setType(e.target.value)} className="min-h-10 w-full rounded-md border border-line-strong bg-bg-0 px-3 text-sm">
             {ACTIVITY_TYPES.map((x) => (
               <option key={x} value={x}>
                 {t(`presence.type_label.${x}`)}

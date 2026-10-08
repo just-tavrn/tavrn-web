@@ -315,7 +315,7 @@ function Tokens({ app }: { app: Application }) {
       <Dialog title={t("apps.secret_title")} open={!!shown} onClose={() => setShown(null)}>
         <div className="space-y-3 text-sm">
           <p className="text-fg-1">{t("apps.secret_once")}</p>
-          <textarea readOnly value={shown?.secret ?? ""} rows={4} className="w-full break-all rounded-md border border-line bg-bg-0 p-2 font-mono text-xs" onFocus={(e) => e.target.select()} data-testid="token-secret" aria-label={t("apps.secret_title")} />
+          <textarea readOnly value={shown?.secret ?? ""} rows={4} className="w-full break-all rounded-md border border-line-strong bg-bg-0 p-2 font-mono text-xs" onFocus={(e) => e.target.select()} data-testid="token-secret" aria-label={t("apps.secret_title")} />
           <p className="text-xs text-warn">{t("apps.secret_warning")}</p>
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={() => void navigator.clipboard?.writeText(shown?.secret ?? "")}>

@@ -249,7 +249,7 @@ function CreateChannelDialog({ roomId, open, onClose, categories }: { roomId: st
         }}
       >
         <Field label={t("channel.kind")}>
-          <select name="kind" value={kind} onChange={(e) => setKind(e.target.value)} className="min-h-10 w-full rounded-md border border-line bg-bg-0 px-3 text-sm">
+          <select name="kind" value={kind} onChange={(e) => setKind(e.target.value)} className="min-h-10 w-full rounded-md border border-line-strong bg-bg-0 px-3 text-sm">
             {["text", "announcement", "forum", "voice", "files"].map((k) => (
               <option key={k} value={k}>
                 {t(`channel.kind.${k}`)}
@@ -262,7 +262,7 @@ function CreateChannelDialog({ roomId, open, onClose, categories }: { roomId: st
         </Field>
         {categories.length > 0 && (
           <Field label={t("channel.category")}>
-            <select name="category" value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="min-h-10 w-full rounded-md border border-line bg-bg-0 px-3 text-sm">
+            <select name="category" value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="min-h-10 w-full rounded-md border border-line-strong bg-bg-0 px-3 text-sm">
               <option value="">{t("common.none")}</option>
               {categories.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -330,7 +330,7 @@ export function InviteDialog({ roomId, open, onClose }: { roomId: string; open: 
           <p className="text-sm text-fg-1">{t("invite.create_hint")}</p>
           <label className="flex flex-col gap-1 text-xs text-fg-2">
             {t("invites.expires")}
-            <select value={hours} onChange={(e) => setHours(Number(e.target.value))} className="min-h-10 w-full rounded-md border border-line bg-bg-0 px-3 text-sm" data-testid="invite-dialog-expiry">
+            <select value={hours} onChange={(e) => setHours(Number(e.target.value))} className="min-h-10 w-full rounded-md border border-line-strong bg-bg-0 px-3 text-sm" data-testid="invite-dialog-expiry">
               {expiryChoices(manage).map((h) => (
                 <option key={h} value={h}>
                   {t(`invite.expiry.${h}`)}

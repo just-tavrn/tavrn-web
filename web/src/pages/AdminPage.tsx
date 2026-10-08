@@ -184,7 +184,7 @@ function UsersTab() {
                 </Button>
                 <label className="flex items-center gap-1 text-xs text-fg-2">
                   {t("admin.grant")}
-                  <input type="number" min={0} max={1000} aria-label={`${t("admin.grant")} ${u.username}`} value={grant[u.id] ?? String(u.room_creation_grant ?? 0)} onChange={(e) => setGrant({ ...grant, [u.id]: e.target.value })} className="w-16 rounded-md border border-line bg-bg-0 px-2 py-1 text-sm text-fg-0" />
+                  <input type="number" min={0} max={1000} aria-label={`${t("admin.grant")} ${u.username}`} value={grant[u.id] ?? String(u.room_creation_grant ?? 0)} onChange={(e) => setGrant({ ...grant, [u.id]: e.target.value })} className="w-16 rounded-md border border-line-strong bg-bg-0 px-2 py-1 text-sm text-fg-0" />
                   <Button variant="ghost" onClick={() => void update(u.id, { room_creation_grant: Number(grant[u.id] ?? u.room_creation_grant ?? 0) })}>
                     {t("admin.grant_set")}
                   </Button>
