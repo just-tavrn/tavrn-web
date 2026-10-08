@@ -18,6 +18,7 @@
     "allow-shell-events",
     "allow-tray-set",
     "allow-tray-status",
-    "allow-set-close-to-tray"
+    "allow-set-close-to-tray",
+    "allow-quit-app"
   ]
 }

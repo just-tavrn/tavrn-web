@@ -52,6 +52,7 @@ pub fn show_main<R: Runtime>(app: &AppHandle<R>) {
         let _ = window.show();
         let _ = window.set_focus();
     }
+    crate::tray::window_changed(app);
 }
 
 /// The client subscribes to the shell's events.

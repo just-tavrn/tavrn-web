@@ -88,6 +88,7 @@ fn the_capability_grants_only_the_app_commands_to_the_main_window() {
             "allow-tray-set",
             "allow-tray-status",
             "allow-set-close-to-tray",
+            "allow-quit-app",
         ]
     );
     assert!(permissions.iter().all(|p| p.starts_with("allow-")), "no plugin or core permissions: the shell's own commands only");
@@ -129,4 +130,18 @@ fn the_installers_show_the_licence_and_terms() {
     }
     // .deb has no accept step: the same file is shipped in the package.
     assert_eq!(c["bundle"]["linux"]["deb"]["files"]["/usr/share/doc/tavrn/LICENSE.txt"], "../LICENSE.txt");
+}
+
+#[test]
+fn the_icons_of_the_bundle_exist() {
+    let icons = conf()["bundle"]["icon"].as_array().cloned().unwrap_or_default();
+    assert!(icons.len() >= 5, "PNG sizes for Linux, .ico for Windows, .icns for macOS");
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    for icon in &icons {
+        let path = dir.join(icon.as_str().unwrap_or_default());
+        assert!(std::fs::metadata(&path).is_ok_and(|m| m.len() > 0), "missing icon {}", path.display());
+    }
+    for kind in [".png", ".ico", ".icns"] {
+        assert!(icons.iter().any(|i| i.as_str().is_some_and(|i| i.ends_with(kind))), "no {kind} icon");
+    }
 }

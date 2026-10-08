@@ -28,9 +28,11 @@ pub const MAIN_WINDOW: &str = "main";
 
 pub fn run() {
     let builder = tauri::Builder::default();
-    // A second start (Start menu, a notification click) shows the running app, which may sit in the tray.
-    #[cfg(windows)]
-    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| events::show_main(app)));
+    // A second start (launcher, Start menu, a Windows notification click) shows the running app, which may sit in the
+    // tray. On Linux the plugin needs the session bus; without one (a bare session, CI under xvfb) it is left out.
+    #[cfg(any(windows, target_os = "linux"))]
+    let builder =
+        if cfg!(windows) || session_bus() { builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| events::show_main(app))) } else { builder };
     let result = builder
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
@@ -49,15 +51,20 @@ pub fn run() {
             tray::tray_set,
             tray::tray_status,
             tray::set_close_to_tray,
+            tray::quit_app,
         ])
         .on_window_event(|window, event| {
-            // Close to tray (Settings → App): hide instead of quitting.
-            if let WindowEvent::CloseRequested { api, .. } = event
-                && window.label() == MAIN_WINDOW
-                && tray::closes_to_tray(window.app_handle())
-            {
-                api.prevent_close();
-                let _ = window.hide();
+            if window.label() != MAIN_WINDOW {
+                return;
+            }
+            match event {
+                // Close to tray (Settings → App): hide instead of quitting.
+                WindowEvent::CloseRequested { api, .. } if tray::closes_to_tray(window.app_handle()) => {
+                    api.prevent_close();
+                    tray::hide_main(window.app_handle());
+                }
+                WindowEvent::Focused(_) | WindowEvent::Resized(_) => tray::window_changed(window.app_handle()),
+                _ => {}
             }
         })
         .setup(|app| {
@@ -92,4 +99,17 @@ pub fn run() {
         eprintln!("tavrn: the app could not start: {e}");
         std::process::exit(1);
     }
+}
+
+/// A D-Bus session bus can be reached (its address in the environment, or the standard socket of the user session).
+#[cfg(target_os = "linux")]
+fn session_bus() -> bool {
+    std::env::var_os("DBUS_SESSION_BUS_ADDRESS").is_some_and(|a| !a.is_empty())
+        || std::env::var_os("XDG_RUNTIME_DIR").is_some_and(|d| std::path::Path::new(&d).join("bus").exists())
+}
+
+#[cfg(not(target_os = "linux"))]
+#[allow(dead_code)]
+fn session_bus() -> bool {
+    false
 }

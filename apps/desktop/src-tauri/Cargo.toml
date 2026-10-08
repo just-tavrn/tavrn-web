@@ -35,7 +35,9 @@ zbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] 
 
 [target.'cfg(windows)'.dependencies]
 windows-native-keyring-store = { version = "1", default-features = false }
-# Close to tray: a second start (Start menu, a notification click) focuses the running app.
+
+[target.'cfg(any(windows, target_os = "linux"))'.dependencies]
+# Close to tray: a second start (launcher, Start menu, a notification click) shows the running app.
 tauri-plugin-single-instance = "2.5"
 
 [target.'cfg(target_os = "macos")'.dependencies]
