@@ -19,6 +19,7 @@ import rnnoiseWorkletUrl from "@sapphi-red/web-noise-suppressor/rnnoiseWorklet.j
 import rnnoiseWasmUrl from "@sapphi-red/web-noise-suppressor/rnnoise.wasm?url";
 import rnnoiseSimdWasmUrl from "@sapphi-red/web-noise-suppressor/rnnoise_simd.wasm?url";
 import { RnnoiseWorkletNode, loadRnnoise } from "@sapphi-red/web-noise-suppressor";
+import { gateModeFor } from "./gate";
 import { gateThreshold, type VoiceSettings } from "./settings";
 import { captureFor, stereoCapture } from "./quality";
 
@@ -53,11 +54,14 @@ export class MicPipeline {
   private closed = false;
   /** Music mode: no microphone processing, two channels when the device has them. */
   private readonly music: boolean;
+  /** The microphone test of the settings: the gate ignores push-to-talk (`gateModeFor`). */
+  private readonly test: boolean;
   private stereoCapture = false;
 
-  private constructor(ctx: AudioContext, gate: AudioWorkletNode, settings: VoiceSettings, onLevel: (r: LevelReport) => void, music: boolean) {
+  private constructor(ctx: AudioContext, gate: AudioWorkletNode, settings: VoiceSettings, onLevel: (r: LevelReport) => void, music: boolean, test: boolean) {
     this.ctx = ctx;
     this.music = music;
+    this.test = test;
     this.settings = settings;
     this.input = ctx.createGain();
     this.gate = gate;
@@ -71,14 +75,17 @@ export class MicPipeline {
     this.monitor.connect(ctx.destination);
   }
 
-  /** Opens the microphone with the settings (asks for permission). */
-  static async create(settings: VoiceSettings, onLevel: (r: LevelReport) => void = () => undefined, opts: { music?: boolean } = {}): Promise<MicPipeline> {
+  /**
+   * Opens the microphone with the settings (asks for permission). `test`: the microphone test of the
+   * settings, where push-to-talk does not close the gate.
+   */
+  static async create(settings: VoiceSettings, onLevel: (r: LevelReport) => void = () => undefined, opts: { music?: boolean; test?: boolean } = {}): Promise<MicPipeline> {
     const ctx = new AudioContext({ sampleRate: 48000, latencyHint: "interactive" });
     const music = !!opts.music;
     try {
       await ctx.audioWorklet.addModule(gateWorkletUrl);
       const gate = new AudioWorkletNode(ctx, "tavrn-gate", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [music ? 2 : 1] });
-      const pipeline = new MicPipeline(ctx, gate, settings, onLevel, music);
+      const pipeline = new MicPipeline(ctx, gate, settings, onLevel, music, !!opts.test);
       await pipeline.apply(settings);
       if (ctx.state === "suspended") await ctx.resume().catch(() => undefined);
       return pipeline;
@@ -128,7 +135,7 @@ export class MicPipeline {
     this.input.gain.value = settings.inputVolume / 100;
     this.gate.port.postMessage({ threshold: gateThreshold(settings), holdMs: settings.inputMode === "ptt" ? 0 : 300 });
     if (settings.inputMode !== "ptt") this.setPttOpen(false);
-    this.gate.port.postMessage({ mode: settings.inputMode === "ptt" ? (this.pttOpen ? "open" : "closed") : "auto" });
+    this.gate.port.postMessage({ mode: gateModeFor(settings.inputMode, this.pttOpen, this.test) });
   }
 
   private async wire(rnnoise: boolean): Promise<void> {
@@ -166,13 +173,13 @@ export class MicPipeline {
     this.pttTimer = null;
     if (pressed) {
       this.setPttOpen(true);
-      this.gate.port.postMessage({ mode: "open" });
+      this.gate.port.postMessage({ mode: gateModeFor("ptt", true, this.test) });
       return;
     }
     this.pttTimer = setTimeout(() => {
       this.pttTimer = null;
       this.setPttOpen(false);
-      this.gate.port.postMessage({ mode: "closed" });
+      this.gate.port.postMessage({ mode: gateModeFor("ptt", false, this.test) });
     }, this.settings.pttReleaseMs);
   }
 

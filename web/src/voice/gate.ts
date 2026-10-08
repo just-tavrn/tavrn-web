@@ -7,6 +7,16 @@
 
 export type GateMode = "auto" | "open" | "closed";
 
+/**
+ * The gate mode of a `MicPipeline`: voice activation lets the gate decide ("auto"); push-to-talk follows the
+ * key. The microphone test of the settings (`test`) exists to judge the microphone, not the key: there the
+ * gate stays open in push-to-talk mode, so "Hear yourself" and the recording carry the voice without a key.
+ */
+export function gateModeFor(inputMode: "vad" | "ptt", pttOpen: boolean, test: boolean): GateMode {
+  if (inputMode !== "ptt") return "auto";
+  return pttOpen || test ? "open" : "closed";
+}
+
 /** RMS level of a block in dBFS (`-Infinity` for digital silence). */
 export function dbfs(block: Float32Array): number {
   let sum = 0;

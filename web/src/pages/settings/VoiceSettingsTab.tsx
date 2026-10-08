@@ -108,10 +108,14 @@ function MicCheck({ settings, onPermission }: { settings: VoiceSettings; onPermi
   const start = async (): Promise<MicPipeline | null> => {
     try {
       const { MicPipeline } = await import("../../voice/audio");
-      const p = await MicPipeline.create(settings, (r) => {
-        setLevel(r.level);
-        setOpen(r.open);
-      });
+      const p = await MicPipeline.create(
+        settings,
+        (r) => {
+          setLevel(r.level);
+          setOpen(r.open);
+        },
+        { test: true },
+      );
       live.current = p;
       setPipeline(p);
       onPermission();
@@ -195,6 +199,11 @@ function MicCheck({ settings, onPermission }: { settings: VoiceSettings; onPermi
         {threshold !== null && <div className="absolute inset-y-0 w-0.5 bg-warn" style={{ left: `${levelToUnit(threshold) * 100}%` }} title={t("voice.settings.threshold")} />}
       </div>
       <p className="text-xs text-fg-2">{t("voice.settings.loopback_hint")}</p>
+      {settings.inputMode === "ptt" && (
+        <p className="text-xs text-fg-2" data-testid="mic-check-ptt-hint">
+          {t("voice.settings.mic_check_ptt")}
+        </p>
+      )}
       {inVoice && (
         <p className="text-xs text-fg-2" data-testid="loopback-busy">
           {t("voice.settings.loopback_busy")}

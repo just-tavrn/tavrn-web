@@ -248,6 +248,7 @@
   "voice.settings.loopback_stop": "Stop listening",
   "voice.settings.loopback_timer": "Hear yourself: time so far",
   "voice.settings.loopback_hint": "Hear yourself plays your microphone back live, processed exactly as in a call (device, noise suppression, gain, voice activation); it stops after one minute. Use headphones: speakers feed back into the microphone.",
+  "voice.settings.mic_check_ptt": "The test ignores push-to-talk: you are heard here without pressing the key.",
   "voice.settings.loopback_busy": "Not available while you are in a voice channel.",
   "voice.settings.loopback_feedback": "That sounds like feedback, so playback is muted. Put on headphones or turn the speakers down, then unmute.",
   "voice.settings.loopback_resume": "Unmute",

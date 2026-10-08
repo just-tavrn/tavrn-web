@@ -248,6 +248,7 @@
   "voice.settings.loopback_stop": "Zuhören beenden",
   "voice.settings.loopback_timer": "Dich selbst hören: bisherige Zeit",
   "voice.settings.loopback_hint": "„Dich selbst hören“ spielt dein Mikrofon live ab, genau so verarbeitet wie im Gespräch (Gerät, Rauschunterdrückung, Verstärkung, Sprachaktivierung); nach einer Minute endet es. Nutze Kopfhörer: Lautsprecher koppeln ins Mikrofon zurück.",
+  "voice.settings.mic_check_ptt": "Der Test ignoriert Push-to-Talk: Hier bist du ohne Drücken der Taste zu hören.",
   "voice.settings.loopback_busy": "Nicht verfügbar, solange du in einem Sprachkanal bist.",
   "voice.settings.loopback_feedback": "Das klingt nach Rückkopplung, die Wiedergabe ist stumm. Setz Kopfhörer auf oder dreh die Lautsprecher leiser, dann Stummschaltung aufheben.",
   "voice.settings.loopback_resume": "Stummschaltung aufheben",

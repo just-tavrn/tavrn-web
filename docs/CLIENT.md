@@ -82,7 +82,8 @@ Voice & video** (kept per device, applied live): microphone and speaker with a l
 the devices only once the page may use the microphone: the desktop app asks for it when the tab opens, the
 browser offers **Show devices**, also on the first click into a list, and the lists follow devices plugged in or
 out), two microphone
-tests with the same processing as in a call (**Hear yourself** plays the microphone back live with a timer
+tests with the same processing as in a call, except that push-to-talk never closes the gate there, the tests
+judge the microphone, not the key (**Hear yourself** plays the microphone back live with a timer
 and stops after one minute, when you leave the settings or when you join a voice channel, and is not available
 while you are in one; it asks for headphones and mutes itself while the sound is loud and concentrated on one
 frequency, the howl of speakers feeding the microphone, until you unmute it; **Record and play back** records
