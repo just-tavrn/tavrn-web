@@ -10,7 +10,10 @@ name: End-to-end
 on:
   push:
     branches: [main]
+  # Draft pull requests get the quick checks only (ci.yml); the suite runs once a pull request is marked
+  # ready for review, on every push after that, and on main.
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
     inputs:
       node-image:
@@ -35,7 +38,8 @@ jobs:
     name: End-to-end
     if: >-
       ${{ vars.CI_ENABLED == 'true' &&
-          (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+          (github.event_name != 'pull_request' ||
+           (github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft)) }}
     uses: just-tavrn/.github/.github/workflows/e2e.yml@main
     with:
       node-image: ${{ inputs.node-image || vars.TAVRN_NODE_IMAGE || 'ghcr.io/just-tavrn/tavrn-node:edge' }}
