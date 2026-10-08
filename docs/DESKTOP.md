@@ -23,8 +23,9 @@ Tauri CLI) and the Rust crate `tavrn-desktop` in `apps/desktop/src-tauri` with a
 |---|---|
 | The main window shows only the bundled client: `tauri://localhost` (Linux), `https://tauri.localhost` (Windows), in development the Vite dev server. Every other navigation is refused; web links (http, https, mailto) open in the system browser, new windows are never opened. The click-to-play embeds load in their frames. | `src-tauri/src/guard.rs`, `src/lib.rs` |
 | Content Security Policy: scripts only from the bundle (`script-src 'self' 'wasm-unsafe-eval'`, no eval, no inline scripts, no third-party scripts), `connect-src` https and wss to any node plus plain http/ws to `localhost` and `127.0.0.1` (development nodes), images and media from https, frames only for the embed providers. | `tauri.conf.json` `app.security.csp` |
-| One capability for the main window: the app's commands, nothing else (no `remote` origins, no plugin or core permissions, no global Tauri object). No capability names the sign-in window (a test checks every capability file). | `src-tauri/capabilities/main.json`, `build.rs`, `src-tauri/src/conf_tests.rs` |
+| One capability for the main window: the app's commands, nothing else (no `remote` origins, no plugin or core permissions, no global Tauri object). The global-shortcut plugin is used from Rust only; its JavaScript commands are not granted. No capability names the sign-in window (a test checks every capability file). | `src-tauri/capabilities/main.json`, `build.rs`, `src-tauri/src/conf_tests.rs` |
 | The sign-in window (`connect`) shows only the chosen node's `/connect?session=…` page (`open_connect` checks origin, path and parameters) and follows https pages from there (identity providers redirect), plain http only on this computer; it never loads the bundled client or `tauri:`, `file:`, `data:`, `javascript:` or `blob:` URLs, and new windows go to the system browser. The node's web client there runs as a plain web client: only the main window counts as the app (`platform/tauriDetect.ts`). | `src-tauri/src/guard.rs`, `src/lib.rs` |
+| The microphone and the camera are granted to the main window without a prompt of the webview (it shows only the bundled client); screen capture and every other permission keep the webview's default. | `src-tauri/src/media.rs` |
 | The node URL is validated twice: in the client and again in the shell before it is stored. | `web/src/platform/nodeUrl.ts`, `src-tauri/src/node_url.rs` |
 
 Unit tests in `src-tauri/src/conf_tests.rs` keep these properties of `tauri.conf.json` and the capability from eroding.
@@ -45,7 +46,7 @@ runs Tauri code. Everything that imports Tauri APIs lives under `platform/tauri*
 | `node` | — | the chosen node with its identity domain and web origin; `set(url, details)` validates and persists them (shell command `set_node`), `resolve(domain)` finds the node of an address (shell command `resolve_node`) |
 | `auth` | the connect flow with this origin (redirect to `<web>/connect`, back at `/connect/callback`) | the sign-in on the node's page: an app session, the page in the sign-in window (`open_connect`), polling, the exchange with the PKCE verifier, `close_connect` |
 | `updater` | — | signed updates (absent while the build has no updater key) |
-| `hotkeys` | — | extension point of the next step (global hotkeys) |
+| `hotkeys` | — | global hotkeys: `register(action, combo)`, `unregister(action)`, `subscribe(handler)` (shell commands `register_hotkey`, `unregister_hotkey`, `listen_hotkeys`) |
 | `keystore` | — | the OS keychain for the key of the local key store (commands `keychain_get`, `keychain_set`, `keychain_delete`, `keychain_status`) |
 | `notifications` | — | native notifications and their clicks (`notify`, `shell_events`) |
 | `tray` | — | the tray icon with the voice state, close to tray, quit (`tray_set`, `tray_status`, `set_close_to_tray`, `quit_app`) |
@@ -214,6 +215,54 @@ Nodes without `connect.app` keep password and TOTP in the app; their passkeys, S
 in the sign-in window keeps its own sign-in on the node's origin (like a browser tab), so the next handoff only asks for
 the confirmation.
 
+## Global hotkeys
+
+Push-to-talk and the priority speaker (while held), mute and deafen (toggles) work while the app is in the background
+or minimized, for example during a game. **Settings → Voice & video → Global hotkeys** has a recorder per action:
+"Change", then press the combination; Escape cancels, Backspace removes the binding. The browser shows a hint instead.
+
+- **Combinations** are modifiers and one key, written as the client captures them: `Ctrl+Alt+Shift+Super+<KeyboardEvent.code>`
+  in this order, e.g. `Ctrl+Shift+KeyM`, `F13`, `Alt+Numpad1`. `Super` is the Windows key on Windows, Cmd on macOS and
+  Super/Meta on Linux; the recorder shows these names. A modifier alone (only Ctrl, for example) cannot be bound.
+- **A global grab takes the key from every other program.** So a key that types text (letters, digits, punctuation,
+  Space, Enter, Tab, arrows, Delete) needs Ctrl, Alt or Super as well; function keys F1–F24, the numpad and Insert, Home,
+  End, Page Up/Down, Pause, Scroll Lock and Print Screen may stand alone. Escape and Backspace are the recorder's keys.
+- **Conflicts** are refused with a message: the same combination for two actions (the shell refuses it as well), and a
+  global combination equal to the push-to-talk or priority key of the window (Settings → Voice & video, the keys that
+  work while the window has focus) — in both directions, since both would fire. A combination the system refuses
+  (another program holds it) is reported and the old binding stays.
+- **Where they live:** with the voice settings of the client (`desktopHotkeys` in `tavrn.voice.settings`); the shell
+  keeps only the registry of the running app (`src-tauri/src/hotkeys.rs`). At every start the client hands the stored
+  bindings to the shell; a combination that cannot be registered then stays stored and is reported once.
+- **How they reach the call:** the shell grabs the combination through
+  [tauri-plugin-global-shortcut](https://v2.tauri.app/plugin/global-shortcut/) and reports presses and releases over a
+  channel the client opened (`listen_hotkeys`); `web/src/voice/hotkeys.ts` drives push-to-talk (the gate opens while
+  held, with the release delay of the settings), the priority speaker, mute and deafen. Push-to-talk needs the input
+  mode "Push to talk". Focus changes of the window do not release a global hold. Outside a call a toggle shows what
+  the next voice channel gets.
+- **Platforms:** Windows (`RegisterHotKey`) and Linux on X11 (`XGrabKey`). In a Wayland session the grab works only
+  through XWayland, i.e. while an X11 window (many games, Wine and Proton included) has the focus; native Wayland has no
+  global shortcuts for applications yet.
+
+## Voice on Linux
+
+WebKitGTK runs WebRTC through GStreamer and keeps it off unless the app switches it on: the shell turns on
+`enable-webrtc` and `enable-media-stream` of the webview's settings (`src-tauri/src/media.rs`). At runtime these
+GStreamer plugins must be installed (the `.deb` depends on them; for the AppImage install them yourself):
+
+```sh
+sudo apt install gstreamer1.0-plugins-bad gstreamer1.0-plugins-good gstreamer1.0-gl gstreamer1.0-pipewire   # or gstreamer1.0-pulseaudio
+```
+
+**The distributions' WebKitGTK is built without WebRTC.** WebKitGTK compiles WebRTC only with its experimental
+features (`ENABLE_WEB_RTC` follows `ENABLE_EXPERIMENTAL_FEATURES`, off in release builds); Ubuntu 24.04 and 26.04 ship
+`libwebkit2gtk-4.1` 2.52 that way (it does not link `libgstwebrtc-1.0`). There the switch has no effect:
+`getUserMedia` works, `RTCPeerConnection` does not exist, and the client refuses to join voice as in browsers without
+WebRTC. Check a system with `ldd /usr/lib/x86_64-linux-gnu/libwebkit2gtk-4.1.so.0 | grep gstwebrtc`; on a system whose
+WebKitGTK is built with WebRTC the switch makes it available (the smoke test asserts that there; not yet verified on
+such a build). End-to-end encrypted voice also needs encoded
+transforms (`RTCRtpScriptTransform`) in that build.
+
 ## Limitations
 
 What the browser gets from "the client is served by the node" and what the app does instead:
@@ -228,7 +277,7 @@ What the browser gets from "the client is served by the node" and what the app d
 | Captcha on login or registration | on the node's page in the sign-in window | the widget is a third-party script (CSP `script-src 'self'`) bound to the node's host name; the node's page loads it. Without `connect.app`: a notice, use the browser for that step. |
 | Web push | not offered | there is no service worker in the app (its pages are not served by the node). The app shows native notifications instead while it runs (also from the tray); nothing reaches a device where the app is not running. |
 | Desktop notifications of the browser | replaced | native notifications ("Notifications" above). |
-| Voice and video | Windows (WebView2, Chromium): expected to work as in Chromium (to be confirmed by hand); Linux: not available with the distributions' WebKitGTK | end-to-end encrypted media needs WebRTC with encoded transforms. The WebKitGTK of Ubuntu 26.04 ships without WebRTC (no `RTCPeerConnection`, checked in the built app), so the client refuses to join, as in browsers that lack it. Screen and window sharing through the platform APIs is a later step. |
+| Voice and video | Windows (WebView2, Chromium): expected to work as in Chromium (to be confirmed by hand); Linux: not available with the distributions' WebKitGTK | end-to-end encrypted media needs WebRTC with encoded transforms. The app switches WebRTC on, but the WebKitGTK of Ubuntu 24.04 and 26.04 is built without it (no `RTCPeerConnection`, checked in the built app; "Voice on Linux"), so the client refuses to join, as in browsers that lack it. Global hotkeys work regardless. Screen and window sharing through the platform APIs is a later step. |
 | Popping out the whiteboard, "open original" in the media viewer | not offered | the app opens no window for content (only the sign-in window); maximize and the download icon cover it. |
 | The terms and other pages that open in a new tab | open on the node's web client in the system browser | the app opens no window for content. |
 | Updates while the repository is private | do not download | the updater fetches `latest.json` and the installers from the public release URLs. |
@@ -237,7 +286,8 @@ What the browser gets from "the client is served by the node" and what the app d
 
 System packages on Linux (Debian/Ubuntu names): `libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev
 librsvg2-dev patchelf xdg-utils`, for the WebDriver test also the WebKit WebDriver (`webkit2gtk-driver`, on Ubuntu
-26.04 `webkitgtk-webdriver`: it provides `/usr/bin/WebKitWebDriver`) and `xvfb`. A Rust toolchain (stable, at least
+26.04 `webkitgtk-webdriver`: it provides `/usr/bin/WebKitWebDriver`), `xvfb` and `xdotool`; for voice the GStreamer
+plugins of "Voice on Linux". A Rust toolchain (stable, at least
 1.90) and the requirements of the web client (README "Development"). On Windows: the Microsoft C++ build tools and
 WebView2 (preinstalled on Windows 10 and 11).
 
@@ -257,14 +307,17 @@ picker accepts `http://127.0.0.1:8080`).
 
 - Rust: `cargo test` in `apps/desktop/src-tauri` (node URL validation, settings file, navigation guards of both windows,
   the sign-in page URL, the resolver with a fake fetcher and SRV lookup for every step and error plus the real fetcher
-  against a local server, updater key, the security properties of `tauri.conf.json` and the capabilities, the keychain
-  with the in-memory mock store of keyring-core and its entry names, notification validation, the tray's states, icons
-  and labels, the installer licence and the icons of the bundle). `cargo test -- --ignored os_keychain` writes, reads
-  and deletes an entry in the real keychain of the machine; desktop.yml runs it with gnome-keyring in a D-Bus session.
+  against a local server, updater key, the hotkey registry: combinations, Super/Cmd/Win, typing keys, duplicates,
+  refused grabs; the media permissions; the security properties of `tauri.conf.json` and the capabilities, the `.deb`
+  dependencies, the keychain with the in-memory mock store of keyring-core and its entry names, notification
+  validation, the tray's states, icons and labels, the installer licence and the icons of the bundle).
+  `cargo test -- --ignored os_keychain` writes, reads and deletes an entry in the real keychain of the machine;
+  desktop.yml runs it with gnome-keyring in a D-Bus session.
 - Vitest, with the other tests of the client (`just test`): the platform detection and both implementations (Tauri
   mocked with `@tauri-apps/api/mocks`), the node picker, Settings → App, the API base plumbing, the flows the app
   does not offer, the key store with the keychain (migration, fallback, lock on close, sign-out), the routing of
-  notifications, the notification settings of the app, the tray wiring.
+  notifications, the notification settings of the app, the tray wiring; the global hotkeys (settings, conflict check,
+  recorder, the bridge to the shell, the voice session's reaction to presses and releases).
 - `node --test` of the update manifest script and of the installer licence (`pnpm --filter @tavrn/desktop test`).
 - Playwright (`e2e/tests/desktop.spec.ts`, simulated shell): the node picker with address first and the advanced URL,
   Settings → App, the sign-in on the node's page with the page in a second browser context; `desktop-connect.spec.ts`:
@@ -292,13 +345,33 @@ picker accepts `http://127.0.0.1:8080`).
 
 ## Builds and releases
 
-`.github/workflows/desktop.yml` ([GITHUB.md](GITHUB.md)):
+`.github/workflows/desktop.yml` ([GITHUB.md](GITHUB.md)) builds on two routes:
 
-- pull requests that touch `apps/desktop`, `web`, the lockfile or the workspace: the Linux build on `ubuntu-latest`
-  with the checks, the WebDriver smoke test under xvfb (against the node image) and the `.deb` and `.AppImage` as
-  artifacts for 7 days;
-- by hand for any branch: `gh workflow run desktop.yml --ref <branch> -f windows=true` adds the Windows installers;
-- release tags: `release.yml` creates the GitHub release, then calls `desktop.yml`, which builds Linux and Windows
+| Route | Runner | When | What |
+|---|---|---|---|
+| Linux, natively | self-hosted `tavrn-heavy` (fallback `ubuntu-latest`) | pull requests that touch `apps/desktop`, `web`, the lockfile, the workspace or the workflow, once ready for review; pushes to `main`; by hand; release tags | the checks (fmt, clippy, tests, licenses, the real Secret Service), `.deb` and `.AppImage`, the WebDriver smoke test under xvfb against the node image's binary; artifact `desktop-linux` |
+| Windows NSIS, cross-compiled | self-hosted `tavrn-heavy` | as the Linux build, except release tags | `tauri build --target x86_64-pc-windows-msvc --runner cargo-xwin --bundles nsis`; artifact `desktop-windows-nsis` (the current installer of `main` is always there) |
+| Windows `.msi` and NSIS, natively | GitHub-hosted `windows-latest` | release tags; by hand with `windows: true` | the release installers with their updater signatures; artifact `desktop-windows` |
+
+All artifacts are kept for 7 days.
+
+- **The self-hosted route** runs on the organization's runner image (`just-tavrn/.github`, `runner/README.md` "Desktop
+  builds"): WebKitGTK, `tauri-driver`, `WebKitWebDriver`, xvfb, xdotool, gnome-keyring, `cargo-xwin`, NSIS and LLVM are
+  in the image, the jobs install nothing, and Cargo builds in the runner's cache slot (`CARGO_TARGET_DIR`). The
+  Microsoft CRT and Windows SDK that cargo-xwin links against come from the runner's cache (`XWIN_CACHE_DIR`, prepared
+  when the runner starts); the job fails with a clear message when it is missing and never downloads it itself (the
+  SDK's licence forbids publishing it, so it is never part of an artifact either).
+- **Trusted events only:** a self-hosted runner executes the code it checks out, so pull requests from forks and from
+  Dependabot build Linux on `ubuntu-latest` and skip the cross-compiled installer. Release builds also stay on
+  `ubuntu-latest` and `windows-latest`: they carry the updater key, and no long-lived secret besides the read token
+  belongs on the self-hosted runners.
+- **Limits of the cross-compiled installer** (experimental upstream, [Tauri: build Windows apps on
+  Linux](https://v2.tauri.app/distribute/windows-installer/#build-windows-apps-on-linux-and-macos)): NSIS only (the
+  `.msi` needs WiX, which runs on Windows), x86_64 only, built but not started (no Windows on the runner), no updater
+  signature. It is for testing by hand; releases ship the installers of `windows-latest`.
+- By hand for any branch: `gh workflow run desktop.yml --ref <branch> -f windows=true` adds the `windows-latest`
+  installers.
+- Release tags: `release.yml` creates the GitHub release, then calls `desktop.yml`, which builds Linux and Windows
   with the updater signatures and attaches the installers, their `.sig` files and `latest.json` to that release.
 
 The installers are not signed by an OS code-signing certificate (Windows SmartScreen warns on the first start); the

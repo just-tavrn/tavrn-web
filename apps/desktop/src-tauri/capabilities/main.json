@@ -22,6 +22,9 @@
     "allow-tray-set",
     "allow-tray-status",
     "allow-set-close-to-tray",
-    "allow-quit-app"
+    "allow-quit-app",
+    "allow-register-hotkey",
+    "allow-unregister-hotkey",
+    "allow-listen-hotkeys"
   ]
 }

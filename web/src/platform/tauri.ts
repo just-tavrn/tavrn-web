@@ -4,11 +4,11 @@
  * (`src-tauri/src/commands.rs`): the chosen node, opening links in the system browser, the updater. This module
  * is loaded only inside the app (platform/index.ts); nothing here runs in a browser.
  */
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { externalUrl } from "./links";
 import { runAppSession } from "./appSession";
 import { shellMembers } from "./tauriShell";
-import type { AppUpdater, Platform, ResolvedNode } from "./types";
+import type { AppUpdater, HotkeyEvent, Platform, PlatformHotkeys, ResolvedNode } from "./types";
 
 interface ShellConfig {
   node: string | null;
@@ -35,6 +35,26 @@ const updater: AppUpdater = {
     return { version: found.version, notes: found.notes ?? null, install: () => invoke<void>("install_update") };
   },
 };
+
+/**
+ * Global hotkeys: the shell reports presses and releases over one channel (a reloaded page opens a new one, the
+ * shell keeps the newest); the bindings themselves are restored by the client (`voice/hotkeys.ts`).
+ */
+function createHotkeys(): PlatformHotkeys {
+  const handlers = new Set<(event: HotkeyEvent) => void>();
+  const channel = new Channel<HotkeyEvent>((event) => {
+    for (const handler of handlers) handler(event);
+  });
+  void invoke<void>("listen_hotkeys", { onEvent: channel }).catch((e: unknown) => console.warn("hotkeys: no channel to the shell", e));
+  return {
+    register: (action, combo) => invoke<string>("register_hotkey", { action, combo }),
+    unregister: (action) => invoke<void>("unregister_hotkey", { action }),
+    subscribe: (handler) => {
+      handlers.add(handler);
+      return () => handlers.delete(handler);
+    },
+  };
+}
 
 /** The desktop platform; `doc` receives the link handler (tests pass a detached document). */
 export async function createTauriPlatform(doc: Document = document): Promise<Platform> {
@@ -83,6 +103,7 @@ export async function createTauriPlatform(doc: Document = document): Promise<Pla
       reopen: (url) => invoke<void>("open_connect", { url }),
     },
     ...(info.updater ? { updater } : {}),
+    hotkeys: createHotkeys(),
     // OS keychain, native notifications, tray (tauriShell.ts).
     ...shellMembers(),
   };

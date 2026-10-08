@@ -7,7 +7,9 @@
  * node and reaches its login page. The account signs in on the node's own page in the sign-in window (password and
  * TOTP, app sessions of the connect flow), the main window picks up the session, sets up its recovery key (the
  * encryption core in the webview) and sends a message in an end-to-end encrypted channel, which the node stores as
- * ciphertext only.
+ * ciphertext only. Then voice on Linux: media streams are on, and WebRTC is on whenever the system's WebKitGTK is
+ * built with it; and a global hotkey: the recorder of Settings → Voice binds Ctrl+Alt+M to "mute", the window is
+ * minimized and a real key press of the X server (xdotool) toggles mute through the shell's global grab.
  *
  * Keychain, tray and notifications: the first start runs without a keychain (`TAVRN_DESKTOP_KEYCHAIN=unavailable`, a
  * session without a Secret Service), so the key stays in IndexedDB and Settings → App warns. The app is then started
@@ -18,8 +20,8 @@
  * distributions' WebKitGTK lacks; the Playwright spec desktop-shell.spec.ts drives the tray with real voice).
  *
  * Plain WebDriver over HTTP (no client library): tauri-driver (`cargo install tauri-driver --locked`) drives the app
- * through WebKitWebDriver (Linux packages `webkit2gtk-driver` or `webkitgtk-webdriver`). Linux only; under `xvfb-run`
- * without a display.
+ * through WebKitWebDriver (Linux packages `webkit2gtk-driver` or `webkitgtk-webdriver`) and `xdotool` for the global
+ * hotkey. Linux only; under `xvfb-run` without a display.
  *
  * Environment:
  *   TAVRN_DESKTOP_APP  the built app binary (default: $CARGO_TARGET_DIR/release/tavrn, else target/release/tavrn)
@@ -30,7 +32,7 @@
  *   TAURI_DRIVER       the tauri-driver binary (default: tauri-driver on the PATH)
  *   WEBDRIVER_PORT     tauri-driver's port (default 4444; WebKitWebDriver uses the next one)
  */
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createHmac, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -162,6 +164,16 @@ async function nextCode(account) {
   while (account.lastStep + 1 > now() + 1) await sleep(1000);
   account.lastStep = Math.max(now(), account.lastStep + 1);
   return totp(account.secret, account.lastStep);
+}
+
+/** Whether the system's WebKitGTK is built with WebRTC (distributions build it without: ENABLE_WEB_RTC is off). */
+function webkitHasWebrtc() {
+  try {
+    const lib = execFileSync("ldconfig", ["-p"], { encoding: "utf8" }).match(/=>\s*(\S*libwebkit2gtk-4\.1\.so\.0)\s*$/m)?.[1];
+    return !!lib && /libgstwebrtc-1\.0/.test(execFileSync("ldd", [lib], { encoding: "utf8" }));
+  } catch {
+    return false;
+  }
 }
 
 async function main() {
@@ -339,6 +351,40 @@ async function main() {
   await goTo("/settings/app");
   const keys = await waitFor("[data-testid=app-keys][data-protection=keychain]", 30_000);
   step(`reload: unlocked from the keychain; Settings → App: ${(await text(keys)).slice(0, 60)}…`);
+
+  // Voice on Linux: the shell switches on media streams and WebRTC of WebKitGTK (src-tauri/src/media.rs).
+  const media = await script("return { pc: typeof RTCPeerConnection, gum: typeof (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) };");
+  if (media.gum !== "function") throw new Error(`no getUserMedia in the webview: ${JSON.stringify(media)}`);
+  if (webkitHasWebrtc()) {
+    if (media.pc !== "function") throw new Error("the system's WebKitGTK has WebRTC, but RTCPeerConnection is missing in the app");
+    step("getUserMedia and RTCPeerConnection present");
+  } else {
+    if (media.pc !== "undefined") throw new Error(`unexpected RTCPeerConnection without a WebRTC build: ${media.pc}`);
+    step("getUserMedia present; this system's WebKitGTK is built without WebRTC (no RTCPeerConnection, docs/DESKTOP.md)");
+  }
+
+  // A global hotkey: bound in Settings → Voice, pressed through the X server while the window is minimized.
+  await script("history.pushState({}, '', '/settings/voice'); dispatchEvent(new PopStateEvent('popstate'));");
+  await click(await waitFor("[data-testid=hotkey-toggle_mute-change]", 30_000));
+  // The combination goes in like typed input (WebKitWebDriver's keyboard does not reach the page under xvfb).
+  await script(`window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyM", key: "m", ctrlKey: true, altKey: true, bubbles: true, cancelable: true }));`);
+  await until("the bound combination", async () => (await text(await find("[data-testid=hotkey-toggle_mute-key]"))) === "Ctrl + Alt + M");
+  step("Ctrl+Alt+M bound to mute through the shell");
+  const minimized = await wd("POST", `/session/${session}/window/minimize`, {}).then(
+    () => true,
+    () => false,
+  );
+  const pressAndExpect = async (pattern) => {
+    execFileSync("xdotool", ["key", "--clearmodifiers", "ctrl+alt+m"]);
+    return until(`the mute toast ${pattern}`, async () => {
+      // textContent: a minimized window renders nothing, the DOM is there.
+      const toasts = await script("return [...document.querySelectorAll('[data-testid=hotkey-voice-state]')].map((e) => e.textContent);");
+      return toasts.some((t) => pattern.test(t));
+    });
+  };
+  await pressAndExpect(/muted|stummgeschaltet/i);
+  await pressAndExpect(/Microphone on|Mikrofon an/i);
+  step(`a real Ctrl+Alt+M of the X server toggled mute and back${minimized ? " while the window was minimized" : " (the window could not be minimized)"}`);
 }
 
 /** Starts tauri-driver and the app with the keychain backend `keychain` (TAVRN_DESKTOP_KEYCHAIN). */

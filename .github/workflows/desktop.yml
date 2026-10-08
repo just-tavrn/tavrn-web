@@ -1,22 +1,37 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# The desktop app (apps/desktop, docs/DESKTOP.md) on GitHub-hosted runners (the self-hosted runner image has no
-# WebKit). Gated by CI_ENABLED (docs/GITHUB.md). Minutes matter: no matrix on pull requests, no scheduled runs.
+# The desktop app (apps/desktop, docs/DESKTOP.md). Gated by CI_ENABLED (docs/GITHUB.md). Two routes:
 #
-# - Pull requests that touch the app or the client: Linux build with cargo fmt, clippy, tests, cargo deny (licenses),
-#   a round trip through the real Secret Service (gnome-keyring), the WebDriver smoke test of the built app under
-#   xvfb, the .deb and .AppImage as artifacts for 7 days.
-# - By hand (workflow_dispatch): the same for any branch; `windows: true` adds the Windows installers (.msi, NSIS).
-# - Release tags: release.yml calls this workflow with `release-tag` after it created the GitHub release; Linux and
-#   Windows installers, their updater signatures and latest.json are attached to that release (never a second one).
+# - The self-hosted runner tavrn-heavy (the organization's runner image ships WebKitGTK, tauri-driver, xvfb, xdotool,
+#   gnome-keyring, cargo-xwin, NSIS and LLVM; the Microsoft CRT and Windows SDK wait in the runner's cache,
+#   XWIN_CACHE_DIR) for trusted events only: pushes, manual runs and pull requests from branches of this repository.
+#   - `linux`: cargo fmt, clippy, tests, cargo deny (licenses), a round trip through the real Secret Service
+#     (gnome-keyring), the .deb and .AppImage, the WebDriver smoke test of the built app under xvfb; artifact
+#     desktop-linux.
+#   - `windows-nsis`: the NSIS installer cross-compiled with cargo-xwin (artifact desktop-windows-nsis), so main
+#     always has a current Windows installer.
+# - GitHub-hosted runners: `linux` falls back to ubuntu-latest for pull requests from forks and Dependabot (and for
+#   release tags: the updater key never reaches a self-hosted runner); `windows-nsis` is skipped there. `windows` on
+#   windows-latest builds the .msi and NSIS installers on release tags and by hand (`windows: true`) only.
+# - Release tags: release.yml calls this workflow with `release-tag` after it created the GitHub release; the Linux
+#   and Windows installers (from `linux` and `windows`), their updater signatures and latest.json are attached to that
+#   release (never a second one).
 name: Desktop
 
 on:
-  # Draft pull requests get the quick checks only (ci.yml); the Linux build and its smoke test (GitHub-hosted,
-  # about seven minutes) run once a pull request is marked ready for review and on every push after that.
-  # Windows builds only by hand (workflow_dispatch) and on release tags.
+  # Draft pull requests get the quick checks only (ci.yml); the Linux build with its smoke test and the NSIS
+  # cross-build run once a pull request is marked ready for review, on every push after that, and on pushes to main.
+  # The .msi (windows-latest) only by hand (workflow_dispatch) and on release tags.
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - apps/desktop/**
+      - web/**
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - .github/workflows/desktop.yml
+  push:
+    branches: [main]
     paths:
       - apps/desktop/**
       - web/**
@@ -26,7 +41,7 @@ on:
   workflow_dispatch:
     inputs:
       windows:
-        description: "Also build the Windows installers (.msi, NSIS)"
+        description: "Also build the Windows installers on windows-latest (.msi, NSIS)"
         type: boolean
         default: false
   workflow_call:
@@ -58,7 +73,10 @@ jobs:
   linux:
     name: Desktop (Linux)
     if: ${{ vars.CI_ENABLED == 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
-    runs-on: ubuntu-latest
+    # tavrn-heavy for trusted events (the trust rule of the organization's rust-ci.yml: never forks or Dependabot,
+    # whose code would run in the runner VM); release builds stay GitHub-hosted, since they carry the updater key and
+    # no long-lived secret besides TAVRN_READ_PAT belongs on the self-hosted runners.
+    runs-on: ${{ fromJSON(github.event_name != 'pull_request_target' && github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && !inputs.release-tag && '["self-hosted","linux","x64","tavrn-heavy"]' || '"ubuntu-latest"') }}
     permissions:
       contents: read
       packages: read
@@ -77,27 +95,51 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.release-tag || github.ref }}
-      - name: System packages (WebKitGTK, WebDriver, xvfb)
+      # GitHub-hosted: install what the runner image of tavrn-heavy ships (the self-hosted job writes nothing into
+      # its container's system: no apt, no toolchain setup, no Actions cache; Cargo builds in the cache slot's
+      # target directory, CARGO_TARGET_DIR).
+      - name: System packages (WebKitGTK, WebDriver, xvfb, xdotool, gnome-keyring)
+        if: ${{ runner.environment == 'github-hosted' }}
         run: |
           sudo apt-get update
           # The WebKit WebDriver is webkit2gtk-driver up to Ubuntu 24.04 and webkitgtk-webdriver from 26.04 on.
           driver=webkit2gtk-driver
           apt-cache policy webkitgtk-webdriver | grep -q 'Candidate: [0-9]' && driver=webkitgtk-webdriver
           sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
-            librsvg2-dev patchelf xdg-utils "$driver" xvfb
+            librsvg2-dev patchelf xdg-utils "$driver" xvfb xdotool gnome-keyring
       - uses: pnpm/action-setup@v6
+        if: ${{ runner.environment == 'github-hosted' }}
       - uses: actions/setup-node@v7
+        if: ${{ runner.environment == 'github-hosted' }}
         with:
           node-version: 24
           cache: pnpm
       - name: Rust toolchain
+        if: ${{ runner.environment == 'github-hosted' }}
         run: rustup toolchain install stable --profile minimal --component clippy,rustfmt && rustup default stable
       - uses: Swatinem/rust-cache@v2
+        if: ${{ runner.environment == 'github-hosted' }}
         with:
           workspaces: apps/desktop/src-tauri -> target
       - uses: taiki-e/install-action@v2
+        if: ${{ runner.environment == 'github-hosted' }}
         with:
           tool: cargo-deny,tauri-driver
+      - name: Tools of the runner image
+        if: ${{ runner.environment == 'self-hosted' }}
+        run: |
+          missing=()
+          for t in cargo cargo-deny tauri-driver WebKitWebDriver xvfb-run xdotool dbus-run-session gnome-keyring-daemon docker; do
+            command -v "$t" >/dev/null || missing+=("$t")
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::not in the runner image (just-tavrn/.github, runner/Dockerfile): ${missing[*]}"; exit 1
+          fi
+          want="$(node -p "require('./package.json').packageManager.split('@')[1]")"
+          [ "$(pnpm --version)" = "$want" ] || { echo "::error::the runner image has pnpm $(pnpm --version), package.json wants $want"; exit 1; }
+          [ "$(node -p 'process.versions.node.split(".")[0]')" = 24 ] || { echo "::error::the runner image has Node.js $(node --version), the job wants 24"; exit 1; }
+          rustc --version && cargo clippy --version && rustfmt --version && node --version
+          echo "CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-unset}"
       - run: pnpm install --frozen-lockfile
       - name: Release builds need the owner's updater key
         if: ${{ inputs.release-tag }}
@@ -120,7 +162,6 @@ jobs:
       - name: The real Linux keychain (gnome-keyring in a D-Bus session)
         working-directory: apps/desktop/src-tauri
         run: |
-          sudo apt-get install -y --no-install-recommends gnome-keyring
           dbus-run-session -- bash -c 'echo ci-keyring | gnome-keyring-daemon --components=secrets --daemonize --unlock >/dev/null && cargo test --locked -- --ignored os_keychain'
       - name: Update manifest script
         run: pnpm --filter @tavrn/desktop test
@@ -129,26 +170,37 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ env.RELEASE_TAG != '' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ env.RELEASE_TAG != '' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
         run: |
+          target="${CARGO_TARGET_DIR:-$PWD/apps/desktop/src-tauri/target}"
+          echo "DESKTOP_TARGET=$target" >> "$GITHUB_ENV"
+          # The self-hosted target directory outlives the job: no installers of earlier builds in the artifact.
+          rm -rf "$target/release/bundle"
           # Updater artifacts (signatures) only for releases: pull requests build without the secret.
           extra=()
           [ -n "$RELEASE_TAG" ] && extra=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
           pnpm --filter @tavrn/desktop tauri build --bundles deb,appimage "${extra[@]}"
-      - name: WebDriver smoke test (node picker, sign-in with TOTP, encrypted message)
+      # The node runs as a process of the job (smoke.mjs starts it with E2E_NODE_BIN), copied out of the node image:
+      # the self-hosted runners reach Docker only through the stack's DinD, whose network is not the job's.
+      - name: WebDriver smoke test (node picker, sign-in with TOTP, encrypted message, media, global hotkey)
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+          NODE_IMAGE: ${{ vars.TAVRN_NODE_IMAGE || 'ghcr.io/just-tavrn/tavrn-node:edge' }}
         run: |
-          echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-          image="${{ vars.TAVRN_NODE_IMAGE || 'ghcr.io/just-tavrn/tavrn-node:edge' }}"
-          docker run -d --name tavrn-node --network host -e TAVRN_LISTEN=127.0.0.1:8300 -e TAVRN_VOICE_ENABLED=false \
-            -e TAVRN_DATABASE_URL='sqlite:///tmp/node.db?mode=rwc' -e TAVRN_DATA_DIR=/tmp/node "$image" --dev
-          E2E_NODE_URL=http://127.0.0.1:8300 TAVRN_DESKTOP_APP=apps/desktop/src-tauri/target/release/tavrn \
+          bin="$RUNNER_TEMP/tavrn-node-bin"
+          mkdir -p "$bin"
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker pull "$NODE_IMAGE"
+          cid="$(docker create "$NODE_IMAGE")"
+          docker cp "$cid:/usr/local/bin/tavrn-node" "$bin/tavrn-node"
+          docker rm -f "$cid" >/dev/null
+          docker logout ghcr.io
+          "$bin/tavrn-node" --version
+          E2E_NODE_BIN="$bin/tavrn-node" TAVRN_DESKTOP_APP="$DESKTOP_TARGET/release/tavrn" \
             xvfb-run -a node apps/desktop/e2e/smoke.mjs
-      - name: Node log
-        if: ${{ failure() }}
-        run: docker logs tavrn-node 2>&1 | tail -100 || true
       - name: Collect the installers
         run: |
           mkdir -p dist-desktop
-          cp apps/desktop/src-tauri/target/release/bundle/deb/*.deb dist-desktop/
-          cp apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage* dist-desktop/
+          cp "$DESKTOP_TARGET"/release/bundle/deb/*.deb dist-desktop/
+          cp "$DESKTOP_TARGET"/release/bundle/appimage/*.AppImage* dist-desktop/
           ls -l dist-desktop
       - uses: actions/upload-artifact@v7
         with:
@@ -163,6 +215,83 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  # The NSIS installer cross-compiled on tavrn-heavy (docs/DESKTOP.md "Builds and releases"): trusted events only,
+  # never for release tags (the windows job builds the release installers with the updater signatures). The
+  # Microsoft CRT and Windows SDK come from the runner's cache; the job never downloads them.
+  windows-nsis:
+    name: Desktop (Windows NSIS, cross-compiled)
+    if: >-
+      ${{ vars.CI_ENABLED == 'true' && !inputs.release-tag &&
+          (github.event_name != 'pull_request' || !github.event.pull_request.draft) &&
+          github.event_name != 'pull_request_target' && github.actor != 'dependabot[bot]' &&
+          (github.event_name != 'pull_request' ||
+           (github.event.pull_request.head.repo.full_name == github.repository &&
+            github.event.pull_request.user.login != 'dependabot[bot]')) }}
+    runs-on: [self-hosted, linux, x64, tavrn-heavy]
+    permissions:
+      contents: read
+    timeout-minutes: 60
+    steps:
+      - name: Windows SDK and tools from the runner
+        run: |
+          if [ -z "${XWIN_CACHE_DIR:-}" ]; then
+            echo "::error::XWIN_CACHE_DIR is not set: this runner has no prepared cargo-xwin cache (just-tavrn/.github, runner/README.md \"Desktop builds\"); the job does not download the Windows SDK itself"
+            exit 1
+          fi
+          done_marker="$XWIN_CACHE_DIR/xwin/DONE"
+          if [ ! -s "$done_marker" ]; then
+            echo "::error::no Windows SDK in $XWIN_CACHE_DIR/xwin (no DONE marker): the runner's start-up download failed (its log says \"cargo-xwin cache download failed\"); restart the runner stack, the job does not download the SDK itself"
+            exit 1
+          fi
+          for arch in ${XWIN_ARCH//,/ }; do
+            head -n1 "$done_marker" | grep -qw -- "$arch" || { echo "::error::the cached SDK lacks the architecture $arch (XWIN_ARCH=$XWIN_ARCH)"; exit 1; }
+          done
+          missing=()
+          for t in cargo-xwin makensis clang lld-link llvm-lib llvm-rc file; do
+            command -v "$t" >/dev/null || missing+=("$t")
+          done
+          rustup target list --installed | grep -qx x86_64-pc-windows-msvc || missing+=("rust target x86_64-pc-windows-msvc")
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::not in the runner image (just-tavrn/.github, runner/Dockerfile): ${missing[*]}"; exit 1
+          fi
+          echo "SDK: $(head -n1 "$done_marker") in $XWIN_CACHE_DIR/xwin"
+          cargo xwin --version && makensis -VERSION && echo
+      - name: Access to private organization repositories
+        env:
+          READ_TOKEN: ${{ secrets.TAVRN_READ_PAT }}
+        run: |
+          if [ -n "$READ_TOKEN" ]; then
+            git config --global url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "https://github.com/just-tavrn/"
+            git config --global --add url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "ssh://git@github.com/just-tavrn/"
+            git config --global --add url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "git@github.com:just-tavrn/"
+          fi
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: pnpm install --frozen-lockfile
+      - name: Build (NSIS, cargo-xwin)
+        run: |
+          target="${CARGO_TARGET_DIR:-$PWD/apps/desktop/src-tauri/target}/x86_64-pc-windows-msvc/release"
+          echo "DESKTOP_TARGET=$target" >> "$GITHUB_ENV"
+          # The target directory of the cache slot outlives the job: no installers of earlier builds in the artifact.
+          rm -rf "$target/bundle"
+          pnpm --filter @tavrn/desktop tauri build --target x86_64-pc-windows-msvc --runner cargo-xwin --bundles nsis
+      - name: Collect the installer
+        run: |
+          file "$DESKTOP_TARGET/tavrn.exe" | grep -q 'PE32+ executable.*x86-64' || { echo "::error::tavrn.exe is not a 64-bit Windows executable"; exit 1; }
+          mkdir -p dist-desktop
+          cp "$DESKTOP_TARGET"/bundle/nsis/*-setup.exe dist-desktop/
+          file dist-desktop/*
+          ls -l dist-desktop
+      # Only the installer: never the target directory or XWIN_CACHE_DIR (Microsoft's SDK must not be published).
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-windows-nsis
+          path: dist-desktop/
+          retention-days: 7
+
+  # The .msi needs WiX, which runs on Windows only: windows-latest for release tags (the release installers, .msi and
+  # NSIS, with updater signatures) and by hand (`windows: true`, also a cross-check of the cross-compiled NSIS).
   windows:
     name: Desktop (Windows)
     if: ${{ vars.CI_ENABLED == 'true' && (inputs.windows || inputs.release-tag) }}
@@ -218,7 +347,8 @@ jobs:
           path: dist-desktop/
           retention-days: 7
 
-  # The only job that writes: installers, signatures and latest.json go to the release release.yml created.
+  # The only job that writes: installers, signatures and latest.json go to the release release.yml created. They come
+  # from linux and windows (artifacts desktop-linux, desktop-windows); windows-nsis never runs for a release tag.
   release-assets:
     name: Release assets (installers, latest.json)
     if: ${{ vars.CI_ENABLED == 'true' && inputs.release-tag }}
