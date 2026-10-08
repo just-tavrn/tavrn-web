@@ -173,7 +173,7 @@ pub fn badged(rgba: &[u8], width: u32, height: u32, state: VoiceState) -> Vec<u8
 /// The bounding box `(x0, y0, x1, y1)` of the pixels with an alpha of at least `ALPHA_MIN` (None: all transparent).
 fn content_box(rgba: &[u8], width: u32, height: u32) -> Option<(u32, u32, u32, u32)> {
     let mut found: Option<(u32, u32, u32, u32)> = None;
-    for (i, px) in rgba.chunks_exact(4).enumerate() {
+    for (i, px) in rgba.as_chunks::<4>().0.iter().enumerate() {
         if px[3] < ALPHA_MIN {
             continue;
         }
