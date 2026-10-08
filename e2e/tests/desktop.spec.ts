@@ -6,7 +6,7 @@
  * covered by the WebDriver smoke test (apps/desktop/e2e/smoke.mjs).
  */
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { NODE, createRoomViaApi, loginAs, nextTotpCode, registerViaApi, registerViaUi, tokenOf, type Account } from "./helpers";
+import { NODE, addVirtualAuthenticator, confirmWithPassword, createRoomViaApi, loginAs, logoutViaUi, nextTotpCode, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, type Account } from "./helpers";
 import { FAKE_MEDIA } from "./voice-helpers";
 
 // The hotkey test joins a voice channel: Chromium's fake microphone, no permission prompts.
@@ -268,5 +268,81 @@ test.describe("Desktop app: global hotkeys (simulated shell)", () => {
     await shell("toggle_mute", true);
     await expect(mute).toHaveAttribute("aria-pressed", "false");
     await page.getByTestId("voice-leave").click();
+  });
+});
+
+test.describe("Desktop app: passkeys on the node's page unlock the app (simulated shell)", () => {
+  /** The sign-in page the app opened after `previous` (polls the shell's record). */
+  async function nextConnectPage(page: Page, previous: string | null): Promise<string> {
+    let url = "";
+    await expect
+      .poll(async () => {
+        url = await page.evaluate(() => (JSON.parse(sessionStorage.getItem("e2e.desktop.connect") ?? "[]") as string[]).at(-1) ?? "");
+        return url !== previous && /\/connect\?session=[A-Za-z0-9_-]{43}&state=/.test(url) ? url : "";
+      })
+      .not.toBe("");
+    return url;
+  }
+
+  test("Unlock with a passkey on the unlock screen, then a passkey sign-in that unlocks right away", async ({ page, browser, browserName, request }) => {
+    test.skip(browserName !== "chromium", "CDP virtual authenticator is Chromium only");
+    test.setTimeout(180_000);
+    // The node's page in a window of its own (its own storage, like the shell's second webview) with the passkey.
+    const context = await browser.newContext({ locale: "de-DE" });
+    const nodePage = await context.newPage();
+    await addVirtualAuthenticator(nodePage);
+    const account = await registerViaUi(nodePage, { prefix: "dpk" });
+    await nodePage.goto("/settings/security");
+    await nodePage.getByRole("button", { name: "Passkey hinzufügen" }).click();
+    await nodePage.getByLabel("Name des Passkeys", { exact: true }).fill("Fensterschlüssel");
+    await nodePage.getByRole("button", { name: "Passkey hinzufügen" }).click();
+    await confirmWithPassword(nodePage, account.password);
+    const item = nodePage.getByTestId("passkey-list").locator("li").filter({ hasText: "Fensterschlüssel" });
+    await expect(item).toBeVisible();
+    test.skip(!(await item.textContent())!.includes("entsperrt Nachrichten"), "no PRF in this Chromium's virtual authenticator");
+
+    // The app: password and TOTP in its own form, then locked; the passkey runs on the node's page (unlock session).
+    // Passkeys belong to the node's web origin (its document's `web`), where the app opens the page.
+    const { web } = await (await request.get(`${NODE}/.well-known/tavrn`)).json();
+    await page.addInitScript((origin) => sessionStorage.setItem("e2e.desktop.node.web", origin), web as string);
+    await asDesktopApp(page, NODE);
+    await page.goto("/login");
+    await page.getByLabel("Benutzername oder Adresse", { exact: true }).fill(account.username);
+    await page.getByLabel("Passwort", { exact: true }).fill(account.password);
+    await page.getByRole("button", { name: "Anmelden", exact: true }).click();
+    await page.getByLabel("6-stelliger Code", { exact: true }).fill(await nextTotpCode(account));
+    await page.getByRole("button", { name: "Bestätigen", exact: true }).click();
+    await expect(page.getByTestId("encryption-title")).toHaveText("Verschlüsselte Nachrichten entsperren", { timeout: 20_000 });
+    await page.getByRole("button", { name: "Mit Passkey entsperren" }).click();
+    await expect(page.getByTestId("unlock-waiting")).toBeVisible();
+    await expect(page.getByTestId("recovery-key-input")).toHaveCount(0);
+    const unlockUrl = await nextConnectPage(page, null);
+    expect(unlockUrl).toMatch(/&method=passkey#k=[A-Za-z0-9_-]{43}$/);
+    expect(unlockUrl.startsWith(`${web}/connect?`)).toBe(true);
+    await nodePage.goto(unlockUrl);
+    await expect(nodePage.getByTestId("connect-title")).toHaveText("Tavrn-App entsperren?", { timeout: 20_000 });
+    await nodePage.getByTestId("connect-unlock").click();
+    await expect(nodePage.getByTestId("connect-done")).toHaveText("Die App ist entsperrt. Kehre zur Tavrn-App zurück.");
+    await expect(page.getByTestId("app-shell")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("e2ee-banner")).toHaveCount(0);
+
+    // Signed out, the app's passkey button goes straight to the passkey on the node's page; its PRF unlocks the app.
+    await page.goto("/");
+    await openNavIfMobile(page);
+    await logoutViaUi(page);
+    await expect(page).toHaveURL(/\/login/);
+    await page.getByRole("button", { name: "Mit Passkey anmelden" }).click();
+    await expect(page.getByTestId("handoff-waiting")).toContainText("Passkey");
+    await expect(page.getByLabel("Passwort", { exact: true })).toHaveCount(0);
+    const signInUrl = await nextConnectPage(page, unlockUrl);
+    expect(signInUrl).toMatch(/&method=passkey#k=[A-Za-z0-9_-]{43}$/);
+    await nodePage.goto(signInUrl);
+    await expect(nodePage.getByTestId("connect-title")).toHaveText("Bei der Tavrn-App anmelden?", { timeout: 20_000 });
+    await nodePage.getByTestId("connect-allow").click();
+    await expect(nodePage.getByTestId("connect-done")).toContainText("dein Passkey entsperrt die App");
+    await expect(page.getByTestId("app-shell")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("encryption-title")).toHaveCount(0);
+    await expect(page.getByTestId("e2ee-banner")).toHaveCount(0);
+    await context.close();
   });
 });
