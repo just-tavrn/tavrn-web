@@ -9,12 +9,10 @@ name: End-to-end
 
 on:
   # Development phase (2026-10-08): the full suite (about 40 minutes on the single e2e runner) runs every night
-  # against the current node image, by hand, and on a pull request only while it carries the label `full-ci`.
-  # Pushes and ordinary pull requests run the quick checks of ci.yml only; merges do not wait for this suite.
+  # against the current node image and by hand (`gh workflow run e2e.yml --ref <branch>` for a pull request
+  # branch). Pushes and pull requests run the quick checks of ci.yml only; merges do not wait for this suite.
   schedule:
     - cron: "17 3 * * *"
-  pull_request:
-    types: [labeled, synchronize]
   workflow_dispatch:
     inputs:
       node-image:
@@ -37,11 +35,7 @@ concurrency:
 jobs:
   e2e:
     name: End-to-end
-    if: >-
-      ${{ vars.CI_ENABLED == 'true' &&
-          (github.event_name != 'pull_request' ||
-           (github.event.pull_request.head.repo.full_name == github.repository &&
-            contains(github.event.pull_request.labels.*.name, 'full-ci'))) }}
+    if: ${{ vars.CI_ENABLED == 'true' }}
     uses: just-tavrn/.github/.github/workflows/e2e.yml@main
     with:
       node-image: ${{ inputs.node-image || vars.TAVRN_NODE_IMAGE || 'ghcr.io/just-tavrn/tavrn-node:edge' }}
