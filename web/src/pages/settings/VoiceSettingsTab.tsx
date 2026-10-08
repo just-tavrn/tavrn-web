@@ -17,7 +17,7 @@ import { ConnectionTestPanel } from "../../voice/ui/ConnectionTestPanel";
 import { platform } from "../../platform";
 import { MoreHotkeysSection } from "./MoreHotkeysSection";
 import { HotkeyRecorder } from "./HotkeyRecorder";
-import { useMediaDevices } from "../../voice/devices";
+import { outputSelectable, useMediaDevices } from "../../voice/devices";
 
 function DeviceSelect({ label, kind, devices, value, onChange, onFocus, testid }: { label: string; kind: MediaDeviceKind; devices: MediaDeviceInfo[]; value: string; onChange: (id: string) => void; onFocus?: () => void; testid: string }) {
   const t = useT();
@@ -346,7 +346,7 @@ export function VoiceSettingsTab() {
   const [bgNote, setBgNote] = useState<string | null>(null);
   const node = useQuery({ queryKey: ["node", "origin"], queryFn: () => publicApi.node.info(), staleTime: 10 * 60_000 });
   const camera = node.data?.voice?.camera ?? { enabled: true, max_resolution: "720p", max_fps: 30 };
-  const sinkSupported = typeof HTMLMediaElement !== "undefined" && "setSinkId" in HTMLMediaElement.prototype;
+  const sinkSupported = outputSelectable();
   const cameraResolutions = (["360p", "720p", "1080p"] as Resolution[]).filter((r) => limitResolution(r, camera.max_resolution) === r);
   const fpsChoices = [15, 24, 30, 60].filter((f) => f <= camera.max_fps);
 

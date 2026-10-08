@@ -1,0 +1,50 @@
+// SPDX-License-Identifier: Apache-2.0
+/**
+ * The quick menus of the microphone and headphones buttons (voice bar and stage controls): right-click, the
+ * context-menu key or a long press on touch opens them (`useContextMenu`); a click keeps muting or deafening.
+ * The devices are listed only while a menu is open.
+ */
+import type { ReactNode } from "react";
+import { useNavigate } from "react-router";
+import { useT } from "../../i18n";
+import { platform } from "../../platform";
+import { ContextMenu, useContextMenu, type ContextMenuTrigger } from "../../components/ContextMenu";
+import type { AnchorRect } from "../../lib/position";
+import { outputSelectable, useMediaDevices } from "../devices";
+import { voiceDeviceMenu, type VoiceDeviceKind } from "../deviceMenu";
+import { comboLabel } from "../hotkeys";
+import { useVoiceSettings } from "../settings";
+
+function VoiceDeviceMenu({ kind, anchor, onClose, beforeNavigate }: { kind: VoiceDeviceKind; anchor: AnchorRect; onClose: () => void; beforeNavigate?: () => void }) {
+  const t = useT();
+  const navigate = useNavigate();
+  const settings = useVoiceSettings((s) => s.settings);
+  const update = useVoiceSettings((s) => s.update);
+  // The desktop app's window holds the microphone permission: the device names come without a prompt.
+  const media = useMediaDevices({ autoUnlock: platform().isDesktop });
+  const ptt = settings.hotkeys.push_to_talk;
+  const entries = voiceDeviceMenu(
+    kind,
+    { devices: media.devices, settings, needsPermission: media.needsPermission, sinkSupported: outputSelectable(), pttKey: ptt ? comboLabel(ptt) : "" },
+    {
+      update,
+      unlock: () => void media.unlock(),
+      openSettings: () => {
+        beforeNavigate?.();
+        navigate("/settings/voice");
+      },
+    },
+    t,
+  );
+  return <ContextMenu entries={entries} anchor={anchor} onClose={onClose} label={t(kind === "input" ? "voice.menu.input_label" : "voice.menu.output_label")} testId={`voice-${kind}-menu`} />;
+}
+
+/**
+ * The quick menu of the microphone (`input`) or headphones (`output`) button: spread `triggerProps` onto the button
+ * and render `overlay`. `beforeNavigate` runs before "Voice settings…" navigates (the voice bar closes the drawer).
+ */
+export function useVoiceDeviceMenu(kind: VoiceDeviceKind, beforeNavigate?: () => void): { triggerProps: ContextMenuTrigger["triggerProps"]; overlay: ReactNode } {
+  const menu = useContextMenu();
+  const overlay = menu.open && menu.anchor ? <VoiceDeviceMenu kind={kind} anchor={menu.anchor} onClose={menu.close} beforeNavigate={beforeNavigate} /> : null;
+  return { triggerProps: menu.triggerProps, overlay };
+}

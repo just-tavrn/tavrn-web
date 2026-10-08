@@ -13,6 +13,7 @@ import { InlineEmoji } from "../../components/InlineEmoji";
 import { useExternalSounds, type ExternalSound } from "../../lib/sounds";
 import { ControlButton } from "./VoiceBar";
 import { PriorityButton } from "./PriorityButton";
+import { useVoiceDeviceMenu } from "./VoiceDeviceMenu";
 import { WhiteboardControl } from "../../whiteboard/WhiteboardStage";
 import { beforeScreenShare } from "../../whiteboard/stage";
 import { GearIcon, HeadphonesIcon, HeadphonesOffIcon, LeaveIcon, MicIcon, MicOffIcon, ScreenIcon, SoundboardIcon, VideoIcon } from "./icons";
@@ -151,15 +152,17 @@ export function VoiceControls({ room, channel, perms }: { room: RoomDetail; chan
   const canSpeak = useVoice((s) => s.canSpeak);
   const transmitting = useVoice((s) => s.transmitting);
   const ptt = useVoiceSettings((s) => s.settings.inputMode === "ptt");
+  const micMenu = useVoiceDeviceMenu("input");
+  const outputMenu = useVoiceDeviceMenu("output");
   const [screenOpen, setScreenOpen] = useState(false);
   const [soundsOpen, setSoundsOpen] = useState(false);
   const soundboard = hasPermission(perms, Permission.USE_SOUNDBOARD) && hasPermission(perms, Permission.SPEAK);
   return (
     <div className="flex shrink-0 flex-wrap items-center justify-center gap-1 border-t border-line bg-bg-1 px-2 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] md:gap-2" data-testid="voice-controls">
-      <ControlButton label={muted ? t("voice.unmute") : t("voice.mute")} active={muted} onClick={() => void toggleMute()} testid="voice-mute" className="min-h-11 min-w-11">
+      <ControlButton label={muted ? t("voice.unmute") : t("voice.mute")} active={muted} onClick={() => void toggleMute()} testid="voice-mute" className="min-h-11 min-w-11" menu={micMenu.triggerProps}>
         {muted ? <MicOffIcon size={20} /> : <MicIcon size={20} />}
       </ControlButton>
-      <ControlButton label={deafened ? t("voice.undeafen") : t("voice.deafen")} active={deafened} onClick={() => void toggleDeafen()} testid="voice-deafen" className="min-h-11 min-w-11">
+      <ControlButton label={deafened ? t("voice.undeafen") : t("voice.deafen")} active={deafened} onClick={() => void toggleDeafen()} testid="voice-deafen" className="min-h-11 min-w-11" menu={outputMenu.triggerProps}>
         {deafened ? <HeadphonesOffIcon size={20} /> : <HeadphonesIcon size={20} />}
       </ControlButton>
       {limits?.camera.enabled && (
@@ -198,6 +201,8 @@ export function VoiceControls({ room, channel, perms }: { room: RoomDetail; chan
       <ControlButton label={t("voice.leave")} solid onClick={() => void leaveVoice()} testid="voice-leave" className="min-h-11 min-w-11">
         <LeaveIcon size={20} />
       </ControlButton>
+      {micMenu.overlay}
+      {outputMenu.overlay}
       {limits && <ScreenShareDialog open={screenOpen} onClose={() => setScreenOpen(false)} maxResolution={limits.screenshare.max_resolution} maxFps={limits.screenshare.max_fps} />}
       {soundsOpen && <SoundboardDialog open onClose={() => setSoundsOpen(false)} roomId={room.id} disabled={muted || !canSpeak} external={hasPermission(perms, Permission.USE_EXTERNAL_SOUNDS)} />}
     </div>

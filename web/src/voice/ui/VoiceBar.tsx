@@ -14,6 +14,8 @@ import { useAuth } from "../../stores/auth";
 import { callTitle } from "../calls/actions";
 import { CallOverlay, openCallView } from "../calls/CallUi";
 import { QualityBadge } from "./QualityBadge";
+import { useVoiceDeviceMenu } from "./VoiceDeviceMenu";
+import type { ContextMenuTrigger } from "../../components/ContextMenu";
 
 const BARS: Record<Quality, number> = { excellent: 3, good: 2, poor: 1, lost: 0, unknown: 0 };
 
@@ -39,8 +41,8 @@ export function useCallNames(): { channel: string; room: string } {
   return { channel: channel ? channelName(channel) : "…", room: room.data?.name ?? "" };
 }
 
-/** A round toggle button of the voice controls. */
-export function ControlButton({ label, active = false, danger = false, solid = false, onClick, children, testid, className = "" }: { label: string; active?: boolean; danger?: boolean; solid?: boolean; onClick: () => void; children: React.ReactNode; testid?: string; className?: string }) {
+/** A round toggle button of the voice controls; `menu` adds a quick menu (right-click, long press). */
+export function ControlButton({ label, active = false, danger = false, solid = false, onClick, children, testid, className = "", menu }: { label: string; active?: boolean; danger?: boolean; solid?: boolean; onClick: () => void; children: React.ReactNode; testid?: string; className?: string; menu?: ContextMenuTrigger["triggerProps"] }) {
   const look = solid ? "bg-danger-solid text-white hover:bg-danger-solid-hover" : danger ? "text-danger hover:bg-danger/15" : active ? "bg-danger/15 text-danger hover:bg-danger/25" : "text-fg-1 hover:bg-bg-3 hover:text-fg-0";
   return (
     <button
@@ -50,6 +52,7 @@ export function ControlButton({ label, active = false, danger = false, solid = f
       aria-pressed={active}
       data-testid={testid}
       onClick={onClick}
+      {...menu}
       className={`inline-flex min-h-10 min-w-10 items-center justify-center rounded-md ${look} ${className}`}
     >
       {children}
@@ -76,6 +79,8 @@ export function VoiceBar() {
   const names = useCallNames();
   const navigate = useNavigate();
   const { closeNav } = useShell();
+  const micMenu = useVoiceDeviceMenu("input", closeNav);
+  const outputMenu = useVoiceDeviceMenu("output", closeNav);
   // Incoming calls and the call view (portals, also while no call runs).
   const overlay = <CallOverlay />;
   if (status === "idle" || !target) return overlay;
@@ -117,15 +122,17 @@ export function VoiceBar() {
             {t("common.cancel")}
           </button>
         )}
-        <ControlButton label={muted ? t("voice.unmute") : t("voice.mute")} active={muted} onClick={() => void toggleMute()} testid="voice-bar-mute">
+        <ControlButton label={muted ? t("voice.unmute") : t("voice.mute")} active={muted} onClick={() => void toggleMute()} testid="voice-bar-mute" menu={micMenu.triggerProps}>
           {muted ? <MicOffIcon /> : <MicIcon />}
         </ControlButton>
-        <ControlButton label={deafened ? t("voice.undeafen") : t("voice.deafen")} active={deafened} onClick={() => void toggleDeafen()} testid="voice-bar-deafen">
+        <ControlButton label={deafened ? t("voice.undeafen") : t("voice.deafen")} active={deafened} onClick={() => void toggleDeafen()} testid="voice-bar-deafen" menu={outputMenu.triggerProps}>
           {deafened ? <HeadphonesOffIcon /> : <HeadphonesIcon />}
         </ControlButton>
         <ControlButton label={t("voice.leave")} danger onClick={() => void leaveVoice()} testid="voice-bar-leave">
           <LeaveIcon />
         </ControlButton>
+        {micMenu.overlay}
+        {outputMenu.overlay}
       </div>
     </div>
   );

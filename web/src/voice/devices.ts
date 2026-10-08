@@ -34,6 +34,11 @@ export async function unlockDeviceLabels(md: DeviceSource): Promise<boolean> {
   }
 }
 
+/** The browser can play on a chosen output device (`HTMLMediaElement.setSinkId`; missing in some Firefox builds and WebKitGTK). */
+export function outputSelectable(): boolean {
+  return typeof HTMLMediaElement !== "undefined" && "setSinkId" in HTMLMediaElement.prototype;
+}
+
 const browserSource = (): DeviceSource | null => (typeof navigator !== "undefined" && typeof navigator.mediaDevices?.enumerateDevices === "function" ? navigator.mediaDevices : null);
 
 export interface MediaDevices {
