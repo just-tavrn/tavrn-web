@@ -131,6 +131,34 @@ test.describe("Threads", () => {
     expect(JSON.stringify(messages)).not.toMatch(/Freitag|Passt/);
   });
 
+  test("followed threads of rooms not opened since the start notify from the start", async ({ page, request }) => {
+    test.setTimeout(90_000);
+    const bob = await registerViaApi(request, "tfb");
+    const alice = await registerViaApi(request, "tfa");
+    const room = await createRoomViaApi(request, bob.token, "Folgeraum");
+    const channelId = room.channels.find((c: { kind: string }) => c.kind === "text").id as string;
+    await joinRoom(request, bob, room.id, alice);
+    const root = await postMessage(request, bob.token, channelId, "Planung fürs Treffen");
+    const created = await request.post(`${NODE}/api/v1/rooms/${room.id}/channels/${channelId}/threads`, { headers: auth(bob.token), data: { title: "Planung", root_message_id: root.id } });
+    expect(created.ok(), await created.text()).toBeTruthy();
+    const thread = (await created.json()) as { id: string };
+    // Alice writes in the thread elsewhere: she follows it.
+    await postMessage(request, alice.token, channelId, "Ich bin dabei", { thread_id: thread.id });
+
+    // Alice starts the client on the home view; the room is not opened. Its followed threads load in the background.
+    const followed = page.waitForResponse((r) => r.url().endsWith(`/rooms/${room.id}/followed-threads`) && r.ok());
+    await loginAs(page, alice);
+    await page.goto("/");
+    await expect(page.getByTestId("ws-status").first()).toHaveAttribute("data-status", "ready");
+    await followed;
+    // @everyone inside a thread reaches its followers only (PROTOCOL.md §7e): Alice is one.
+    await postMessage(request, bob.token, channelId, "@everyone Treffen um drei", { thread_id: thread.id, mentions_everyone: true });
+    const toast = page.getByTestId("notify-toast-mention");
+    await expect(toast).toBeVisible({ timeout: 20_000 });
+    await expect(toast).toContainText("Treffen um drei");
+    await expect(toast).toContainText("Folgeraum");
+  });
+
   test("forum: a post with title, message and tags; the tag filter and the post card", async ({ page, request }) => {
     test.setTimeout(120_000);
     const alice = await registerViaApi(request, "alice");

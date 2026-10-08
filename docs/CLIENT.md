@@ -152,7 +152,10 @@ panel is the channel's conversation in thread mode: encryption, reactions, uploa
 slash commands work there as in the channel, and in encrypted channels the title is encrypted with the channel's
 messages. Its header follows or unfollows the thread and, for its creator or members with *Manage threads*,
 renames, archives, locks or deletes it. Starting or writing in a thread follows it; only followed threads count
-towards the channel's unread badge and raise notifications (direct mentions always do).
+towards the channel's unread badge and raise notifications (direct mentions always do). The client loads the
+followed threads of every room once it is connected (one room after the other in the background, at most 100 rooms per
+node, again after a reconnect at most once a minute) and keeps them current over the WebSocket, so this works for rooms
+not opened since the start as well; a thread started on another device is followed here at once.
 
 Forum channels show posts instead of messages: cards with title, tags, author, replies, last activity and the
 start of the first message, tag filter chips, "Latest activity" or "Newest posts", archived posts on demand and

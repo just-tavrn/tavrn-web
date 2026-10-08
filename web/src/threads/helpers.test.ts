@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
-import type { Message, TavrnApi, Thread } from "@tavrn/sdk";
+import type { Message, TavrnApi, TavrnSocket, Thread } from "@tavrn/sdk";
 import { defaultTitle } from "./titles";
 import { relativeTime } from "./format";
-import { applyThreadState, patchRoot, summaryOf, threadMessage } from "./realtime";
+import { applyThreadState, patchRoot, summaryOf, threadHandlers, threadMessage } from "./realtime";
 import { useThreads } from "./store";
 import { useUnread, applyBump } from "../stores/unread";
 import { fetchPage, messagesKey, type MessagePages } from "../lib/messagePages";
@@ -70,5 +70,24 @@ describe("thread helpers", () => {
     const s = applyBump({ C1: { last: "M9", read: "M9", unread: 0, mentions: 0 } }, "C1", 2, 1);
     expect(s.C1).toEqual({ last: "M9", read: "M9", unread: 2, mentions: 1 });
     expect(applyBump(s, "C1", -5, -5).C1).toMatchObject({ unread: 0, mentions: 0 });
+  });
+});
+
+describe("thread events keep the followed threads current (PROTOCOL.md §7e, #2)", () => {
+  /** A socket whose handlers the test calls directly. */
+  function socket() {
+    const handlers: Record<string, (d: unknown) => void> = {};
+    const s = { on: (type: string, fn: (d: unknown) => void) => ((handlers[type] = fn), () => undefined) } as unknown as TavrnSocket;
+    return { s, emit: (type: string, d: unknown) => handlers[type]!(d) };
+  }
+
+  it("a thread the user started (on any connection) is followed at once; others' threads are not", () => {
+    useThreads.setState({ followed: {}, open: null });
+    const { s, emit } = socket();
+    threadHandlers(s, new QueryClient(), () => ({ id: "U1", address: "alice@n" }));
+    emit("thread.create", { room_id: "R1", thread: thread({ id: "T7", created_by_id: "U2" }) });
+    expect(useThreads.getState().followed.T7).toBeUndefined();
+    emit("thread.create", { room_id: "R1", thread: thread({ id: "T8", created_by_id: "U1", last_message_id: "M20" }) });
+    expect(useThreads.getState().followed.T8).toMatchObject({ roomId: "R1", channelId: "C1", lastRead: "M20", unread: 0 });
   });
 });
