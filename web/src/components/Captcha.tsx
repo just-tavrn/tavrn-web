@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useEffect, useRef } from "react";
+import { platform } from "../platform";
+import { useT } from "../i18n";
 
 declare global {
   interface Window {
@@ -36,7 +38,22 @@ function loadTurnstile(): Promise<void> {
  * Cloudflare Turnstile widget. Delivers the token via `onToken`; changing `resetKey` resets the widget
  * (e.g. after a failed login, because tokens are valid only once).
  */
-export function Captcha({ siteKey, onToken, resetKey = 0 }: { siteKey: string; onToken: (token: string | null) => void; resetKey?: number }) {
+export function Captcha(props: { siteKey: string; onToken: (token: string | null) => void; resetKey?: number }) {
+  // The desktop app loads no third-party scripts (CSP script-src 'self') and the widget is bound to the node's host.
+  if (platform().isDesktop) return <DesktopCaptchaNotice />;
+  return <Turnstile {...props} />;
+}
+
+function DesktopCaptchaNotice() {
+  const t = useT();
+  return (
+    <p role="status" className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-fg-1" data-testid="captcha-desktop">
+      {t("desktop.captcha_unavailable")}
+    </p>
+  );
+}
+
+function Turnstile({ siteKey, onToken, resetKey = 0 }: { siteKey: string; onToken: (token: string | null) => void; resetKey?: number }) {
   const ref = useRef<HTMLDivElement>(null);
   const widgetId = useRef<string | null>(null);
   const tokenCb = useRef(onToken);

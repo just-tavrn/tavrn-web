@@ -22,11 +22,12 @@ single-page app that works on phones, tablets and desktops, in English and Germa
 |---|---|
 | [`web/`](web) | `@tavrn/web`: the client (`src/`), its static assets and generated icons (`public/`), translations (`src/i18n/`), Vitest tests next to the code |
 | [`e2e/`](e2e) | `@tavrn/e2e`: the Playwright suite (`tests/`), its fixtures (a fake OpenID provider, the example bot) and `playwright.config.ts` |
-| [`docs/`](docs) | [CLIENT.md](docs/CLIENT.md) (what the client does), [ACCESSIBILITY.md](docs/ACCESSIBILITY.md), [GITHUB.md](docs/GITHUB.md) (repository setup) |
+| [`apps/desktop/`](apps/desktop) | `@tavrn/desktop`: the desktop app, a Tauri 2 shell around the client (Rust crate `tavrn-desktop` in `src-tauri/` with its own Cargo workspace, the WebDriver smoke test in `e2e/`) |
+| [`docs/`](docs) | [CLIENT.md](docs/CLIENT.md) (what the client does), [DESKTOP.md](docs/DESKTOP.md) (the desktop app), [ACCESSIBILITY.md](docs/ACCESSIBILITY.md), [GITHUB.md](docs/GITHUB.md) (repository setup) |
 | `scripts/` | license and hygiene checks |
 
-A pnpm workspace at the root ties `web` and `e2e` together. In phase 6 the Tauri shells for desktop and mobile
-(`apps/desktop`) join it: the installable apps will be built from this repository around the same client.
+A pnpm workspace at the root ties `web`, `e2e` and `apps/desktop` together. The desktop app bundles the same client
+and talks to the home node its user picks ([DESKTOP.md](docs/DESKTOP.md)); the mobile shells join later.
 
 ## How the client reaches a node
 
@@ -34,6 +35,10 @@ A pnpm workspace at the root ties `web` and `e2e` together. In phase 6 the Tauri
 serves it on its own domain, next to the API (`/api/v1`), the WebSocket and `/.well-known/tavrn`. The client talks to
 the origin it was loaded from: there is no build-time configuration and there are no `VITE_*` variables; everything a
 node offers (registration mode, captcha, voice, single sign-on, limits) comes from the node at runtime.
+
+**The desktop app** bundles the client instead and asks for the home node on its first start; the client's platform
+layer (`web/src/platform/`) then gives that node's URL to the API client, the WebSocket and the link builders
+([DESKTOP.md](docs/DESKTOP.md)).
 
 **Other nodes** are reached from that client: rooms on other nodes open a federated session with a token of the home
 node, and the login page offers "Sign in with an account of another node". When a sign-in needs the home node itself
@@ -55,7 +60,8 @@ Requirements: Node.js 24, pnpm (the version in `package.json`, for example throu
 [`just`](https://github.com/casey/just), and a tavrn node to talk to (below). During the private phase git needs read
 access to `just-tavrn` (your GitHub credentials, for example through `gh auth setup-git`): `@tavrn/sdk`, `@tavrn/e2ee`
 and `@tavrn/crypto` (with its built WebAssembly module) come from their repositories by tag, wired up in
-`pnpm-workspace.yaml` (`overrides`, `blockExoticSubdeps: false`; see the tavrn-js README). No Rust toolchain is needed.
+`pnpm-workspace.yaml` (`overrides`, `blockExoticSubdeps: false`; see the tavrn-js README). No Rust toolchain is needed
+for the web client; the desktop app needs one ([DESKTOP.md](docs/DESKTOP.md) "Development").
 
 ```sh
 git clone https://github.com/just-tavrn/tavrn-web
@@ -90,6 +96,10 @@ with `TAVRN_VOICE_ENABLED=false`.
 | `just dist-tarball` | `release/tavrn-web-<version>.tar.gz` from `web/dist`, as the release attaches it |
 | `just e2e [args]` | the Playwright suite against real nodes (below) |
 | `just publish-check` | pre-publication hygiene (`scripts/publish-check.sh`: no private files, domains or secrets) |
+| `just desktop-dev` | the desktop app with the client from the Vite dev server ([DESKTOP.md](docs/DESKTOP.md); needs Rust and the WebKitGTK packages on Linux) |
+| `just desktop-check` | cargo fmt, clippy, tests and `cargo deny` (licenses) of the desktop shell (needs `web/dist`); the CI runs it in `desktop.yml`, `just check` stays JavaScript-only |
+| `just desktop-build` | the installers of this platform (Linux `.deb` and `.AppImage`, Windows `.msi` and NSIS) |
+| `just desktop-e2e` | the WebDriver smoke test of the built Linux app (`E2E_NODE_BIN`; tauri-driver) |
 
 ### Translations
 

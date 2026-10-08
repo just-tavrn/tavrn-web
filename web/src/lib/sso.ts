@@ -13,6 +13,13 @@
 import { setReauth } from "../stores/reauth";
 import { createPkce, randomUrlSafe, type TavrnApi } from "@tavrn/sdk";
 import { safeNext } from "./remoteSignIn";
+import { platform } from "../platform";
+import { t } from "../i18n";
+
+/** Single sign-on works only in the browser, on the node's own web client. */
+export function ssoAvailable(): boolean {
+  return !platform().isDesktop;
+}
 
 const PENDING_KEY = "tavrn.sso";
 const LOGOUT_KEY = "tavrn.sso.logout";
@@ -32,6 +39,8 @@ export interface PendingSso {
 
 /** Starts a flow and leaves the page for the provider. `api` carries the session for `link`/`reauth`. */
 export async function startSso(api: TavrnApi, purpose: SsoPurpose, next: string, navigate: (url: string) => void = (u) => location.assign(u)): Promise<void> {
+  // The node sends the browser back to its own web client: the desktop app cannot receive the callback (docs/DESKTOP.md).
+  if (!ssoAvailable()) throw new Error(t("desktop.sso_unavailable"));
   const { verifier, challenge } = await createPkce();
   const pending: PendingSso = { state: randomUrlSafe(), verifier, purpose, next: safeNext(next), startedAt: Date.now() };
   const resp = await api.oidc.start({ purpose, code_challenge: challenge, client_state: pending.state, device_name: "Browser" });

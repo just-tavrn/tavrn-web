@@ -45,3 +45,6 @@ perf/results/
 
 # Private pattern list of the pre-publication check
 .publish-check.private
+
+# The desktop shell: files tauri-build generates (capability schemas); signing keys never (*.key above)
+apps/desktop/src-tauri/gen/

@@ -33,6 +33,9 @@ import { getMls } from "../stores/mls";
 import { VoiceBar } from "../voice/ui/VoiceBar";
 import { useRoomMenu } from "../components/menus/RoomMenu";
 import { useVoiceRealtime } from "../voice/useVoiceRealtime";
+import { originUrl, platform } from "../platform";
+import { announceUpdate } from "../platform/updates";
+import { useToasts } from "../stores/toasts";
 
 /** Renewal check for federated sessions (before the 7-day cap). */
 const RENEW_CHECK_MS = 10 * 60_000;
@@ -240,6 +243,17 @@ function Scoped({ node, children, quiet = false }: { node: string | null; childr
   );
 }
 
+let updateAnnounced = false;
+
+/** Desktop app: one update check per start, announced as a toast (Settings → App installs it). */
+function useUpdateAnnouncement() {
+  useEffect(() => {
+    if (updateAnnounced) return;
+    updateAnnounced = true;
+    void announceUpdate(platform(), (toast) => useToasts.getState().push(toast));
+  }, []);
+}
+
 /**
  * Notification settings of the account (home node, local storage when the node has no route yet) and the
  * navigation target of browser notifications (design note 4.11).
@@ -255,7 +269,7 @@ function useNotificationSetup(token: string | null, address: string | undefined)
     void useNotifications.getState().load({ get: () => api.users.notificationSettings(), put: (s) => api.users.putNotificationSettings(s) }, address);
     // Web push of this device (PROTOCOL.md §6d): renews an enabled registration on the home node.
     const { user, deviceId } = useAuth.getState();
-    void usePush.getState().init({ api, account: address, homeNode: user?.domain ?? location.hostname, deviceId: deviceId ?? null });
+    void usePush.getState().init({ api, account: address, homeNode: user?.domain ?? new URL(originUrl()).hostname, deviceId: deviceId ?? null });
     return () => {
       useNotifications.getState().reset();
       usePush.getState().reset();
@@ -324,6 +338,7 @@ export function AppLayout() {
   useVoiceRealtime();
   useNodeHousekeeping(token, address);
   useNotificationSetup(token, address);
+  useUpdateAnnouncement();
   usePrivacySetup(token, address);
   const { node: nodeParam, roomId, conversationId } = useParams();
   const location = useLocation();

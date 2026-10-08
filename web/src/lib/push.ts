@@ -7,6 +7,7 @@
 import type { PushSubscriptionRequest } from "@tavrn/sdk";
 import { t } from "../i18n";
 import { navigateFromNotification } from "./notify";
+import { platform } from "../platform";
 
 /** Bump when `public/sw.js` changes in a way that needs a new registration (the URL carries the version). */
 export const SW_VERSION = 1;
@@ -30,8 +31,12 @@ export const SW_STRING_KEYS = [
   "generic",
 ] as const;
 
-/** Service worker, push manager and notifications are all there (not in every browser, not in private windows). */
+/**
+ * Service worker, push manager and notifications are all there (not in every browser, not in private windows).
+ * Never in the desktop app: its pages are not served by the node, so there is no service worker to receive pushes.
+ */
 export function pushSupported(): boolean {
+  if (platform().isDesktop) return false;
   return typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 }
 

@@ -24,6 +24,7 @@ import { useShell } from "../AppShell";
 import { ConfirmAction, copyWithToast } from "./common";
 import { useNotifyMenu } from "./useNotifyMenu";
 import { useFullHistory } from "../../search/useFullHistory";
+import { webOrigin } from "../../platform";
 
 export function useChannelMenu(room: RoomDetail, channel: Channel): { menu: ContextMenuTrigger; overlay: ReactNode } {
   const t = useT();
@@ -76,7 +77,7 @@ export function useChannelMenu(room: RoomDetail, channel: Channel): { menu: Cont
               .then(() => useToasts.getState().push({ kind: "info", title: t("menu.channel.duplicated", { name }) }))
               .catch(toastError),
           remove: () => setConfirmDelete(true),
-          copyLink: () => void copyWithToast(`${window.location.origin}${roomPath(room.id, channel.id)}`, t("menu.copied")),
+          copyLink: () => void copyWithToast(`${webOrigin()}${roomPath(room.id, channel.id)}`, t("menu.copied")),
           copyId: () => void copyWithToast(channel.id, t("menu.copied")),
           moveEveryoneHere: () => setPendingMove({ to: channel, count: elsewhere }),
           moveEveryoneTo: (id) => {

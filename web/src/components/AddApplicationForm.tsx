@@ -9,6 +9,7 @@ import { useOriginDomain } from "../lib/origin";
 import { useNodes } from "../stores/nodes";
 import { useT } from "../i18n";
 import { Button, ErrorText, Field, Input } from "./ui";
+import { webOrigin } from "../platform";
 
 export function AddApplicationForm({ room, onOpen }: { room?: { node: string | null; id: string }; onOpen: (path: string) => void }) {
   const t = useT();
@@ -18,7 +19,7 @@ export function AddApplicationForm({ room, onOpen }: { room?: { node: string | n
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const open = () => {
-    const target = parseAddInput(input, { origin: location.origin, webs, ownDomain: origin });
+    const target = parseAddInput(input, { origin: webOrigin(), webs, ownDomain: origin });
     if (!target) {
       setError(t("addapp.not_a_link"));
       return;

@@ -18,6 +18,7 @@ import { RoomIcon } from "./Avatar";
 import { roomPath } from "./NodeScope";
 import { Button, Dialog, ErrorText, Field, Input } from "./ui";
 import { AddApplicationForm } from "./AddApplicationForm";
+import { webOrigin } from "../platform";
 
 export function CreateRoomDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (path: string) => void }) {
   const t = useT();
@@ -123,7 +124,7 @@ function JoinForm({ onClose, onJoined }: { onClose: () => void; onJoined: (path:
   const check = async () => {
     setError(null);
     setPreview(null);
-    let tg = parseInviteInput(input, { origin: location.origin, webs });
+    let tg = parseInviteInput(input, { origin: webOrigin(), webs });
     if (!tg) {
       setError(t("room.join.not_a_link"));
       return;
