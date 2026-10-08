@@ -212,6 +212,20 @@ export function placeBefore(s: RailState, entry: string, before: string | null):
   return { ...detached, order: order.filter((e) => e === entry || detached.order.includes(e)) };
 }
 
+/** Moves an entry right after `after` (the drop below an entry): after the last room of a folder it stays inside. */
+export function placeAfter(s: RailState, entry: string, after: string): RailState {
+  if (entry === after) return s;
+  const folder = isFolderEntry(after) ? undefined : folderOf(s, after);
+  if (folder) {
+    if (isFolderEntry(entry)) return placeAfter(s, entry, folderEntry(folder.id));
+    const rest = folder.roomIds.filter((k) => k !== entry);
+    return moveToFolder(s, entry, folder.id, rest.indexOf(after) + 1);
+  }
+  const rest = s.order.filter((e) => e !== entry);
+  const at = rest.indexOf(after);
+  return placeBefore(s, entry, at >= 0 ? (rest[at + 1] ?? null) : null);
+}
+
 /** Moves an entry up (`delta` < 0) or down among its neighbours: in its folder, or on the top level. */
 export function shiftEntry(s: RailState, entry: string, delta: number): RailState {
   const folder = isFolderEntry(entry) ? undefined : folderOf(s, entry);

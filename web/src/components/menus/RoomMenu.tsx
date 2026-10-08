@@ -13,7 +13,7 @@ import { apiFor } from "../../stores/nodes";
 import { isUnread, markConversationRead, useUnread } from "../../stores/unread";
 import { toastError, useToasts } from "../../stores/toasts";
 import { indexLeftRoom } from "../../stores/conversationIndex";
-import { ContextMenu, useContextMenu, type ContextMenuTrigger } from "../ContextMenu";
+import { ContextMenu, normalizeMenu, separator, useContextMenu, type ContextMenuTrigger, type MenuEntry } from "../ContextMenu";
 import { NodeScope, roomPath } from "../NodeScope";
 import { useShell } from "../AppShell";
 import { InviteDialog } from "../../pages/ChannelSidebar";
@@ -23,8 +23,11 @@ import { useCapabilities } from "../../moderation/hooks";
 import { ReportDialog } from "../../moderation/ReportDialog";
 import { useAuth } from "../../stores/auth";
 
-/** `node` = domain of the room's node, null for the home node. */
-export function useRoomMenu(room: Pick<Room, "id" | "name">, node: string | null): { menu: ContextMenuTrigger; overlay: ReactNode } {
+/**
+ * `node` = domain of the room's node, null for the home node. `extra`: entries of the place the room is shown in (the
+ * rail's folder entries), before "Leave".
+ */
+export function useRoomMenu(room: Pick<Room, "id" | "name">, node: string | null, extra?: MenuEntry[]): { menu: ContextMenuTrigger; overlay: ReactNode } {
   const t = useT();
   const menu = useContextMenu();
   const client = apiFor(node);
@@ -51,24 +54,27 @@ export function useRoomMenu(room: Pick<Room, "id" | "name">, node: string | null
   const perms = parsePermissions(detail.data?.my_permissions);
 
   const entries = menu.open
-    ? roomMenu(
-        { unread, canInvite: hasPermission(perms, Permission.CREATE_INVITES), isOwner: !!detail.data?.is_owner, notify: notify.state, canReport },
-        {
-          ...notify.actions,
-          markRead: () =>
-            void Promise.all(channelIds.map((id) => markConversationRead(client, id)))
-              .then(() => useToasts.getState().push({ kind: "info", title: t("menu.marked_read") }))
-              .catch(toastError),
-          invite: () => setDialog("invite"),
-          settings: () => {
-            closeNav();
-            navigate(roomPath(node, room.id, undefined, "settings"));
+    ? withExtra(
+        roomMenu(
+          { unread, canInvite: hasPermission(perms, Permission.CREATE_INVITES), isOwner: !!detail.data?.is_owner, notify: notify.state, canReport },
+          {
+            ...notify.actions,
+            markRead: () =>
+              void Promise.all(channelIds.map((id) => markConversationRead(client, id)))
+                .then(() => useToasts.getState().push({ kind: "info", title: t("menu.marked_read") }))
+                .catch(toastError),
+            invite: () => setDialog("invite"),
+            settings: () => {
+              closeNav();
+              navigate(roomPath(node, room.id, undefined, "settings"));
+            },
+            leave: () => setDialog("leave"),
+            copyId: () => void copyWithToast(room.id, t("menu.copied")),
+            report: () => setDialog("report"),
           },
-          leave: () => setDialog("leave"),
-          copyId: () => void copyWithToast(room.id, t("menu.copied")),
-          report: () => setDialog("report"),
-        },
-        t,
+          t,
+        ),
+        extra,
       )
     : [];
 
@@ -102,4 +108,12 @@ export function useRoomMenu(room: Pick<Room, "id" | "name">, node: string | null
     </>
   );
   return { menu, overlay };
+}
+
+/** Inserts `extra` before the "Leave" group. */
+function withExtra(base: MenuEntry[], extra?: MenuEntry[]): MenuEntry[] {
+  if (!extra?.length) return base;
+  const at = base.findIndex((e) => e.id === "sep-leave");
+  const i = at >= 0 ? at : base.length;
+  return normalizeMenu([...base.slice(0, i), separator("sep-place"), ...extra, ...base.slice(i)]);
 }

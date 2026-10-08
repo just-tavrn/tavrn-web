@@ -13,6 +13,7 @@ import {
   materialize,
   moveToFolder,
   parseRailState,
+  placeAfter,
   placeBefore,
   pruneRooms,
   removeFromFolder,
@@ -173,6 +174,17 @@ describe("rail folders: editing", () => {
   it("placing a room before a room inside a folder moves it into that folder there", () => {
     const s = placeBefore(withFolder(), d, c);
     expect(s.folders[0]!.roomIds).toEqual([b, d, c]);
+  });
+
+  it("places after an entry: on the top level, inside a folder, and after a folder's last room", () => {
+    let s = placeAfter(withFolder(), a, d);
+    expect(topLevel(s, home)).toEqual(["folder:F", d, a]);
+    s = placeAfter(s, a, b);
+    expect(s.folders[0]!.roomIds).toEqual([b, a, c]);
+    s = placeAfter(s, d, c);
+    expect(s.folders[0]!.roomIds).toEqual([b, a, c, d]);
+    s = placeAfter(s, folderEntry("F"), c);
+    expect(topLevel(s, home)).toEqual(["folder:F"]);
   });
 
   it("moves an entry up and down (the menu alternative to dragging), inside a folder too", () => {
