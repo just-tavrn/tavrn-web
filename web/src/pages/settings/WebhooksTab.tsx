@@ -20,8 +20,19 @@ import { describeError, toastError, useToasts } from "../../stores/toasts";
 import { getMls } from "../../stores/mls";
 import { ConfirmDialog, Section, Select } from "./common";
 
-/** Channels webhooks can post in (the node refuses others with `channel.no_text`). */
-const WEBHOOK_KINDS = ["text", "announcement"];
+/** Channels webhooks can post in (the node refuses others with `channel.no_text`); forum channels into posts only. */
+const WEBHOOK_KINDS = ["text", "announcement", "forum"];
+
+/** Forum channels show posts only: their webhooks name a post with `thread_id` (APPLICATIONS.md §6.1). */
+function ForumHint({ channel }: { channel: Channel | undefined }) {
+  const t = useT();
+  if (channel?.kind !== "forum") return null;
+  return (
+    <p className="rounded-md bg-bg-2 px-2 py-1 text-xs text-fg-1 sm:col-span-3" data-testid="webhook-forum-hint">
+      {t("webhooks.forum_hint")}
+    </p>
+  );
+}
 
 type Sealing = "sender" | "node";
 
@@ -95,7 +106,8 @@ function CreateWebhook({ room, channels, mayEveryone, onCreated }: { room: RoomD
   const [sealing, setSealing] = useState<Sealing>("sender");
   const [everyone, setEveryone] = useState(false);
   const [busy, setBusy] = useState(false);
-  const encrypted = !!channels.find((c) => c.id === channelId)?.encrypted;
+  const target = channels.find((c) => c.id === channelId);
+  const encrypted = !!target?.encrypted;
   return (
     <Section title={t("webhooks.create_title")} description={t("webhooks.create_hint")}>
       {channels.length === 0 && <p className="text-sm text-fg-2" data-testid="webhook-no-channel">{t("webhooks.no_channel")}</p>}
@@ -126,6 +138,7 @@ function CreateWebhook({ room, channels, mayEveryone, onCreated }: { room: RoomD
             {channels.map((c) => (
               <option key={c.id} value={c.id}>
                 #{channelName(c)}
+                {c.kind === "forum" ? ` (${t("webhooks.forum_channel")})` : ""}
                 {c.encrypted ? ` (${t("webhooks.encrypted_channel")})` : ""}
               </option>
             ))}
@@ -134,6 +147,7 @@ function CreateWebhook({ room, channels, mayEveryone, onCreated }: { room: RoomD
         <Button type="submit" disabled={busy || !name.trim() || !channelId} data-testid="webhook-create">
           {t("webhooks.create")}
         </Button>
+        <ForumHint channel={target} />
         {encrypted && <SealingChoice value={sealing} onChange={setSealing} />}
         {mayEveryone && (
           <label className="flex min-h-10 items-center gap-2 text-sm text-fg-1 sm:col-span-3">
@@ -206,11 +220,13 @@ function WebhookRow({ room, webhook, channels, onChanged, onUrl }: { room: RoomD
                 {channels.map((c) => (
                   <option key={c.id} value={c.id}>
                     #{channelName(c)}
+                    {c.kind === "forum" ? ` (${t("webhooks.forum_channel")})` : ""}
                     {c.encrypted ? ` (${t("webhooks.encrypted_channel")})` : ""}
                   </option>
                 ))}
               </Select>
             </Field>
+            <ForumHint channel={room.channels.find((c) => c.id === channelId)} />
             <Button type="submit" data-testid="webhook-save">
               {t("common.save")}
             </Button>
