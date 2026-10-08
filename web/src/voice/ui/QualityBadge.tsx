@@ -15,8 +15,9 @@ export function QualityBadge() {
   const name = preset === "custom" ? t("voice.quality.kbps", { kbps }) : t(`voice.quality.preset.${preset}`);
   const title = isMusic(kbps) ? t("voice.quality.badge_music", { name, kbps, mb: trafficMbPerHour(kbps) }) : t("voice.quality.badge", { name, kbps });
   return (
-    <span className="shrink-0 rounded border border-line px-1 text-[10px] font-medium leading-4 text-fg-2" title={title} aria-label={title} data-testid="voice-quality" data-kbps={kbps}>
-      {name}
+    <span className="shrink-0 rounded border border-line px-1 text-[10px] font-medium leading-4 text-fg-2" title={title} data-testid="voice-quality" data-kbps={kbps}>
+      <span aria-hidden="true">{name}</span>
+      <span className="sr-only">{title}</span>
     </span>
   );
 }

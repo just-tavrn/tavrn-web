@@ -77,7 +77,7 @@ test("an owner picks a quality preset; the voice panel shows it and the micropho
 
   await join(page, room.id);
   const badge = page.getByTestId("voice-quality");
-  await expect(badge).toHaveText("Studio");
+  await expect(badge).toContainText("Studio");
   await expect(badge).toHaveAttribute("title", "Sprachqualität: Studio, Opus 128 kbit/s");
   await expect.poll(() => sent(page), { timeout: 30_000 }).toMatchObject({ maxBitrate: 128_000 });
   // Opus in-band FEC is negotiated by the node's media server (limits.audio_fec).
@@ -92,7 +92,7 @@ test("an owner picks a quality preset; the voice panel shows it and the micropho
   await choosePreset(page, room.id, voice.id, "music");
   await expect(page.getByTestId("channel-editor").getByText(/Musikmodus: Stereo/)).toBeVisible();
   await join(page, room.id);
-  await expect(badge).toHaveText("Musik");
+  await expect(badge).toContainText("Musik");
   await expect(badge).toHaveAttribute("title", /Opus 192 kbit\/s, Stereo, etwa 86 MB pro Stunde/);
   await expect.poll(() => sent(page), { timeout: 30_000 }).toMatchObject({ maxBitrate: 192_000 });
   const music = await page.evaluate(() => (window as unknown as { __captures: { constraints: MediaTrackConstraints; channelCount?: number }[] }).__captures.at(-1)!);
