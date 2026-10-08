@@ -81,4 +81,27 @@ describe("voice & video settings (design note 4.9)", () => {
     const opts = cameraOptions({ ...DEFAULT_SETTINGS, cameraResolution: "1080p", cameraFps: 60, cameraDeviceId: "cam" }, { max_resolution: "720p", max_fps: 30 });
     expect(opts).toEqual({ deviceId: "cam", width: 1280, height: 720, frameRate: 30 });
   });
+
+  it("keeps a stream volume per streamer apart from the voice volume (issue #20)", () => {
+    expect(DEFAULT_SETTINGS.streamVolumes).toEqual({});
+    const store = useVoiceSettings.getState();
+    store.setStreamVolume("bob@n", 40);
+    store.setUserVolume("bob@n", 150);
+    expect(useVoiceSettings.getState().settings.streamVolumes).toEqual({ "bob@n": 40 });
+    expect(useVoiceSettings.getState().settings.userVolumes).toEqual({ "bob@n": 150 });
+    // Persisted per device like the voice volumes; 100 % removes the entry.
+    expect(JSON.parse(localStorage.getItem(SETTINGS_KEY)!).streamVolumes).toEqual({ "bob@n": 40 });
+    useVoiceSettings.getState().setStreamVolume("bob@n", 100);
+    expect(useVoiceSettings.getState().settings.streamVolumes).toEqual({});
+    expect(useVoiceSettings.getState().settings.userVolumes).toEqual({ "bob@n": 150 });
+    // Validated like the voice volumes: 0–200 %, numbers only, bounded addresses.
+    const s = normalizeSettings({ streamVolumes: { "a@n": 250, "b@n": -1, "c@n": "x", ["x".repeat(321)]: 50 } });
+    expect(s.streamVolumes).toEqual({ "a@n": 200, "b@n": 0 });
+  });
+
+  it("streams stay audible while deafened unless switched off (issue #20)", () => {
+    expect(DEFAULT_SETTINGS.streamWhileDeafened).toBe(true);
+    expect(normalizeSettings({ streamWhileDeafened: false }).streamWhileDeafened).toBe(false);
+    expect(normalizeSettings({ streamWhileDeafened: "no" }).streamWhileDeafened).toBe(true);
+  });
 });

@@ -100,6 +100,17 @@ describe("memberMenu", () => {
     expect(ids(plain)).not.toContain("volume");
     expect(ids(plain)).not.toContain("disconnect");
   });
+
+  it("adds the stream volume next to the voice volume while the member streams (issue #20)", () => {
+    const voice = { channelId: "v1", serverMuted: false, channels: [], inMyCall: true, volume: 100, streaming: true, streamVolume: 60 };
+    const a = { ...memberActions(), streamVolume: (v: number): MenuEntry => ({ kind: "custom", id: "stream-volume", render: () => String(v) }) };
+    const entries = memberMenu(ctx({ voice }), a, t);
+    const order = ids(entries);
+    expect(order.indexOf("stream-volume")).toBe(order.indexOf("volume") + 1);
+    expect(ids(memberMenu(ctx({ voice: { ...voice, streaming: false } }), a, t))).not.toContain("stream-volume");
+    expect(ids(memberMenu(ctx({ voice: { ...voice, inMyCall: false } }), a, t))).not.toContain("stream-volume");
+    expect(ids(memberMenu(ctx({ self: true, voice }), a, t))).not.toContain("stream-volume");
+  });
 });
 
 describe("voice participant menus (design note 4.13 item 3)", () => {
@@ -141,6 +152,13 @@ describe("voice participant menus (design note 4.13 item 3)", () => {
     expect(ids(voiceParticipantMenu({ ...base, self: true, perms: ALL_PERMISSIONS }, actions(), t))).toEqual(["copy-address", "copy-id"]);
     // No other voice channel: no move submenu.
     expect(ids(voiceParticipantMenu({ ...base, perms: Permission.MOVE_MEMBERS, channels: [] }, actions(), t))).not.toContain("move");
+  });
+
+  it("the reduced menu also offers the stream volume while the participant streams (issue #20)", () => {
+    const a = { ...actions(), streamVolume: (v: number): MenuEntry => ({ kind: "custom", id: "stream-volume", render: () => String(v) }) };
+    expect(ids(voiceParticipantMenu({ ...base, streaming: true, streamVolume: 80 }, a, t))).toEqual(["volume", "stream-volume", "copy-address", "copy-id"]);
+    expect(ids(voiceParticipantMenu({ ...base, streaming: false, streamVolume: 80 }, a, t))).toEqual(["volume", "copy-address", "copy-id"]);
+    expect(ids(voiceParticipantMenu({ ...base, self: true, streaming: true, streamVolume: 80 }, a, t))).toEqual(["copy-address", "copy-id"]);
   });
 });
 
