@@ -345,13 +345,33 @@ picker accepts `http://127.0.0.1:8080`).
 
 ## Builds and releases
 
-`.github/workflows/desktop.yml` ([GITHUB.md](GITHUB.md)):
+`.github/workflows/desktop.yml` ([GITHUB.md](GITHUB.md)) builds on two routes:
 
-- pull requests that touch `apps/desktop`, `web`, the lockfile or the workspace: the Linux build on `ubuntu-latest`
-  with the checks, the WebDriver smoke test under xvfb (against the node image) and the `.deb` and `.AppImage` as
-  artifacts for 7 days;
-- by hand for any branch: `gh workflow run desktop.yml --ref <branch> -f windows=true` adds the Windows installers;
-- release tags: `release.yml` creates the GitHub release, then calls `desktop.yml`, which builds Linux and Windows
+| Route | Runner | When | What |
+|---|---|---|---|
+| Linux, natively | self-hosted `tavrn-heavy` (fallback `ubuntu-latest`) | pull requests that touch `apps/desktop`, `web`, the lockfile, the workspace or the workflow, once ready for review; pushes to `main`; by hand; release tags | the checks (fmt, clippy, tests, licenses, the real Secret Service), `.deb` and `.AppImage`, the WebDriver smoke test under xvfb against the node image's binary; artifact `desktop-linux` |
+| Windows NSIS, cross-compiled | self-hosted `tavrn-heavy` | as the Linux build, except release tags | `tauri build --target x86_64-pc-windows-msvc --runner cargo-xwin --bundles nsis`; artifact `desktop-windows-nsis` (the current installer of `main` is always there) |
+| Windows `.msi` and NSIS, natively | GitHub-hosted `windows-latest` | release tags; by hand with `windows: true` | the release installers with their updater signatures; artifact `desktop-windows` |
+
+All artifacts are kept for 7 days.
+
+- **The self-hosted route** runs on the organization's runner image (`just-tavrn/.github`, `runner/README.md` "Desktop
+  builds"): WebKitGTK, `tauri-driver`, `WebKitWebDriver`, xvfb, xdotool, gnome-keyring, `cargo-xwin`, NSIS and LLVM are
+  in the image, the jobs install nothing, and Cargo builds in the runner's cache slot (`CARGO_TARGET_DIR`). The
+  Microsoft CRT and Windows SDK that cargo-xwin links against come from the runner's cache (`XWIN_CACHE_DIR`, prepared
+  when the runner starts); the job fails with a clear message when it is missing and never downloads it itself (the
+  SDK's licence forbids publishing it, so it is never part of an artifact either).
+- **Trusted events only:** a self-hosted runner executes the code it checks out, so pull requests from forks and from
+  Dependabot build Linux on `ubuntu-latest` and skip the cross-compiled installer. Release builds also stay on
+  `ubuntu-latest` and `windows-latest`: they carry the updater key, and no long-lived secret besides the read token
+  belongs on the self-hosted runners.
+- **Limits of the cross-compiled installer** (experimental upstream, [Tauri: build Windows apps on
+  Linux](https://v2.tauri.app/distribute/windows-installer/#build-windows-apps-on-linux-and-macos)): NSIS only (the
+  `.msi` needs WiX, which runs on Windows), x86_64 only, built but not started (no Windows on the runner), no updater
+  signature. It is for testing by hand; releases ship the installers of `windows-latest`.
+- By hand for any branch: `gh workflow run desktop.yml --ref <branch> -f windows=true` adds the `windows-latest`
+  installers.
+- Release tags: `release.yml` creates the GitHub release, then calls `desktop.yml`, which builds Linux and Windows
   with the updater signatures and attaches the installers, their `.sig` files and `latest.json` to that release.
 
 The installers are not signed by an OS code-signing certificate (Windows SmartScreen warns on the first start); the
