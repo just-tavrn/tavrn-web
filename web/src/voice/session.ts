@@ -55,6 +55,7 @@ import type { LevelReport } from "./audio";
 import { DEFAULT_GRACE_MS, RejoinSchedule } from "./reconnect";
 import { playCue, type Cue } from "./cues";
 import { setIcePolicy } from "./ice";
+import { desktopHeld } from "./hotkeys";
 import type { BackgroundHandle } from "./background";
 
 /** LiveKit must confirm encryption for this device within this time, else nothing is published. */
@@ -543,9 +544,10 @@ function follow(s: Session) {
     if (settings().inputMode === "ptt" && e.code === settings().pttKey) s.pipeline.setPtt(false);
     if (settings().priorityKey && e.code === settings().priorityKey) void setPriority(false);
   };
+  // Leaving the window releases the keys of the window, not a global hotkey of the desktop app that is still held.
   const blur = () => {
-    s.pipeline.setPtt(false);
-    if (useVoice.getState().prioritySelf) void setPriority(false);
+    if (!desktopHeld("push_to_talk")) s.pipeline.setPtt(false);
+    if (useVoice.getState().prioritySelf && !desktopHeld("priority")) void setPriority(false);
   };
   window.addEventListener("keydown", down);
   window.addEventListener("keyup", up);
