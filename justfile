@@ -54,10 +54,11 @@ desktop-check: install
     @[ -f web/dist/index.html ] || { echo "web/dist is missing: run just build first (the shell embeds it)" >&2; exit 1; }
     cd apps/desktop/src-tauri && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked && cargo deny check licenses
 
-# WebDriver smoke test of the built Linux app (tauri-driver, WebKitWebDriver; E2E_NODE_BIN like `just e2e`)
+# The node must serve its web client (a release build or the image); the app always renders under xvfb-run with X11 forced
+# WebDriver smoke test of the built Linux app (tauri-driver, WebKitWebDriver; E2E_NODE_BIN like `just e2e`), never on the desktop
 desktop-e2e:
-    @[ -n "${E2E_NODE_BIN:-}" ] || { echo "set E2E_NODE_BIN to a tavrn-node binary" >&2; exit 1; }
-    {{ if env("DISPLAY", "") == "" { "xvfb-run -a " } else { "" } }}node apps/desktop/e2e/smoke.mjs
+    @[ -n "${E2E_NODE_BIN:-}${E2E_NODE_URL:-}" ] || { echo "set E2E_NODE_BIN to a tavrn-node binary (or E2E_NODE_URL to a running development node)" >&2; exit 1; }
+    env -u WAYLAND_DISPLAY GDK_BACKEND=x11 xvfb-run -a node apps/desktop/e2e/smoke.mjs
 
 # Extra arguments go to `playwright test` (default: chromium and the phone emulation, two workers).
 # Playwright against real nodes: set E2E_NODE_BIN (a tavrn-node binary) or E2E_NODE_IMAGE (its container image)
