@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from "vitest";
-import { Gate, LevelMeter, dbfs } from "./gate";
+import { ChannelGuard, Gate, LevelMeter, dbfs, routeChannels } from "./gate";
 
 const RATE = 48000;
 const BLOCK = 128;
@@ -107,5 +107,74 @@ describe("noise gate / voice activation (synthetic frames)", () => {
     expect(reports).toBeLessThanOrEqual(6);
     // A 0.3 sine is about -13.5 dBFS RMS; short blocks wobble a little around it.
     expect(Math.abs(last + 13.5)).toBeLessThan(1);
+  });
+});
+
+describe("Gate with two channels", () => {
+  it("applies one gain to both channels, so a stereo image stays balanced", () => {
+    const gate = new Gate(RATE);
+    gate.configure({ threshold: -30, holdMs: 0 });
+    const loud = sine(0.5, 1)[0]!;
+    const quiet = sine(0.01, 1)[0]!;
+    const outL = new Float32Array(BLOCK);
+    const outR = new Float32Array(BLOCK);
+    for (let i = 0; i < 40; i++) gate.processChannels([loud, quiet], [outL, outR]);
+    // The loud channel opened the gate for both.
+    expect(gate.open).toBe(true);
+    for (let i = 0; i < BLOCK; i++) expect(outR[i]! / (quiet[i]! || 1)).toBeCloseTo(outL[i]! / (loud[i]! || 1), 6);
+  });
+});
+
+describe("ChannelGuard (a mono microphone is never heard on one side only)", () => {
+  const level = (db: number) => db;
+  const feed = (guard: ChannelGuard, l: number, r: number, t: number) => {
+    let src = guard.source;
+    for (let i = 0; i < ms(t); i++) src = guard.push(level(l), level(r), BLOCK);
+    return src;
+  };
+
+  it("starts with the average of both channels until it knows more", () => {
+    const guard = new ChannelGuard(RATE);
+    expect(guard.source).toBe("mix");
+    expect(feed(guard, -Infinity, -Infinity, 5000)).toBe("mix");
+    expect(feed(guard, -30, -90, 100)).toBe("mix");
+  });
+
+  it("puts a single microphone on a two-channel interface on both sides", () => {
+    const left = new ChannelGuard(RATE);
+    expect(feed(left, -30, -90, 300)).toBe("left");
+    const right = new ChannelGuard(RATE);
+    expect(feed(right, -Infinity, -25, 300)).toBe("right");
+  });
+
+  it("becomes stereo when both channels carry signal, and stays so through one-sided passages", () => {
+    const guard = new ChannelGuard(RATE);
+    expect(feed(guard, -30, -35, 300)).toBe("stereo");
+    // A hard-panned passage or a pause on one side is no reason to fold the image.
+    expect(feed(guard, -30, -90, 1500)).toBe("stereo");
+    expect(feed(guard, -30, -32, 50)).toBe("stereo");
+    expect(feed(guard, -30, -90, 1500)).toBe("stereo");
+    // A side that stays silent for 2 s: the live channel goes to both sides.
+    expect(feed(guard, -30, -90, 2100)).toBe("left");
+    // Both sides again: stereo after 250 ms.
+    expect(feed(guard, -30, -30, 300)).toBe("stereo");
+  });
+
+  it("ignores silence and quiet-but-not-silent channels", () => {
+    const guard = new ChannelGuard(RATE);
+    expect(feed(guard, -30, -65, 3000)).toBe("mix");
+    expect(feed(guard, -80, -90, 3000)).toBe("mix");
+  });
+
+  it("routes the source onto both output channels", () => {
+    const l = Float32Array.from([1, 0.5]);
+    const r = Float32Array.from([0, -0.5]);
+    const scratch = new Float32Array(2);
+    expect(routeChannels("stereo", l, r, scratch)).toEqual([l, r]);
+    expect(routeChannels("left", l, r, scratch)).toEqual([l, l]);
+    expect(routeChannels("right", l, r, scratch)).toEqual([r, r]);
+    const [a, b] = routeChannels("mix", l, r, scratch);
+    expect(a).toBe(b);
+    expect([...a]).toEqual([0.5, 0]);
   });
 });

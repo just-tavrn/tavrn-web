@@ -90,6 +90,22 @@ node's media server (UDP per address, TCP, TURN) and says what to fix when one f
 settings → Soundboard; members with `use_soundboard` play them from the call controls into their own
 (encrypted) microphone track. LiveKit, RNNoise and the background effects are only loaded once voice is used.
 
+**Quality and traffic** (VOICE.md §4a): with `manage_channels`, room settings → Channels → a voice channel →
+**Voice quality** offers Saver (8 kbps, telephone quality, least traffic), Standard (32, clear speech), High (64,
+the default of new channels), Studio (128, practically transparent speech), Music (192, stereo) and a custom
+value; presets above the node's `TAVRN_VOICE_MAX_BITRATE_KBPS` are shown as limited by this node. Everybody in a
+channel receives what a speaker publishes (the media server forwards, it does not transcode), so quality is a
+channel setting, and the section names the traffic per hour for every speaker and listener (Music: about 86 MB).
+The voice bar shows the quality of the current call with the Opus bitrate in its tooltip. The microphone is
+published as Opus with the channel's bitrate, DTX on and RED off; in-band FEC is negotiated by the node's media
+server (`limits.audio_fec`), the browser needs no option for it. **Music mode** (192 kbps and more): echo
+cancellation, noise suppression (also RNNoise) and automatic gain are off, DTX is off so quiet passages are not
+cut, and the capture asks for two channels. Stereo is published only when the device really delivers two
+channels; a mono microphone is published as mono and heard in the middle, and a two-channel interface with a
+single microphone on one input is folded onto both sides (the gate worklet's channel guard: one side below
+−70 dBFS while the other carries signal), so nobody is ever heard on one side only. Calls in DMs use 64 kbps.
+A changed quality applies from the next join.
+
 ## Encrypted conversations
 
 Each channel, DM and group DM is an MLS group ([`@tavrn/e2ee`](https://github.com/just-tavrn/tavrn-js/tree/main/e2ee), `src/mls.ts`): the first device that opens a
