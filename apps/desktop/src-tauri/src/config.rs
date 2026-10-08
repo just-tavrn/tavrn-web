@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The app's settings in `<app config dir>/config.json` (Linux `~/.config/org.tavrn.desktop/`, Windows
-//! `%APPDATA%\org.tavrn.desktop\`): today only the home node chosen in the node picker. A missing, unreadable or
+//! `%APPDATA%\org.tavrn.desktop\`): the home node chosen in the node picker, with its identity domain and the origin
+//! of its web client when they are known (delegation: both may differ from the node's URL). A missing, unreadable or
 //! corrupt file means "no settings" (the node picker asks again); a stored node that no longer passes the
 //! validation is dropped.
 
@@ -19,6 +20,17 @@ pub struct Config {
     /// Origin of the home node, or none before the first choice.
     #[serde(default)]
     pub node: Option<String>,
+    /// Origin of the node's web client (its sign-in page), when its document named one.
+    #[serde(default)]
+    pub web: Option<String>,
+    /// Identity domain of the node (`alice@<domain>`), when known.
+    #[serde(default)]
+    pub domain: Option<String>,
+}
+
+/// An identity domain worth storing: a node domain, or `localhost` (a development node).
+pub fn valid_identity_domain(d: &str) -> bool {
+    d == "localhost" || crate::resolve::valid_domain(d)
 }
 
 /// Reads the settings; never fails (see the module documentation).
@@ -31,6 +43,9 @@ pub fn load(path: &Path) -> Config {
         return Config::default();
     };
     config.node = config.node.and_then(|n| node_url::validate(&n).ok());
+    // The web origin and the domain belong to the node: without it they mean nothing.
+    config.web = config.web.filter(|_| config.node.is_some()).and_then(|w| node_url::validate(&w).ok());
+    config.domain = config.domain.filter(|d| config.node.is_some() && valid_identity_domain(d));
     config
 }
 
@@ -67,7 +82,7 @@ mod tests {
     fn writes_and_reads_the_node() -> io::Result<()> {
         let d = dir("roundtrip");
         let path = d.join("nested").join(FILE_NAME);
-        let config = Config { node: Some("https://tavrn.example".into()) };
+        let config = Config { node: Some("https://tavrn.example".into()), web: Some("https://web.tavrn.example".into()), domain: Some("tavrn.example".into()) };
         save(&path, &config)?;
         assert_eq!(load(&path), config);
         assert!(!path.with_extension("json.tmp").exists(), "no temporary file is left behind");
@@ -97,6 +112,11 @@ mod tests {
         assert_eq!(load(&path).node, None);
         fs::write(&path, r#"{"node": "https://Tavrn.Example/", "future": true}"#)?;
         assert_eq!(load(&path).node.as_deref(), Some("https://tavrn.example"), "normalized; unknown fields ignored");
+        fs::write(&path, r#"{"node": "https://tavrn.example", "web": "http://evil.example", "domain": "Not A Domain"}"#)?;
+        let c = load(&path);
+        assert_eq!((c.web, c.domain), (None, None), "an invalid web origin or domain is dropped");
+        fs::write(&path, r#"{"web": "https://web.tavrn.example", "domain": "tavrn.example"}"#)?;
+        assert_eq!(load(&path), Config::default(), "nothing without a node");
         fs::remove_dir_all(d)
     }
 }

@@ -17,6 +17,7 @@ import { describeError, useToasts } from "../stores/toasts";
 import { errorMessage, useT } from "../i18n";
 import { AuthCard } from "../components/auth/AuthCard";
 import { ErrorText } from "../components/ui";
+import { afterSignIn } from "./ConnectPages";
 
 const isSession = (r: OidcTokenResponse): r is AuthResponse => "access_token" in r;
 const isReauth = (r: OidcTokenResponse): r is OidcReauth => "reauth_token" in r;
@@ -55,7 +56,7 @@ export function SsoCallbackPage() {
           authFlow.clearPreauth();
           authFlow.setSetup({ kind: "login" });
           useAuth.getState().setSession(resp);
-          navigate(`/encryption?next=${encodeURIComponent(flow.next)}`, { replace: true });
+          navigate(afterSignIn(flow.next), { replace: true });
         } else if (flow.purpose === "reauth" && isReauth(resp)) {
           setReauthToken(resp.reauth_token, resp.expires_in);
           navigate(flow.next, { replace: true });

@@ -9,7 +9,7 @@ import { browserPlatform } from "./browser";
 import { detectTauri } from "./tauriDetect";
 import type { Platform } from "./types";
 
-export type { AvailableUpdate, AppUpdater, NodeChoice, Platform, PlatformKind } from "./types";
+export type { AvailableUpdate, AppUpdater, NodeChoice, NodeDetails, NodePageMode, NodePageSignIn, Platform, PlatformAuth, PlatformKind, ResolvedNode, ResolveFailure } from "./types";
 
 let current: Platform = browserPlatform;
 
