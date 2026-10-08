@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The app's settings in `<app config dir>/config.json` (Linux `~/.config/org.tavrn.desktop/`, Windows
 //! `%APPDATA%\org.tavrn.desktop\`): the home node chosen in the node picker, with its identity domain and the origin
-//! of its web client when they are known (delegation: both may differ from the node's URL). A missing, unreadable or
-//! corrupt file means "no settings" (the node picker asks again); a stored node that no longer passes the
-//! validation is dropped.
+//! of its web client when they are known (delegation: both may differ from the node's URL), and "close to tray". A
+//! missing, unreadable or corrupt file means "no settings" (the node picker asks again); a stored node that no longer
+//! passes the validation is dropped.
 
 use std::fs;
 use std::io;
@@ -26,6 +26,9 @@ pub struct Config {
     /// Identity domain of the node (`alice@<domain>`), when known.
     #[serde(default)]
     pub domain: Option<String>,
+    /// Closing the window hides it into the tray; none: the platform's default (`tray::close_to_tray_default`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub close_to_tray: Option<bool>,
 }
 
 /// An identity domain worth storing: a node domain, or `localhost` (a development node).
@@ -82,7 +85,12 @@ mod tests {
     fn writes_and_reads_the_node() -> io::Result<()> {
         let d = dir("roundtrip");
         let path = d.join("nested").join(FILE_NAME);
-        let config = Config { node: Some("https://tavrn.example".into()), web: Some("https://web.tavrn.example".into()), domain: Some("tavrn.example".into()) };
+        let config = Config {
+            node: Some("https://tavrn.example".into()),
+            web: Some("https://web.tavrn.example".into()),
+            domain: Some("tavrn.example".into()),
+            close_to_tray: Some(true),
+        };
         save(&path, &config)?;
         assert_eq!(load(&path), config);
         assert!(!path.with_extension("json.tmp").exists(), "no temporary file is left behind");
@@ -111,6 +119,7 @@ mod tests {
         fs::write(&path, r#"{"node": "http://evil.example"}"#)?;
         assert_eq!(load(&path).node, None);
         fs::write(&path, r#"{"node": "https://Tavrn.Example/", "future": true}"#)?;
+        assert_eq!(load(&path).close_to_tray, None, "an older file has no close-to-tray choice");
         assert_eq!(load(&path).node.as_deref(), Some("https://tavrn.example"), "normalized; unknown fields ignored");
         fs::write(&path, r#"{"node": "https://tavrn.example", "web": "http://evil.example", "domain": "Not A Domain"}"#)?;
         let c = load(&path);

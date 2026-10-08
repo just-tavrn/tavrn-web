@@ -2,8 +2,9 @@
 /**
  * Turning incoming messages into notifications (design note 4.11): the decision ({@link decide}), then an
  * entry in the notification center (mentions and DMs), a toast with a jump link, an optional soft sound
- * and, while the tab is in the background, a browser notification. Previews only show plaintext; the
- * content of encrypted messages is never put into a system notification.
+ * and, while the tab is in the background, a browser notification ({@link systemNotify}; in the desktop app a
+ * native one while its window is not focused). Previews only show plaintext; the content of encrypted messages
+ * is never put into a system notification.
  */
 import type { QueryClient } from "@tanstack/react-query";
 import type { Conversation, Message, RoomDetail } from "@tavrn/sdk";
@@ -17,6 +18,7 @@ import { channelName } from "./names";
 import { apiFor } from "../stores/nodes";
 import { useUnread } from "../stores/unread";
 import { useThreads } from "../threads/store";
+import { platform } from "../platform";
 
 /** Longest preview text. */
 const PREVIEW = 140;
@@ -84,7 +86,7 @@ export async function notifyMessage(m: Message, ctx: NotifyContext): Promise<voi
   if (d.important) useNotifications.getState().push({ kind: where.room ? "mention" : "dm", title, body, path });
   useToasts.getState().push({ kind: "info", title, detail: body, path, testId: d.important ? "notify-toast-mention" : "notify-toast" });
   if (state.settings.global.sound) playNotifySound();
-  if (state.settings.global.browser) showBrowserNotification(title, body, m.conversation_id, path);
+  systemNotify({ title, body, tag: m.conversation_id, path }, { browser: state.settings.global.browser });
 }
 
 /** Room details are fetched at most this often per node for notifications of rooms not opened yet. */
@@ -182,6 +184,50 @@ export async function requestBrowserPermission(): Promise<NotificationPermission
   } catch {
     return Notification.permission;
   }
+}
+
+// ---- System notifications (browser or desktop app) -----------------------------------------------
+
+const DESKTOP_KEY = "tavrn.desktop.notifications";
+
+/** Desktop app: native notifications are on unless switched off on this device (Settings → Notifications). */
+export function desktopNotificationsEnabled(): boolean {
+  try {
+    return localStorage.getItem(DESKTOP_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+export function setDesktopNotifications(on: boolean): void {
+  try {
+    if (on) localStorage.removeItem(DESKTOP_KEY);
+    else localStorage.setItem(DESKTOP_KEY, "off");
+  } catch {
+    /* no storage: stays on */
+  }
+}
+
+/** The client's window has the focus (the desktop app's window, or the visible tab). */
+export function windowFocused(): boolean {
+  return document.visibilityState === "visible" && document.hasFocus();
+}
+
+/**
+ * A notification outside the page, besides the in-app toast: in the desktop app a native one while its window is not
+ * focused (mentions, DMs, incoming calls); in the browser a browser notification when `browser` (the account's
+ * setting) allows it. Returns what was shown.
+ */
+export function systemNotify(n: { title: string; body: string; tag: string; path: string | null }, opts: { browser: boolean }): "native" | "browser" | "none" {
+  const native = platform().notifications;
+  if (native) {
+    if (!desktopNotificationsEnabled() || windowFocused()) return "none";
+    void native.show({ title: n.title, body: n.body, path: n.path }).catch(() => undefined);
+    return "native";
+  }
+  if (!opts.browser) return "none";
+  showBrowserNotification(n.title, n.body, n.tag, n.path);
+  return "browser";
 }
 
 /** Only while the tab is hidden, and only with permission. */

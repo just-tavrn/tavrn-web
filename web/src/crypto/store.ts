@@ -9,9 +9,19 @@
  * is a non-extractable WebCrypto key. By default it is persisted next to the data, so the device
  * unlocks by itself; with "lock on close" it lives only in this module's memory and every new tab
  * or browser start has to unlock with the recovery key or a passkey (which yield the master secret).
+ *
+ * The desktop app keeps the persisted local key in the OS keychain instead (`platform().keystore`, docs/DESKTOP.md
+ * "Keys in the OS keychain"): IndexedDB then holds ciphertext only, which opens nothing without the keychain entry.
+ * The local key is the cleanest cut: one 32-byte secret per account fits every keychain (the MLS client state does
+ * not: it grows with the groups), and everything else stays as in the browser. A store of the browser kind is
+ * migrated on the first start (the key goes into the keychain, verified by reading it back, then the IndexedDB copy is
+ * removed); a keychain that fails keeps or restores the browser's behaviour, which {@link CryptoStore.keyProtection}
+ * reports for Settings → App.
  */
 import { LocalKeyMismatchError, localAad, localStorageKey, type CryptoStatus, type KeyStore } from "@tavrn/e2ee";
 import { STORE_ACCOUNTS, STORE_SECRETS, idbDelete, idbGet, idbPut, openDb } from "./idb";
+import { platform } from "../platform";
+import type { PlatformKeystore } from "../platform/types";
 
 export { LocalKeyMismatchError, type CryptoStatus };
 
@@ -24,10 +34,18 @@ interface AccountRecord {
   account: string;
   deviceId: string;
   lockOnClose: boolean;
-  /** Persisted local key; absent with lock on close. */
+  /** Persisted local key (the browser, or the desktop app without a keychain); absent with lock on close. */
   key?: CryptoKey;
+  /** Desktop app: the local key is in the OS keychain. */
+  keychain?: boolean;
   master: Sealed;
 }
+
+/**
+ * Where the persisted local key of an account is: the OS keychain, IndexedDB because the keychain failed (desktop),
+ * IndexedDB (browser), nowhere (lock on close), or there is no local data.
+ */
+export type KeyProtection = "keychain" | "fallback" | "browser" | "lock_on_close" | "none";
 
 interface SecretRecord {
   account: string;
@@ -55,22 +73,23 @@ async function unseal(key: CryptoKey, account: string, name: string, sealed: Sea
   return new Uint8Array(plain);
 }
 
-/** Derives the local storage key of `deviceId` from the master secret as a non-extractable AES key. */
-async function deriveLocalKey(master: Uint8Array, deviceId: string): Promise<CryptoKey> {
-  const raw = await localStorageKey(master, deviceId);
-  try {
-    return await crypto.subtle.importKey("raw", raw as Uint8Array<ArrayBuffer>, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
-  } finally {
-    raw.fill(0);
-  }
+/** Imports raw key bytes as a non-extractable AES key. */
+function importLocalKey(raw: Uint8Array): Promise<CryptoKey> {
+  return crypto.subtle.importKey("raw", raw as Uint8Array<ArrayBuffer>, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
 }
+
+const sameBytes = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((x, i) => x === b[i]);
 
 /** The IndexedDB {@link KeyStore} of the web client, with "lock on close". */
 export class CryptoStore implements KeyStore {
   private dbPromise: Promise<IDBDatabase> | null = null;
   private current: Unlocked | null = null;
 
-  constructor(private readonly dbName = "tavrn-crypto") {}
+  /** `keychain`: the OS keychain of the desktop app (undefined in the browser). */
+  constructor(
+    private readonly dbName = "tavrn-crypto",
+    private readonly keychain: () => PlatformKeystore | undefined = () => platform().keystore,
+  ) {}
 
   private db(): Promise<IDBDatabase> {
     this.dbPromise ??= openDb(this.dbName).catch((e: unknown) => {
@@ -106,14 +125,94 @@ export class CryptoStore implements KeyStore {
   async resume(account: string): Promise<boolean> {
     if (this.current?.account === account) return true;
     const rec = await this.record(account);
-    if (!rec?.key) return false;
+    if (!rec) return false;
+    const key = rec.keychain ? await this.keyFromKeychain(account) : rec.key;
+    if (!key) return false;
+    let master: Uint8Array;
     try {
-      const master = await unseal(rec.key, account, MASTER, rec.master);
-      this.setCurrent({ account, deviceId: rec.deviceId, key: rec.key, master });
-      return true;
+      master = await unseal(key, account, MASTER, rec.master);
     } catch {
       return false;
     }
+    this.setCurrent({ account, deviceId: rec.deviceId, key, master });
+    // Desktop app: a key still in IndexedDB (a store of the browser kind, or an earlier fallback) moves now.
+    if (!rec.keychain && !rec.lockOnClose && this.keychain()) {
+      const raw = await localStorageKey(master, rec.deviceId);
+      try {
+        if (await this.toKeychain(account, raw)) {
+          delete rec.key;
+          rec.keychain = true;
+          await idbPut(await this.db(), STORE_ACCOUNTS, rec);
+        }
+      } finally {
+        raw.fill(0);
+      }
+    }
+    return true;
+  }
+
+  /** The local key from the keychain, or null (no entry, no keychain, or it failed). */
+  private async keyFromKeychain(account: string): Promise<CryptoKey | null> {
+    const kc = this.keychain();
+    if (!kc) return null;
+    let raw: Uint8Array | null;
+    try {
+      raw = await kc.get(account);
+    } catch {
+      return null;
+    }
+    if (!raw) return null;
+    try {
+      return await importLocalKey(raw);
+    } catch {
+      return null;
+    } finally {
+      raw.fill(0);
+    }
+  }
+
+  /** Stores the local key in the keychain and reads it back; false (nothing changes) when that does not work. */
+  private async toKeychain(account: string, raw: Uint8Array): Promise<boolean> {
+    const kc = this.keychain();
+    if (!kc) return false;
+    try {
+      await kc.set(account, raw);
+      const back = await kc.get(account);
+      const ok = !!back && sameBytes(back, raw);
+      back?.fill(0);
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Persists the local key of `rec`: in the keychain when there is one that works, else in IndexedDB. */
+  private async persistKey(rec: AccountRecord, raw: Uint8Array, key: CryptoKey): Promise<void> {
+    if (await this.toKeychain(rec.account, raw)) {
+      rec.keychain = true;
+      delete rec.key;
+    } else {
+      delete rec.keychain;
+      rec.key = key;
+    }
+  }
+
+  /** Removes the account's keychain entry; never fails (sign-out and lock on close must not depend on it). */
+  private async dropKeychainEntry(account: string): Promise<void> {
+    try {
+      await this.keychain()?.delete(account);
+    } catch {
+      /* the entry stays until the next save replaces it or the user removes it */
+    }
+  }
+
+  /** Where the persisted local key of the account is (Settings → App of the desktop app). */
+  async keyProtection(account: string): Promise<KeyProtection> {
+    const rec = await this.record(account);
+    if (!rec) return "none";
+    if (rec.lockOnClose) return "lock_on_close";
+    if (rec.keychain) return "keychain";
+    return this.keychain() ? "fallback" : "browser";
   }
 
   /**
@@ -124,11 +223,16 @@ export class CryptoStore implements KeyStore {
     const previous = await this.record(account);
     const lockOnClose = opts.lockOnClose ?? previous?.lockOnClose ?? false;
     if (previous) await this.wipe(account);
-    const key = await deriveLocalKey(master, deviceId);
-    const rec: AccountRecord = { account, deviceId, lockOnClose, master: await seal(key, account, MASTER, master) };
-    if (!lockOnClose) rec.key = key;
-    await idbPut(await this.db(), STORE_ACCOUNTS, rec);
-    this.setCurrent({ account, deviceId, key, master: master.slice() });
+    const raw = await localStorageKey(master, deviceId);
+    try {
+      const key = await importLocalKey(raw);
+      const rec: AccountRecord = { account, deviceId, lockOnClose, master: await seal(key, account, MASTER, master) };
+      if (!lockOnClose) await this.persistKey(rec, raw, key);
+      await idbPut(await this.db(), STORE_ACCOUNTS, rec);
+      this.setCurrent({ account, deviceId, key, master: master.slice() });
+    } finally {
+      raw.fill(0);
+    }
   }
 
   /**
@@ -138,15 +242,25 @@ export class CryptoStore implements KeyStore {
   async unlockWithMaster(account: string, master: Uint8Array): Promise<void> {
     const rec = await this.record(account);
     if (!rec) throw new Error("no local data for this account");
-    const key = await deriveLocalKey(master, rec.deviceId);
-    let stored: Uint8Array;
+    const raw = await localStorageKey(master, rec.deviceId);
     try {
-      stored = await unseal(key, account, MASTER, rec.master);
-    } catch {
-      throw new LocalKeyMismatchError();
+      const key = await importLocalKey(raw);
+      let stored: Uint8Array;
+      try {
+        stored = await unseal(key, account, MASTER, rec.master);
+      } catch {
+        throw new LocalKeyMismatchError();
+      }
+      stored.fill(0);
+      this.setCurrent({ account, deviceId: rec.deviceId, key, master: master.slice() });
+      // Desktop app: the keychain entry was missing or unreadable; store it again (or fall back to IndexedDB).
+      if (rec.keychain && !rec.lockOnClose) {
+        await this.persistKey(rec, raw, key);
+        await idbPut(await this.db(), STORE_ACCOUNTS, rec);
+      }
+    } finally {
+      raw.fill(0);
     }
-    stored.fill(0);
-    this.setCurrent({ account, deviceId: rec.deviceId, key, master: master.slice() });
   }
 
   isUnlocked(account?: string): boolean {
@@ -162,6 +276,7 @@ export class CryptoStore implements KeyStore {
   /** Deletes all local data of the account (logout) and locks if it was open. */
   async wipe(account: string): Promise<void> {
     if (this.current?.account === account) this.lock();
+    await this.dropKeychainEntry(account);
     const db = await this.db();
     await idbDelete(db, STORE_ACCOUNTS, account);
     await idbDelete(db, STORE_SECRETS, IDBKeyRange.bound([account, ""], [account, "￿"]));
@@ -177,8 +292,18 @@ export class CryptoStore implements KeyStore {
     const rec = await this.record(cur.account);
     if (!rec) throw new Error("no local data for this account");
     rec.lockOnClose = on;
-    if (on) delete rec.key;
-    else rec.key = cur.key;
+    if (on) {
+      delete rec.key;
+      if (rec.keychain) await this.dropKeychainEntry(cur.account);
+      delete rec.keychain;
+    } else {
+      const raw = await localStorageKey(cur.master, cur.deviceId);
+      try {
+        await this.persistKey(rec, raw, cur.key);
+      } finally {
+        raw.fill(0);
+      }
+    }
     await idbPut(await this.db(), STORE_ACCOUNTS, rec);
   }
 
