@@ -23,7 +23,7 @@ import { useT } from "../i18n";
 import { describeError } from "../stores/toasts";
 import { AuthCard } from "../components/auth/AuthCard";
 import { Button, ErrorText } from "../components/ui";
-import { deviceProofFor, forgetPrf, passkeyEntryIds, takePrf } from "../crypto/e2ee";
+import { deviceProofFor, forgetPrf, hasPendingPrf, passkeyEntryIds, takePrf } from "../crypto/e2ee";
 import { parseUnlockKey, sealForApp } from "../crypto/sealedUnlock";
 import { evaluatePrf, passkeysSupported } from "../lib/passkeys";
 import { checkCallback, completeRemoteSignIn, homeClient, hostOf, takePendingConnect, type PendingConnect } from "../lib/remoteSignIn";
@@ -250,6 +250,8 @@ function AppSessionConnect() {
       </p>
       <p className="mt-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-fg-1" data-testid="connect-warning">
         {t("connect.app_warning")}
+        {/* A passkey confirmation also hands the app the unlock of the encrypted messages: say so. */}
+        {appKey && (method === "passkey" || hasPendingPrf()) && <> {t("connect.app_unlock_note")}</>}
       </p>
       <ErrorText>{error}</ErrorText>
       <div className="mt-4 flex flex-col gap-2 sm:flex-row-reverse">

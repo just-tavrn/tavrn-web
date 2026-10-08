@@ -33,6 +33,11 @@ export function rememberPrf(credentialId: string, prf: Uint8Array) {
   pendingPrf = { credentialId, prf: prf.slice() };
 }
 
+/** Whether a passkey ceremony left a PRF output (without taking it). */
+export function hasPendingPrf(): boolean {
+  return pendingPrf !== null;
+}
+
 export function takePrf(): { credentialId: string; prf: Uint8Array } | null {
   const p = pendingPrf;
   pendingPrf = null;

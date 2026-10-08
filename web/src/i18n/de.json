@@ -2028,6 +2028,7 @@
   "connect.app_title": "Bei der Tavrn-App anmelden?",
   "connect.app_text": "Die App „{device}“ möchte sich als {address} anmelden.",
   "connect.app_warning": "Fahre nur fort, wenn du diese Anmeldung gerade eben selbst in deiner eigenen Tavrn-App begonnen hast. Die App erhält eine Sitzung deines Kontos als neues Gerät.",
+  "connect.app_unlock_note": "Dein Passkey entsperrt in dieser App auch deine verschlüsselten Nachrichten.",
   "connect.app_allow": "In der App anmelden",
   "connect.app_done": "Du bist angemeldet. Kehre zur Tavrn-App zurück.",
   "connect.app_close_hint": "Die App schließt dieses Fenster; im Browser kannst du den Tab schließen.",

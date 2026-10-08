@@ -312,6 +312,7 @@ describe("connect flow: app sessions of the desktop app (FEDERATION.md §8 step 
     useAuth.setState({ token: "local", refresh: "r", user: localUser, deviceId: "D", home: null });
     rememberPrf("Y3JlZA", new Uint8Array(32).fill(5));
     renderAt(sessionUrl());
+    expect(await screen.findByTestId("connect-warning")).not.toHaveTextContent("entsperrt in dieser App");
     await userEvent.setup().click(await screen.findByRole("button", { name: "In der App anmelden" }));
     await screen.findByTestId("connect-done");
     expect(calls.find((c) => c.url.endsWith("/auth/connect/code"))!.body).not.toHaveProperty("sealed_unlock");
@@ -328,6 +329,8 @@ describe("connect flow: app sessions of the desktop app (FEDERATION.md §8 step 
     expect(await screen.findByText("Anmeldung mit Passkey…")).toBeInTheDocument();
     expect(screen.queryByLabelText("Passwort")).toBeNull();
     ceremony({ session: { ...session, user: localUser, access_token: "local-acc" } as never, credentialId: "Y3JlZA", prf: new Uint8Array(32).fill(5) });
+    // The warning says that the passkey also unlocks the app's encrypted messages.
+    expect(await screen.findByTestId("connect-warning")).toHaveTextContent("Dein Passkey entsperrt in dieser App auch deine verschlüsselten Nachrichten.");
     await userEvent.setup().click(await screen.findByRole("button", { name: "In der App anmelden" }));
     expect(await screen.findByTestId("connect-done")).toHaveTextContent("Passkey entsperrt die App");
     expect(passkeyLogin).toHaveBeenCalledTimes(1);

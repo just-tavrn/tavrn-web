@@ -2028,6 +2028,7 @@
   "connect.app_title": "Sign in to the Tavrn app?",
   "connect.app_text": "The app “{device}” asks to sign in as {address}.",
   "connect.app_warning": "Only continue if you started this sign-in yourself, just now, in your own Tavrn app. The app gets a session of your account as a new device.",
+  "connect.app_unlock_note": "Your passkey also unlocks your encrypted messages in this app.",
   "connect.app_allow": "Sign in to the app",
   "connect.app_done": "You are signed in. Return to the Tavrn app.",
   "connect.app_close_hint": "The app closes this window; in a browser you can close the tab.",
