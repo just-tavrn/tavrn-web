@@ -61,11 +61,22 @@ pub fn set_node_with(settings: &Settings, url: &str, web: Option<&str>, domain: 
     if domain.as_deref().is_some_and(|d| !config::valid_identity_domain(d)) {
         return Err("node_url.domain".into());
     }
+    update_config(settings, |c| {
+        c.node = Some(node.clone());
+        c.web = web;
+        c.domain = domain;
+    })?;
+    Ok(node)
+}
+
+/// Changes the settings and writes them; the settings in memory change only when the file was written.
+pub fn update_config(settings: &Settings, change: impl FnOnce(&mut config::Config)) -> Result<(), String> {
     let mut current = settings.config.lock().map_err(|_| "config.unavailable".to_string())?;
-    let next = config::Config { node: Some(node.clone()), web, domain };
+    let mut next = current.clone();
+    change(&mut next);
     config::save(&settings.path, &next).map_err(|e| format!("config.write_failed: {e}"))?;
     *current = next;
-    Ok(node)
+    Ok(())
 }
 
 #[tauri::command]
@@ -179,7 +190,19 @@ mod tests {
         assert_eq!(config::load(&s.path).domain.as_deref(), Some("tavrn.example"), "refusals keep the old settings");
         // The node URL alone (the advanced picker) forgets the old node's details.
         assert!(set_node_in(&s, "https://other.example").is_ok());
-        assert_eq!(config::load(&s.path), config::Config { node: Some("https://other.example".into()), web: None, domain: None });
+        assert_eq!(config::load(&s.path), config::Config { node: Some("https://other.example".into()), web: None, domain: None, close_to_tray: None });
+        let _ = std::fs::remove_dir_all(s.path.parent().unwrap_or(&s.path));
+    }
+
+    #[test]
+    fn changing_one_setting_keeps_the_others() {
+        let s = settings("keep");
+        assert!(set_node_in(&s, "https://tavrn.example").is_ok());
+        assert_eq!(update_config(&s, |c| c.close_to_tray = Some(false)), Ok(()));
+        assert!(set_node_in(&s, "https://other.example").is_ok());
+        let stored = config::load(&s.path);
+        assert_eq!(stored.node.as_deref(), Some("https://other.example"));
+        assert_eq!(stored.close_to_tray, Some(false));
         let _ = std::fs::remove_dir_all(s.path.parent().unwrap_or(&s.path));
     }
 

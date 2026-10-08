@@ -81,9 +81,20 @@ fn the_capability_grants_only_the_app_commands_to_the_main_window() {
             "allow-install-update",
             "allow-resolve-node",
             "allow-open-connect",
-            "allow-close-connect"
+            "allow-close-connect",
+            "allow-keychain-get",
+            "allow-keychain-set",
+            "allow-keychain-delete",
+            "allow-keychain-status",
+            "allow-notify",
+            "allow-shell-events",
+            "allow-tray-set",
+            "allow-tray-status",
+            "allow-set-close-to-tray",
+            "allow-quit-app",
         ]
     );
+    assert!(permissions.iter().all(|p| p.starts_with("allow-")), "no plugin or core permissions: the shell's own commands only");
     assert_eq!(conf()["app"]["security"]["capabilities"], serde_json::json!(["main"]));
 }
 
@@ -126,4 +137,32 @@ fn updates_come_from_the_github_releases_and_are_signed() {
 #[test]
 fn installers_for_linux_and_windows() {
     assert_eq!(conf()["bundle"]["targets"], serde_json::json!(["deb", "appimage", "msi", "nsis"]));
+}
+
+#[test]
+fn the_installers_show_the_licence_and_terms() {
+    let c = conf();
+    assert_eq!(c["bundle"]["licenseFile"], "../LICENSE.txt", "NSIS shows it as the licence page to accept, the MSI as its licence dialog");
+    let text = include_str!("../../LICENSE.txt");
+    assert!(text.len() > 10_000, "the licence file is the Apache-2.0 text, the NOTICE and the terms");
+    for part in ["Apache License", "Version 2.0, January 2004", "Terms of use and privacy notice for the Tavrn desktop app", "https://tavrn.org", "github.com"]
+    {
+        assert!(text.contains(part), "LICENSE.txt lacks {part:?}");
+    }
+    // .deb has no accept step: the same file is shipped in the package.
+    assert_eq!(c["bundle"]["linux"]["deb"]["files"]["/usr/share/doc/tavrn/LICENSE.txt"], "../LICENSE.txt");
+}
+
+#[test]
+fn the_icons_of_the_bundle_exist() {
+    let icons = conf()["bundle"]["icon"].as_array().cloned().unwrap_or_default();
+    assert!(icons.len() >= 5, "PNG sizes for Linux, .ico for Windows, .icns for macOS");
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    for icon in &icons {
+        let path = dir.join(icon.as_str().unwrap_or_default());
+        assert!(std::fs::metadata(&path).is_ok_and(|m| m.len() > 0), "missing icon {}", path.display());
+    }
+    for kind in [".png", ".ico", ".icns"] {
+        assert!(icons.iter().any(|i| i.as_str().is_some_and(|i| i.ends_with(kind))), "no {kind} icon");
+    }
 }

@@ -2,14 +2,16 @@
 /**
  * Notification settings of the account (design note 4.11): the global level (all / mentions only / nothing),
  * sound, browser notifications (the permission prompt only appears after a click here), and the rooms,
- * channels and DMs with their own settings or a mute, which can be reset.
+ * channels and DMs with their own settings or a mute, which can be reset. The desktop app has no web push and no
+ * browser permission: it offers its native notifications instead (a switch of this device, docs/DESKTOP.md).
  */
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { RoomDetail } from "@tavrn/sdk";
 import { intlLocale, useT } from "../../i18n";
 import { FOREVER, mutedNow, setGlobalSetting, useNotifications, type NotificationMode } from "../../stores/notifications";
-import { browserNotificationsSupported, playNotifySound, requestBrowserPermission } from "../../lib/notify";
+import { browserNotificationsSupported, desktopNotificationsEnabled, playNotifySound, requestBrowserPermission, setDesktopNotifications } from "../../lib/notify";
+import { platform } from "../../platform";
 import { channelName } from "../../lib/names";
 import { Button, Field } from "../../components/ui";
 import { Section, Select } from "./common";
@@ -24,6 +26,8 @@ export function NotificationsTab() {
   const source = useNotifications((s) => s.source);
   const queryClient = useQueryClient();
   const [permission, setPermission] = useState<string>(browserNotificationsSupported() ? Notification.permission : "unsupported");
+  const desktop = !!platform().notifications;
+  const [nativeOn, setNativeOn] = useState(desktopNotificationsEnabled);
   // Names of rooms and channels the client knows (room details in the cache).
   const rooms = queryClient.getQueriesData<RoomDetail>({ queryKey: ["room"] }).map(([, r]) => r).filter((r): r is RoomDetail => !!r?.channels);
   const roomName = (id: string) => rooms.find((r) => r.id === id)?.name ?? id;
@@ -67,31 +71,50 @@ export function NotificationsTab() {
             {t("notify.sound_preview")}
           </Button>
         </div>
-        <label className="flex items-start gap-2 text-sm">
-          <input
-            type="checkbox"
-            className="mt-0.5 h-4 w-4"
-            checked={settings.global.browser && permission === "granted"}
-            disabled={permission === "unsupported" || permission === "denied"}
-            data-testid="notify-browser"
-            onChange={async (e) => {
-              if (!e.target.checked) return setGlobalSetting({ browser: false });
-              // The browser asks only now, after the click (never on page load).
-              const result = await requestBrowserPermission();
-              setPermission(result);
-              setGlobalSetting({ browser: result === "granted" });
-            }}
-          />
-          <span>
-            {t("notify.browser")}
-            <span className="block text-xs text-fg-2">{permission === "denied" ? t("notify.browser_denied") : permission === "unsupported" ? t("notify.browser_unsupported") : t("notify.browser_hint")}</span>
-          </span>
-        </label>
+        {desktop ? (
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4"
+              checked={nativeOn}
+              data-testid="notify-desktop"
+              onChange={(e) => {
+                setDesktopNotifications(e.target.checked);
+                setNativeOn(e.target.checked);
+              }}
+            />
+            <span>
+              {t("notify.desktop")}
+              <span className="block text-xs text-fg-2">{t("notify.desktop_hint")}</span>
+            </span>
+          </label>
+        ) : (
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4"
+              checked={settings.global.browser && permission === "granted"}
+              disabled={permission === "unsupported" || permission === "denied"}
+              data-testid="notify-browser"
+              onChange={async (e) => {
+                if (!e.target.checked) return setGlobalSetting({ browser: false });
+                // The browser asks only now, after the click (never on page load).
+                const result = await requestBrowserPermission();
+                setPermission(result);
+                setGlobalSetting({ browser: result === "granted" });
+              }}
+            />
+            <span>
+              {t("notify.browser")}
+              <span className="block text-xs text-fg-2">{permission === "denied" ? t("notify.browser_denied") : permission === "unsupported" ? t("notify.browser_unsupported") : t("notify.browser_hint")}</span>
+            </span>
+          </label>
+        )}
         <p className="text-xs text-fg-2" data-testid="mentions-privacy">
           {t("notify.mentions_privacy")}
         </p>
       </Section>
-      <PushSection />
+      {!desktop && <PushSection />}
       <AccessibilitySection />
       <Section title={t("notify.overrides")} description={t("notify.overrides_hint")}>
         {overrides.length === 0 && <p className="text-sm text-fg-2">{t("notify.overrides_none")}</p>}

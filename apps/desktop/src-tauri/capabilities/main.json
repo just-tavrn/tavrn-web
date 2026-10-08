@@ -12,6 +12,16 @@
     "allow-install-update",
     "allow-resolve-node",
     "allow-open-connect",
-    "allow-close-connect"
+    "allow-close-connect",
+    "allow-keychain-get",
+    "allow-keychain-set",
+    "allow-keychain-delete",
+    "allow-keychain-status",
+    "allow-notify",
+    "allow-shell-events",
+    "allow-tray-set",
+    "allow-tray-status",
+    "allow-set-close-to-tray",
+    "allow-quit-app"
   ]
 }

@@ -35,6 +35,7 @@ import { useRoomMenu } from "../components/menus/RoomMenu";
 import { useVoiceRealtime } from "../voice/useVoiceRealtime";
 import { originUrl, platform } from "../platform";
 import { announceUpdate } from "../platform/updates";
+import { startDesktopShell } from "../platform/desktopShell";
 import { useToasts } from "../stores/toasts";
 
 /** Renewal check for federated sessions (before the 7-day cap). */
@@ -258,6 +259,17 @@ function useUpdateAnnouncement() {
  * Notification settings of the account (home node, local storage when the node has no route yet) and the
  * navigation target of browser notifications (design note 4.11).
  */
+/** Desktop app: the tray follows the voice connection, its menu and clicked notifications act here (docs/DESKTOP.md). */
+function useDesktopShell(address: string | undefined) {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    const { tray, notifications } = platform();
+    if (!tray && !notifications) return;
+    return startDesktopShell({ tray, notifications, queryClient, self: address ?? null, navigate: (path) => navigate(path) });
+  }, [navigate, queryClient, address]);
+}
+
 function useNotificationSetup(token: string | null, address: string | undefined) {
   const navigate = useNavigate();
   useEffect(() => {
@@ -338,6 +350,7 @@ export function AppLayout() {
   useVoiceRealtime();
   useNodeHousekeeping(token, address);
   useNotificationSetup(token, address);
+  useDesktopShell(address);
   useUpdateAnnouncement();
   usePrivacySetup(token, address);
   const { node: nodeParam, roomId, conversationId } = useParams();
