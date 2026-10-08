@@ -58,6 +58,7 @@ import { DEFAULT_GRACE_MS, RejoinSchedule } from "./reconnect";
 import { playCue, type Cue } from "./cues";
 import { setIcePolicy } from "./ice";
 import { hotkeyHeld } from "./hotkeys";
+import { PttCues } from "./pttCues";
 import type { BackgroundHandle } from "./background";
 
 /** LiveKit must confirm encryption for this device within this time, else nothing is published. */
@@ -101,6 +102,8 @@ interface Session {
   offs: Array<() => void>;
   /** The push-to-talk key (or the hold button) is held. */
   pttHeld: boolean;
+  /** The tones of push-to-talk and the priority key (issue #37). */
+  pttCues: PttCues;
   leaving: boolean;
   /** Mute state to restore when undeafening. */
   mutedBeforeDeafen: boolean;
@@ -712,6 +715,13 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
       offs: [],
       // A hotkey held while joining keeps transmitting from the start.
       pttHeld: hotkeyHeld("push_to_talk"),
+      pttCues: new PttCues((c) => cue(c, true), {
+        // Not while the server keeps the microphone closed or the user muted it: nothing would be sent.
+        allowed: () => {
+          const v = useVoice.getState();
+          return v.canSpeak && !v.serverMuted && !v.muted;
+        },
+      }),
       leaving: false,
       mutedBeforeDeafen: false,
       clips: new Map(),
@@ -727,6 +737,7 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
       signals: new SignalLimiter(),
     };
     current = s;
+    s.pipeline.onPtt = (open) => s.pttCues.mic(open);
     if (s.pttHeld) applyPtt(s);
     // Re-key on every epoch change of the group from now on; an epoch that changed since the key above was
     // derived is picked up right away.
@@ -1011,6 +1022,7 @@ export async function setPriority(on: boolean): Promise<void> {
   if (useVoice.getState().prioritySelf === on) return;
   set({ prioritySelf: on });
   publishPriority(s);
+  s.pttCues.priority(on);
   applyPtt(s);
   try {
     await local.setAttributes({ priority: on ? "1" : "" });
@@ -1019,6 +1031,8 @@ export async function setPriority(on: boolean): Promise<void> {
     if (on && current === s) {
       set({ prioritySelf: false });
       publishPriority(s);
+      s.pttCues.priority(false);
+      applyPtt(s);
     }
   }
 }

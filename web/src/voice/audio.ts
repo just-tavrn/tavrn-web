@@ -48,6 +48,8 @@ export class MicPipeline {
   private pttTimer: ReturnType<typeof setTimeout> | null = null;
   /** Push-to-talk holds the gate open (key down or within the release delay). */
   private pttOpen = false;
+  /** Hears the push-to-talk gate open and close (the push-to-talk cues, issue #37). */
+  onPtt: ((open: boolean) => void) | null = null;
   private closed = false;
   /** Music mode: no microphone processing, two channels when the device has them. */
   private readonly music: boolean;
@@ -125,7 +127,7 @@ export class MicPipeline {
     await this.wire(!this.music && settings.noiseSuppression === "rnnoise");
     this.input.gain.value = settings.inputVolume / 100;
     this.gate.port.postMessage({ threshold: gateThreshold(settings), holdMs: settings.inputMode === "ptt" ? 0 : 300 });
-    if (settings.inputMode !== "ptt") this.pttOpen = false;
+    if (settings.inputMode !== "ptt") this.setPttOpen(false);
     this.gate.port.postMessage({ mode: settings.inputMode === "ptt" ? (this.pttOpen ? "open" : "closed") : "auto" });
   }
 
@@ -163,15 +165,21 @@ export class MicPipeline {
     if (this.pttTimer) clearTimeout(this.pttTimer);
     this.pttTimer = null;
     if (pressed) {
-      this.pttOpen = true;
+      this.setPttOpen(true);
       this.gate.port.postMessage({ mode: "open" });
       return;
     }
     this.pttTimer = setTimeout(() => {
       this.pttTimer = null;
-      this.pttOpen = false;
+      this.setPttOpen(false);
       this.gate.port.postMessage({ mode: "closed" });
     }, this.settings.pttReleaseMs);
+  }
+
+  private setPttOpen(open: boolean): void {
+    if (open === this.pttOpen) return;
+    this.pttOpen = open;
+    this.onPtt?.(open);
   }
 
   /**

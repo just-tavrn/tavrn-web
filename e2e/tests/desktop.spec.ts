@@ -7,7 +7,7 @@
  */
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { NODE, createRoomViaApi, loginAs, nextTotpCode, registerViaApi, registerViaUi, tokenOf, type Account } from "./helpers";
-import { FAKE_MEDIA } from "./voice-helpers";
+import { FAKE_MEDIA, cues } from "./voice-helpers";
 
 // The hotkey test joins a voice channel: Chromium's fake microphone, no permission prompts.
 test.use({ launchOptions: { args: FAKE_MEDIA }, permissions: ["microphone", "camera"] });
@@ -290,6 +290,14 @@ test.describe("Desktop app: hotkeys (simulated shell)", () => {
     await expect(mute).toHaveAttribute("aria-pressed", "true");
     await page.keyboard.press("Control+Shift+KeyM");
     await expect(mute).toHaveAttribute("aria-pressed", "false");
+    // Push-to-talk (the left Ctrl alone): a rising tone when the microphone opens, a falling one when it closes.
+    const pttTones = async () => (await cues(page)).filter((c) => c.cue === "ptt_on" || c.cue === "ptt_off").length;
+    const before = await pttTones();
+    await page.keyboard.down("ControlLeft");
+    await page.waitForTimeout(150);
+    await page.keyboard.up("ControlLeft");
+    await expect.poll(pttTones).toBe(before + 2);
+    expect((await cues(page)).slice(-2).map((c) => c.cue)).toEqual(["ptt_on", "ptt_off"]);
     await page.getByTestId("voice-leave").click();
   });
 });

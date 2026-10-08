@@ -484,6 +484,10 @@ test.describe("Voice channels", () => {
     await page.getByTestId("cues-off").uncheck();
     await expect(page.getByTestId("cue-leave")).toBeChecked();
     await expect(page.getByTestId("cue-join")).not.toBeChecked();
+    // Push-to-talk and priority speaker tones (issue #37): a switch each, on by default; the preview plays.
+    for (const cue of ["ptt_on", "ptt_off", "priority_on", "priority_off"]) await expect(page.getByTestId(`cue-${cue}`)).toBeChecked();
+    await page.getByRole("button", { name: "Abspielen: Push-to-Talk: Mikrofon geht auf", exact: true }).click();
+    await expect.poll(async () => (await scheduledCues(page)).some((c) => c.cue === "ptt_on")).toBe(true);
 
     // Settings persist per device.
     await page.reload();

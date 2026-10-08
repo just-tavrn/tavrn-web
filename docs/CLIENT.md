@@ -87,8 +87,9 @@ five seconds), a test tone, input/output volume, automatic gain, echo cancellati
 with a live "transmitting" light or push-to-talk (key and release delay), camera with preview, resolution and
 frame rate within the node's limits, mirroring and background blur (strength slider, quality fast/balanced/high
 with mask smoothing) or an image (MediaPipe served by the node, turned off automatically on machines that cannot
-keep up, with the measured numbers), soft notification sounds (join, leave, mute, deafen, streams, connection;
-volume and a switch per sound), the ringtone volume, and a **connection test** that tries every path to the
+keep up, with the measured numbers), soft notification sounds (join, leave, mute, deafen, streams, connection, and a soft rising and falling
+tone when push-to-talk or the priority key opens and closes the microphone, heard only by you, never while the server
+keeps the microphone closed; volume and a switch per sound), the ringtone volume, and a **connection test** that tries every path to the
 node's media server (UDP per address, TCP, TURN) and says what to fix when one fails. Room owners upload soundboard clips under room
 settings → Soundboard; members with `use_soundboard` play them from the call controls into their own
 (encrypted) microphone track. LiveKit, RNNoise and the background effects are only loaded once voice is used.
