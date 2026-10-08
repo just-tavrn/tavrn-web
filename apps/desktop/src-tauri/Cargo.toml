@@ -25,6 +25,10 @@ tauri-plugin-opener = "2.7"
 tauri-plugin-updater = "2.13"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Address first (src/resolve.rs): the discovery document over rustls (the updater's TLS stack) and SRV records.
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+hickory-resolver = { version = "0.26", default-features = false, features = ["tokio", "system-config"] }
 # OS keychain (keyring ecosystem: the core API with its in-memory mock store, plus the platform stores below).
 keyring-core = "1"
 # Native notifications (the backend of tauri-plugin-notification, used directly for the click on Linux).

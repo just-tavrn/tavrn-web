@@ -12,6 +12,7 @@ pub mod guard;
 pub mod keychain;
 pub mod node_url;
 pub mod notify;
+pub mod resolve;
 pub mod tray;
 pub mod updater;
 
@@ -21,10 +22,46 @@ mod conf_tests;
 use std::sync::Arc;
 
 use tauri::webview::NewWindowResponse;
-use tauri::{Manager, Url, WebviewWindowBuilder, WindowEvent};
+use tauri::{AppHandle, Manager, Runtime, Url, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
-/// Label of the only window; capabilities/main.json applies to it.
+/// Label of the app's window; capabilities/main.json applies to it (and only to it).
 pub const MAIN_WINDOW: &str = "main";
+/// Label of the sign-in window: the node's own `/connect` page, without any capability (docs/DESKTOP.md "Signing in").
+pub const CONNECT_WINDOW: &str = "connect";
+
+fn open_link(link: String) {
+    let _ = tauri_plugin_opener::open_url(link, None::<&str>);
+}
+
+/// Shows `url` (validated by `guard::connect_url`) in the sign-in window, creating it on first use.
+pub fn open_connect_window<R: Runtime>(app: &AppHandle<R>, url: Url) -> tauri::Result<()> {
+    if let Some(window) = app.get_webview_window(CONNECT_WINDOW) {
+        window.navigate(url)?;
+        window.show()?;
+        return window.set_focus();
+    }
+    let dev_url: Option<Url> = if cfg!(dev) { app.config().build.dev_url.clone() } else { None };
+    WebviewWindowBuilder::new(app, CONNECT_WINDOW, WebviewUrl::External(url))
+        .title("Tavrn")
+        .inner_size(520.0, 760.0)
+        .min_inner_size(360.0, 480.0)
+        .on_navigation(move |url| match guard::connect_navigation(url, dev_url.as_ref()) {
+            guard::Navigation::Allow => true,
+            guard::Navigation::External(link) => {
+                open_link(link);
+                false
+            }
+            guard::Navigation::Deny => false,
+        })
+        .on_new_window(|url, _features| {
+            if let Some(link) = guard::new_window(&url) {
+                open_link(link);
+            }
+            NewWindowResponse::Deny
+        })
+        .build()?;
+    Ok(())
+}
 
 pub fn run() {
     let builder = tauri::Builder::default();
@@ -42,6 +79,9 @@ pub fn run() {
             commands::open_external,
             commands::check_update,
             commands::install_update,
+            commands::resolve_node,
+            commands::open_connect,
+            commands::close_connect,
             keychain::keychain_get,
             keychain::keychain_set,
             keychain::keychain_delete,

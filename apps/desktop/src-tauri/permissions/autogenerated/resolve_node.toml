@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-resolve-node"
+description = "Enables the resolve_node command without any pre-configured scope."
+commands.allow = ["resolve_node"]
+
+[[permission]]
+identifier = "deny-resolve-node"
+description = "Denies the resolve_node command without any pre-configured scope."
+commands.deny = ["resolve_node"]
