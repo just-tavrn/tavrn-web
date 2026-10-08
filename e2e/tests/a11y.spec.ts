@@ -140,6 +140,20 @@ test.describe("Accessibility (axe, WCAG 2.2 AA)", () => {
       await expect(page.getByTestId("message").filter({ hasText: "Ein Bild" })).toBeVisible();
     }
 
+    // The room header's menu (one button: icon, name, chevron) and the account menu of the account bar.
+    await openNavIfMobile(page);
+    await page.getByTestId("room-header-menu").click();
+    await expect(page.getByTestId("room-menu")).toBeVisible();
+    await scan(page, "room header menu");
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("room-menu")).toHaveCount(0);
+    await page.getByTestId("presence-menu-button").click();
+    await expect(page.getByTestId("presence-menu")).toBeVisible();
+    await scan(page, "account menu");
+    await page.keyboard.press("Escape");
+    await page.goto(`/rooms/${room.id}/channels/${channel.id}`);
+    await expect(page.getByTestId("message").filter({ hasText: "Ein Bild" })).toBeVisible();
+
     // Composer with the emoji picker.
     await expect(page.getByLabel("Nachricht", { exact: true })).toBeEnabled({ timeout: 20_000 });
     await page.getByRole("button", { name: "Emoji einfügen" }).click();
@@ -266,6 +280,11 @@ test.describe("Accessibility (axe, WCAG 2.2 AA)", () => {
     await scan(page, "voice channel (joined)");
     await page.getByTestId("voice-mute").click();
     await scan(page, "voice channel (muted)");
+    // The voice bar with the padlock in the signal bars and the account bar below it (in the drawer on phones).
+    await openNavIfMobile(page);
+    await expect(page.getByTestId("voice-bar-signal")).toBeVisible();
+    await expect(page.getByTestId("voice-bar-signal")).toHaveAccessibleName(/^Verschlüsselt · Verbindung/);
+    await scan(page, "voice bar and account bar");
   });
 
   test("keyboard: skip link, focus trap and return in dialogs, pickers and the media viewer", async ({ page, request }) => {
@@ -349,8 +368,19 @@ test.describe("Accessibility (axe, WCAG 2.2 AA)", () => {
   });
 
   test("admin page", async ({ page, request }) => {
+    // Nine admin tabs plus the account menu and the settings navigation: more than the default 30 s on phones.
+    test.setTimeout(90_000);
     const admin = await adminAccount(request);
     await loginAs(page, admin);
+    // The account menu of a node admin (with the node administration) and the settings navigation with its link.
+    await page.goto("/");
+    await openNavIfMobile(page);
+    await page.getByTestId("presence-menu-button").click();
+    await expect(page.getByTestId("presence-admin")).toBeVisible();
+    await scan(page, "account menu (node admin)");
+    await page.goto("/settings/profile");
+    await expect(page.getByTestId("settings-admin-link")).toBeVisible();
+    await scan(page, "user settings (node admin)");
     for (const tab of ["overview", "users", "invites", "bans", "entitlements", "tokens", "applications", "federation", "audit"]) {
       await page.goto(`/admin/${tab}`);
       await expect(page.getByRole("heading", { level: 1 })).toBeVisible();

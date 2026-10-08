@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
- * The context menu of a room in the rail (design note 4.11): mark as read, notification settings, invite,
- * settings, leave. The room detail (channels, permissions) is loaded when the menu opens.
+ * The context menu of a room in the rail and of the room header in the sidebar (design note 4.11): invite,
+ * settings, mark as read, notification settings, leave. The room detail (channels, permissions) is loaded when the menu opens.
  */
 import { useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -23,8 +23,11 @@ import { useCapabilities } from "../../moderation/hooks";
 import { ReportDialog } from "../../moderation/ReportDialog";
 import { useAuth } from "../../stores/auth";
 
-/** `node` = domain of the room's node, null for the home node. */
-export function useRoomMenu(room: Pick<Room, "id" | "name">, node: string | null): { menu: ContextMenuTrigger; overlay: ReactNode } {
+/**
+ * `node` = domain of the room's node, null for the home node. `openReports`: the moderators' open reports (badge
+ * text) from the room header; "Room settings" then shows the count and opens the report inbox.
+ */
+export function useRoomMenu(room: Pick<Room, "id" | "name">, node: string | null, { openReports = null }: { openReports?: string | null } = {}): { menu: ContextMenuTrigger; overlay: ReactNode } {
   const t = useT();
   const menu = useContextMenu();
   const client = apiFor(node);
@@ -52,7 +55,7 @@ export function useRoomMenu(room: Pick<Room, "id" | "name">, node: string | null
 
   const entries = menu.open
     ? roomMenu(
-        { unread, canInvite: hasPermission(perms, Permission.CREATE_INVITES), isOwner: !!detail.data?.is_owner, notify: notify.state, canReport },
+        { unread, canInvite: hasPermission(perms, Permission.CREATE_INVITES), isOwner: !!detail.data?.is_owner, notify: notify.state, canReport, openReports },
         {
           ...notify.actions,
           markRead: () =>
@@ -62,7 +65,7 @@ export function useRoomMenu(room: Pick<Room, "id" | "name">, node: string | null
           invite: () => setDialog("invite"),
           settings: () => {
             closeNav();
-            navigate(roomPath(node, room.id, undefined, "settings"));
+            navigate(roomPath(node, room.id, undefined, openReports ? "settings/reports" : "settings"));
           },
           leave: () => setDialog("leave"),
           copyId: () => void copyWithToast(room.id, t("menu.copied")),

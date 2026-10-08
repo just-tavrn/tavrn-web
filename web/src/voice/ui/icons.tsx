@@ -1,16 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-/** Small stroke icons for the voice UI (24×24 viewBox, `currentColor`). */
-import type { ReactNode } from "react";
+/** Small stroke icons for the voice UI on the client's icon base (`components/icons.tsx`). */
+import { Svg, type IconProps } from "../../components/icons";
 
-function Svg({ size = 18, children, className = "" }: { size?: number; children: ReactNode; className?: string }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={`shrink-0 ${className}`}>
-      {children}
-    </svg>
-  );
-}
-
-type IconProps = { size?: number; className?: string };
+export { GearIcon } from "../../components/icons";
 
 export const MicIcon = (p: IconProps) => (
   <Svg {...p}>
@@ -90,14 +82,6 @@ export const ExpandIcon = (p: IconProps) => (
   </Svg>
 );
 
-export const GearIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <circle cx="12" cy="12" r="3" />
-    <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
-  </Svg>
-);
-
-/** Connection quality as three bars (`level` 0–3). */
 /** Priority speaker (design note 4.13 item 3). */
 export const MegaphoneIcon = (p: IconProps) => (
   <Svg {...p}>
@@ -106,12 +90,28 @@ export const MegaphoneIcon = (p: IconProps) => (
   </Svg>
 );
 
-export function SignalBars({ level, className = "" }: { level: number; className?: string }) {
+/**
+ * Connection quality as three bars (`level` 0–3). `locked`: the end-to-end encrypted variant with a small padlock
+ * at the bottom right (16 px; the caller names both, encryption and quality, in its text alternative).
+ */
+export function SignalBars({ level, className = "", locked = false }: { level: number; className?: string; locked?: boolean }) {
+  if (!locked)
+    return (
+      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" className={`shrink-0 ${className}`}>
+        {[0, 1, 2].map((i) => (
+          <rect key={i} data-bar={i} x={1 + i * 4.5} y={9 - i * 3.5} width="3" height={4 + i * 3.5} rx="0.8" fill="currentColor" opacity={i < level ? 1 : 0.25} />
+        ))}
+      </svg>
+    );
   return (
-    <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" className={`shrink-0 ${className}`}>
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false" className={`shrink-0 ${className}`}>
       {[0, 1, 2].map((i) => (
-        <rect key={i} x={1 + i * 4.5} y={9 - i * 3.5} width="3" height={4 + i * 3.5} rx="0.8" fill="currentColor" opacity={i < level ? 1 : 0.25} />
+        <rect key={i} data-bar={i} x={0.5 + i * 3} y={10.5 - i * 3.5} width="2.2" height={4.5 + i * 3.5} rx="0.6" fill="currentColor" opacity={i < level ? 1 : 0.25} />
       ))}
+      <g data-testid="signal-lock">
+        <path d="M10.6 10V8.4a1.9 1.9 0 0 1 3.8 0V10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+        <rect x="9.6" y="10" width="5.8" height="5" rx="1" fill="currentColor" />
+      </g>
     </svg>
   );
 }

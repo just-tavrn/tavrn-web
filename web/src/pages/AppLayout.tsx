@@ -4,14 +4,13 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate, useParams } from "react-router";
 import { api, publicApi } from "../lib/api";
 import { useAuth } from "../stores/auth";
-import { useNodeRealtime, useRealtime, useRealtimeState } from "../hooks/useRealtime";
+import { useNodeRealtime, useRealtime } from "../hooks/useRealtime";
 import { useLocale, useT } from "../i18n";
 import { syncMailLocale } from "../lib/mailLocale";
 import { AppShell, useShell } from "../components/AppShell";
 import { Toaster } from "../components/Toaster";
 import { RoomIcon } from "../components/Avatar";
 import { CreateRoomDialog } from "../components/CreateRoomDialog";
-import { PresenceMenu } from "../components/PresenceMenu";
 import { NotificationBell } from "../components/NotificationCenter";
 import { useNotifications } from "../stores/notifications";
 import { usePush } from "../stores/push";
@@ -23,6 +22,7 @@ import { BrandIcon } from "../components/auth/Brand";
 import { NodeBanner, NodeScope, NodeSessionBanner, roomPath, useNode, useNodeUnreachable } from "../components/NodeScope";
 import { skipUnlockChosen } from "./EncryptionPage";
 import { ChannelSidebar } from "./ChannelSidebar";
+import { AccountBar } from "./AccountBar";
 import { MemberList } from "./MemberList";
 import { ConversationMembers, HomeSidebar, useConversations } from "./DirectMessages";
 import { useUnread } from "../stores/unread";
@@ -145,53 +145,6 @@ function RoomRail() {
         }}
       />
     </>
-  );
-}
-
-function StatusDot() {
-  const t = useT();
-  const status = useRealtimeState((s) => s.status);
-  const color = status === "ready" ? "bg-brand-mint" : status === "closed" ? "bg-danger" : "bg-warn";
-  const label = t(`shell.status.${status}`);
-  return (
-    <span className="flex items-center gap-1.5 text-xs text-fg-2" title={label} data-testid="ws-status" data-status={status}>
-      <span className={`inline-block h-2 w-2 rounded-full ${color}`} aria-hidden="true" />
-      {label}
-    </span>
-  );
-}
-
-function Footer() {
-  const t = useT();
-  const user = useAuth((s) => s.user);
-  const remoteHome = useAuth((s) => !!s.home);
-  const navigate = useNavigate();
-  const { closeNav } = useShell();
-  return (
-    <div className="flex items-center gap-1 border-t border-line bg-bg-0 p-2">
-      <PresenceMenu />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium" data-testid="me-name">
-          {user?.display_name}
-        </p>
-        {/* Signed in with an account of another node: its full address, domain included (design note 9d). */}
-        {remoteHome && (
-          <p className="truncate text-[11px] text-fg-2" data-testid="me-address" title={t("auth.remote_home_hint", { domain: user?.domain ?? "" })}>
-            {user?.address}
-          </p>
-        )}
-        <StatusDot />
-      </div>
-      {user?.is_node_admin && !remoteHome && (
-        <button type="button" aria-label={t("admin.link")} title={t("admin.link")} className="min-h-10 min-w-10 rounded-md text-fg-2 hover:bg-bg-3 hover:text-fg-0" onClick={() => { closeNav(); navigate("/admin"); }}>
-          🛠
-        </button>
-      )}
-      <NotificationBell />
-      <button type="button" aria-label={t("user.settings")} title={t("user.settings")} className="min-h-10 min-w-10 rounded-md text-fg-2 hover:bg-bg-3 hover:text-fg-0" onClick={() => { closeNav(); navigate("/settings"); }}>
-        ⚙
-      </button>
-    </div>
   );
 }
 
@@ -412,7 +365,7 @@ export function AppLayout() {
               )}
             </div>
             <VoiceBar />
-            <Footer />
+            <AccountBar />
           </div>
         }
         aside={

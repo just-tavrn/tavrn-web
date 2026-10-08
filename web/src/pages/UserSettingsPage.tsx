@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { TavrnApiError } from "@tavrn/sdk";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { NavLink, Navigate, useNavigate, useParams } from "react-router";
+import { Link, NavLink, Navigate, useNavigate, useParams } from "react-router";
 import { api } from "../lib/api";
 import { LOCALES, intlLocale, useLocale, useT } from "../i18n";
 import { describeError, toastError } from "../stores/toasts";
@@ -18,6 +18,8 @@ import { PersonalSoundsTab } from "./settings/PersonalSoundsTab";
 import { LegalTab } from "./settings/LegalTab";
 import { AppTab } from "./settings/AppTab";
 import { platform } from "../platform";
+import { useAuth } from "../stores/auth";
+import { WrenchIcon } from "../components/icons";
 
 const TABS = ["profile", "privacy", "security", "voice", "notifications", "emojis", "sounds", "applications", "language", "devices", "legal", "app"] as const;
 /** Tabs of this platform: "app" (home node, updates) only in the desktop app. */
@@ -27,6 +29,7 @@ export function UserSettingsPage() {
   const t = useT();
   const { tab = "profile" } = useParams();
   const navigate = useNavigate();
+  const admin = useAuth((s) => !!s.user?.is_node_admin && !s.home);
   if (!tabs().includes(tab as (typeof TABS)[number])) return <Navigate to="/settings/profile" replace />;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -38,6 +41,16 @@ export function UserSettingsPage() {
       </header>
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <nav aria-label={t("settings.sections")} className="flex shrink-0 gap-1 overflow-x-auto border-b border-line p-2 md:w-48 md:flex-col md:border-b-0 md:border-r">
+          {admin && (
+            <>
+              {/* Node admins of the home node: the node administration at the top (also in the account menu). */}
+              <Link to="/admin" title={t("admin.link_hint")} className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-md border border-line bg-bg-1 px-3 py-2 text-sm font-medium text-fg-0 hover:bg-bg-3" data-testid="settings-admin-link">
+                <WrenchIcon size={16} className="text-accent" />
+                {t("admin.link")}
+              </Link>
+              <div role="separator" className="mx-1 w-px shrink-0 bg-line md:mx-0 md:my-1 md:h-px md:w-auto" />
+            </>
+          )}
           {tabs().map((x) => (
             <NavLink key={x} to={`/settings/${x}`} className={({ isActive }) => `whitespace-nowrap rounded-md px-3 py-2 text-sm ${isActive ? "bg-accent-soft text-fg-0" : "text-fg-1 hover:bg-bg-3/60 hover:text-fg-0"}`}>
               {t(`user.tab.${x}`)}

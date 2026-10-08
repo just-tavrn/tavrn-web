@@ -262,6 +262,21 @@ describe("notification and list menus", () => {
     expect(ids(channelMenu({ kind: "text", unread: false, canManage: false, system: false, voiceMove, notify }, actions, t))).not.toContain("move-here");
   });
 
+  it("puts invite and settings first; open reports show on the settings entry", () => {
+    const actions = { ...notifyActions, setSuppressEveryone: vi.fn(), markRead: vi.fn(), invite: vi.fn(), settings: vi.fn(), leave: vi.fn(), copyId: vi.fn() };
+    const plain = roomMenu({ unread: false, canInvite: true, isOwner: false, notify }, actions, t);
+    expect(ids(plain).slice(0, 3)).toEqual(["invite", "settings", "mark-read"]);
+    const settings = findEntry(plain, "settings");
+    expect(settings).toMatchObject({ testId: "room-settings-button" });
+    expect(settings?.hint).toBeUndefined();
+    expect(settings?.kind === "item" && settings.ariaLabel).toBeFalsy();
+    expect(ids(roomMenu({ unread: false, canInvite: false, isOwner: false, notify }, actions, t))[0]).toBe("settings");
+    const many = roomMenu({ unread: false, canInvite: true, isOwner: false, notify, openReports: "3" }, actions, t);
+    expect(findEntry(many, "settings")).toMatchObject({ hint: "3", hintBadge: true, ariaLabel: 'menu.room.settings · reports.open_reports_many:{"count":"3"}' });
+    const one = roomMenu({ unread: false, canInvite: true, isOwner: false, notify, openReports: "1" }, actions, t);
+    expect(findEntry(one, "settings")).toMatchObject({ ariaLabel: 'menu.room.settings · reports.open_reports_one:{"count":"1"}' });
+  });
+
   it("does not let owners leave their room; DMs can be closed and blocked", () => {
     const actions = { ...notifyActions, setSuppressEveryone: vi.fn(), markRead: vi.fn(), invite: vi.fn(), settings: vi.fn(), leave: vi.fn(), copyId: vi.fn() };
     const owner = roomMenu({ unread: true, canInvite: true, isOwner: true, notify: { ...notify, suppressEveryone: false } }, actions, t);

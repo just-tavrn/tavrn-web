@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { confirmRecoveryCodes, confirmRecoveryKey, logoutViaUi, openNavIfMobile, registerViaUi, tokenOf, uniqueName } from "./helpers";
+import { confirmRecoveryCodes, confirmRecoveryKey, logoutViaUi, openNavIfMobile, registerViaUi, tokenOf, uniqueName, openRoomInvite } from "./helpers";
 import { A, B, BROWSER_API_A, FEDERATION_BROWSER, NODE_A, NODE_B, NODE_PORT_A, WEB_A, WEB_B, chromiumOnly } from "./federation-helpers";
 
 test.use(FEDERATION_BROWSER);
@@ -158,8 +158,7 @@ test.describe("Identity domain and node host (delegation)", () => {
     await page.getByRole("dialog").getByRole("button", { name: "Erstellen" }).click();
     await expect(page.getByTestId("channel-name")).toHaveText("allgemein");
     const channelId = page.url().split("/channels/")[1]!;
-    await openNavIfMobile(page);
-    await page.getByRole("button", { name: "Einladen" }).click();
+    await openRoomInvite(page);
     const dialog = page.getByRole("dialog");
     await dialog.getByLabel("Eine Person direkt einladen").fill(bob.address);
     await dialog.getByRole("button", { name: "Einladung senden" }).click();

@@ -4,7 +4,7 @@
 // announcement gating, and the thread panel's navigation on phones.
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
-import { NODE, createRoomViaApi, loginAs, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, type Account } from "./helpers";
+import { NODE, createRoomViaApi, loginAs, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, type Account, openRoomInvite } from "./helpers";
 import { joinRoom, openContextMenu, postMessage } from "./menu-helpers";
 
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
@@ -47,8 +47,7 @@ async function createRoomInUi(page: Page, name: string): Promise<string> {
 }
 
 async function inviteLink(page: Page): Promise<string> {
-  await openNavIfMobile(page);
-  await page.getByRole("button", { name: "Einladen" }).click();
+  await openRoomInvite(page);
   await page.getByRole("button", { name: "Link erzeugen" }).click();
   const link = await page.getByTestId("invite-link").inputValue();
   await page.getByRole("button", { name: "Fertig" }).click();

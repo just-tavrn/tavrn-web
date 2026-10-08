@@ -21,7 +21,9 @@ password, invite; a text channel with messages (formatting, a reply, a code bloc
 the navigation drawer (phone), the composer with the emoji picker, a message context menu, the media viewer, the
 member list, a modal dialog (create channel), the search panel with results, a files channel with entries, all
 room settings tabs, all user settings tabs, Discover, Home; friends with an incoming request, a direct message,
-the whiteboard, a joined voice channel (fake microphone and camera) muted and unmuted; every admin tab.
+the whiteboard, a joined voice channel (fake microphone and camera) muted and unmuted, the voice bar and account
+bar; the room header menu, the account menu (also a node admin's) and the settings navigation with the admin link;
+every admin tab.
 
 Run it alone (with `E2E_NODE_BIN` or `E2E_NODE_IMAGE` set, README.md "End-to-end tests"): `cd e2e && npx playwright test tests/a11y.spec.ts --project chromium --project mobile-android
 --project tablet-chromium --workers=2`. `A11Y_REPORT_DIR=<dir>` writes every finding as JSON,
@@ -80,7 +82,12 @@ Before: 3 critical + 325 serious + 241 moderate + 25 minor nodes. After: 0 criti
   `aria-modal="true"`, labelled by their title, focus trap (`lib/focusTrap.ts`), Escape, focus return.
 - **Menus**: context menus and the "⋯" menus (`ContextMenu`) with `role="menu"`, roving tabindex, arrow keys,
   Home/End, submenus, Shift+F10 and the context menu key; the presence menu got the same keyboard model and
-  returns the focus to its button on Escape.
+  returns the focus to its button on Escape. The room header of the sidebar is one menu button inside the
+  sidebar's `h2` (`aria-haspopup="menu"`, `aria-expanded`; Enter or Space opens the room menu with its first item
+  focused); its accessible name is the room name, the node of a remote room and the number of open reports.
+- **Icons** in the sidebar bars are SVG (2 px stroke, `currentColor`, `components/icons.tsx`) on 40 px targets;
+  the voice bar's padlock sits in the signal bars and their text alternative names encryption and quality
+  ("Encrypted · connection good"), so neither depends on colour.
 - **Tabs**: the sign-in/registration switch is a tab list with arrow keys and a tab panel (`lib/a11y.ts`
   `tabListKeyDown`); the settings and admin sections are navigation links with `aria-current="page"`.
 - **Pickers**: the emoji picker is a dialog with a menu grid (arrow keys, Escape, focus return) and one tab stop

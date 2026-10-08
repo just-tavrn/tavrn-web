@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { NODE, openNavIfMobile, registerViaUi, tokenOf } from "./helpers";
+import { NODE, openNavIfMobile, registerViaUi, tokenOf, openRoomInvite } from "./helpers";
 
 // History for new members of encrypted channels (design note 4.13 item 11, ENCRYPTION.md §7b): the channel policy
 // decides what the node serves from before a member's join, members' devices share the keys of older epochs
@@ -51,8 +51,7 @@ async function roomWithHistory(page: Page, name: string) {
 }
 
 async function inviteLink(page: Page): Promise<string> {
-  await openNavIfMobile(page);
-  await page.getByRole("button", { name: "Einladen" }).click();
+  await openRoomInvite(page);
   await page.getByRole("button", { name: "Link erzeugen" }).click();
   const link = await page.getByTestId("invite-link").inputValue();
   await page.getByRole("button", { name: "Fertig" }).click();
