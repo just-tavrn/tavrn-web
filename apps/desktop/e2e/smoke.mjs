@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: Apache-2.0
 /**
- * WebDriver smoke test of the BUILT desktop app (docs/DESKTOP.md "Tests"): the app starts, shows the node picker,
- * refuses `http://evil`, accepts a node in development mode on this computer and reaches the login page; then an
- * account (registered over the API with TOTP) signs in with password and TOTP code, sets up its recovery key (the
+ * WebDriver smoke test of the BUILT desktop app (docs/DESKTOP.md "Tests"): the app starts and shows the node picker;
+ * the shell's resolver reports an address whose domain has no node; the advanced node URL refuses `http://evil`; the
+ * address of an account (registered over the API with TOTP) on a node in development mode on this computer finds the
+ * node and reaches its login page. The account signs in on the node's own page in the sign-in window (password and
+ * TOTP, app sessions of the connect flow), the main window picks up the session, sets up its recovery key (the
  * encryption core in the webview) and sends a message in an end-to-end encrypted channel, which the node stores as
  * ciphertext only.
  *
@@ -155,25 +157,6 @@ async function main() {
   session = created.sessionId;
   step("app started");
 
-  const input = await waitFor("input[name=node]", 60_000);
-  step("node picker shown");
-
-  await type(input, "http://evil");
-  await click(await find("form button[type=submit]"));
-  const error = await waitFor("[data-testid=node-picker-error]");
-  const message = await text(error);
-  if (!/https/.test(message)) throw new Error(`unexpected refusal text: ${message}`);
-  step(`http://evil refused: ${message}`);
-
-  await type(await find("input[name=node]"), nodeUrl);
-  await click(await find("form button[type=submit]"));
-  await waitFor("input[name=username]", 30_000);
-  const node = await until("the node name", async () => {
-    const t = await text(await find("[data-testid=node-name]"));
-    return /\(localhost\)/.test(t) ? t : null;
-  });
-  step(`login page of ${node}`);
-
   // An account with TOTP, registered over the API (another device of the same user).
   const username = `desk${randomBytes(4).toString("hex")}`;
   const password = `passwort-${username}-xyz`;
@@ -183,15 +166,69 @@ async function main() {
   const confirmed = await api("POST", "/auth/totp/confirm", { code: await nextCode(account) }, pre.preauth_token);
   const apiToken = confirmed.session.access_token;
 
-  // Password and second factor in the app.
-  await type(await find("input[name=username]"), username);
+  const address = await waitFor("input[name=address]", 60_000);
+  step("node picker shown");
+
+  // The shell's resolver (FEDERATION.md §1.4): a domain without any node.
+  await type(address, "someone@nowhere.invalid");
+  await click(await find("form button[type=submit]"));
+  const notFound = await text(await waitFor("[data-testid=node-picker-error]", 60_000));
+  if (!/nowhere\.invalid/.test(notFound)) throw new Error(`unexpected resolver error: ${notFound}`);
+  step(`no node for nowhere.invalid: ${notFound}`);
+
+  // The advanced node URL keeps refusing plain http to other hosts.
+  await click(await find("[data-testid=node-picker-advanced]"));
+  await type(await waitFor("input[name=node]"), "http://evil");
+  await click(await find("form button[type=submit]"));
+  const message = await until("the refusal", async () => {
+    const t = await text(await find("[data-testid=node-picker-error]"));
+    return /https/.test(t) ? t : null;
+  });
+  step(`http://evil refused: ${message}`);
+
+  // Address first: the account's address on the development node finds the node and its login page.
+  await script("location.reload()");
+  const nodeHost = new URL(nodeUrl).port ? `localhost:${new URL(nodeUrl).port}` : "localhost";
+  await type(await waitFor("input[name=address]", 30_000), `${username}@${nodeHost}`);
+  await click(await find("form button[type=submit]"));
+  const prefilled = await waitFor("input[name=username]", 30_000);
+  const value = await wd("GET", `/session/${session}/element/${prefilled}/property/value`);
+  if (value !== username) throw new Error(`the login page did not take the username: ${value}`);
+  const node = await until("the node name", async () => {
+    const t = await text(await find("[data-testid=node-name]"));
+    return /\(localhost\)/.test(t) ? t : null;
+  });
+  step(`address ${username}@${nodeHost} → login page of ${node}`);
+
+  // Sign-in on the node's own page: the sign-in window (no native API) shows the node's /connect page.
+  const main = await wd("GET", `/session/${session}/window`);
+  await click(await waitFor("[data-testid=node-page-signin]", 30_000));
+  await waitFor("[data-testid=handoff-waiting]");
+  const connectWindow = await until("the sign-in window", async () => (await wd("GET", `/session/${session}/window/handles`)).find((h) => h !== main), 30_000);
+  await wd("POST", `/session/${session}/window`, { handle: connectWindow });
+  const pageUrl = await wd("GET", `/session/${session}/url`);
+  if (!pageUrl.startsWith(`http://${nodeHost}/`) && !pageUrl.startsWith(`${nodeUrl}/`)) throw new Error(`the sign-in window shows ${pageUrl}`);
+  step(`sign-in window: ${pageUrl}`);
+  // The page has no native API: a command from it is refused (or the IPC is not there at all).
+  const refused = await script(
+    "const ipc = window.__TAURI_INTERNALS__; return typeof ipc?.invoke === 'function' ? ipc.invoke('get_config').then(() => 'allowed', (e) => 'refused: ' + e) : 'absent';",
+  );
+  if (refused === "allowed") throw new Error("the node's page reached a native command");
+  step(`native API from the node's page: ${refused}`);
+  await type(await waitFor("input[name=username]", 60_000), username);
   await type(await find("input[name=password]"), password);
   await click(await find("form button[type=submit]"));
-  const code = await waitFor("input[name=totp_code]", 30_000);
-  await type(code, await nextCode(account));
+  await type(await waitFor("input[name=totp_code]", 30_000), await nextCode(account));
   await click(await find("form button[type=submit]"));
+  await click(await waitFor("[data-testid=connect-allow]", 30_000));
+  await waitFor("[data-testid=connect-done]", 30_000);
+  step("signed in and confirmed on the node's page");
+
+  // The app polls the code, exchanges it with its verifier and closes the window; encryption is set up in the app.
+  await wd("POST", `/session/${session}/window`, { handle: main });
   await waitFor("[data-testid=recovery-key-words]", 60_000);
-  step("signed in with password and TOTP");
+  await until("the sign-in window to close", async () => (await wd("GET", `/session/${session}/window/handles`)).length === 1, 30_000);
+  step("the main window took over the session; the sign-in window closed");
 
   // The recovery key: generated by the encryption core (WebAssembly) in the webview.
   await click(await find("input[type=checkbox]"));

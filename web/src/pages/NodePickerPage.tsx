@@ -135,7 +135,7 @@ export function NodePickerPage() {
           <Button type="submit" className="w-full" disabled={busy}>
             {busy ? t("node_picker.finding") : t("node_picker.continue")}
           </Button>
-          <button type="button" className="block min-h-9 w-full text-center text-sm text-fg-2 hover:text-fg-0" onClick={() => (setAdvanced(true), setError(null))}>
+          <button type="button" className="block min-h-9 w-full text-center text-sm text-fg-2 hover:text-fg-0" onClick={() => (setAdvanced(true), setError(null))} data-testid="node-picker-advanced">
             {t("node_picker.advanced")}
           </button>
         </form>
