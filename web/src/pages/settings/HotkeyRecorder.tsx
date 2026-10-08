@@ -27,11 +27,16 @@ export function HotkeyRecorder({ action, label, testid, removable = true }: { ac
     if (!recording) return;
     recorder.current = new ComboRecorder();
     setRecording(true);
+    // React removes the listeners a moment after the recording ends: keys pressed meanwhile act as bindings again.
+    let done = false;
     const finish = () => {
+      done = true;
+      setRecording(false);
       setActive(false);
       setPartial("");
     };
     const handle = (e: KeyboardEvent, down: boolean) => {
+      if (done) return;
       e.preventDefault();
       e.stopPropagation();
       const step = down ? recorder.current?.down(e) : recorder.current?.up(e);
@@ -48,8 +53,7 @@ export function HotkeyRecorder({ action, label, testid, removable = true }: { ac
     return () => {
       window.removeEventListener("keydown", onDown, { capture: true });
       window.removeEventListener("keyup", onUp, { capture: true });
-      // The window's keys act again a moment later: the keyup of the recorded key must not end a hold.
-      setTimeout(() => setRecording(false), 0);
+      setRecording(false);
     };
   }, [recording, action]);
 
