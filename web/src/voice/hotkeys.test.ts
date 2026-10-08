@@ -155,6 +155,17 @@ describe("the voice session reacts to presses and releases", () => {
     expect(voice.setPrioritySpeaker.mock.calls).toEqual([[true], [false]]);
   });
 
+  it("a binding that changes or goes away while held is released", async () => {
+    fakeShell();
+    handleHotkey({ action: "push_to_talk", pressed: true });
+    await bindHotkey("push_to_talk", "F14");
+    expect(voice.pushToTalk.mock.calls).toEqual([[true], [false]]);
+    handleHotkey({ action: "priority", pressed: true });
+    await clearHotkey("priority");
+    expect(voice.setPrioritySpeaker.mock.calls).toEqual([[true], [false]]);
+    expect(desktopHeld("priority")).toBe(false);
+  });
+
   it("mute and deafen toggle on the press only", () => {
     handleHotkey({ action: "toggle_mute", pressed: true });
     handleHotkey({ action: "toggle_mute", pressed: false });

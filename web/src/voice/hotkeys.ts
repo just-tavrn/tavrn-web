@@ -133,6 +133,7 @@ export async function bindHotkey(action: HotkeyAction, combo: string): Promise<s
   if (conflict) return conflict.key === "voice.hotkeys.conflict_desktop" ? t(conflict.key, { action: actionLabel(conflict.action) }) : t(conflict.key);
   try {
     const canonical = await hotkeys.register(action, combo);
+    release(action);
     update({ desktopHotkeys: { ...useVoiceSettings.getState().settings.desktopHotkeys, [action]: canonical } });
     return null;
   } catch (e) {
@@ -143,6 +144,7 @@ export async function bindHotkey(action: HotkeyAction, combo: string): Promise<s
 /** Removes the binding of `action`. */
 export async function clearHotkey(action: HotkeyAction): Promise<void> {
   await platform().hotkeys?.unregister(action);
+  release(action);
   const { settings, update } = useVoiceSettings.getState();
   update({ desktopHotkeys: { ...settings.desktopHotkeys, [action]: "" } });
 }
@@ -172,6 +174,11 @@ const held = new Set<HotkeyAction>();
 /** Whether a global hotkey of `action` is held right now (focus changes of the window do not release it). */
 export function desktopHeld(action: HotkeyAction): boolean {
   return held.has(action);
+}
+
+/** Ends a hold whose binding changed or went away (its release would never come). */
+function release(action: HotkeyAction): void {
+  if (held.has(action)) handleHotkey({ action, pressed: false });
 }
 
 /** A press or release of the shell: push-to-talk and the priority speaker follow the hold, the toggles the press. */
