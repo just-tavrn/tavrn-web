@@ -37,7 +37,9 @@ describe("EmojiPicker (design note 4.13)", () => {
     await u.selectOptions(screen.getByLabelText("Hautfarbe"), "3");
     await u.type(screen.getByLabelText("Emojis suchen"), "daumen hoch");
     const results = await screen.findByRole("group", { name: "Suchergebnisse" }, FIND);
-    await u.click(within(results).getAllByRole("menuitem")[0]!);
+    // The Unicode data is imported lazily (a large JSON): the results fill in once it is there.
+    const [first] = await within(results).findAllByRole("menuitem", {}, FIND);
+    await u.click(first!);
     expect(onPick).toHaveBeenLastCalledWith("👍🏽");
     await u.click(screen.getByRole("button", { name: "Emoji" }));
     const recent = await screen.findByRole("group", { name: "Zuletzt verwendet" }, FIND);

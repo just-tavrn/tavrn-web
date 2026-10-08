@@ -6,10 +6,14 @@
  */
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { externalUrl } from "./links";
-import type { AppUpdater, HotkeyEvent, Platform, PlatformHotkeys } from "./types";
+import { runAppSession } from "./appSession";
+import type { AppUpdater, HotkeyEvent, Platform, PlatformHotkeys, ResolvedNode } from "./types";
 
 interface ShellConfig {
   node: string | null;
+  /** Origin of the node's web client and its identity domain (absent before they were known). */
+  web?: string | null;
+  domain?: string | null;
 }
 
 interface AppInfo {
@@ -55,6 +59,8 @@ function createHotkeys(): PlatformHotkeys {
 export async function createTauriPlatform(doc: Document = document): Promise<Platform> {
   const [config, info] = await Promise.all([invoke<ShellConfig>("get_config"), invoke<AppInfo>("app_info")]);
   let node = config.node;
+  let web = config.web ?? null;
+  let domain = config.domain ?? null;
   const openExternal = async (url: string) => {
     await invoke<void>("open_external", { url: externalUrl(url) });
   };
@@ -62,15 +68,38 @@ export async function createTauriPlatform(doc: Document = document): Promise<Pla
     kind: "desktop",
     isDesktop: true,
     nodeBase: () => node ?? "",
-    // A node serves its web client on the URL the user picked (where links shared with others point to).
-    webOrigin: () => node ?? location.origin,
+    // A node serves its web client on the URL the user picked (where links shared with others point to), unless its
+    // document names another origin.
+    webOrigin: () => web ?? node ?? location.origin,
     openExternal,
     appVersion: async () => info.version,
     node: {
       current: () => node,
-      set: async (url) => {
-        node = await invoke<string>("set_node", { url });
+      set: async (url, details) => {
+        const args = details ? { url, web: details.web ?? null, domain: details.domain ?? null } : { url };
+        node = await invoke<string>("set_node", args);
+        web = details?.web ? new URL(details.web).origin : null;
+        domain = details?.domain ?? null;
       },
+      domain: () => domain,
+      resolve: (name) => invoke<ResolvedNode>("resolve_node", { domain: name }),
+    },
+    auth: {
+      // The node's page in a window of the shell without any native API (FEDERATION.md §8 step 3, docs/DESKTOP.md).
+      signInOnNodePage: (req) =>
+        runAppSession({
+          api: req.api,
+          web: req.endpoints.web,
+          domain: req.endpoints.domain,
+          deviceName: "Desktop app",
+          mode: req.mode,
+          open: (url) => invoke<void>("open_connect", { url }),
+          close: () => invoke<void>("close_connect"),
+          onPage: req.onPage,
+          device: req.device,
+          signal: req.signal,
+        }),
+      reopen: (url) => invoke<void>("open_connect", { url }),
     },
     ...(info.updater ? { updater } : {}),
     hotkeys: createHotkeys(),

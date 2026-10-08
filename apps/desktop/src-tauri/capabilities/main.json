@@ -10,6 +10,9 @@
     "allow-open-external",
     "allow-check-update",
     "allow-install-update",
+    "allow-resolve-node",
+    "allow-open-connect",
+    "allow-close-connect",
     "allow-register-hotkey",
     "allow-unregister-hotkey",
     "allow-listen-hotkeys"
