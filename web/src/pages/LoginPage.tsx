@@ -5,6 +5,7 @@ import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 import { TavrnApiError, type AuthResponse, type PreAuthResponse } from "@tavrn/sdk";
 import { publicApi } from "../lib/api";
 import { completeRemoteSignIn } from "../lib/remoteSignIn";
+import { afterSignIn } from "./ConnectPages";
 import { RemoteLogin } from "../components/auth/RemoteLogin";
 import { lastAccount, useAuth } from "../stores/auth";
 import { useAuthFlow, type FlowKind } from "../stores/authFlow";
@@ -44,7 +45,8 @@ export function LoginPage() {
   const preApi = useMemo(() => (preauth ? publicApi.withToken(preauth.token) : null), [preauth]);
   const kind: FlowKind = preauth?.kind ?? setup?.kind ?? "login";
 
-  const toEncryption = () => navigate(`/encryption?next=${encodeURIComponent(next)}`, { replace: true });
+  // The encryption step (recovery key or unlock), except on the confirmation of the desktop app's sign-in.
+  const toEncryption = () => navigate(afterSignIn(next), { replace: true });
 
   const finish = (session: AuthResponse, extra: { codes?: string[] | null; passkey?: { credentialId: string; prf: Uint8Array | null } }) => {
     const flow = useAuthFlow.getState();
@@ -63,7 +65,7 @@ export function LoginPage() {
   };
 
   // Signed in and in the middle of the setup (e.g. reload while the recovery codes were shown).
-  if (token && !codes && setup && !preauth) return <Navigate to={`/encryption?next=${encodeURIComponent(next)}`} replace />;
+  if (token && !codes && setup && !preauth) return <Navigate to={afterSignIn(next)} replace />;
 
   if (codes) {
     return (
@@ -114,7 +116,7 @@ export function LoginPage() {
 function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthResponse, kind: FlowKind, username: string) => void; onSession: (s: AuthResponse, passkey: { credentialId: string; prf: Uint8Array | null }) => void }) {
   const t = useT();
   const [params] = useSearchParams();
-  const [mode, setMode] = useState<Mode>(params.get("invite") ? "register" : "login");
+  const [mode, setMode] = useState<Mode>(params.get("invite") || params.get("mode") === "register" ? "register" : "login");
   const [invite, setInvite] = useState(params.get("invite") ?? "");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");

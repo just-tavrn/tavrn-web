@@ -216,3 +216,97 @@ describe("connect flow", () => {
     expect(validConnectOrigin("https://user@other.example", true)).toBe(false);
   });
 });
+
+describe("connect flow: app sessions of the desktop app (FEDERATION.md §8 step 3)", () => {
+  const SESSION = "S".repeat(43);
+  const sessionUrl = (extra = "") => `/connect?session=${SESSION}&state=${"s".repeat(22)}${extra}`;
+  const localUser = { ...homeUser, domain: VISIT, address: `alice@${VISIT}` };
+  const pendingSession = () => ({ body: { status: "pending", device_name: "Tavrn auf dem Laptop", expires_in: 580 } });
+
+  it("asks with the session's device name, issues the code for the session and stays on the page", async () => {
+    const calls = network({
+      [`origin/api/v1/auth/connect/session/${SESSION}`]: pendingSession,
+      "origin/api/v1/auth/connect/code": () => ({ body: { code: "one-time", expires_in: 120 } }),
+    });
+    useAuth.setState({ token: "local", refresh: "r", user: localUser, deviceId: "D", home: null });
+    renderAt(sessionUrl());
+    expect(await screen.findByTestId("connect-text")).toHaveTextContent(`„Tavrn auf dem Laptop“ möchte sich als alice@${VISIT} anmelden`);
+    expect(screen.getByTestId("connect-warning")).toHaveTextContent("selbst in deiner eigenen Tavrn-App");
+    await userEvent.setup().click(screen.getByRole("button", { name: "In der App anmelden" }));
+    expect(await screen.findByTestId("connect-done")).toHaveTextContent("Kehre zur Tavrn-App zurück");
+    expect(calls.find((c) => c.url.endsWith("/auth/connect/code"))).toMatchObject({ body: { session_id: SESSION }, auth: "Bearer local" });
+    expect(calls.find((c) => c.url.endsWith("/auth/connect/code"))!.body).not.toHaveProperty("origin");
+    // The session is read once, before the confirmation; afterwards the app alone polls it (the code is handed out once).
+    expect(calls.filter((c) => c.url.includes("/auth/connect/session/"))).toHaveLength(1);
+  });
+
+  it("does not read the session again after the confirmation (a reload of the page)", async () => {
+    const calls = network({ [`origin/api/v1/auth/connect/session/${SESSION}`]: pendingSession, "origin/api/v1/auth/connect/code": () => ({ body: { code: "c", expires_in: 120 } }) });
+    useAuth.setState({ token: "local", refresh: "r", user: localUser, deviceId: "D", home: null });
+    const { unmount } = renderAt(sessionUrl());
+    await userEvent.setup().click(await screen.findByRole("button", { name: "In der App anmelden" }));
+    await screen.findByTestId("connect-done");
+    unmount();
+    renderAt(sessionUrl());
+    expect(await screen.findByTestId("connect-done")).toBeInTheDocument();
+    expect(calls.filter((c) => c.url.includes("/auth/connect/session/"))).toHaveLength(1);
+  });
+
+  it("an expired session cannot be confirmed", async () => {
+    network({ [`origin/api/v1/auth/connect/session/${SESSION}`]: () => ({ status: 410, body: { code: "connect.session_expired", status: 410, title: "Gone", type: "x" } }) });
+    useAuth.setState({ token: "local", refresh: "r", user: localUser, deviceId: "D", home: null });
+    renderAt(sessionUrl());
+    expect(await screen.findByTestId("connect-expired")).toHaveTextContent("abgelaufen");
+    expect(screen.queryByRole("button", { name: "In der App anmelden" })).toBeNull();
+  });
+
+  it("cancel leaves the session alone and says the window can be closed", async () => {
+    const calls = network({ [`origin/api/v1/auth/connect/session/${SESSION}`]: pendingSession });
+    useAuth.setState({ token: "local", refresh: "r", user: localUser, deviceId: "D", home: null });
+    renderAt(sessionUrl());
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Abbrechen" }));
+    expect(await screen.findByTestId("connect-cancelled")).toHaveTextContent("Fenster schließen");
+    expect(calls.some((c) => c.url.endsWith("/auth/connect/code"))).toBe(false);
+  });
+
+  it("signed out: signs in on this page and comes back without the encryption step (keys are made in the app)", async () => {
+    network({
+      [`origin/api/v1/auth/connect/session/${SESSION}`]: pendingSession,
+      "origin/api/v1/auth/login": () => ({ body: { status: "second_factor_required", preauth_token: "pre", methods: ["totp"], expires_in: 600 } }),
+      "origin/api/v1/auth/second-factor/verify": () => ({ body: { ...session, user: localUser, access_token: "local-acc" } }),
+    });
+    renderAt(sessionUrl());
+    const u = userEvent.setup();
+    await u.type(await screen.findByLabelText("Benutzername"), "alice");
+    await u.type(screen.getByLabelText("Passwort"), "passwort-alice");
+    await u.click(screen.getByRole("button", { name: "Anmelden" }));
+    await u.type(await screen.findByLabelText("6-stelliger Code"), "123456");
+    await u.click(screen.getByRole("button", { name: "Bestätigen" }));
+    expect(await screen.findByTestId("connect-text")).toHaveTextContent("Tavrn auf dem Laptop");
+    expect(screen.queryByText("Verschlüsselungsseite")).toBeNull();
+  });
+
+  it("registration mode opens the page's registration", async () => {
+    network({ [`origin/api/v1/auth/connect/session/${SESSION}`]: pendingSession });
+    renderAt(sessionUrl("&mode=register"));
+    expect(await screen.findByRole("tab", { name: "Registrieren" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("malformed session links are refused", async () => {
+    network();
+    useAuth.setState({ token: "local", refresh: "r", user: localUser, deviceId: "D", home: null });
+    renderAt(`/connect?session=short&state=${"s".repeat(22)}`);
+    expect(await screen.findByText("Dieser Anmeldelink ist ungültig oder unvollständig.")).toBeInTheDocument();
+  });
+});
+
+describe("after a sign-in on the node's page", () => {
+  it("skips the encryption step only for the confirmation of an app session", async () => {
+    const { afterSignIn, skipsEncryption } = await import("./ConnectPages");
+    expect(skipsEncryption(`/connect?session=${"S".repeat(43)}&state=x`)).toBe(true);
+    expect(skipsEncryption("/connect?origin=https%3A%2F%2Fa.example&state=x")).toBe(false);
+    expect(skipsEncryption("/friends?session=1")).toBe(false);
+    expect(afterSignIn("/friends")).toBe("/encryption?next=%2Ffriends");
+    expect(afterSignIn(`/connect?session=${"S".repeat(43)}`)).toBe(`/connect?session=${"S".repeat(43)}`);
+  });
+});

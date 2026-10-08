@@ -13,4 +13,12 @@ export const browserPlatform: Platform = {
     window.open(externalUrl(url), "_blank", "noopener,noreferrer");
   },
   appVersion: async () => version,
+  auth: {
+    // Today's connect flow of FEDERATION.md §8: the home node's page sends the browser back to /connect/callback.
+    signInOnNodePage: async (req) => {
+      const { startConnect } = await import("../lib/remoteSignIn");
+      location.assign(await startConnect(req.endpoints, req.next, req.address));
+      return new Promise(() => {});
+    },
+  },
 };
