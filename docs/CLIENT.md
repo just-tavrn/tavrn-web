@@ -147,15 +147,19 @@ and starts standalone threads. A thread opens in a panel next to the channel on 
 edge, or use the arrow keys on it, to resize; the width is remembered on this device) and full screen with a back
 button on phones; Esc closes it, and every thread has its own link (`…/channels/<channel>/threads/<thread>`). The
 panel is the channel's conversation in thread mode: encryption, reactions, uploads, mentions, `/me` and the other
-slash commands work there as in the channel, and in encrypted channels the title is encrypted with the channel's
+slash commands work there as in the channel (application commands invoked there name the thread, so the bot answers
+in it), and in encrypted channels the title is encrypted with the channel's
 messages. Its header follows or unfollows the thread and, for its creator or members with *Manage threads*,
 renames, archives, locks or deletes it. Starting or writing in a thread follows it; only followed threads count
 towards the channel's unread badge and raise notifications (direct mentions always do).
 
 Forum channels show posts instead of messages: cards with title, tags, author, replies, last activity and the
 start of the first message, tag filter chips, "Latest activity" or "Newest posts", archived posts on demand and
-**New post** (title, message, up to five tags). Their tags and the auto-archive time of every channel's threads
-are set in the room settings under *Channels* (*Manage channels*). In announcement channels only members with
+**New post** (title, message, up to five tags). Where the node announces `threads.client_ids` the client picks the
+post's id, so the device signature of the first message covers it like every reply and readers see no "unverified"
+marker; a node that refuses the id (this device's clock is far off) gets the post with an unsigned first message. Their tags and the auto-archive time of every channel's threads
+are set in the room settings under *Channels* (*Manage channels*). Webhooks (room settings → *Webhooks*) can post
+into forum channels too; the settings explain that every payload then names a post with `"thread_id"`. In announcement channels only members with
 *Manage messages* post; the others see a notice instead of the composer and react or reply in threads.
 
 ## Context menus, notifications and media
@@ -182,7 +186,9 @@ registers the subscription with the home node, which pushes while no tab of the 
 the notification settings (rooms on other nodes push through the home node for DMs, mentions and calls). Pushes of
 encrypted conversations only name the conversation and the sender; "Show message text in push notifications" adds
 a preview of unencrypted messages. A click opens or focuses the conversation; a test button sends a push. Signing
-out removes the subscription; on iPhone and iPad push works only after adding tavrn to the home screen.
+out removes the subscription; on iPhone and iPad push works only after adding tavrn to the home screen. When the
+browser's subscription still belongs to another account (`409 push.endpoint_taken`), the client unsubscribes it and
+subscribes again, which gives this account a new endpoint.
 Images open a viewer (zoom, drag, swipe or arrow keys between the images of a message, download icon, open
 original); audio attachments get an inline player and videos play inline and enlarge into the viewer.
 Downloads only start from the download icon. SVG files are never shown inline or opened, only downloaded (they

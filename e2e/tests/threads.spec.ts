@@ -174,6 +174,36 @@ test.describe("Threads", () => {
     expect((await loose.json()).code).toBe("message.thread_required");
   });
 
+  test("forum: the first message of a post is signed by the device (the client picks the post's id)", async ({ page, request }) => {
+    test.setTimeout(120_000);
+    await registerViaUi(page, { prefix: "signer" });
+    const token = await tokenOf(page);
+    const owner = { token } as Account;
+    const room = await createRoomViaApi(request, token, "Signierraum");
+    const forum = await channel(request, owner, room.id, { kind: "forum", name: "fragen" });
+    await page.goto(`/rooms/${room.id}/channels/${forum.id}`);
+    await expect(page.getByTestId("forum-view")).toBeVisible();
+    await page.getByTestId("forum-new-post").click();
+    const dialog = page.getByTestId("forum-post-dialog");
+    await dialog.getByTestId("forum-post-title-input").fill("Signiert?");
+    await dialog.getByTestId("forum-post-body").fill("Erste Nachricht des Beitrags");
+    await dialog.getByTestId("forum-post-submit").click();
+    const first = panel(page).getByTestId("message").filter({ hasText: "Erste Nachricht des Beitrags" });
+    await expect(first).toBeVisible();
+    // The node keeps the client's id: the device signature covers it as thread_id (PROTOCOL.md §7e).
+    const posts = await (await request.get(`${NODE}/api/v1/rooms/${room.id}/channels/${forum.id}/threads`, { headers: auth(token) })).json();
+    const post = posts.items[0];
+    expect(post.first_message.thread_id).toBe(post.id);
+    expect(post.first_message.signature).toMatch(/^[A-Za-z0-9_-]{107}$/);
+    // Readers verify it like every other message: no "unverified" marker, also after a reload.
+    await page.reload();
+    // The open post comes back with the page (its link).
+    const reloaded = panel(page).getByTestId("message").filter({ hasText: "Erste Nachricht des Beitrags" });
+    await expect(reloaded).toBeVisible();
+    await expect(reloaded.getByTestId("message-author")).toBeVisible();
+    await expect(reloaded.getByTestId("unverified-marker")).toHaveCount(0);
+  });
+
   test("announcement channel: members cannot post, but react and reply in threads", async ({ page, request }) => {
     test.setTimeout(120_000);
     const alice = await registerViaApi(request, "alice");
