@@ -28,6 +28,14 @@ describe("voice & video settings (design note 4.9)", () => {
     expect(normalizeSettings({ priorityKey: "x".repeat(65) }).priorityKey).toBe("");
   });
 
+  it("keeps the global hotkeys of the desktop app per action, in the canonical spelling (docs/DESKTOP.md)", () => {
+    expect(DEFAULT_SETTINGS.desktopHotkeys).toEqual({ push_to_talk: "", priority: "", toggle_mute: "", toggle_deafen: "" });
+    const s = normalizeSettings({ desktopHotkeys: { push_to_talk: "F13", toggle_mute: "Ctrl+Shift+KeyM", toggle_deafen: "<script>", priority: 5, shutdown: "F1" } });
+    expect(s.desktopHotkeys).toEqual({ push_to_talk: "F13", priority: "", toggle_mute: "Ctrl+Shift+KeyM", toggle_deafen: "" });
+    expect(normalizeSettings({ desktopHotkeys: { toggle_mute: `Ctrl+${"K".repeat(70)}` } }).desktopHotkeys.toggle_mute).toBe("");
+    expect(normalizeSettings({ desktopHotkeys: "F13" }).desktopHotkeys).toEqual(DEFAULT_SETTINGS.desktopHotkeys);
+  });
+
   it("only keeps a background image that is a data: URL of an image", () => {
     expect(normalizeSettings({ backgroundImage: "data:image/jpeg;base64,AAAA" }).backgroundImage).toBe("data:image/jpeg;base64,AAAA");
     expect(normalizeSettings({ backgroundImage: "https://evil.example/x.png" }).backgroundImage).toBeNull();

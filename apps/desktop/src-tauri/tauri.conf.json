@@ -56,7 +56,10 @@
     "license": "Apache-2.0",
     "licenseFile": "../LICENSE.txt",
     "linux": {
-      "deb": { "files": { "/usr/share/doc/tavrn/LICENSE.txt": "../LICENSE.txt" } }
+      "deb": {
+        "depends": ["gstreamer1.0-plugins-bad", "gstreamer1.0-plugins-good", "gstreamer1.0-gl", "gstreamer1.0-pipewire | gstreamer1.0-pulseaudio"],
+        "files": { "/usr/share/doc/tavrn/LICENSE.txt": "../LICENSE.txt" }
+      }
     },
     "windows": {
       "webviewInstallMode": { "type": "downloadBootstrapper" },

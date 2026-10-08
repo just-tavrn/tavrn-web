@@ -21,6 +21,9 @@ fn main() {
         "tray_status",
         "set_close_to_tray",
         "quit_app",
+        "register_hotkey",
+        "unregister_hotkey",
+        "listen_hotkeys",
     ];
     let attributes = tauri_build::Attributes::new().app_manifest(tauri_build::AppManifest::new().commands(commands));
     if let Err(e) = tauri_build::try_build(attributes) {
