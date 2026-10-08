@@ -6,6 +6,7 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { externalUrl } from "./links";
+import { shellMembers } from "./tauriShell";
 import type { AppUpdater, Platform } from "./types";
 
 interface ShellConfig {
@@ -53,6 +54,8 @@ export async function createTauriPlatform(doc: Document = document): Promise<Pla
       },
     },
     ...(info.updater ? { updater } : {}),
+    // OS keychain, native notifications, tray (tauriShell.ts).
+    ...shellMembers(),
   };
   installLinkHandler(doc, openExternal, platform.webOrigin);
   return platform;
