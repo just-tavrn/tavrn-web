@@ -163,7 +163,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@tavrn/sdk': github:just-tavrn/tavrn-js#99633ae748c75f07881b7cc98a122ea559b407ab&path:sdk
+  '@tavrn/sdk': link:/home/baton/tavrn-split/tavrn-js/.claude/worktrees/desktop-unlock/sdk
   '@tavrn/e2ee': github:just-tavrn/tavrn-js#99633ae748c75f07881b7cc98a122ea559b407ab&path:e2ee
   '@tavrn/crypto': github:just-tavrn/tavrn-crypto#v0.1.0&path:pkg
 
@@ -195,8 +195,8 @@ importers:
         specifier: github:just-tavrn/tavrn-js#99633ae748c75f07881b7cc98a122ea559b407ab&path:e2ee
         version: git+https://github.com/just-tavrn/tavrn-js.git#99633ae748c75f07881b7cc98a122ea559b407ab&path:e2ee
       '@tavrn/sdk':
-        specifier: github:just-tavrn/tavrn-js#99633ae748c75f07881b7cc98a122ea559b407ab&path:sdk
-        version: git+https://github.com/just-tavrn/tavrn-js.git#99633ae748c75f07881b7cc98a122ea559b407ab&path:sdk
+        specifier: link:/home/baton/tavrn-split/tavrn-js/.claude/worktrees/desktop-unlock/sdk
+        version: link:../../../../../tavrn-js/.claude/worktrees/desktop-unlock/sdk
       '@types/libsodium-wrappers':
         specifier: ^0.8.2
         version: 0.8.2
@@ -240,8 +240,8 @@ importers:
         specifier: github:just-tavrn/tavrn-js#99633ae748c75f07881b7cc98a122ea559b407ab&path:e2ee
         version: git+https://github.com/just-tavrn/tavrn-js.git#99633ae748c75f07881b7cc98a122ea559b407ab&path:e2ee
       '@tavrn/sdk':
-        specifier: github:just-tavrn/tavrn-js#99633ae748c75f07881b7cc98a122ea559b407ab&path:sdk
-        version: git+https://github.com/just-tavrn/tavrn-js.git#99633ae748c75f07881b7cc98a122ea559b407ab&path:sdk
+        specifier: link:/home/baton/tavrn-split/tavrn-js/.claude/worktrees/desktop-unlock/sdk
+        version: link:../../../../../tavrn-js/.claude/worktrees/desktop-unlock/sdk
       dompurify:
         specifier: ^3.4.16
         version: 3.4.16
@@ -1254,10 +1254,6 @@ packages:
 
   '@tavrn/e2ee@git+https://github.com/just-tavrn/tavrn-js.git#99633ae748c75f07881b7cc98a122ea559b407ab&path:e2ee':
     resolution: {commit: 99633ae748c75f07881b7cc98a122ea559b407ab, path: e2ee, repo: https://github.com/just-tavrn/tavrn-js.git, type: git}
-    version: 0.2.1
-
-  '@tavrn/sdk@git+https://github.com/just-tavrn/tavrn-js.git#99633ae748c75f07881b7cc98a122ea559b407ab&path:sdk':
-    resolution: {commit: 99633ae748c75f07881b7cc98a122ea559b407ab, path: sdk, repo: https://github.com/just-tavrn/tavrn-js.git, type: git}
     version: 0.2.1
 
   '@testing-library/dom@10.4.2':
@@ -3469,16 +3465,14 @@ snapshots:
     dependencies:
       '@tavrn/crypto': git+https://github.com/just-tavrn/tavrn-crypto.git#5b5929a573fd573ed1417132b26b8fe72c1027b5&path:pkg
       '@tavrn/e2ee': git+https://github.com/just-tavrn/tavrn-js.git#99633ae748c75f07881b7cc98a122ea559b407ab&path:e2ee
-      '@tavrn/sdk': git+https://github.com/just-tavrn/tavrn-js.git#99633ae748c75f07881b7cc98a122ea559b407ab&path:sdk
+      '@tavrn/sdk': link:../../../../tavrn-js/.claude/worktrees/desktop-unlock/sdk
 
   '@tavrn/crypto@git+https://github.com/just-tavrn/tavrn-crypto.git#5b5929a573fd573ed1417132b26b8fe72c1027b5&path:pkg': {}
 
   '@tavrn/e2ee@git+https://github.com/just-tavrn/tavrn-js.git#99633ae748c75f07881b7cc98a122ea559b407ab&path:e2ee':
     dependencies:
       '@tavrn/crypto': git+https://github.com/just-tavrn/tavrn-crypto.git#5b5929a573fd573ed1417132b26b8fe72c1027b5&path:pkg
-      '@tavrn/sdk': git+https://github.com/just-tavrn/tavrn-js.git#99633ae748c75f07881b7cc98a122ea559b407ab&path:sdk
-
-  '@tavrn/sdk@git+https://github.com/just-tavrn/tavrn-js.git#99633ae748c75f07881b7cc98a122ea559b407ab&path:sdk': {}
+      '@tavrn/sdk': link:../../../../tavrn-js/.claude/worktrees/desktop-unlock/sdk
 
   '@testing-library/dom@10.4.2':
     dependencies:
