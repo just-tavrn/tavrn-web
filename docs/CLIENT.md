@@ -1,7 +1,7 @@
 # The web client
 
 What the web client does, screen by screen: accounts and encryption, several nodes in one client, voice and video,
-context menus, notifications and media, translations. The protocol behind each part is specified in
+the room rail and its folders, context menus, notifications and media, translations. The protocol behind each part is specified in
 [tavrn-protocol](https://github.com/just-tavrn/tavrn-protocol); the client's accessibility is documented in
 [ACCESSIBILITY.md](ACCESSIBILITY.md).
 
@@ -174,6 +174,51 @@ start of the first message, tag filter chips, "Latest activity" or "Newest posts
 **New post** (title, message, up to five tags). Their tags and the auto-archive time of every channel's threads
 are set in the room settings under *Channels* (*Manage channels*). In announcement channels only members with
 *Manage messages* post; the others see a notice instead of the composer and react or reply in threads.
+
+## Room rail and folders
+
+The room rail (the narrow bar on the far left; inside the navigation drawer on phones) lists Home, your rooms,
+the rooms of other nodes under their domain, "+" (create or join) and Discover. Rooms show a mention count (red)
+or an unread dot once their channels' counts are known. Rooms can be grouped into **folders**:
+
+- **Create**: right-click (long press on touch, the context-menu key or Shift+F10 on Home, + or Discover) on the
+  empty rail → "New folder…" asks for a name (up to 32 characters; without one the folder is named after its
+  rooms) and an optional colour. A room's menu offers "Move to folder ▸" with the folders, "New folder…" (a folder
+  with that room) and "Remove from folder"; "Move up" / "Move down" reorder rooms and folders.
+- **Folder menu**: "Rename…", "Colour ▸", "Expand"/"Collapse", "Move up"/"Move down", "Delete folder" (its rooms
+  return to the rail at the folder's place; no room is left).
+- **Drag and drop** (mouse): a room dropped onto another room makes a folder of both (as on phone home screens),
+  onto a folder adds it, onto the empty rail takes it out of its folder; dropped onto the upper or lower edge of an
+  entry it is placed before or after it (an accent line shows where). On touch nothing is draggable; every drag
+  action is also a menu entry (WCAG 2.5.7).
+- **Display**: a collapsed folder is a rounded square with up to four mini icons on its colour; a click expands
+  it inline (its rooms follow on a slightly lighter background) and collapses it again. A collapsed folder shows
+  the sum of its rooms' counts (a mention count wins over the unread dot) and the selected ring while it holds the
+  open room. Rooms of several nodes can share a folder; their names carry their domain. A room you leave (or one
+  its node no longer lists) leaves its folder; rooms of a node that cannot be reached stay where they are.
+- **Accessibility**: the rooms stay links in a list ("Your rooms"); a folder is a disclosure button
+  (`aria-expanded`, `aria-controls`) whose accessible name holds its name, the number of rooms, the mention or
+  unread count and "contains the open room"; a room's counts are its accessible description. ↑/↓, Home and End
+  move through the rail, → expands a folder or enters it, ← goes back to the folder or collapses it, Enter and
+  Space toggle it.
+
+Storage: folders are a per-account client setting kept in this browser (local storage
+`tavrn.rail:<account address>`). The shape is ready to sync through the home node later (follow-up, not yet
+done):
+
+```json
+{
+  "clientStateVersion": 1,
+  "folders": [{ "id": "f3a…", "name": "Raids", "color": "violet", "roomIds": ["home.example/01J…", "other.example/01K…"] }],
+  "order": ["home.example/01H…", "folder:f3a…"],
+  "expanded": ["f3a…"]
+}
+```
+
+Room keys are node-qualified (`<domain>/<room id>`); `order` lists the top-level entries (rooms of the home node
+and folders; rooms of other nodes outside folders stay under their domain), rooms the order does not know yet
+are appended in the node's order; `expanded` is device state. A newer `clientStateVersion` than the client
+knows is ignored (the rail shows no folders) instead of being misread.
 
 ## Context menus, notifications and media
 
