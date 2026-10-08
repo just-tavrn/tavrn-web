@@ -11,7 +11,10 @@
 name: Desktop
 
 on:
+  # Draft pull requests get the quick checks only (ci.yml); the builds run once a pull request is marked ready
+  # for review and on every push after that.
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - apps/desktop/**
       - web/**
@@ -52,7 +55,7 @@ env:
 jobs:
   linux:
     name: Desktop (Linux)
-    if: ${{ vars.CI_ENABLED == 'true' }}
+    if: ${{ vars.CI_ENABLED == 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
