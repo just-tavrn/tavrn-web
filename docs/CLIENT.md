@@ -61,6 +61,14 @@ once from a voice channel's menu (with a confirmation; the target's user limit h
 per-person volume there. A dropped connection rejoins by itself; others see an amber plug on your avatar
 meanwhile instead of you vanishing.
 
+**Quick menus on mute and deafen.** A right-click (the context-menu key, a long press on touch) on the microphone
+button of the voice bar or of the stage controls lists the microphones (the current one checked), switches
+push-to-talk on or off (with the bound key as a hint) and links to the voice settings; the headphones button lists
+the output devices the same way. A choice changes the voice settings, so it applies live to the running call
+like a change in the settings tab. While the browser hides the device names the menu offers **Show devices**;
+browsers without output device selection (`setSinkId`, missing in some Firefox builds and WebKitGTK) say so
+instead of listing speakers. A click keeps muting and deafening.
+
 **Voice and stream audio are separate.** A participant's voice (microphone) and their screen share's audio
 each have their own volume (0–200 %, kept per device): the voice volume in the participant's menu, the stream
 volume behind the speaker button on the stream tile and, while they stream, in the menu next to the voice

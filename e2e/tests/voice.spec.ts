@@ -10,6 +10,7 @@ import { dirname, join, resolve } from "node:path";
 import { expect, test, type APIRequestContext, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { NODE, createRoomViaApi, inviteCode, loginAs, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, type Account } from "./helpers";
 import { hideDeviceNamesUntilAsked } from "./voice-helpers";
+import { openContextMenu } from "./menu-helpers";
 
 /** An animated GIF (profile.spec.ts fixture) for the avatar animation on the stage. */
 const ANIMATED_GIF = resolve(dirname(new URL(import.meta.url).pathname), "../fixtures/animated.gif");
@@ -533,6 +534,63 @@ test.describe("Voice channels", () => {
     // The microphone test never ran.
     await expect(page.getByTestId("mic-check-start")).toBeVisible();
     await expect(page.getByTestId("mic-meter")).toHaveAttribute("data-level", "-100");
+  });
+
+  test("Quick menus on mute and deafen: devices and push-to-talk, applied live (right-click, long press on phones)", async ({ browser, request }) => {
+    test.setTimeout(120_000);
+    const { roomId, code } = await setup(request);
+    const alice = await voiceUser(browser, "vmenu", { cuesOff: true });
+    const page = alice.page;
+    await joinRoom(request, page, code);
+    await joinFromSidebar(page, roomId);
+    await expect(page.getByTestId("voice-bar")).toHaveAttribute("data-status", "connected", { timeout: 30_000 });
+
+    // The stage's headphones button: the output devices, the system default checked; a choice applies and is checked.
+    // Phones open it with a long press (touch events through the DevTools protocol), desktops with a right-click.
+    const deafen = page.getByTestId("voice-deafen");
+    await openContextMenu(page, deafen);
+    const output = page.getByTestId("voice-output-menu");
+    await expect(output.getByRole("menuitemcheckbox", { name: "Systemstandard" })).toHaveAttribute("aria-checked", "true");
+    const speaker = output.getByRole("menuitemcheckbox", { name: /Fake Audio Output/ }).first();
+    const speakerName = (await speaker.innerText()).trim();
+    await speaker.click();
+    await expect(output).toHaveCount(0);
+    // Opening the menu never deafened.
+    await expect(deafen).toHaveAttribute("aria-pressed", "false");
+    await openContextMenu(page, deafen);
+    await expect(output.getByRole("menuitemcheckbox", { name: speakerName })).toHaveAttribute("aria-checked", "true");
+    await page.keyboard.press("Escape");
+    await expect(output).toHaveCount(0);
+
+    // The voice bar's microphone button: the fake microphones and push-to-talk, which brings up the stage's hold button.
+    await openNavIfMobile(page);
+    const mute = page.getByTestId("voice-bar-mute");
+    await openContextMenu(page, mute);
+    const input = page.getByTestId("voice-input-menu");
+    await expect(input.getByRole("menuitemcheckbox", { name: /Fake Audio Input/ }).first()).toBeVisible();
+    await expect(page.getByTestId("voice-ptt")).toHaveCount(0);
+    const ptt = input.getByRole("menuitemcheckbox", { name: /Push-to-Talk/ });
+    await expect(ptt).toHaveAttribute("aria-checked", "false");
+    await ptt.click();
+    await expect(ptt).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByTestId("voice-ptt")).toBeAttached();
+    await ptt.click();
+    await expect(ptt).toHaveAttribute("aria-checked", "false");
+    await expect(page.getByTestId("voice-ptt")).toHaveCount(0);
+    const microphone = input.getByRole("menuitemcheckbox", { name: /Fake Audio Input/ }).first();
+    const microphoneName = (await microphone.innerText()).trim();
+    await microphone.click();
+    await expect(input).toHaveCount(0);
+    await expect(mute).toHaveAttribute("aria-pressed", "false");
+    // The call keeps running on the new microphone.
+    await expect(page.getByTestId("voice-bar")).toHaveAttribute("data-status", "connected");
+
+    // "Voice settings…" opens the settings tab with both choices.
+    await openContextMenu(page, mute);
+    await input.getByRole("menuitem", { name: "Sprachchat-Einstellungen…" }).click();
+    await expect(page).toHaveURL(/\/settings\/voice$/);
+    await expect(page.getByTestId("mic-select").locator("option:checked")).toHaveText(microphoneName);
+    await expect(page.getByTestId("speaker-select").locator("option:checked")).toHaveText(speakerName);
   });
 
   test("Hear yourself: the live loopback starts, shows its timer and stops next to record and play back; leaving the settings ends it", async ({ page, request }) => {
