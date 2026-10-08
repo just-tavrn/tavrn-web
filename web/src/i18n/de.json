@@ -3117,5 +3117,10 @@
   "tray.mute": "Mikrofon stummschalten",
   "tray.deafen": "Ton aus",
   "tray.leave": "Sprachkanal verlassen",
-  "tray.quit": "Tavrn beenden"
+  "tray.quit": "Tavrn beenden",
+  "webhooks.forum_channel": "Forum",
+  "webhooks.forum_hint": "Forumkanal: Jede Nachricht landet in einem Beitrag. Ergänze \"thread_id\": \"<Beitrags-ID>\" im Payload (die ID steht im Link des Beitrags); Nachrichten ohne sie werden abgelehnt.",
+  "errors.push.endpoint_taken": "Das Push-Abo dieses Browsers gehört zu einem anderen Konto. Schalte Push-Benachrichtigungen erneut ein.",
+  "errors.thread.id_invalid": "Der Beitrag konnte nicht angelegt werden: Prüfe die Uhrzeit dieses Geräts.",
+  "errors.thread.id_taken": "Der Beitrag konnte nicht angelegt werden. Versuche es erneut."
 }

@@ -99,6 +99,19 @@ describe("push store", () => {
     expect(JSON.parse(localStorage.getItem("tavrn.push:bob@chat.example.org")!)).toEqual({ id: "sub1", key: KEY });
   });
 
+  it("an endpoint another account holds is replaced by a new browser subscription (409 push.endpoint_taken)", async () => {
+    localStorage.setItem("tavrn.push:bob@chat.example.org", JSON.stringify({ id: "old", key: KEY }));
+    const taken = fakeSubscription(KEY, "https://push.example/theirs");
+    const s = setup({ permission: "granted", existing: taken });
+    s.api.push.subscribe.mockRejectedValueOnce(new TavrnApiError({ type: "about:blank", title: "Conflict", status: 409, code: "push.endpoint_taken", detail: "" }));
+    await usePush.getState().init(s.ctx);
+    expect(taken.unsubscribe).toHaveBeenCalled();
+    expect(s.pushManager.subscribe).toHaveBeenCalledTimes(1);
+    expect(s.api.push.subscribe).toHaveBeenCalledTimes(2);
+    expect(s.api.push.subscribe).toHaveBeenLastCalledWith(expect.objectContaining({ endpoint: "https://push.example/new" }));
+    expect(usePush.getState().status).toBe("on");
+  });
+
   it("refused permission leaves push off", async () => {
     const s = setup({ grant: "denied" });
     await usePush.getState().init(s.ctx);

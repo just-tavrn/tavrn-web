@@ -3117,5 +3117,10 @@
   "tray.mute": "Mute microphone",
   "tray.deafen": "Deafen",
   "tray.leave": "Leave voice channel",
-  "tray.quit": "Quit Tavrn"
+  "tray.quit": "Quit Tavrn",
+  "webhooks.forum_channel": "forum",
+  "webhooks.forum_hint": "Forum channel: each message goes into a post. Add \"thread_id\": \"<post id>\" to the payload (the id is in the post's link); messages without it are refused.",
+  "errors.push.endpoint_taken": "This browser's push subscription belongs to another account. Turn push notifications on again.",
+  "errors.thread.id_invalid": "The post could not be created: check the clock of this device.",
+  "errors.thread.id_taken": "The post could not be created. Try again."
 }
