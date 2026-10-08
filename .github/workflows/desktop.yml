@@ -11,8 +11,9 @@
 name: Desktop
 
 on:
-  # Draft pull requests get the quick checks only (ci.yml); the builds run once a pull request is marked ready
-  # for review and on every push after that.
+  # Draft pull requests get the quick checks only (ci.yml); the Linux build and its smoke test (GitHub-hosted,
+  # about seven minutes) run once a pull request is marked ready for review and on every push after that.
+  # Windows builds only by hand (workflow_dispatch) and on release tags.
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
