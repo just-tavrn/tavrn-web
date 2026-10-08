@@ -100,6 +100,21 @@ const wait = (ms: number, signal?: AbortSignal) =>
     );
   });
 
+/**
+ * After a finished handoff the sign-in window stays open this long (in the background: the app continues at once), so
+ * the node's page in it can sign its own session out first (docs/DESKTOP.md "Signing in").
+ */
+export const APP_CLOSE_GRACE_MS = 4000;
+
+/** Closes the page's window: at once after a cancel or an error, after {@link APP_CLOSE_GRACE_MS} when it is done. */
+function closeWindow(run: AppSessionRun, done: boolean): Promise<void> | void {
+  if (!done) return run.close().catch(() => undefined);
+  void (async () => {
+    await (run.sleep ?? wait)(APP_CLOSE_GRACE_MS, run.signal);
+    await run.close().catch(() => undefined);
+  })();
+}
+
 /** Polls until the session is ready (null when cancelled); network hiccups are retried, the node's answers are not. */
 async function pollUntilReady(run: AppSessionRun, sessionId: string): Promise<ConnectSessionStatus | null> {
   const sleep = run.sleep ?? wait;
@@ -127,6 +142,7 @@ export async function runAppSession(run: AppSessionRun): Promise<AppSessionResul
   const created = await run.api.auth.createConnectSession({ code_challenge: challenge, device_name: run.deviceName });
   const keys = await (run.keys ?? defaultKeys)();
   const url = connectPageUrl(run.web, created.session_id, randomUrlSafe(), run.mode ?? "login", { method: run.method, key: keys?.publicKey });
+  let done = false;
   try {
     await run.open(url);
     run.onPage?.(url);
@@ -138,11 +154,12 @@ export async function runAppSession(run: AppSessionRun): Promise<AppSessionResul
       const unlock = status.sealed_unlock && keys ? keys.open(status.sealed_unlock, created.session_id) : null;
       const device = run.device ? await run.device().catch(() => null) : null;
       const session = await run.api.auth.connectToken({ code: status.code, code_verifier: verifier, device });
+      done = true;
       return { session, unlock };
     }
   } finally {
     keys?.dispose();
-    await run.close().catch(() => undefined);
+    await closeWindow(run, done);
   }
 }
 
@@ -161,6 +178,7 @@ export async function runAppUnlock(run: Omit<AppSessionRun, "mode" | "method" | 
     const first = await run.api.auth.pollConnectSession(created.session_id);
     if (first.purpose !== "unlock") throw connectError("connect.unlock_unsupported", "The node has no unlock sessions");
     const url = connectPageUrl(run.web, created.session_id, randomUrlSafe(), "login", { method: "passkey", key: keys.publicKey });
+    let done = false;
     try {
       await run.open(url);
       run.onPage?.(url);
@@ -168,9 +186,10 @@ export async function runAppUnlock(run: Omit<AppSessionRun, "mode" | "method" | 
       if (!status) return null;
       const material = status.sealed_unlock ? keys.open(status.sealed_unlock, created.session_id) : null;
       if (!material) throw connectError("connect.unlock_failed", "The unlock material did not open");
+      done = true;
       return material;
     } finally {
-      await run.close().catch(() => undefined);
+      await closeWindow(run, done);
     }
   } finally {
     keys?.dispose();

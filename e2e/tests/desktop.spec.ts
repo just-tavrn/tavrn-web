@@ -5,7 +5,7 @@
  * the explicit node base, Settings → App and the global hotkeys run against the real node. The built app itself is
  * covered by the WebDriver smoke test (apps/desktop/e2e/smoke.mjs).
  */
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
 import { NODE, addVirtualAuthenticator, confirmWithPassword, createRoomViaApi, loginAs, logoutViaUi, nextTotpCode, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, type Account } from "./helpers";
 import { FAKE_MEDIA, cues, hideDeviceNamesUntilAsked } from "./voice-helpers";
 
@@ -97,9 +97,20 @@ async function openedConnectPage(page: Page): Promise<string> {
   return url;
 }
 
-/** The node's page in a window of its own (another browser context: its own storage, like the shell's second webview). */
-async function signInOnNodePage(browser: Browser, url: string, account: Account) {
+/**
+ * The node's page in a window of its own (another browser context: its own storage, like the shell's second webview).
+ * `inWindow`: the page runs in the app's sign-in window (the Tauri runtime with the window label `connect`, no
+ * commands), where it signs its own session out after the handoff; the test waits for that before closing it.
+ */
+async function signInOnNodePage(browser: Browser, url: string, account: Account, inWindow = false) {
   const context = await browser.newContext({ locale: "de-DE" });
+  if (inWindow) {
+    await context.addInitScript(() => {
+      const w = window as unknown as Record<string, unknown>;
+      w.isTauri = true;
+      w.__TAURI_INTERNALS__ = { metadata: { currentWindow: { label: "connect" } } };
+    });
+  }
   const page = await context.newPage();
   await page.goto(url);
   await page.getByLabel("Benutzername", { exact: true }).fill(account.username);
@@ -110,7 +121,19 @@ async function signInOnNodePage(browser: Browser, url: string, account: Account)
   await expect(page.getByTestId("connect-text")).toContainText("Desktop app");
   await page.getByTestId("connect-allow").click();
   await expect(page.getByTestId("connect-done")).toBeVisible();
+  if (inWindow) {
+    // Once the app exchanged the code the page signs out; "return to the app" stays on screen.
+    await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("tavrn.auth") ?? "{}").token ?? null), { timeout: 20_000 }).toBeNull();
+    await expect(page.getByTestId("connect-done")).toBeVisible();
+  }
   await context.close();
+}
+
+/** Names of the account's devices, as the app's session sees them. */
+async function deviceNames(page: Page, request: APIRequestContext): Promise<string[]> {
+  const token = await page.evaluate(() => JSON.parse(localStorage.getItem("tavrn.auth") ?? "{}").token as string);
+  const devices = await (await request.get(`${NODE}/api/v1/users/me/devices`, { headers: { Authorization: `Bearer ${token}` } })).json();
+  return (devices as Array<{ name: string }>).map((d) => d.name).sort();
 }
 
 test.describe("Desktop app (simulated shell)", () => {
@@ -176,14 +199,32 @@ test.describe("Desktop app (simulated shell)", () => {
     await expect(page.getByTestId("handoff-waiting")).toBeVisible();
     const url = await openedConnectPage(page);
     await signInOnNodePage(browser, url, account);
-    // The app polled the code, exchanged it with its verifier and closed the window; its own device sets up encryption.
+    // The app polled the code, exchanged it with its verifier and closed the window (a moment later); its own device
+    // sets up encryption.
     await expect(page.getByTestId("encryption-title")).toHaveText("Dein Wiederherstellungsschlüssel", { timeout: 20_000 });
-    expect(await page.evaluate(() => sessionStorage.getItem("e2e.desktop.connect.closed"))).toBe("1");
+    await expect.poll(() => page.evaluate(() => sessionStorage.getItem("e2e.desktop.connect.closed")), { timeout: 10_000 }).toBe("1");
     const token = await page.evaluate(() => JSON.parse(localStorage.getItem("tavrn.auth") ?? "{}").token as string);
     const devices = await (await request.get(`${NODE}/api/v1/users/me/devices`, { headers: { Authorization: `Bearer ${token}` } })).json();
     expect(devices.find((d: { current: boolean }) => d.current)?.name).toBe("Desktop app");
+    // A browser tab (here: not the sign-in window) keeps its own sign-in, as a browser user expects.
+    expect(await deviceNames(page, request)).toHaveLength(3);
     // The waiting panel fits the phone width.
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+
+  test("sign-in in the app's sign-in window: the page signs itself out afterwards, no extra device stays", async ({ page, request, browser }) => {
+    test.setTimeout(90_000);
+    const account = await registerViaApi(request, "handw");
+    await asDesktopApp(page, NODE);
+    await page.goto("/login");
+    await page.getByTestId("node-page-signin").click();
+    const url = await openedConnectPage(page);
+    await signInOnNodePage(browser, url, account, true);
+    await expect(page.getByTestId("encryption-title")).toHaveText("Dein Wiederherstellungsschlüssel", { timeout: 20_000 });
+    // The registration's device and the app's: the page's own sign-in is gone (docs/DESKTOP.md "Signing in").
+    await expect.poll(() => deviceNames(page, request)).toEqual(["Desktop app", "e2e"]);
+    // The app closes the window a moment later, after the page signed out.
+    await expect.poll(() => page.evaluate(() => sessionStorage.getItem("e2e.desktop.connect.closed")), { timeout: 10_000 }).toBe("1");
   });
 
   test("the browser has neither the picker nor Settings → App", async ({ page, request }) => {

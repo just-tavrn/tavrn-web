@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it, vi } from "vitest";
 import { TavrnApi, TavrnApiError, pkceChallenge } from "@tavrn/sdk";
-import { APP_SESSION_POLL_MS, connectPageUrl, runAppSession, runAppUnlock } from "./appSession";
+import { APP_CLOSE_GRACE_MS, APP_SESSION_POLL_MS, connectPageUrl, runAppSession, runAppUnlock } from "./appSession";
 import type { UnlockKeyPair } from "../crypto/sealedUnlock";
 
 const session = { status: "ok", user: { address: "alice@home.example" }, access_token: "acc", refresh_token: "ref", expires_in: 3600, device_id: "D", recovery_code_used: false };
@@ -85,8 +85,23 @@ describe("app sessions of the connect flow (FEDERATION.md §8 step 3)", () => {
     expect(url.hash).toBe(`#k=${keys.publicKey}`);
     expect(onPage).toHaveBeenCalledWith(url.toString());
     expect(calls.filter((c) => c.url.includes("/auth/connect/session/"))).toHaveLength(3);
-    expect(close).toHaveBeenCalled();
+    await vi.waitFor(() => expect(close).toHaveBeenCalled());
     expect(APP_SESSION_POLL_MS).toBe(2000);
+  });
+
+  it("after a sign-in the window closes a moment later, so the page in it can sign itself out first", async () => {
+    const { api } = node([ready]);
+    const close = vi.fn(async () => {});
+    let releaseGrace = () => {};
+    const sleep = vi.fn((ms: number, _signal?: AbortSignal) => (ms === APP_CLOSE_GRACE_MS ? new Promise<void>((r) => (releaseGrace = r)) : Promise.resolve()));
+    const result = await runAppSession({ api, web: "https://app.home.example", domain: "home.example", deviceName: "d", open: async () => {}, close, sleep, keys: noKeys });
+    // The app continues signed in at once; the window waits for the page's sign-out (docs/DESKTOP.md "Signing in").
+    expect(result).toEqual({ session, unlock: null });
+    await vi.waitFor(() => expect(sleep).toHaveBeenCalledWith(APP_CLOSE_GRACE_MS, undefined));
+    expect(close).not.toHaveBeenCalled();
+    releaseGrace();
+    await vi.waitFor(() => expect(close).toHaveBeenCalledTimes(1));
+    expect(APP_CLOSE_GRACE_MS).toBeGreaterThanOrEqual(3000);
   });
 
   it("refuses a code of another node", async () => {
@@ -164,7 +179,8 @@ describe("unlock sessions (passkey unlock of a signed-in app)", () => {
     const open = vi.fn(async (_url: string) => {});
     const close = vi.fn(async () => {});
     const keys = fakeKeys();
-    const material = await runAppUnlock({ api, web: "https://app.home.example", domain: "home.example", deviceName: "Desktop app", open, close, sleep: noSleep, keys: async () => keys });
+    const sleep = vi.fn(async (_ms: number, _signal?: AbortSignal) => {});
+    const material = await runAppUnlock({ api, web: "https://app.home.example", domain: "home.example", deviceName: "Desktop app", open, close, sleep, keys: async () => keys });
     expect(material).toEqual({ credentialId: "Y3JlZA", prf: new Uint8Array(32).fill(7) });
     expect(calls[0]!.body).toMatchObject({ purpose: "unlock", device_name: "Desktop app" });
     // The support check polls before the page opens.
@@ -173,7 +189,8 @@ describe("unlock sessions (passkey unlock of a signed-in app)", () => {
     expect(url.searchParams.get("method")).toBe("passkey");
     expect(url.hash).toBe(`#k=${keys.publicKey}`);
     expect(calls.some((c) => c.url.endsWith("/auth/connect/token"))).toBe(false);
-    expect(close).toHaveBeenCalled();
+    await vi.waitFor(() => expect(close).toHaveBeenCalled());
+    expect(sleep).toHaveBeenCalledWith(APP_CLOSE_GRACE_MS, undefined);
     expect(keys.disposed).toBe(true);
   });
 
