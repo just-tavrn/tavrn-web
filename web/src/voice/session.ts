@@ -46,7 +46,8 @@ import { VoiceError, voiceErrorMessage } from "./errors";
 import { channelKey, participantsOf, useVoicePresence } from "./presence";
 import { cameraOptions, resolutionSize, useVoiceSettings, type VoiceSettings } from "./settings";
 import { withEntitlementCaps } from "./entitlementCaps";
-import { IDLE, SpeakingBatcher, useSoundOverlays, useVoice, type ParticipantMedia, type Quality, type VoiceTarget } from "./store";
+import { IDLE, SpeakingBatcher, isWatched, useSoundOverlays, useVoice, useWatchedStreams, type ParticipantMedia, type Quality, type VoiceTarget } from "./store";
+import { participantVolumes, type Volumes } from "./volume";
 import { ANALYSER_SIZE, SPEAKING_POLL_MS, SpeakingDetector, analysersAvailable, combineLevels, localLevel, rmsDb } from "./speaking";
 import { PriorityTracker, claimsPriority, duckGain, rampTo, verifyPriority } from "./priority";
 import { SOUND_TOPIC, SignalLimiter, encodeSoundSignal, parseClipEmoji, parseSoundSignal } from "./soundSignal";
@@ -188,6 +189,7 @@ function mediaOf(p: Participant): ParticipantMedia {
     camera: !!cam?.track && !cam.isMuted,
     screen: !!p.getTrackPublication(Track.Source.ScreenShare)?.track,
     micMuted: !mic || mic.isMuted,
+    screenAudio: !!p.getTrackPublication(Track.Source.ScreenShareAudio)?.track,
   };
 }
 
@@ -349,13 +351,19 @@ function refreshMedia(s: Session) {
   set({ media, camera: local.camera, screen: local.screen, focus: focus && media[focus]?.screen ? focus : null });
 }
 
-/** Playback volume of a remote participant: per-user volume × output volume, 0 while deafened. */
+/** The volumes last applied per identity (development test hooks). */
+const applied = new Map<string, Volumes>();
+
+/**
+ * Playback volumes of a remote participant (`volume.ts`, issue #20): the voice volume on the microphone, the
+ * stream volume on the screen share audio, both times the output volume; deafen silences the voice, and the
+ * stream too unless it is watched (and "stream audio while deafened" is on).
+ */
 function applyVolume(p: RemoteParticipant, deafened = useVoice.getState().deafened) {
-  const s = settings();
-  const user = splitIdentity(p.identity).address;
-  const volume = deafened ? 0 : ((s.userVolumes[user] ?? 100) / 100) * (s.outputVolume / 100);
-  p.setVolume(volume, Track.Source.Microphone);
-  p.setVolume(volume, Track.Source.ScreenShareAudio);
+  const v = participantVolumes(settings(), splitIdentity(p.identity).address, { deafened, watched: isWatched(useWatchedStreams.getState(), p.identity) });
+  p.setVolume(v.microphone, Track.Source.Microphone);
+  p.setVolume(v.stream, Track.Source.ScreenShareAudio);
+  applied.set(p.identity, v);
 }
 
 function applyVolumes(s: Session) {
@@ -467,6 +475,7 @@ function wire(s: Session) {
       s.priority.remove(p.identity);
       s.detector?.forget(p.identity);
       s.signals.forget(p.identity);
+      applied.delete(p.identity);
       media();
     })
     .on(RoomEvent.TrackSubscribed, (track: RemoteTrack, pub: { source: Track.Source }, p: RemoteParticipant) => {
@@ -529,6 +538,10 @@ function follow(s: Session) {
       if (epoch != null && local != null && epoch > local) void s.mls.catchUp(s.q).catch(() => undefined);
     }),
     useVoiceSettings.subscribe((now, prev) => void applySettings(s, now.settings, prev.settings)),
+    // A stream tile appearing or going away changes what is audible while deafened.
+    useWatchedStreams.subscribe(() => {
+      if (current === s && useVoice.getState().deafened) applyVolumes(s);
+    }),
   );
   const editable = (e: KeyboardEvent) => {
     const el = e.target as HTMLElement | null;
@@ -567,7 +580,7 @@ async function applySettings(s: Session, next: VoiceSettings, prev: VoiceSetting
       await s.room.switchActiveDevice("audiooutput", next.outputDeviceId || "default");
       await s.pipeline.setOutputDevice(next.outputDeviceId);
     }
-    if (next.outputVolume !== prev.outputVolume || next.userVolumes !== prev.userVolumes) applyVolumes(s);
+    if (next.outputVolume !== prev.outputVolume || next.userVolumes !== prev.userVolumes || next.streamVolumes !== prev.streamVolumes || next.streamWhileDeafened !== prev.streamWhileDeafened) applyVolumes(s);
     if (useVoice.getState().camera) {
       if (next.cameraDeviceId !== prev.cameraDeviceId && next.cameraDeviceId) await s.room.switchActiveDevice("videoinput", next.cameraDeviceId);
       if (next.background !== prev.background || next.backgroundImage !== prev.backgroundImage || next.backgroundQuality !== prev.backgroundQuality) await startBackground(s);
@@ -587,6 +600,7 @@ async function cleanup(s: Session) {
     batcher.clear();
     clearSoundOverlays();
     lastReport = { level: Number.NEGATIVE_INFINITY, open: false };
+    applied.clear();
   }
   s.priority.clear();
   await stopBackground(s);
@@ -1101,6 +1115,14 @@ function exposeForTests(s: Session) {
       speaking: analysing(s) ? "analyser" : "livekit",
       priority: [...s.priority.active],
       ducking: Object.fromEntries([...s.taps.values()].map((t) => [t.identity, t.duck.gain.value])),
+      // Volumes as applied (`volume.ts`) and the gains LiveKit's Web Audio mix plays them with.
+      volumes: Object.fromEntries([...applied].map(([identity, v]) => [identity, v])),
+      gains: Object.fromEntries(
+        [...s.room.remoteParticipants.values()].map((p) => {
+          const gain = (source: Track.Source) => (p.getTrackPublication(source)?.track as { gainNode?: GainNode } | undefined)?.gainNode?.gain.value ?? null;
+          return [p.identity, { microphone: gain(Track.Source.Microphone), stream: gain(Track.Source.ScreenShareAudio) }];
+        }),
+      ),
       remote: [...s.room.remoteParticipants.values()].map((p) => ({
         identity: p.identity,
         isSpeaking: p.isSpeaking,
