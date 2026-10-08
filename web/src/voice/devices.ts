@@ -51,7 +51,10 @@ export interface MediaDevices {
  */
 export function useMediaDevices({ source = browserSource(), autoUnlock, refresh = 0 }: { source?: DeviceSource | null; autoUnlock: boolean; refresh?: number }): MediaDevices {
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
-  const asked = useRef(false);
+  // The desktop app's own request is pending or was refused: only a refusal shows "Show devices".
+  const [refused, setRefused] = useState(false);
+  const asking = useRef(false);
+  const latest = useRef<MediaDeviceInfo[]>([]);
   const md = useRef(source);
   md.current = source;
 
@@ -59,15 +62,19 @@ export function useMediaDevices({ source = browserSource(), autoUnlock, refresh 
     const m = md.current;
     if (!m) return [];
     const all = await m.enumerateDevices().catch(() => [] as MediaDeviceInfo[]);
+    latest.current = all;
     setDevices(all);
     return all;
   }, []);
 
   const unlock = useCallback(async () => {
     const m = md.current;
-    if (!m || asked.current) return;
-    asked.current = true;
-    if (await unlockDeviceLabels(m)) await list();
+    if (!m || asking.current || (latest.current.length > 0 && !labelsHidden(latest.current))) return;
+    asking.current = true;
+    const granted = await unlockDeviceLabels(m);
+    asking.current = false;
+    setRefused(!granted);
+    if (granted) await list();
   }, [list]);
 
   const hasSource = !!source;
@@ -86,5 +93,5 @@ export function useMediaDevices({ source = browserSource(), autoUnlock, refresh 
     };
   }, [hasSource, autoUnlock, refresh, list, unlock]);
 
-  return { devices, needsPermission: labelsHidden(devices), unlock };
+  return { devices, needsPermission: labelsHidden(devices) && (!autoUnlock || refused), unlock };
 }

@@ -379,15 +379,17 @@ async function main() {
 
   // System-wide hotkeys: bound in Settings → Voice, pressed through the X server while the window is minimized.
   await script("history.pushState({}, '', '/settings/voice'); dispatchEvent(new PopStateEvent('popstate'));");
-  await click(await waitFor("[data-testid=hotkey-toggle_mute-change]", 30_000));
+  // Clicks from the page itself: a WebDriver click goes to coordinates, which a layout change in between would miss.
+  const press = async (css) => script("arguments[0].scrollIntoView({ block: 'center' }); arguments[0].click();", [{ [ELEMENT]: await waitFor(css, 30_000) }]);
+  await press("[data-testid=hotkey-toggle_mute-change]");
   // The keys go in like typed input (WebKitWebDriver's keyboard does not reach the page under xvfb).
   const key = (type, init) => script(`window.dispatchEvent(new KeyboardEvent(arguments[0], { ...arguments[1], bubbles: true, cancelable: true }));`, [type, init]);
   await key("keydown", { code: "KeyM", key: "m", ctrlKey: true, altKey: true });
   await until("the bound combination", async () => (await text(await find("[data-testid=hotkey-toggle_mute-key]"))) === "Ctrl + Alt + M");
   step("Ctrl+Alt+M bound to mute through the shell");
   // Push-to-talk on the left Ctrl alone: recorded when it is released without another key.
-  await click(await waitFor("[data-testid=mode-ptt]"));
-  await click(await waitFor("[data-testid=ptt-capture]"));
+  await press("[data-testid=mode-ptt]");
+  await press("[data-testid=ptt-capture]");
   await key("keydown", { code: "ControlLeft", key: "Control", ctrlKey: true });
   await key("keyup", { code: "ControlLeft", key: "Control" });
   const pttBinding = () => script("return JSON.parse(localStorage.getItem('tavrn.voice.settings') || '{}').hotkeys?.push_to_talk;");

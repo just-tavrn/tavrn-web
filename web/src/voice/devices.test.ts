@@ -76,6 +76,26 @@ describe("useMediaDevices", () => {
     expect(f.stopped).toEqual(["audio"]);
   });
 
+  it("desktop app: no \"Show devices\" while it asks by itself (the page would jump)", async () => {
+    const f = fakeDevices();
+    let grant: () => void = () => undefined;
+    const ask = f.md.getUserMedia;
+    f.md.getUserMedia = vi.fn((c: MediaStreamConstraints) => new Promise<MediaStream>((resolve) => (grant = () => resolve(ask(c))))) as typeof ask;
+    const { result } = renderHook(() => useMediaDevices({ source: f.md, autoUnlock: true }));
+    await waitFor(() => expect(f.md.getUserMedia).toHaveBeenCalledTimes(1));
+    expect(result.current.devices).toHaveLength(3);
+    expect(result.current.needsPermission).toBe(false);
+    await act(async () => grant());
+    await waitFor(() => expect(result.current.devices.some((d) => d.label === "USB Headset")).toBe(true));
+  });
+
+  it("desktop app: offers \"Show devices\" only when its own request was refused", async () => {
+    const f = fakeDevices({ refuse: true });
+    const { result } = renderHook(() => useMediaDevices({ source: f.md, autoUnlock: true }));
+    await waitFor(() => expect(f.md.getUserMedia).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(result.current.needsPermission).toBe(true));
+  });
+
   it("browser: does not prompt by itself; unlock() (the button or the first focus of a list) fills the lists", async () => {
     const f = fakeDevices();
     const { result } = renderHook(() => useMediaDevices({ source: f.md, autoUnlock: false }));
