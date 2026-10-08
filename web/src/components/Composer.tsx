@@ -430,7 +430,7 @@ export function Composer({
           ))}
         </ul>
       )}
-      <div ref={inputRow} className="flex items-end gap-1 rounded-lg border border-line bg-bg-0 px-2 py-2 focus-within:border-accent">
+      <div ref={inputRow} className="flex items-end gap-1 rounded-lg border border-line-strong bg-bg-0 px-2 py-2 focus-within:border-accent">
         {canAttach && (
           <>
             <input
