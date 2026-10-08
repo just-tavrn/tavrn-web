@@ -109,6 +109,12 @@ node's media server (UDP per address, TCP, TURN) and says what to fix when one f
 settings → Soundboard; members with `use_soundboard` play them from the call controls into their own
 (encrypted) microphone track. LiveKit, RNNoise and the background effects are only loaded once voice is used.
 
+**The screen stays on during calls:** while you are in a voice channel or a call, the browser client asks for a
+screen wake lock (switch "Keep the screen on during voice calls" in the voice settings, on by default), so a phone
+does not lock mid-conversation. Browsers hold it only while the page is visible and the client asks again when you
+come back; keeping voice alive with the display off is up to the mobile apps, and the desktop app will keep the system
+awake through its shell.
+
 **Quality and traffic** (VOICE.md §4a): with `manage_channels`, room settings → Channels → a voice channel →
 **Voice quality** offers Saver (8 kbps, telephone quality, least traffic), Standard (32, clear speech), High (64,
 the default of new channels), Studio (128, practically transparent speech), Music (192, stereo) and a custom

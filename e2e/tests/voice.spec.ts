@@ -422,6 +422,43 @@ test.describe("Voice channels", () => {
     await bob.page.context().setOffline(false);
   });
 
+  test("Screen wake lock: requested after joining, released after leaving", async ({ browser, request }) => {
+    test.setTimeout(120_000);
+    const { roomId, code } = await setup(request);
+    const alice = await voiceUser(browser, "valice", { cuesOff: true });
+    // A fake Screen Wake Lock API that counts requests and releases (installed before the client loads).
+    await alice.page.context().addInitScript(() => {
+      const log = { requests: 0, releases: 0 };
+      (window as unknown as { __wakeLock: typeof log }).__wakeLock = log;
+      Object.defineProperty(navigator, "wakeLock", {
+        configurable: true,
+        value: {
+          request: async (type: string) => {
+            log.requests++;
+            const sentinel = Object.assign(new EventTarget(), {
+              type,
+              released: false,
+              release: async () => {
+                if (sentinel.released) return;
+                sentinel.released = true;
+                log.releases++;
+                sentinel.dispatchEvent(new Event("release"));
+              },
+            });
+            return sentinel;
+          },
+        },
+      });
+    });
+    const wakeLock = () => alice.page.evaluate(() => (window as unknown as { __wakeLock?: { requests: number; releases: number } }).__wakeLock ?? null);
+    await joinRoom(request, alice.page, code);
+    await joinFromSidebar(alice.page, roomId);
+    await expect.poll(wakeLock, { timeout: 15_000 }).toEqual({ requests: 1, releases: 0 });
+    await alice.page.getByTestId("voice-leave").click();
+    await expect(alice.page.getByTestId("voice-join-panel")).toBeVisible();
+    await expect.poll(wakeLock, { timeout: 15_000 }).toEqual({ requests: 1, releases: 1 });
+  });
+
   test("full channel: user_limit 1 is reported with the limit", async ({ browser, request }) => {
     test.setTimeout(150_000);
     const { roomId, code } = await setup(request, { userLimit: 1 });

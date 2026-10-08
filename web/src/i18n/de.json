@@ -263,6 +263,8 @@
   "voice.settings.loopback_stopped_voice": "„Dich selbst hören“ wurde beendet, weil du einem Sprachkanal beigetreten bist.",
   "voice.settings.transmitting": "Sendet",
   "voice.settings.test_tone": "Testton abspielen",
+  "voice.settings.keep_screen_on": "Bildschirm im Sprachchat anlassen",
+  "voice.settings.keep_screen_on_hint": "Der Browser hält den Bildschirm nur an, solange diese Seite sichtbar ist.",
   "voice.settings.processing": "Sprachverarbeitung",
   "voice.settings.auto_gain": "Automatische Lautstärkeregelung",
   "voice.settings.echo": "Echounterdrückung",

@@ -388,6 +388,8 @@ export function VoiceSettingsTab() {
         <Button variant="ghost" onClick={() => void testTone(settings.outputDeviceId, settings.outputVolume / 100).catch(toastError)} data-testid="speaker-test">
           {t("voice.settings.test_tone")}
         </Button>
+        {/* The desktop app keeps the screen on through its shell later (`voice/wakeLock.ts`). */}
+        {!platform().isDesktop && <Check label={t("voice.settings.keep_screen_on")} hint={t("voice.settings.keep_screen_on_hint")} checked={settings.keepScreenOn} onChange={(v) => update({ keepScreenOn: v })} testid="keep-screen-on" />}
       </Section>
 
       <Section title={t("voice.test.title")} description={t("voice.test.description")}>

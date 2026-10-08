@@ -263,6 +263,8 @@
   "voice.settings.loopback_stopped_voice": "Hear yourself stopped because you joined a voice channel.",
   "voice.settings.transmitting": "Transmitting",
   "voice.settings.test_tone": "Play test tone",
+  "voice.settings.keep_screen_on": "Keep the screen on during voice calls",
+  "voice.settings.keep_screen_on_hint": "The browser keeps the screen on only while this page is visible.",
   "voice.settings.processing": "Voice processing",
   "voice.settings.auto_gain": "Automatic gain",
   "voice.settings.echo": "Echo cancellation",
