@@ -31,6 +31,13 @@
  *                      (http://127.0.0.1:<port>, e.g. the container image with host networking in desktop.yml)
  *   TAURI_DRIVER       the tauri-driver binary (default: tauri-driver on the PATH)
  *   WEBDRIVER_PORT     tauri-driver's port (default 4444; WebKitWebDriver uses the next one)
+ *
+ * The node must serve its web client (the sign-in window shows its pages): a release build or the container image. A
+ * debug tavrn-node reads `web/dist` from its build tree at run time and serves a placeholder once that tree is gone;
+ * the test refuses such a node. The app always renders on the X display of xvfb-run: GTK is forced to X11 and
+ * WAYLAND_DISPLAY is removed (WSLg sets it, and GTK would otherwise open the windows on the desktop). The app runs as a
+ * single instance (a second start hands over to the first and exits), so the test waits for a quit app to be gone
+ * before it starts it again, and refuses to start while another instance of the same binary runs.
  */
 import { execFileSync, spawn } from "node:child_process";
 import { createHmac, randomBytes } from "node:crypto";
@@ -38,6 +45,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { appProcessPattern, childEnv, servesWebClient } from "./smoke-lib.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, "../../..");
@@ -63,7 +71,7 @@ function fail(message) {
 }
 
 function start(cmd, args, env) {
-  const child = spawn(cmd, args, { env: { ...process.env, ...env }, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(cmd, args, { env: childEnv(process.env, env), stdio: ["ignore", "pipe", "pipe"] });
   const log = [];
   child.stdout.on("data", (d) => log.push(String(d)));
   child.stderr.on("data", (d) => log.push(String(d)));
@@ -89,8 +97,10 @@ async function until(what, fn, timeoutMs = 30_000) {
   throw new Error(`timed out waiting for ${what}${last ? `: ${last.message}` : ""}`);
 }
 
-async function wd(method, path, body) {
-  const resp = await fetch(`${driver}${path}`, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+async function wd(method, path, body, timeoutMs = 120_000) {
+  const resp = await fetch(`${driver}${path}`, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(timeoutMs) }).catch((e) => {
+    throw new Error(`${method} ${path}: ${e.name === "TimeoutError" ? `no answer within ${timeoutMs / 1000} s` : e.message}`);
+  });
   const json = await resp.json().catch(() => ({}));
   if (!resp.ok) throw new Error(`${method} ${path}: ${resp.status} ${JSON.stringify(json.value ?? json)}`);
   return json.value;
@@ -187,6 +197,8 @@ async function main() {
     });
   }
   await until("the node", async () => (await fetch(`${nodeUrl}/healthz`)).ok, 120_000);
+  const home = await (await fetch(`${nodeUrl}/`)).text();
+  if (!servesWebClient(home)) fail(`the node at ${nodeUrl} serves no web client (a debug tavrn-node whose build tree with web/dist is gone?); use a release build or the container image`);
   step(`node at ${nodeUrl}`);
 
   // The first start has no keychain (a session without a Secret Service).
@@ -389,13 +401,24 @@ async function main() {
 
 /** Starts tauri-driver and the app with the keychain backend `keychain` (TAVRN_DESKTOP_KEYCHAIN). */
 let driverProcess = null;
+/** Pids of running instances of the app binary. */
+function appPids() {
+  try {
+    return execFileSync("pgrep", ["-f", "-x", appProcessPattern(app)], { encoding: "utf8" }).split(/\s+/).filter(Boolean).map(Number);
+  } catch {
+    return [];
+  }
+}
+
 async function startApp(keychain) {
+  // A running instance would take over the new start (single instance) and the session would never come up.
+  if (appPids().length) throw new Error(`another instance of ${app} is running (pids ${appPids().join(", ")}); quit it first`);
   // The app's settings and web storage go to the scratch directory (a clean first start, kept for restarts).
   const xdg = { XDG_CONFIG_HOME: join(scratch, "config"), XDG_DATA_HOME: join(scratch, "data"), XDG_CACHE_HOME: join(scratch, "cache") };
   for (const d of Object.values(xdg)) mkdirSync(d, { recursive: true });
   driverProcess = start(driverBin, ["--port", String(driverPort), "--native-port", String(driverPort + 1)], { ...xdg, TAVRN_DESKTOP_KEYCHAIN: keychain });
   await until("tauri-driver", async () => (await fetch(`${driver}/status`)).ok);
-  const created = await wd("POST", "/session", { capabilities: { alwaysMatch: { browserName: "wry", "tauri:options": { application: app } } } });
+  const created = await wd("POST", "/session", { capabilities: { alwaysMatch: { browserName: "wry", "tauri:options": { application: app } } } }, 90_000);
   session = created.sessionId;
 }
 
@@ -403,6 +426,10 @@ async function startApp(keychain) {
 async function restartApp(keychain) {
   await wd("DELETE", `/session/${session}`).catch(() => undefined);
   session = null;
+  // The quit app may take a moment to exit; until it has, a new start would only hand over to it (single instance).
+  await until("the app to exit", async () => appPids().length === 0, 20_000).catch(() => {
+    for (const pid of appPids()) process.kill(pid, "SIGKILL");
+  });
   driverProcess?.kill("SIGTERM");
   await until("tauri-driver to stop", async () => {
     try {
