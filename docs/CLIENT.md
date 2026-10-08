@@ -186,6 +186,14 @@ builders where the node lives. Flows that need the node's own origin are not off
 sign-on, the connect flow, captchas, web push); the password with TOTP or a recovery code works. The full list and
 the reasons are in DESKTOP.md "Limitations".
 
+**Global hotkeys** (app only): Settings → Voice & video → Global hotkeys binds push-to-talk and the priority speaker
+(held), mute and deafen (toggles) to key combinations that also work while the app is in the background or minimized,
+for example during a game. A recorder per action takes the combination (Escape cancels, Backspace removes it) and
+shows the key names of the platform (Super, Win or Cmd). The bindings are kept with the voice settings, apart from the
+push-to-talk and priority keys of the window, and are handed to the shell at every start; a combination that another
+action or a key of the window already uses is refused. The browser shows a hint instead (DESKTOP.md "Global
+hotkeys").
+
 ## Translations
 
 The web client ships English (default) and German. To add a language, copy `web/src/i18n/en.json` to

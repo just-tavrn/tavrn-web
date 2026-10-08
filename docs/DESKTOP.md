@@ -22,7 +22,8 @@ Tauri CLI) and the Rust crate `tavrn-desktop` in `apps/desktop/src-tauri` with a
 |---|---|
 | The main window shows only the bundled client: `tauri://localhost` (Linux), `https://tauri.localhost` (Windows), in development the Vite dev server. Every other navigation is refused; web links (http, https, mailto) open in the system browser, new windows are never opened. The click-to-play embeds load in their frames. | `src-tauri/src/guard.rs`, `src/lib.rs` |
 | Content Security Policy: scripts only from the bundle (`script-src 'self' 'wasm-unsafe-eval'`, no eval, no inline scripts, no third-party scripts), `connect-src` https and wss to any node plus plain http/ws to `localhost` and `127.0.0.1` (development nodes), images and media from https, frames only for the embed providers. | `tauri.conf.json` `app.security.csp` |
-| One capability for the main window: the app's six commands, nothing else (no `remote` origins, no plugin permissions, no global Tauri object). | `src-tauri/capabilities/main.json`, `build.rs` |
+| One capability for the main window: the app's own commands, nothing else (no `remote` origins, no plugin permissions, no global Tauri object). The global-shortcut plugin is used from Rust only; its JavaScript commands are not granted. | `src-tauri/capabilities/main.json`, `build.rs` |
+| The microphone and the camera are granted to the window without a prompt of the webview (it shows only the bundled client); screen capture and every other permission keep the webview's default. | `src-tauri/src/media.rs` |
 | The node URL is validated twice: in the client and again in the shell before it is stored. | `web/src/platform/nodeUrl.ts`, `src-tauri/src/node_url.rs` |
 
 Unit tests in `src-tauri/src/conf_tests.rs` keep these properties of `tauri.conf.json` and the capability from eroding.
@@ -42,7 +43,8 @@ runs Tauri code. Everything that imports Tauri APIs lives under `platform/tauri*
 | `appVersion()` | `web/package.json` | the installed app |
 | `node` | — | the chosen node, `set(url)` validates and persists it (shell command `set_node`) |
 | `updater` | — | signed updates (absent while the build has no updater key) |
-| `hotkeys`, `keystore`, `notifications`, `tray` | — | extension points of the next steps (global hotkeys; keychain, notifications, tray) |
+| `hotkeys` | — | global hotkeys: `register(action, combo)`, `unregister(action)`, `subscribe(handler)` (shell commands `register_hotkey`, `unregister_hotkey`, `listen_hotkeys`) |
+| `keystore`, `notifications`, `tray` | — | extension points of the next steps (keychain, notifications, tray) |
 
 The helpers `apiBase()`, `originUrl()`, `originWsUrl()`, `webOrigin()`, `originHost()` and `allowsInsecureNodes()`
 of `platform/index.ts` are the single place the API client (`lib/api.ts`), the WebSocket, node discovery
@@ -65,6 +67,54 @@ browser (`https://tavrn.example`; without a scheme https is assumed). Rules:
 **Settings → App** (only in the app) shows the version, the node with "Change node" (the picker again; changing the
 node signs out of the old one first) and the updates.
 
+## Global hotkeys
+
+Push-to-talk and the priority speaker (while held), mute and deafen (toggles) work while the app is in the background
+or minimized, for example during a game. **Settings → Voice & video → Global hotkeys** has a recorder per action:
+"Change", then press the combination; Escape cancels, Backspace removes the binding. The browser shows a hint instead.
+
+- **Combinations** are modifiers and one key, written as the client captures them: `Ctrl+Alt+Shift+Super+<KeyboardEvent.code>`
+  in this order, e.g. `Ctrl+Shift+KeyM`, `F13`, `Alt+Numpad1`. `Super` is the Windows key on Windows, Cmd on macOS and
+  Super/Meta on Linux; the recorder shows these names. A modifier alone (only Ctrl, for example) cannot be bound.
+- **A global grab takes the key from every other program.** So a key that types text (letters, digits, punctuation,
+  Space, Enter, Tab, arrows, Delete) needs Ctrl, Alt or Super as well; function keys F1–F24, the numpad and Insert, Home,
+  End, Page Up/Down, Pause, Scroll Lock and Print Screen may stand alone. Escape and Backspace are the recorder's keys.
+- **Conflicts** are refused with a message: the same combination for two actions (the shell refuses it as well), and a
+  global combination equal to the push-to-talk or priority key of the window (Settings → Voice & video, the keys that
+  work while the window has focus) — in both directions, since both would fire. A combination the system refuses
+  (another program holds it) is reported and the old binding stays.
+- **Where they live:** with the voice settings of the client (`desktopHotkeys` in `tavrn.voice.settings`); the shell
+  keeps only the registry of the running app (`src-tauri/src/hotkeys.rs`). At every start the client hands the stored
+  bindings to the shell; a combination that cannot be registered then stays stored and is reported once.
+- **How they reach the call:** the shell grabs the combination through
+  [tauri-plugin-global-shortcut](https://v2.tauri.app/plugin/global-shortcut/) and reports presses and releases over a
+  channel the client opened (`listen_hotkeys`); `web/src/voice/hotkeys.ts` drives push-to-talk (the gate opens while
+  held, with the release delay of the settings), the priority speaker, mute and deafen. Push-to-talk needs the input
+  mode "Push to talk". Focus changes of the window do not release a global hold. Outside a call a toggle shows what
+  the next voice channel gets.
+- **Platforms:** Windows (`RegisterHotKey`) and Linux on X11 (`XGrabKey`). In a Wayland session the grab works only
+  through XWayland, i.e. while an X11 window (many games, Wine and Proton included) has the focus; native Wayland has no
+  global shortcuts for applications yet.
+
+## Voice on Linux
+
+WebKitGTK runs WebRTC through GStreamer and keeps it off unless the app switches it on: the shell turns on
+`enable-webrtc` and `enable-media-stream` of the webview's settings (`src-tauri/src/media.rs`). At runtime these
+GStreamer plugins must be installed (the `.deb` depends on them; for the AppImage install them yourself):
+
+```sh
+sudo apt install gstreamer1.0-plugins-bad gstreamer1.0-plugins-good gstreamer1.0-gl gstreamer1.0-pipewire   # or gstreamer1.0-pulseaudio
+```
+
+**The distributions' WebKitGTK is built without WebRTC.** WebKitGTK compiles WebRTC only with its experimental
+features (`ENABLE_WEB_RTC` follows `ENABLE_EXPERIMENTAL_FEATURES`, off in release builds); Ubuntu 24.04 and 26.04 ship
+`libwebkit2gtk-4.1` 2.52 that way (it does not link `libgstwebrtc-1.0`). There the switch has no effect:
+`getUserMedia` works, `RTCPeerConnection` does not exist, and the client refuses to join voice as in browsers without
+WebRTC. Check a system with `ldd /usr/lib/x86_64-linux-gnu/libwebkit2gtk-4.1.so.0 | grep gstwebrtc`; on a system whose
+WebKitGTK is built with WebRTC the switch makes it available (the smoke test asserts that there; not yet verified on
+such a build). End-to-end encrypted voice also needs encoded
+transforms (`RTCRtpScriptTransform`) in that build.
+
 ## Limitations
 
 What the browser gets from "the client is served by the node" and what the app does instead:
@@ -79,7 +129,7 @@ What the browser gets from "the client is served by the node" and what the app d
 | Captcha on login or registration | not shown (notice instead) | the widget is a third-party script (CSP `script-src 'self'`) bound to the node's host name. Use the browser for that step, or the operator turns the captcha off for logins. |
 | Web push | not offered | there is no service worker in the app (its pages are not served by the node). Native notifications come with the next step. |
 | Desktop notifications of the browser | as far as the webview supports them | native notifications come with the next step. |
-| Voice and video | Windows (WebView2, Chromium): expected to work as in Chromium (to be confirmed by hand); Linux: not available with the distributions' WebKitGTK | end-to-end encrypted media needs WebRTC with encoded transforms. The WebKitGTK of Ubuntu 26.04 ships without WebRTC (no `RTCPeerConnection`, checked in the built app), so the client refuses to join, as in browsers that lack it. Screen and window sharing through the platform APIs is a later step. |
+| Voice and video | Windows (WebView2, Chromium): expected to work as in Chromium (to be confirmed by hand); Linux: not available with the distributions' WebKitGTK | end-to-end encrypted media needs WebRTC with encoded transforms. The app switches WebRTC on, but the WebKitGTK of Ubuntu 24.04 and 26.04 is built without it (no `RTCPeerConnection`, checked in the built app; "Voice on Linux"), so the client refuses to join, as in browsers that lack it. Global hotkeys work regardless. Screen and window sharing through the platform APIs is a later step. |
 | Popping out the whiteboard, "open original" in the media viewer | not offered | the app opens no second window; maximize and the download icon cover it. |
 | The terms and other pages that open in a new tab | open on the node's web client in the system browser | the app opens no second window. |
 | Updates while the repository is private | do not download | the updater fetches `latest.json` and the installers from the public release URLs. |
@@ -88,7 +138,8 @@ What the browser gets from "the client is served by the node" and what the app d
 
 System packages on Linux (Debian/Ubuntu names): `libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev
 librsvg2-dev patchelf xdg-utils`, for the WebDriver test also the WebKit WebDriver (`webkit2gtk-driver`, on Ubuntu
-26.04 `webkitgtk-webdriver`: it provides `/usr/bin/WebKitWebDriver`) and `xvfb`. A Rust toolchain (stable, at least
+26.04 `webkitgtk-webdriver`: it provides `/usr/bin/WebKitWebDriver`), `xvfb` and `xdotool`; for voice the GStreamer
+plugins of "Voice on Linux". A Rust toolchain (stable, at least
 1.90) and the requirements of the web client (README "Development"). On Windows: the Microsoft C++ build tools and
 WebView2 (preinstalled on Windows 10 and 11).
 
@@ -107,16 +158,21 @@ picker accepts `http://127.0.0.1:8080`).
 ### Tests
 
 - Rust: `cargo test` in `apps/desktop/src-tauri` (node URL validation, settings file, navigation guard, updater key,
-  the security properties of `tauri.conf.json` and the capability).
+  the hotkey registry: combinations, Super/Cmd/Win, typing keys, duplicates, refused grabs; the media permissions; the
+  security properties of `tauri.conf.json` and the capability, the `.deb` dependencies).
 - Vitest, with the other tests of the client (`just test`): the platform detection and both implementations (Tauri
   mocked with `@tauri-apps/api/mocks`), the node picker, Settings → App, the API base plumbing, the flows the app
-  does not offer.
+  does not offer; the global hotkeys (settings, conflict check, recorder, the bridge to the shell, the voice session's
+  reaction to presses and releases).
 - `node --test` of the update manifest script (`pnpm --filter @tavrn/desktop test`).
 - WebDriver smoke test of the built Linux app (`apps/desktop/e2e/smoke.mjs`, plain WebDriver over HTTP): the app
   starts, shows the node picker, refuses `http://evil`, accepts a development node and reaches the login page; an
   account with TOTP (registered over the API) signs in with password and code, sets up its recovery key (the
   encryption core runs in the webview) and sends a message in an end-to-end encrypted channel, which the node stores
-  as ciphertext only. It needs `tauri-driver` (`cargo install tauri-driver --locked`) and a built app:
+  as ciphertext only; `getUserMedia` is present (and `RTCPeerConnection` whenever the system's WebKitGTK has WebRTC);
+  the recorder binds Ctrl+Alt+M to mute, the window is minimized and `xdotool` presses the combination through the X
+  server: the shell's global grab reports it and mute toggles. It needs `tauri-driver`
+  (`cargo install tauri-driver --locked`) and a built app:
 
   ```sh
   just desktop-build
