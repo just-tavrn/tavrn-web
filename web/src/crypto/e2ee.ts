@@ -21,6 +21,8 @@ export interface E2eeContext {
   address: string;
   /** Device id of the current session. */
   deviceId: string;
+  /** `ensureDevice`: creates KeyPackages in the open session manager's state (see `@tavrn/e2ee`). */
+  keyPackages?: (count: number) => Promise<string[] | null>;
 }
 
 const bind = (ctx: E2eeContext): shared.E2eeContext => ({ ...ctx, store: cryptoStore });

@@ -8,7 +8,7 @@
 import { create } from "zustand";
 import { mlsApiOf, openMlsManager, qualify, reloadOwnIdentity, withBackupKey as withStoreBackupKey, type MlsEvent, type MlsManager, type VerifiedContact } from "@tavrn/e2ee";
 import type { Channel } from "@tavrn/sdk";
-import { api } from "../lib/api";
+import { api, homeBase } from "../lib/api";
 import { apiFor, homeKeys, useNodes } from "./nodes";
 import { useAuth } from "./auth";
 import { cryptoStore } from "../crypto/store";
@@ -65,6 +65,15 @@ export function withBackupKey<T>(fn: (key: Uint8Array) => T): T | null {
 let current: { key: string; manager: Promise<MlsManager | null> } | null = null;
 
 /**
+ * Name of the Web Lock and the BroadcastChannel through which the tabs of this browser share the MLS state of an
+ * account (`@tavrn/e2ee` tabs.ts): one tab owns and writes the state, the others forward their state-changing calls
+ * to it. Per home node, account and device. The desktop app has one window, which always owns the state.
+ */
+export function mlsTabName(nodeBase: string, address: string, deviceId: string): string {
+  return `tavrn-mls|${nodeBase}|${address}/${deviceId}`;
+}
+
+/**
  * The session manager of the signed-in account, or null while this device cannot decrypt (no master
  * secret, locked, or no device key yet). Created once per account and device.
  */
@@ -81,6 +90,7 @@ export function getMls(): Promise<MlsManager | null> {
       deviceId,
       homeDomain: user.domain,
       onEvent,
+      tabs: { name: mlsTabName(homeBase() || location.origin, user.address, deviceId) },
     });
     if (!m) return null;
     eventSource = m;

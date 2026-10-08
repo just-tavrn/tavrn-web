@@ -136,6 +136,17 @@ member or not confirmed by its user's key shows a warning and blocks sending unt
 keys are backed up encrypted on the home node so that a new device unlocked with the recovery key reads
 the history. Friends (requests, accept, block) live under "Friends" on the home view.
 
+**Several tabs.** All tabs of one browser profile share the account's MLS state (one IndexedDB store). One tab owns
+it: the first tab that opens the account's session manager holds the Web Lock `tavrn-mls|<home node>|<address>/<device>`
+(`src/stores/mls.ts`, `@tavrn/e2ee` `src/tabs.ts`), runs every join, catch-up, commit and encryption and alone
+writes the state. The other tabs read from a copy that follows the owner's writes (decryption, rosters, voice
+keys) and send everything that changes the state to the owner over a BroadcastChannel of the same name; the
+owner also passes on the epoch changes their views wait for. When the owner tab closes or signs out, the next tab
+takes the lock over, loads the state from the store and runs the calls that were in flight once more. Without Web
+Locks or BroadcastChannel every tab works alone (a second tab may then have to rejoin after an invalid commit, as
+before). The desktop app has one window, which always owns the state. New KeyPackages (topped up at every start)
+are created in the owner's state too.
+
 ## Threads, forum and announcement channels
 
 Threads ([PROTOCOL.md §7e](https://github.com/just-tavrn/tavrn-protocol/blob/main/PROTOCOL.md)) are
