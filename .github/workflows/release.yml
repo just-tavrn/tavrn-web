@@ -3,7 +3,8 @@
 # Release of the web client (docs/GITHUB.md "Releases"). Push a tag vX.Y.Z whose commit carries version X.Y.Z in
 # web/package.json: the workflow checks the tag, runs the checks, builds web/dist and attaches it as
 # tavrn-web-X.Y.Z.tar.gz (with its SHA-256 sum) to a GitHub release, so the node's image build can embed a pinned
-# bundle instead of building this repository. Gated by CI_ENABLED.
+# bundle instead of building this repository. The job `desktop` then attaches the desktop installers, their updater
+# signatures and latest.json to the same release (desktop.yml, docs/DESKTOP.md). Gated by CI_ENABLED.
 name: Release
 
 on:
@@ -73,3 +74,18 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --generate-notes --verify-tag release/*
+
+  desktop:
+    name: Desktop installers ${{ github.ref_name }}
+    needs: release
+    if: ${{ vars.CI_ENABLED == 'true' }}
+    permissions:
+      contents: write
+      packages: read
+    uses: ./.github/workflows/desktop.yml
+    with:
+      release-tag: ${{ github.ref_name }}
+    secrets:
+      TAVRN_READ_PAT: ${{ secrets.TAVRN_READ_PAT }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}

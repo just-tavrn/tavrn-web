@@ -10,6 +10,7 @@ import { useNode } from "../components/NodeScope";
 import { useWhiteboardSession } from "./store";
 import { useChannelBoard } from "./WhiteboardPage";
 import { WhiteboardSession } from "./WhiteboardSession";
+import { platform } from "../platform";
 
 const iconButton = "inline-flex min-h-9 min-w-9 items-center justify-center rounded-md text-fg-1 hover:bg-bg-3 hover:text-fg-0";
 
@@ -35,7 +36,8 @@ export default function WhiteboardStageTile({ roomId, channelId, focused, onFocu
       <button type="button" className={iconButton} onClick={() => setMaximized((m) => !m)} aria-label={maximized ? t("whiteboard.restore") : t("whiteboard.maximize")} title={maximized ? t("whiteboard.restore") : t("whiteboard.maximize")} data-testid="whiteboard-maximize" aria-pressed={maximized}>
         {maximized ? "🗗" : "🗖"}
       </button>
-      {!isOwner && (
+      {/* The desktop app opens no second window (docs/DESKTOP.md); maximize covers it there. */}
+      {!isOwner && !platform().isDesktop && (
         <button type="button" className={iconButton} onClick={popout} aria-label={t("whiteboard.popout")} title={t("whiteboard.popout")} data-testid="whiteboard-popout">
           ↗
         </button>

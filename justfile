@@ -10,7 +10,7 @@ default:
 dev: install
     pnpm --filter @tavrn/web dev
 
-# Every check of the CI: licenses (SPDX headers, dependency licenses), typecheck, Vitest
+# Every check of the JavaScript CI: licenses (SPDX headers, dependency licenses), typecheck, Vitest (the desktop shell: desktop-check)
 check: license-check typecheck test
 
 # scripts/check-spdx.sh (map in sync with LICENSE.md), scripts/check-js-licenses.mjs (no (A)GPL/LGPL)
@@ -40,6 +40,24 @@ dist-tarball: build
     tar -C web/dist -czf "release/tavrn-web-$v.tar.gz" .
     (cd release && sha256sum "tavrn-web-$v.tar.gz" > "tavrn-web-$v.tar.gz.sha256")
     ls -l release
+
+# The desktop app (docs/DESKTOP.md): Tauri dev mode, the client from the Vite dev server (needs the Linux packages)
+desktop-dev: install
+    pnpm --filter @tavrn/desktop tauri dev
+
+# Installers of this platform (Linux: .deb and .AppImage; Windows: .msi and NSIS) from web/dist; extra args go to `tauri build`
+desktop-build *args: install
+    pnpm --filter @tavrn/desktop tauri build {{ if args == "" { if os() == "windows" { "--bundles msi,nsis" } else { "--bundles deb,appimage" } } else { args } }}
+
+# cargo fmt, clippy, tests and dependency licenses of the desktop shell (needs web/dist: `just build` first)
+desktop-check: install
+    @[ -f web/dist/index.html ] || { echo "web/dist is missing: run just build first (the shell embeds it)" >&2; exit 1; }
+    cd apps/desktop/src-tauri && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked && cargo deny check licenses
+
+# WebDriver smoke test of the built Linux app (tauri-driver, WebKitWebDriver; E2E_NODE_BIN like `just e2e`)
+desktop-e2e:
+    @[ -n "${E2E_NODE_BIN:-}" ] || { echo "set E2E_NODE_BIN to a tavrn-node binary" >&2; exit 1; }
+    {{ if env("DISPLAY", "") == "" { "xvfb-run -a " } else { "" } }}node apps/desktop/e2e/smoke.mjs
 
 # Extra arguments go to `playwright test` (default: chromium and the phone emulation, two workers).
 # Playwright against real nodes: set E2E_NODE_BIN (a tavrn-node binary) or E2E_NODE_IMAGE (its container image)

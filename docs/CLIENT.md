@@ -176,6 +176,16 @@ these features only for nodes that announce `reports.v1` and `automod.v1`.
   owns rooms lists them in the deletion dialog with "Transfer ownership" and "Delete room" for each.
 - **Single sign-on groups.** Admin → SSO picks the rooms and their roles of a group by name.
 
+## The desktop app
+
+The same client also runs as the desktop app for Linux and Windows ([DESKTOP.md](DESKTOP.md)): it is bundled into a
+Tauri shell instead of being served by a node, asks for the home node on the first start (the node picker at `/node`,
+changeable under Settings → App, where the app also shows its version and installs signed updates) and talks to that
+node over https and wss. The client's platform layer (`src/platform/`) tells the API client, the WebSocket and the link
+builders where the node lives. Flows that need the node's own origin are not offered in the app (passkeys, single
+sign-on, the connect flow, captchas, web push); the password with TOTP or a recovery code works. The full list and
+the reasons are in DESKTOP.md "Limitations".
+
 ## Translations
 
 The web client ships English (default) and German. To add a language, copy `web/src/i18n/en.json` to

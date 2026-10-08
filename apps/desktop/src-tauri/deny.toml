@@ -1,0 +1,38 @@
+# cargo deny configuration of the desktop shell (`just desktop-check`, desktop.yml). The same allow-list as
+# tavrn-node: permissive licenses and MPL-2.0, no (A)GPL/LGPL.
+
+[graph]
+all-features = true
+
+[licenses]
+allow = [
+    "MIT",
+    "MIT-0",
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "MPL-2.0",
+    "Zlib",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "CC0-1.0",
+    "BSL-1.0",
+]
+confidence-threshold = 0.93
+unused-allowed-license = "allow"
+
+# Mozilla's CA certificate bundle of the updater's TLS stack (rustls via reqwest): data under the permissive
+# Community Data License Agreement, not code (the same exception as tavrn-node).
+[[licenses.exceptions]]
+crate = "webpki-root-certs"
+allow = ["CDLA-Permissive-2.0"]
+
+[bans]
+multiple-versions = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

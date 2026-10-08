@@ -13,6 +13,7 @@ import { renderMarkdown } from "../lib/markdown";
 import { PROVIDER_NAMES, type Embed } from "../lib/embeds";
 import { cardsOf, readPreview, type LinkPreview } from "../lib/linkPreview";
 import { useContentPrivacy } from "../stores/contentPrivacy";
+import { originUrl } from "../platform";
 
 /** `true` once the element has been near the viewport (always `true` without IntersectionObserver). */
 function useSeen<T extends Element>(): [React.RefObject<T | null>, boolean] {
@@ -170,7 +171,7 @@ export const LinkPreviews = memo(function LinkPreviews({ body, content }: { body
   const cards = useMemo(() => {
     if (!body.includes("http")) return null;
     const preview = readPreview(raw, body);
-    return cardsOf(body, preview, location.hostname, { embeds: embeds !== "off", previews: showPreviews });
+    return cardsOf(body, preview, new URL(originUrl()).hostname, { embeds: embeds !== "off", previews: showPreviews });
   }, [body, raw, embeds, showPreviews]);
   const hasCards = !!cards && (cards.embeds.length > 0 || !!cards.preview);
   if (rich.length === 0 && !hasCards) return null;

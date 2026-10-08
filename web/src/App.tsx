@@ -22,6 +22,8 @@ import { MessageRequestPage, MessageRequestsPage } from "./pages/MessageRequests
 import { ReauthDialog } from "./components/ReauthDialog";
 import { TermsGate } from "./components/legal/TermsGate";
 import { LegalDocumentPage, LegalIndexPage, NoticeFormPage, NoticeStatusPage } from "./pages/legal/LegalPages";
+import { NodePickerPage } from "./pages/NodePickerPage";
+import { platform } from "./platform";
 
 // The whiteboard page (and with it the Excalidraw canvas) is loaded only when a board is opened.
 const WhiteboardPage = lazy(() => import("./whiteboard/WhiteboardPage").then((m) => ({ default: m.WhiteboardPage })));
@@ -32,9 +34,22 @@ const whiteboard = (
 );
 
 export function App() {
+  const desktop = platform().isDesktop;
+  // The desktop app without a home node yet: the node picker for every path (docs/DESKTOP.md).
+  if (desktop && !platform().node?.current()) {
+    return (
+      <BrowserRouter>
+        <Routes>
+          <Route path="*" element={<NodePickerPage />} />
+        </Routes>
+      </BrowserRouter>
+    );
+  }
   return (
     <BrowserRouter>
       <Routes>
+        {/* Desktop app: change the home node (Settings → App). */}
+        {desktop && <Route path="/node" element={<NodePickerPage />} />}
         <Route path="/login" element={<LoginPage />} />
         <Route path="/encryption" element={<EncryptionPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />

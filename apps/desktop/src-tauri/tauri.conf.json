@@ -1,0 +1,69 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Tavrn",
+  "mainBinaryName": "tavrn",
+  "version": "../../../web/package.json",
+  "identifier": "org.tavrn.desktop",
+  "build": {
+    "frontendDist": "../../../web/dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "pnpm --filter @tavrn/web dev",
+    "beforeBuildCommand": "pnpm --filter @tavrn/web build"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Tavrn",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 360,
+        "minHeight": 560,
+        "create": false,
+        "useHttpsScheme": true,
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "capabilities": ["main"],
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self' 'wasm-unsafe-eval'",
+        "style-src": "'self' 'unsafe-inline'",
+        "font-src": "'self'",
+        "img-src": "'self' data: blob: https: http://localhost:* http://127.0.0.1:*",
+        "media-src": "'self' blob: https: http://localhost:* http://127.0.0.1:*",
+        "connect-src": "'self' ipc: http://ipc.localhost https: wss: http://localhost:* ws://localhost:* http://127.0.0.1:* ws://127.0.0.1:*",
+        "worker-src": "'self' blob:",
+        "frame-src": "https://www.youtube-nocookie.com https://player.twitch.tv https://clips.twitch.tv https://player.vimeo.com https://open.spotify.com",
+        "object-src": "'none'",
+        "base-uri": "'self'",
+        "form-action": "'self'"
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["deb", "appimage", "msi", "nsis"],
+    "createUpdaterArtifacts": false,
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.png", "icons/icon.ico"],
+    "category": "SocialNetworking",
+    "shortDescription": "Federated community chat with end-to-end encrypted conversations",
+    "longDescription": "tavrn is a federated, self-hostable community chat: rooms with text, voice, announcement, files and forum channels, direct messages and friends across nodes, end-to-end encrypted conversations. The desktop app talks to the home node you choose.",
+    "publisher": "tavrn",
+    "homepage": "https://github.com/just-tavrn/tavrn",
+    "license": "Apache-2.0",
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper" },
+      "nsis": { "installMode": "currentUser" }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "REPLACE_WITH_THE_OWNERS_MINISIGN_PUBLIC_KEY",
+      "endpoints": ["https://github.com/just-tavrn/tavrn-web/releases/latest/download/latest.json"],
+      "windows": { "installMode": "passive" }
+    }
+  }
+}

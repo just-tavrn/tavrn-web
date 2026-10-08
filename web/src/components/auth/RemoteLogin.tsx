@@ -9,8 +9,8 @@ import { homeClient, startConnect } from "../../lib/remoteSignIn";
 import { Button, ErrorText, Field, Input } from "../ui";
 import { deviceProofFor } from "../../crypto/e2ee";
 import { SecondFactorVerify } from "./SecondFactorVerify";
+import { deviceName, originHost, platform } from "../../platform";
 
-const DEVICE_NAME = "Browser";
 
 /**
  * "Sign in with an account of another node" (FEDERATION.md §8): address → discovery of the home node →
@@ -56,7 +56,7 @@ export function RemoteLogin({ next, onSession, onCancel }: { next: string; onSes
       // Continue this browser's device of that account if it has one (PROTOCOL.md §5b). The address always
       // carries the identity domain, wherever the node's API lives (design note 4.2c).
       const device = await deviceProofFor(home, `${user}@${endpoints.domain}`);
-      const resp = await home.auth.login({ username: user, password, device_name: DEVICE_NAME, device });
+      const resp = await home.auth.login({ username: user, password, device_name: deviceName(), device });
       setPassword("");
       if (resp.status === "enrollment_required") setError(t("auth.remote_enroll_needed", { domain: endpoints.domain }));
       else setPreauth(resp);
@@ -117,7 +117,7 @@ export function RemoteLogin({ next, onSession, onCancel }: { next: string; onSes
         </p>
       </div>
       <p className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-fg-1" data-testid="remote-warning">
-        {t("auth.remote_warning", { origin: origin ?? location.host, domain: endpoints.domain })}
+        {t("auth.remote_warning", { origin: origin ?? originHost(), domain: endpoints.domain })}
       </p>
       {preauth ? (
         methods.length ? (
@@ -141,12 +141,15 @@ export function RemoteLogin({ next, onSession, onCancel }: { next: string; onSes
         </form>
       )}
       <ErrorText>{error}</ErrorText>
-      <div className="space-y-1 border-t border-line pt-3">
-        <Button variant="ghost" className="w-full border border-line" disabled={!!busy} onClick={() => void connect()} data-testid="remote-connect">
-          {t("auth.remote_connect", { domain: endpoints.domain })}
-        </Button>
-        <p className="text-xs text-fg-2">{t("auth.remote_connect_hint", { domain: endpoints.domain })}</p>
-      </div>
+      {/* The connect flow returns to this client's origin, which the desktop app does not have (docs/DESKTOP.md). */}
+      {!platform().isDesktop && (
+        <div className="space-y-1 border-t border-line pt-3">
+          <Button variant="ghost" className="w-full border border-line" disabled={!!busy} onClick={() => void connect()} data-testid="remote-connect">
+            {t("auth.remote_connect", { domain: endpoints.domain })}
+          </Button>
+          <p className="text-xs text-fg-2">{t("auth.remote_connect_hint", { domain: endpoints.domain })}</p>
+        </div>
+      )}
       <button type="button" className="block min-h-9 w-full text-center text-sm text-fg-2 hover:text-fg-0" onClick={reset}>
         {t("auth.remote_back")}
       </button>

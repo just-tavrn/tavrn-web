@@ -3,11 +3,15 @@ import { TavrnApi, createRefresher } from "@tavrn/sdk";
 import { readStored, useAuth } from "../stores/auth";
 import { currentReauth, requestReauth } from "../stores/reauth";
 import { trackingFetch } from "../stores/reach";
+import { apiBase, originWsUrl } from "../platform";
 
 export const CLIENT_HEADER = "tavrn-web/0.0.1 (content.v1, reactions, e2ee.mls1)";
 
-/** Base URL of the account's home node: this origin unless signed in with an account of another node. */
-export const homeBase = () => useAuth.getState().home?.base ?? "";
+/**
+ * Base URL of the account's home node: the client's node (this origin in the browser, the chosen node in the
+ * desktop app) unless signed in with an account of another node.
+ */
+export const homeBase = () => useAuth.getState().home?.base ?? apiBase();
 const homeDomain = () => useAuth.getState().user?.domain ?? null;
 
 /**
@@ -55,15 +59,14 @@ export const quietApi = new TavrnApi({
 });
 
 /**
- * The node this web client was loaded from, without a session: node info and captcha of the login
- * page, password step, second factor and passkey login, the peer document proxy.
+ * The node this web client was loaded from (desktop app: the node picked on the first start), without a session:
+ * node info and captcha of the login page, password step, second factor and passkey login, the peer document proxy.
  */
-export const publicApi = new TavrnApi({ baseUrl: "", clientHeader: CLIENT_HEADER });
+export const publicApi = new TavrnApi({ baseUrl: apiBase, clientHeader: CLIENT_HEADER });
 
 /** WebSocket of the home node. */
 export function wsUrl(): string {
   const home = useAuth.getState().home;
   if (home) return home.ws;
-  const base = location.origin.replace(/^http/, "ws");
-  return `${base}/api/v1/ws`;
+  return originWsUrl();
 }

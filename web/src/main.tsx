@@ -6,6 +6,7 @@ import { App } from "./App";
 import "./styles.css";
 import { useLocale } from "./i18n";
 import { registerServiceWorker } from "./lib/push";
+import { initPlatform } from "./platform";
 
 document.documentElement.lang = useLocale.getState().locale;
 
@@ -16,13 +17,17 @@ const queryClient = new QueryClient({
 const root = document.getElementById("root");
 if (!root) throw new Error("#root fehlt in index.html");
 
-// Web push only (no caching, no offline mode): the worker shows pushes of the home node while no tab is open.
-void registerServiceWorker();
-
-createRoot(root).render(
-  <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
-  </StrictMode>,
-);
+// The platform first (browser, or the desktop app with the node the user picked): every API call depends on it.
+void initPlatform()
+  .catch((e: unknown) => console.error("platform detection failed", e))
+  .then(() => {
+    // Web push only (no caching, no offline mode): the worker shows pushes of the home node while no tab is open.
+    void registerServiceWorker();
+    createRoot(root).render(
+      <StrictMode>
+        <QueryClientProvider client={queryClient}>
+          <App />
+        </QueryClientProvider>
+      </StrictMode>,
+    );
+  });

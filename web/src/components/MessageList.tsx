@@ -28,6 +28,7 @@ import { UnverifiedMarker, VerifiedBadge } from "./Verification";
 import { MediaAvatar } from "./Avatar";
 import { useAuthorAvatar } from "./AuthorProfiles";
 import { LinkPreviews } from "./LinkPreviews";
+import { webOrigin } from "../platform";
 
 /** How an author is shown: nickname or display name, role colour. */
 export interface AuthorLook {
@@ -641,7 +642,7 @@ const MessageRow = memo(function MessageRow({ m, grouped, own, bot, author, repl
           replyInThread: () => onThread?.(m, "reply", body),
           react: (emoji) => onReact?.(m, emoji, !!m.reactions?.some((r) => r.emoji === emoji && r.me)),
           copyText: () => void copyText(c.kind === "text" ? c.body : "").then((ok) => ok && useToasts.getState().push({ kind: "info", title: t("menu.copied") })),
-          copyLink: () => void copyText(`${window.location.origin}${window.location.pathname}?message=${m.id}`).then((ok) => ok && useToasts.getState().push({ kind: "info", title: t("menu.copied") })),
+          copyLink: () => void copyText(`${webOrigin()}${window.location.pathname}?message=${m.id}`).then((ok) => ok && useToasts.getState().push({ kind: "info", title: t("menu.copied") })),
           copyId: () => void copyText(m.id).then((ok) => ok && useToasts.getState().push({ kind: "info", title: t("menu.copied") })),
           pin: (pinned) => onPin?.(m, pinned),
           edit: startEdit,

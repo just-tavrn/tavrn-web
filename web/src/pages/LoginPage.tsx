@@ -21,10 +21,10 @@ import { SecondFactorEnroll, type EnrollResult } from "../components/auth/Second
 import { SecondFactorVerify } from "../components/auth/SecondFactorVerify";
 import { RecoveryCodesView } from "../components/auth/RecoveryCodes";
 import { SsoButton, SsoOnlyLogin } from "../components/auth/SsoButton";
+import { deviceName } from "../platform";
 
 type Mode = "login" | "register";
 
-const DEVICE_NAME = "Browser";
 
 /**
  * Sign-in and registration (PROTOCOL.md §5a.5): password step, then the second factor (enrollment for
@@ -161,8 +161,8 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
       const device = mode === "login" ? await deviceProofFor(publicApi, account) : null;
       const resp =
         mode === "login"
-          ? await publicApi.auth.login({ username: name, password, device_name: DEVICE_NAME, captcha_token: captchaToken, device })
-          : await publicApi.auth.register({ username: name, password, display_name: displayName || null, email: email || null, device_name: DEVICE_NAME, captcha_token: captchaToken, invite: invite.trim() || null, accept_terms: terms ? terms.version : null });
+          ? await publicApi.auth.login({ username: name, password, device_name: deviceName(), captcha_token: captchaToken, device })
+          : await publicApi.auth.register({ username: name, password, display_name: displayName || null, email: email || null, device_name: deviceName(), captcha_token: captchaToken, invite: invite.trim() || null, accept_terms: terms ? terms.version : null });
       setPassword("");
       setPasswordRepeat("");
       onPreauth(resp, mode, name);
@@ -185,7 +185,7 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
     setBusy(true);
     try {
       // The account is known only after the ceremony: prove the device of the last account of this browser.
-      const r = await passkeyLogin(publicApi, { deviceName: DEVICE_NAME, device: await deviceProofFor(publicApi, lastAccount()) });
+      const r = await passkeyLogin(publicApi, { deviceName: deviceName(), device: await deviceProofFor(publicApi, lastAccount()) });
       onSession(r.session, { credentialId: r.credentialId, prf: r.prf });
     } catch (err) {
       setError(describeError(err));

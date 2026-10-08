@@ -2,6 +2,7 @@
 import { create } from "zustand";
 import type { AuthResponse, TokenPair, UserPrivate } from "@tavrn/sdk";
 import { clearReauth, setReauth } from "./reauth";
+import { webOrigin } from "../platform";
 
 const KEY = "tavrn.auth";
 /** Address of the last account signed in on this browser (device proof for passkey and SSO logins). */
@@ -128,11 +129,11 @@ if (typeof window !== "undefined") {
 }
 
 /**
- * Origin of the home node's web client: this origin, or the remote home's `web` (its host may differ from
+ * Origin of the home node's web client: this origin (desktop app: the chosen node), or the remote home's `web` (its host may differ from
  * the identity domain, design note 4.2c).
  */
 export function homeWeb(): string {
-  return useAuth.getState().home?.web ?? location.origin;
+  return useAuth.getState().home?.web ?? webOrigin();
 }
 
 /** `true` when the account's home node is not the node this web client was loaded from. */
