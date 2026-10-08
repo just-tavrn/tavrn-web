@@ -15,6 +15,7 @@ import { ChannelBotsAllowed } from "./BotsEncryptionSection";
 import { HistoryPolicySection } from "./HistoryPolicy";
 import { ThreadSettingsSection } from "../../threads/ThreadSettings";
 import { StorageSection } from "../../files/StorageSection";
+import { VoiceQualitySection } from "./VoiceQualitySection";
 
 export function ChannelsTab({ room }: { room: RoomDetail }) {
   const { api } = useNode();
@@ -181,6 +182,7 @@ function ChannelEditor({ channel, room, canManage, onChanged }: { channel: Chann
           )}
         </Section>
       </form>
+      {isVoice && <VoiceQualitySection channel={channel} room={room} canManage={canManage} onChanged={onChanged} />}
       {isFiles && <StorageSection room={room} channel={channel} />}
       <NoBotsToggles channel={channel} room={room} onChanged={onChanged} />
       <ChannelBotsAllowed channel={channel} room={room} onChanged={onChanged} />
