@@ -21,9 +21,15 @@ const allowedHosts = process.env.E2E_ALLOWED_HOSTS?.split(",").filter(Boolean);
  * served by the node itself under `/mediapipe/` (copied into the build, served from node_modules in
  * development), never from a CDN: no third party learns who uses voice. The segmentation model lives in
  * `public/mediapipe/`.
+ *
+ * The runtime is taken from the `@mediapipe/tasks-vision` that `@livekit/track-processors` itself depends on (it
+ * pins an exact version): its JavaScript is what the bundle runs, and MediaPipe's loader and WebAssembly module
+ * only work as the pair of one release. A copy of another version (a direct dependency of the client) would serve
+ * a runtime the bundled loader was not built for.
  */
 function mediapipeAssets(): Plugin {
-  const dir = join(dirname(createRequire(import.meta.url).resolve("@mediapipe/tasks-vision")), "wasm");
+  const processors = createRequire(import.meta.url).resolve("@livekit/track-processors");
+  const dir = join(dirname(createRequire(processors).resolve("@mediapipe/tasks-vision")), "wasm");
   const files = readdirSync(dir).filter((f) => f.endsWith(".js") || f.endsWith(".wasm"));
   return {
     name: "tavrn-mediapipe-assets",
@@ -48,7 +54,7 @@ function mediapipeAssets(): Plugin {
  * 13 MB) is left out; CJK text falls back to the system fonts.
  */
 function excalidrawFonts(): Plugin {
-  const dir = resolve(__dirname, "node_modules/@excalidraw/excalidraw/dist/prod/fonts");
+  const dir = resolve(import.meta.dirname, "node_modules/@excalidraw/excalidraw/dist/prod/fonts");
   const excluded = new Set(["Xiaolai"]);
   const prefix = "/assets/excalidraw/fonts/";
   const files = (): string[] => {
@@ -93,7 +99,7 @@ function excalidrawFonts(): Plugin {
 export default defineConfig({
   plugins: [react(), tailwindcss(), mediapipeAssets(), excalidrawFonts()],
   // Excalidraw's Mermaid import (text-to-diagram) is replaced by a stub: see src/whiteboard/mermaid-stub.ts.
-  resolve: { alias: { "@excalidraw/mermaid-to-excalidraw": resolve(__dirname, "src/whiteboard/mermaid-stub.ts") } },
+  resolve: { alias: { "@excalidraw/mermaid-to-excalidraw": resolve(import.meta.dirname, "src/whiteboard/mermaid-stub.ts") } },
   server: {
     port: webPort,
     strictPort: true,
