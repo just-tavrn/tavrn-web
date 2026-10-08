@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
-/** Settings → App, desktop app only: version, the home node (node picker) and the signed updates. */
+/**
+ * Settings → App, desktop app only: version, the home node (node picker), the signed updates, where the keys of this
+ * device are kept (OS keychain or the visible fallback), close to tray and quit.
+ */
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { platform, type AvailableUpdate } from "../../platform";
 import { useT } from "../../i18n";
 import { describeError } from "../../stores/toasts";
 import { Button, ErrorText } from "../../components/ui";
 import { Section } from "./common";
+import { cryptoStore } from "../../crypto";
+import { useAuth } from "../../stores/auth";
 
 type UpdateState = { kind: "idle" } | { kind: "checking" } | { kind: "current" } | { kind: "available"; update: AvailableUpdate } | { kind: "installing"; update: AvailableUpdate };
 
@@ -90,6 +95,75 @@ export function AppTab() {
         )}
         <ErrorText>{error}</ErrorText>
       </Section>
+      <KeysSection />
+      <TraySection />
     </div>
+  );
+}
+
+/** Where the key that unlocks the local key store is: the OS keychain, or the fallback with a warning. */
+function KeysSection() {
+  const t = useT();
+  const keystore = platform().keystore;
+  const address = useAuth((s) => s.user?.address ?? null);
+  const protection = useQuery({ queryKey: ["app-key-protection", address], queryFn: () => cryptoStore.keyProtection(address!), enabled: !!address });
+  const status = useQuery({ queryKey: ["app-keychain"], queryFn: () => keystore!.status(), enabled: !!keystore, retry: false });
+  if (!keystore || !address) return null;
+  const backend = t(`desktop.backend.${status.data?.backend ?? "none"}`);
+  return (
+    <Section title={t("desktop.keys")}>
+      <div data-testid="app-keys" data-protection={protection.data ?? "loading"} data-backend={status.data?.backend ?? ""}>
+        {protection.data === "keychain" && <p className="text-sm text-fg-1">{t("desktop.keys_keychain", { backend })}</p>}
+        {(protection.data === "fallback" || protection.data === "browser") && (
+          <p role="alert" className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-sm text-fg-0" data-testid="app-keys-fallback">
+            {t("desktop.keys_fallback")}
+          </p>
+        )}
+        {protection.data === "lock_on_close" && <p className="text-sm text-fg-1">{t("desktop.keys_lock_on_close")}</p>}
+        {protection.data === "none" && <p className="text-sm text-fg-2">{t("desktop.keys_none")}</p>}
+      </div>
+    </Section>
+  );
+}
+
+/** Close to tray (persisted by the shell) and quit. */
+function TraySection() {
+  const t = useT();
+  const tray = platform().tray;
+  const queryClient = useQueryClient();
+  const status = useQuery({ queryKey: ["app-tray"], queryFn: () => tray!.status(), enabled: !!tray });
+  const [error, setError] = useState<string | null>(null);
+  if (!tray) return null;
+  const toggle = async (on: boolean) => {
+    setError(null);
+    try {
+      await tray.setCloseToTray(on);
+    } catch (e) {
+      setError(describeError(e));
+    }
+    await queryClient.invalidateQueries({ queryKey: ["app-tray"] });
+  };
+  return (
+    <Section title={t("desktop.tray")}>
+      {status.data?.available === false ? (
+        <p className="text-sm text-fg-2" data-testid="app-tray-unavailable">
+          {t("desktop.tray_unavailable")}
+        </p>
+      ) : (
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" className="mt-0.5 h-4 w-4" checked={!!status.data?.closeToTray} disabled={!status.data} onChange={(e) => void toggle(e.target.checked)} data-testid="app-close-to-tray" />
+          <span>
+            {t("desktop.close_to_tray")}
+            <span className="block text-xs text-fg-2">
+              {t("desktop.close_to_tray_hint")} {t("desktop.tray_hint")}
+            </span>
+          </span>
+        </label>
+      )}
+      <Button variant="ghost" className="border border-line" onClick={() => void tray.quit()} data-testid="app-quit">
+        {t("desktop.quit")}
+      </Button>
+      <ErrorText>{error}</ErrorText>
+    </Section>
   );
 }
