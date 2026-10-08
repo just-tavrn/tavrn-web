@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 import { TavrnApiError, type AuthResponse, type PreAuthResponse } from "@tavrn/sdk";
 import { publicApi } from "../lib/api";
 import { completeRemoteSignIn } from "../lib/remoteSignIn";
-import { afterSignIn } from "./ConnectPages";
+import { afterSignIn, directMethod } from "./ConnectPages";
 import { RemoteLogin } from "../components/auth/RemoteLogin";
 import { lastAccount, useAuth } from "../stores/auth";
 import { useAuthFlow, type FlowKind } from "../stores/authFlow";
@@ -22,6 +22,7 @@ import { SecondFactorEnroll, type EnrollResult } from "../components/auth/Second
 import { SecondFactorVerify } from "../components/auth/SecondFactorVerify";
 import { RecoveryCodesView } from "../components/auth/RecoveryCodes";
 import { SsoButton, SsoOnlyLogin } from "../components/auth/SsoButton";
+import { startSso } from "../lib/sso";
 import { deviceName, platform } from "../platform";
 import { NodePageRequired, useNodePageHandoff } from "../components/auth/NodePageHandoff";
 import { parseAppAddress, resolveErrorMessage, switchToNodeOf } from "../lib/nodeAddress";
@@ -118,7 +119,7 @@ export function LoginPage() {
 function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthResponse, kind: FlowKind, username: string) => void; onSession: (s: AuthResponse, passkey?: { credentialId: string; prf: Uint8Array | null }) => void }) {
   const t = useT();
   const [params] = useSearchParams();
-  const [mode, setMode] = useState<Mode>(params.get("invite") || params.get("mode") === "register" ? "register" : "login");
+  const [mode, setMode] = useState<Mode>(params.get("invite") || params.get("mode") === "register" || params.get("method") === "register" ? "register" : "login");
   const [invite, setInvite] = useState(params.get("invite") ?? "");
   const [username, setUsername] = useState(params.get("username") ?? "");
   const [password, setPassword] = useState("");
@@ -139,7 +140,7 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
   const queryClient = useQueryClient();
   const desktop = platform().isDesktop;
   // Desktop app: passkeys, single sign-on and the captcha run on the node's own page (FEDERATION.md §8 step 3).
-  const handoff = useNodePageHandoff({ next, onSession: (s) => onSession(s) });
+  const handoff = useNodePageHandoff({ next, onSession });
   const captcha = node.data?.captcha ?? null;
   const captchaNeeded = !!captcha && (mode === "login" ? captcha.login : captcha.register);
   // Published terms are accepted at registration, in the version shown (design note 4.14 item 2).
@@ -222,6 +223,31 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
     }
   };
 
+  // The desktop app's passkey and SSO buttons open this page with `method=` (FEDERATION.md §8 step 3): that method
+  // starts at once, with "Use another method" as the way back to the whole form.
+  const [direct, setDirect] = useState(() => (desktop ? null : directMethod(params)));
+  const directStarted = useRef(false);
+  const startDirect = () => {
+    if (direct === "passkey") return void passkeyOnly();
+    setError(null);
+    setBusy(true);
+    startSso(publicApi, "login", next).catch((err: unknown) => {
+      setError(describeError(err));
+      setBusy(false);
+    });
+  };
+  useEffect(() => {
+    if (!direct || directStarted.current) return;
+    if (direct === "passkey" && !passkeysSupported()) return setDirect(null);
+    if (direct === "sso") {
+      if (!node.data) return;
+      if (!node.data.sso) return setDirect(null);
+    }
+    directStarted.current = true;
+    startDirect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [direct, node.data]);
+
   const registrationClosed = node.data?.registration === "closed";
   const inviteMode = node.data?.registration === "invite";
 
@@ -241,11 +267,46 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
   }
 
   if (handoff.view) return <AuthCard>{handoff.view}</AuthCard>;
+  if (direct) {
+    return (
+      <AuthCard>
+        <div data-testid="direct-method">
+          <h1 className="text-base font-semibold" role="status">
+            {t(direct === "passkey" ? "connect.method_passkey" : "connect.method_sso")}
+          </h1>
+          <div className="mt-3">
+            <ErrorText>{error}</ErrorText>
+          </div>
+          <div className="mt-4 flex flex-col gap-2">
+            {error && (
+              <Button className="w-full" disabled={busy} onClick={startDirect}>
+                {t("connect.method_retry")}
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              className="w-full"
+              disabled={busy && direct === "sso"}
+              onClick={() => {
+                setError(null);
+                setDirect(null);
+              }}
+            >
+              {t("connect.method_other")}
+            </Button>
+          </div>
+        </div>
+      </AuthCard>
+    );
+  }
   const toNodePage = handoff.available ? () => handoff.start("login") : undefined;
+  // The app's buttons for a passkey and single sign-on start that method on the page at once.
+  const passkeyOnNodePage = handoff.available ? () => handoff.start("login", "passkey") : undefined;
+  const ssoOnNodePage = handoff.available ? () => handoff.start("login", "sso") : undefined;
   // The captcha is bound to the node's host: in the app this step happens on the node's page.
   const captchaOnNodePage = desktop && handoff.available && captchaNeeded;
 
-  if (node.data?.sso?.only && !breakGlass) return <SsoOnlyLogin next={next} onAdmin={() => setBreakGlass(true)} onHandoff={toNodePage} />;
+  if (node.data?.sso?.only && !breakGlass) return <SsoOnlyLogin next={next} onAdmin={() => setBreakGlass(true)} onHandoff={ssoOnNodePage} />;
 
   return (
     <AuthCard>
@@ -254,7 +315,7 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
           {t("legal.delete.done")}
         </p>
       )}
-      {mode === "login" && <SsoButton next={next} onHandoff={toNodePage} />}
+      {mode === "login" && <SsoButton next={next} onHandoff={ssoOnNodePage} />}
       <div role="tablist" aria-label={t("a11y.auth_mode")} onKeyDown={tabListKeyDown} className={`grid grid-cols-2 rounded-md bg-bg-0 p-1 text-sm ${mode === "login" && node.data?.sso ? "mt-4" : ""}`}>
         {(["login", "register"] as Mode[]).map((m) => (
           <button
@@ -335,7 +396,7 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
         {mode === "login" && (
           <>
             {(passkeysSupported() || toNodePage) && (
-              <Button variant="ghost" className="w-full border border-line" disabled={busy} onClick={() => (desktop && toNodePage ? toNodePage() : void passkeyOnly())}>
+              <Button variant="ghost" className="w-full border border-line" disabled={busy} onClick={() => (desktop && passkeyOnNodePage ? passkeyOnNodePage() : void passkeyOnly())}>
                 {t("auth.passkey_login")}
               </Button>
             )}

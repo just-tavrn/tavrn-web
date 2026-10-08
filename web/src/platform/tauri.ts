@@ -6,7 +6,7 @@
  */
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { externalUrl } from "./links";
-import { runAppSession } from "./appSession";
+import { runAppSession, runAppUnlock } from "./appSession";
 import { shellMembers } from "./tauriShell";
 import type { AppUpdater, HotkeyEvent, Platform, PlatformHotkeys, ResolvedNode } from "./types";
 
@@ -94,10 +94,23 @@ export async function createTauriPlatform(doc: Document = document): Promise<Pla
           domain: req.endpoints.domain,
           deviceName: "Desktop app",
           mode: req.mode,
+          method: req.method,
           open: (url) => invoke<void>("open_connect", { url }),
           close: () => invoke<void>("close_connect"),
           onPage: req.onPage,
           device: req.device,
+          signal: req.signal,
+        }),
+      // Passkey unlock of the signed-in app: the same window, an unlock session (FEDERATION.md §8 step 3).
+      unlockOnNodePage: (req) =>
+        runAppUnlock({
+          api: req.api,
+          web: req.endpoints.web,
+          domain: req.endpoints.domain,
+          deviceName: "Desktop app",
+          open: (url) => invoke<void>("open_connect", { url }),
+          close: () => invoke<void>("close_connect"),
+          onPage: req.onPage,
           signal: req.signal,
         }),
       reopen: (url) => invoke<void>("open_connect", { url }),

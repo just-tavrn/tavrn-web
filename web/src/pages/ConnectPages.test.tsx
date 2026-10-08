@@ -10,10 +10,20 @@ import { useAuth } from "../stores/auth";
 import { resetNodeCaches, useNodes } from "../stores/nodes";
 import { checkCallback, safeNext, startConnect, takePendingConnect, type PendingConnect } from "../lib/remoteSignIn";
 import { renderWithProviders } from "../test/render";
-import { deviceProofFor } from "../crypto/e2ee";
+import { deviceProofFor, rememberPrf, takePrf } from "../crypto/e2ee";
+import { evaluatePrf, passkeyLogin } from "../lib/passkeys";
+import { sealForApp } from "../crypto/sealedUnlock";
 
 // The browser's stored device (IndexedDB) is replaced by a stub: no device unless a test provides a proof.
 vi.mock("../crypto/e2ee", async (original) => ({ ...(await original<typeof import("../crypto/e2ee")>()), deviceProofFor: vi.fn(async () => null) }));
+// WebAuthn ceremonies (jsdom has none) and the sealed box (WebAssembly; its round trip: crypto/sealedUnlock.test.ts).
+vi.mock("../lib/passkeys", async (original) => ({
+  ...(await original<typeof import("../lib/passkeys")>()),
+  passkeysSupported: () => true,
+  passkeyLogin: vi.fn(),
+  evaluatePrf: vi.fn(),
+}));
+vi.mock("../crypto/sealedUnlock", async (original) => ({ ...(await original<typeof import("../crypto/sealedUnlock")>()), sealForApp: vi.fn(async () => "sealed-box") }));
 
 const HOME = "home.example";
 const VISIT = "visit.example";
@@ -40,7 +50,7 @@ function network(overrides: Record<string, (body: Record<string, unknown> | null
     const body = init.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : null;
     calls.push({ url: url.toString(), method: init.method ?? "GET", body, auth: (init.headers as Record<string, string> | undefined)?.Authorization });
     const key = `${url.host === location.host ? "origin" : url.host}${url.pathname}`;
-    const json = (status: number, b: unknown) => new Response(JSON.stringify(b), { status, headers: { "Content-Type": "application/json" } });
+    const json = (status: number, b: unknown) => (status === 204 ? new Response(null, { status }) : new Response(JSON.stringify(b), { status, headers: { "Content-Type": "application/json" } }));
     if (overrides[key]) {
       const r = overrides[key]!(body);
       return json(r.status ?? 200, r.body);
@@ -87,13 +97,17 @@ function renderAt(route: string) {
 }
 
 beforeEach(() => {
+  vi.clearAllMocks();
   useAuth.getState().logout();
   useNodes.getState().clear();
   resetNodeCaches();
   sessionStorage.clear();
 });
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  takePrf();
+});
 
 describe("sign-in with an account of another node: direct flow", () => {
   it("discovers the home node, signs in with password and TOTP there and opens a federated session here", async () => {
@@ -221,7 +235,8 @@ describe("connect flow: app sessions of the desktop app (FEDERATION.md §8 step 
   const SESSION = "S".repeat(43);
   const sessionUrl = (extra = "") => `/connect?session=${SESSION}&state=${"s".repeat(22)}${extra}`;
   const localUser = { ...homeUser, domain: VISIT, address: `alice@${VISIT}` };
-  const pendingSession = () => ({ body: { status: "pending", device_name: "Tavrn auf dem Laptop", expires_in: 580 } });
+  const pendingSession = () => ({ body: { status: "pending", device_name: "Tavrn auf dem Laptop", purpose: "login", expires_in: 580 } });
+  const KEY = "K".repeat(43);
 
   it("asks with the session's device name, issues the code for the session and stays on the page", async () => {
     const calls = network({
@@ -290,6 +305,117 @@ describe("connect flow: app sessions of the desktop app (FEDERATION.md §8 step 
     network({ [`origin/api/v1/auth/connect/session/${SESSION}`]: pendingSession });
     renderAt(sessionUrl("&mode=register"));
     expect(await screen.findByRole("tab", { name: "Registrieren" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("the app's key travels in the fragment: no key, nothing sealed", async () => {
+    const calls = network({ [`origin/api/v1/auth/connect/session/${SESSION}`]: pendingSession, "origin/api/v1/auth/connect/code": () => ({ body: { code: "c", expires_in: 120 } }) });
+    useAuth.setState({ token: "local", refresh: "r", user: localUser, deviceId: "D", home: null });
+    rememberPrf("Y3JlZA", new Uint8Array(32).fill(5));
+    renderAt(sessionUrl());
+    await userEvent.setup().click(await screen.findByRole("button", { name: "In der App anmelden" }));
+    await screen.findByTestId("connect-done");
+    expect(calls.find((c) => c.url.endsWith("/auth/connect/code"))!.body).not.toHaveProperty("sealed_unlock");
+    expect(sealForApp).not.toHaveBeenCalled();
+    expect(takePrf()).toBeNull();
+  });
+
+  it("method=passkey: signs in with the passkey at once and seals its PRF output to the app's key", async () => {
+    let ceremony: (v: Awaited<ReturnType<typeof passkeyLogin>>) => void = () => {};
+    vi.mocked(passkeyLogin).mockImplementation(() => new Promise((resolve) => (ceremony = resolve)));
+    const calls = network({ [`origin/api/v1/auth/connect/session/${SESSION}`]: pendingSession, "origin/api/v1/auth/connect/code": () => ({ body: { code: "c", expires_in: 120 } }) });
+    renderAt(`${sessionUrl("&method=passkey")}#k=${KEY}`);
+    // Only the passkey: a short state instead of the whole form.
+    expect(await screen.findByText("Anmeldung mit Passkey…")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Passwort")).toBeNull();
+    ceremony({ session: { ...session, user: localUser, access_token: "local-acc" } as never, credentialId: "Y3JlZA", prf: new Uint8Array(32).fill(5) });
+    await userEvent.setup().click(await screen.findByRole("button", { name: "In der App anmelden" }));
+    expect(await screen.findByTestId("connect-done")).toHaveTextContent("Passkey entsperrt die App");
+    expect(passkeyLogin).toHaveBeenCalledTimes(1);
+    expect(sealForApp).toHaveBeenCalledWith(KEY, { sessionId: SESSION, credentialId: "Y3JlZA", prf: expect.any(Uint8Array) });
+    expect(calls.find((c) => c.url.endsWith("/auth/connect/code"))).toMatchObject({ body: { session_id: SESSION, sealed_unlock: "sealed-box" }, auth: "Bearer local-acc" });
+  });
+
+  it("method=passkey on a page that is already signed in: confirming runs the passkey for the unlock", async () => {
+    vi.mocked(evaluatePrf).mockResolvedValue({ credentialId: "Y3JlZA", prf: new Uint8Array(32).fill(6) });
+    const calls = network({
+      [`origin/api/v1/auth/connect/session/${SESSION}`]: pendingSession,
+      "origin/api/v1/auth/connect/code": () => ({ body: { code: "c", expires_in: 120 } }),
+      "origin/api/v1/users/me/secret-storage": () => ({ body: { items: [{ method: "recovery" }, { method: "passkey:Y3JlZA" }] } }),
+    });
+    useAuth.setState({ token: "local", refresh: "r", user: localUser, deviceId: "D", home: null });
+    renderAt(`${sessionUrl("&method=passkey")}#k=${KEY}`);
+    await userEvent.setup().click(await screen.findByRole("button", { name: "In der App anmelden" }));
+    await screen.findByTestId("connect-done");
+    expect(evaluatePrf).toHaveBeenCalledWith(["Y3JlZA"]);
+    expect(calls.find((c) => c.url.endsWith("/auth/connect/code"))!.body).toMatchObject({ sealed_unlock: "sealed-box" });
+  });
+
+  it("method=passkey: another method shows the whole form", async () => {
+    vi.mocked(passkeyLogin).mockRejectedValue(Object.assign(new Error("cancelled"), { name: "NotAllowedError" }));
+    network({ [`origin/api/v1/auth/connect/session/${SESSION}`]: pendingSession });
+    renderAt(`${sessionUrl("&method=passkey")}#k=${KEY}`);
+    const u = userEvent.setup();
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    await u.click(screen.getByRole("button", { name: "Erneut versuchen" }));
+    await waitFor(() => expect(passkeyLogin).toHaveBeenCalledTimes(2));
+    await u.click(screen.getByRole("button", { name: "Andere Methode verwenden" }));
+    expect(await screen.findByLabelText("Passwort")).toBeInTheDocument();
+  });
+
+  it("unlock session: the page asks only for the passkey and sends the sealed PRF output without a code", async () => {
+    vi.mocked(evaluatePrf).mockResolvedValue({ credentialId: "Y3JlZA", prf: new Uint8Array(32).fill(7) });
+    const calls = network({
+      [`origin/api/v1/auth/connect/session/${SESSION}`]: () => ({ body: { status: "pending", device_name: "Tavrn auf dem Laptop", purpose: "unlock", expires_in: 580 } }),
+      "origin/api/v1/auth/connect/code": () => ({ status: 204, body: null }),
+      "origin/api/v1/users/me/secret-storage": () => ({ body: { items: [{ method: "passkey:Y3JlZA" }] } }),
+    });
+    useAuth.setState({ token: "local", refresh: "r", user: localUser, deviceId: "D", home: null });
+    renderAt(`${sessionUrl("&method=passkey")}#k=${KEY}`);
+    expect(await screen.findByTestId("connect-title")).toHaveTextContent("Tavrn-App entsperren?");
+    expect(screen.getByTestId("connect-text")).toHaveTextContent(`„Tavrn auf dem Laptop“ möchte die verschlüsselten Nachrichten von alice@${VISIT}`);
+    expect(screen.queryByRole("button", { name: "In der App anmelden" })).toBeNull();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Mit Passkey entsperren" }));
+    expect(await screen.findByTestId("connect-done")).toHaveTextContent("Die App ist entsperrt");
+    expect(calls.find((c) => c.url.endsWith("/auth/connect/code"))).toMatchObject({ body: { session_id: SESSION, sealed_unlock: "sealed-box" } });
+    expect(calls.find((c) => c.url.endsWith("/auth/connect/code"))!.body).not.toHaveProperty("code_challenge");
+  });
+
+  it("unlock session: a passkey sign-in on this page unlocks without a second ceremony", async () => {
+    vi.mocked(passkeyLogin).mockResolvedValue({ session: { ...session, user: localUser, access_token: "local-acc" } as never, credentialId: "Y3JlZA", prf: new Uint8Array(32).fill(8) });
+    const calls = network({
+      [`origin/api/v1/auth/connect/session/${SESSION}`]: () => ({ body: { status: "pending", device_name: "Laptop", purpose: "unlock", expires_in: 580 } }),
+      "origin/api/v1/auth/connect/code": () => ({ status: 204, body: null }),
+    });
+    renderAt(`${sessionUrl("&method=passkey")}#k=${KEY}`);
+    expect(await screen.findByTestId("connect-done")).toHaveTextContent("Die App ist entsperrt");
+    expect(evaluatePrf).not.toHaveBeenCalled();
+    expect(calls.find((c) => c.url.endsWith("/auth/connect/code"))!.body).toMatchObject({ sealed_unlock: "sealed-box" });
+  });
+
+  it("unlock session: another account, no passkey or no key say so", async () => {
+    const unlockPending = () => ({ body: { status: "pending", device_name: "Laptop", purpose: "unlock", expires_in: 580 } });
+    vi.mocked(evaluatePrf).mockResolvedValue({ credentialId: "Y3JlZA", prf: new Uint8Array(32).fill(7) });
+    network({
+      [`origin/api/v1/auth/connect/session/${SESSION}`]: unlockPending,
+      "origin/api/v1/auth/connect/code": () => ({ status: 403, body: { code: "connect.user_mismatch", status: 403, title: "Forbidden", type: "x" } }),
+      "origin/api/v1/users/me/secret-storage": () => ({ body: { items: [{ method: "passkey:Y3JlZA" }] } }),
+    });
+    useAuth.setState({ token: "local", refresh: "r", user: localUser, deviceId: "D", home: null });
+    const first = renderAt(`${sessionUrl()}#k=${KEY}`);
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Mit Passkey entsperren" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("gehört zu einem anderen Konto");
+    first.unmount();
+
+    network({ [`origin/api/v1/auth/connect/session/${SESSION}`]: unlockPending, "origin/api/v1/users/me/secret-storage": () => ({ body: { items: [{ method: "recovery" }] } }) });
+    const second = renderAt(`${sessionUrl()}#k=${KEY}`);
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Mit Passkey entsperren" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Keiner deiner Passkeys");
+    second.unmount();
+
+    sessionStorage.clear();
+    network({ [`origin/api/v1/auth/connect/session/${SESSION}`]: unlockPending });
+    renderAt(sessionUrl());
+    expect(await screen.findByText(/Entsperr-Link ist unvollständig/)).toBeInTheDocument();
   });
 
   it("malformed session links are refused", async () => {

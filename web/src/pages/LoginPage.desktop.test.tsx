@@ -11,7 +11,8 @@ import { Route, Routes } from "react-router";
 import type { AuthResponse } from "@tavrn/sdk";
 import { LoginPage } from "./LoginPage";
 import { resetPlatform, setPlatform } from "../platform";
-import type { NodePageSignIn, Platform, ResolvedNode } from "../platform";
+import type { NodePageResult, NodePageSignIn, Platform, ResolvedNode } from "../platform";
+import { takePrf } from "../crypto/e2ee";
 import { useAuth } from "../stores/auth";
 import { useAuthFlow } from "../stores/authFlow";
 import { mockFetch, renderWithProviders } from "../test/render";
@@ -27,20 +28,20 @@ interface Fake {
   set: ReturnType<typeof vi.fn>;
   resolve: ReturnType<typeof vi.fn>;
   openExternal: ReturnType<typeof vi.fn>;
-  /** Settles the running sign-in. */
-  finish: (s: AuthResponse | null | Error) => void;
+  /** Settles the running sign-in (a session alone: no unlock material). */
+  finish: (s: AuthResponse | NodePageResult | null | Error) => void;
   last: () => NodePageSignIn;
 }
 
 function desktop(): Fake {
   let node = "https://t.local";
-  let settle: ((s: AuthResponse | null | Error) => void) | null = null;
+  let settle: ((s: AuthResponse | NodePageResult | null | Error) => void) | null = null;
   const signIn = vi.fn(
     (req: NodePageSignIn) =>
-      new Promise<AuthResponse | null>((resolve, reject) => {
+      new Promise<NodePageResult | null>((resolve, reject) => {
         req.onPage?.("https://t.local/connect?session=S&state=x");
         req.signal?.addEventListener("abort", () => resolve(null));
-        settle = (s) => (s instanceof Error ? reject(s) : resolve(s));
+        settle = (s) => (s instanceof Error ? reject(s) : resolve(s && "session" in s ? s : s ? { session: s, unlock: null } : null));
       }),
   );
   const set = vi.fn(async (url: string) => {
@@ -120,6 +121,35 @@ describe("desktop login: sign-in on the node's page", () => {
     await waitFor(() => expect(fake.signIn).toHaveBeenCalledTimes(2));
     expect(calls.some((c) => c.url.includes("/auth/oidc/start"))).toBe(false);
     expect(calls.some((c) => c.url.includes("/auth/webauthn"))).toBe(false);
+  });
+
+  it("the passkey button starts the passkey on the page at once and waits with Cancel instead of the form", async () => {
+    const fake = desktop();
+    mockFetch({ "/api/v1/node": { body: nodeInfo({ sso: { label: "Firmen-Login", only: false } }) }, "/.well-known/tavrn": { body: wellKnown(["connect.app", "sso.oidc"]) } });
+    renderLogin();
+    const u = userEvent.setup();
+    await u.click(await screen.findByRole("button", { name: "Mit Passkey anmelden" }));
+    const waiting = await screen.findByTestId("handoff-waiting");
+    expect(fake.last().method).toBe("passkey");
+    expect(waiting).toHaveTextContent("Passkey");
+    expect(screen.queryByLabelText("Passwort")).toBeNull();
+    await u.click(screen.getByRole("button", { name: "Abbrechen" }));
+    expect(await screen.findByLabelText("Passwort")).toBeInTheDocument();
+    await u.click(await screen.findByTestId("sso-button"));
+    await waitFor(() => expect(fake.last().method).toBe("sso"));
+    expect(await screen.findByTestId("handoff-waiting")).toHaveTextContent("Single Sign-on");
+  });
+
+  it("a passkey sign-in on the page hands its unlock material to the encryption step", async () => {
+    const fake = desktop();
+    mockFetch({ "/api/v1/node": { body: nodeInfo() }, "/.well-known/tavrn": { body: wellKnown(["connect.app"]) } });
+    renderLogin();
+    const u = userEvent.setup();
+    await u.click(await screen.findByRole("button", { name: "Mit Passkey anmelden" }));
+    await screen.findByTestId("handoff-waiting");
+    fake.finish({ session, unlock: { credentialId: "Y3JlZA", prf: new Uint8Array(32).fill(9) } });
+    expect(await screen.findByText("Verschlüsselungsseite")).toBeInTheDocument();
+    expect(takePrf()).toEqual({ credentialId: "Y3JlZA", prf: new Uint8Array(32).fill(9) });
   });
 
   it("a registration with a captcha happens on the node's page", async () => {

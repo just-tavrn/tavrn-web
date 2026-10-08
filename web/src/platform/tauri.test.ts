@@ -116,12 +116,50 @@ describe("the desktop app's node and sign-in handoff", () => {
       mode: "register",
     });
     vi.useRealTimers();
-    expect(session).toMatchObject({ access_token: "a" });
+    expect(session).toMatchObject({ session: { access_token: "a" }, unlock: null });
     const open = calls.find((c) => c.cmd === "open_connect")?.args as { url: string };
-    expect(open.url).toMatch(/^https:\/\/home\.example\/connect\?session=S{43}&state=[A-Za-z0-9_-]+&mode=register$/);
+    // The handoff's key for sealed unlock material rides in the fragment.
+    expect(open.url).toMatch(/^https:\/\/home\.example\/connect\?session=S{43}&state=[A-Za-z0-9_-]+&mode=register#k=[A-Za-z0-9_-]{43}$/);
     expect(calls.map((c) => c.cmd)).toContain("close_connect");
     await p.auth!.reopen!(open.url);
     expect(calls.filter((c) => c.cmd === "open_connect")).toHaveLength(2);
+  });
+});
+
+describe("passkey unlock on the node's page", () => {
+  it("creates an unlock session with the app's session, opens the page and opens the sealed PRF output", async () => {
+    const calls = backend({ node: "https://home.example" });
+    const p = await createTauriPlatform(detached());
+    const { TavrnApi } = await import("@tavrn/sdk");
+    const { sealForApp, parseUnlockKey } = await import("../crypto/sealedUnlock");
+    const requests: Array<{ url: string; auth?: string; body?: unknown }> = [];
+    let polls = 0;
+    const fetchImpl = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = String(input);
+      requests.push({ url, auth: (init.headers as Record<string, string> | undefined)?.Authorization, body: init.body ? JSON.parse(String(init.body)) : undefined });
+      const json = (b: unknown) => new Response(JSON.stringify(b), { status: 200, headers: { "Content-Type": "application/json" } });
+      if (url.endsWith("/auth/connect/session")) return json({ session_id: "S".repeat(43), expires_in: 600 });
+      if (url.includes("/auth/connect/session/")) {
+        if (polls++ < 1) return json({ status: "pending", device_name: "Desktop app", purpose: "unlock", expires_in: 600 });
+        // The page: seals to the key it found in the fragment of the window the app opened.
+        const opened = calls.find((c) => c.cmd === "open_connect")!.args as { url: string };
+        const key = parseUnlockKey(new URL(opened.url).hash)!;
+        const sealed = await sealForApp(key, { sessionId: "S".repeat(43), credentialId: "Y3JlZA", prf: new Uint8Array(32).fill(4) });
+        return json({ status: "ready", node: "home.example", sealed_unlock: sealed, expires_in: 100 });
+      }
+      return json({});
+    }) as typeof fetch;
+    vi.useFakeTimers({ shouldAdvanceTime: true, advanceTimeDelta: 500 });
+    const material = await p.auth!.unlockOnNodePage!({
+      api: new TavrnApi({ baseUrl: "https://home.example", fetchImpl, getToken: () => "app-session" }),
+      endpoints: { domain: "home.example", base: "https://home.example", ws: "wss://home.example/api/v1/ws", web: "https://home.example" },
+    });
+    vi.useRealTimers();
+    expect(material).toEqual({ credentialId: "Y3JlZA", prf: new Uint8Array(32).fill(4) });
+    expect(requests[0]).toMatchObject({ auth: "Bearer app-session", body: { purpose: "unlock" } });
+    const open = calls.find((c) => c.cmd === "open_connect")?.args as { url: string };
+    expect(open.url).toMatch(/^https:\/\/home\.example\/connect\?session=S{43}&state=[A-Za-z0-9_-]+&method=passkey#k=[A-Za-z0-9_-]{43}$/);
+    expect(calls.map((c) => c.cmd)).toContain("close_connect");
   });
 });
 
