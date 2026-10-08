@@ -536,7 +536,7 @@ test.describe("Voice channels", () => {
     await expect(page.getByTestId("mic-meter")).toHaveAttribute("data-level", "-100");
   });
 
-  test("Quick menus on mute and deafen: devices and push-to-talk, applied live (right-click, long press on phones)", async ({ browser, request }) => {
+  test("Quick menus on mute and deafen: devices, push-to-talk and sliders, applied live (right-click, long press on phones)", async ({ browser, request }) => {
     test.setTimeout(120_000);
     const { roomId, code } = await setup(request);
     const alice = await voiceUser(browser, "vmenu", { cuesOff: true });
@@ -554,11 +554,11 @@ test.describe("Voice channels", () => {
     const speaker = output.getByRole("menuitemcheckbox", { name: /Fake Audio Output/ }).first();
     const speakerName = (await speaker.innerText()).trim();
     await speaker.click();
-    await expect(output).toHaveCount(0);
+    // The menu stays open with the choice checked; the output volume is below the list.
+    await expect(output.getByRole("menuitemcheckbox", { name: speakerName })).toHaveAttribute("aria-checked", "true");
+    await expect(output.getByRole("slider", { name: "Ausgangslautstärke" })).toBeVisible();
     // Opening the menu never deafened.
     await expect(deafen).toHaveAttribute("aria-pressed", "false");
-    await openContextMenu(page, deafen);
-    await expect(output.getByRole("menuitemcheckbox", { name: speakerName })).toHaveAttribute("aria-checked", "true");
     await page.keyboard.press("Escape");
     await expect(output).toHaveCount(0);
 
@@ -571,15 +571,21 @@ test.describe("Voice channels", () => {
     await expect(page.getByTestId("voice-ptt")).toHaveCount(0);
     const ptt = input.getByRole("menuitemcheckbox", { name: /Push-to-Talk/ });
     await expect(ptt).toHaveAttribute("aria-checked", "false");
+    await expect(input.getByRole("slider", { name: "Eingangslautstärke" })).toBeVisible();
+    await expect(input.getByRole("slider", { name: "Aktivierungsschwelle" })).toBeVisible();
     await ptt.click();
     await expect(ptt).toHaveAttribute("aria-checked", "true");
     await expect(page.getByTestId("voice-ptt")).toBeAttached();
+    // The activation threshold does not apply to push-to-talk.
+    await expect(input.getByRole("slider", { name: "Aktivierungsschwelle" })).toHaveCount(0);
     await ptt.click();
     await expect(ptt).toHaveAttribute("aria-checked", "false");
     await expect(page.getByTestId("voice-ptt")).toHaveCount(0);
     const microphone = input.getByRole("menuitemcheckbox", { name: /Fake Audio Input/ }).first();
     const microphoneName = (await microphone.innerText()).trim();
     await microphone.click();
+    await expect(input.getByRole("menuitemcheckbox", { name: microphoneName })).toHaveAttribute("aria-checked", "true");
+    await page.keyboard.press("Escape");
     await expect(input).toHaveCount(0);
     await expect(mute).toHaveAttribute("aria-pressed", "false");
     // The call keeps running on the new microphone.

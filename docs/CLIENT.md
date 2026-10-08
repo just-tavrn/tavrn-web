@@ -63,9 +63,11 @@ meanwhile instead of you vanishing.
 
 **Quick menus on mute and deafen.** A right-click (the context-menu key, a long press on touch) on the microphone
 button of the voice bar or of the stage controls lists the microphones (the current one checked), switches
-push-to-talk on or off (with the bound key as a hint) and links to the voice settings; the headphones button lists
-the output devices the same way. A choice changes the voice settings, so it applies live to the running call
-like a change in the settings tab. While the browser hides the device names the menu offers **Show devices**;
+push-to-talk on or off (with the bound key as a hint), has sliders for the input volume and, with voice activation,
+the activation threshold, and links to the voice settings; the headphones button lists the output devices the same
+way with an output volume slider. A choice changes the voice settings, so it applies live to the running call
+like a change in the settings tab. The menu stays open after a choice and closes on a click outside, Escape or a
+second right-click on the same button; the arrow keys reach the sliders. While the browser hides the device names the menu offers **Show devices**;
 browsers without output device selection (`setSinkId`, missing in some Firefox builds and WebKitGTK) say so
 instead of listing speakers. A click keeps muting and deafening.
 
