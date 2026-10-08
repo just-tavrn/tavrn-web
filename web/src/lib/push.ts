@@ -29,6 +29,9 @@ export const SW_STRING_KEYS = [
   "remote_dm",
   "test",
   "generic",
+  "report_title",
+  "report",
+  "report_node",
 ] as const;
 
 /**

@@ -200,6 +200,11 @@ the notification settings (rooms on other nodes push through the home node for D
 encrypted conversations only name the conversation and the sender; "Show message text in push notifications" adds
 a preview of unencrypted messages. A click opens or focuses the conversation; a test button sends a push. Signing
 out removes the subscription; on iPhone and iPad push works only after adding tavrn to the home screen.
+"Push notifications for new reports" (on by default, stored on the home node as `global.reports`) lets room
+moderators and node admins turn off the pushes of new reports; such a push names only the room ("New report in
+<room>", or "A report for the node admins") and opens the room's Reports tab or Admin → Reports. A hint under the
+switches says what rooms on other nodes push: under "All messages" they do not push ordinary messages, only mentions,
+direct messages and calls (the home node receives no hints for the rest, PROTOCOL.md §6d).
 Images open a viewer (zoom, drag, swipe or arrow keys between the images of a message, download icon, open
 original); audio attachments get an inline player and videos play inline and enlarge into the viewer.
 Downloads only start from the download icon. SVG files are never shown inline or opened, only downloaded (they
@@ -232,7 +237,8 @@ these features only for nodes that announce `reports.v1` and `automod.v1`.
   durations), remove, ban (node ban for node reports) or delete the person's messages (with the count and a typed
   confirmation). The actions run with the moderator's own permissions and are noted in the audit log with the
   report. The ⚙ in the room header and the tabs show the number of open reports; new reports arrive in the bell
-  🔔 and as a toast (not while notifications are set to nothing or the room is muted).
+  🔔 and as a toast (not while notifications are set to nothing or the room is muted), and as a web push while no tab
+  is open (see "Push notifications" above).
 - **Auto-moderation.** Room settings → **Auto-moderation** shows the node's flood protection and edits the room's
   content rules: words and phrases (one per line, `*` within a word, optionally whole words only), link filters
   (block all, allow only some domains, block some domains), exempt roles and channels, and the action (block,
@@ -243,6 +249,10 @@ these features only for nodes that announce `reports.v1` and `automod.v1`.
 - **Ownership.** Room settings → Overview → **Transfer ownership** hands the room to another member of the room's
   node (not a bot); the owner confirms with the password, a passkey or single sign-on. Deleting an account that still
   owns rooms lists them in the deletion dialog with "Transfer ownership" and "Delete room" for each.
+- **Retention.** Room settings → Overview → **Message retention** (owner or "Manage room") deletes the room's
+  messages after a number of days, with their attachments (PROTOCOL.md §7f); the section shows the node's period
+  (`GET /node` `message_retention_days`), and a room can only choose a shorter one. Pinned messages and the welcome
+  channel are kept. **Attachment retention** below it deletes only the files, earlier if set so.
 - **Single sign-on groups.** Admin → SSO picks the rooms and their roles of a group by name.
 
 ## The desktop app
@@ -279,3 +289,8 @@ also observes them system-wide, while a game has the focus, without taking the k
 The web client ships English (default) and German. To add a language, copy `web/src/i18n/en.json` to
 `web/src/i18n/<code>.json`, translate the values, and register the file in `web/src/i18n/index.ts`.
 A unit test verifies that every language has exactly the same keys as English.
+
+The language also decides the language of the home node's e-mails (address confirmation, password reset, account,
+legal and app token mails): the client sends it as `locale` (`PATCH /users/me`) when the app starts and the node has
+another one, and whenever the user switches the language under Settings → Language (`lib/mailLocale.ts`). The node
+writes English where it has no texts for the language.

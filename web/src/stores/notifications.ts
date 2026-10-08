@@ -33,6 +33,8 @@ export function normalizeSettings(raw: unknown): NotificationSettings {
       browser: g.browser === true,
       // Web push previews of unencrypted messages (PROTOCOL.md §6d); left out while off, like the node does.
       ...(g.push_text === true ? { push_text: true } : {}),
+      // Web push of new reports (PROTOCOL.md §6c): on by default, kept only while off, like the node does.
+      ...(g.reports === false ? { reports: false } : {}),
     },
     rooms: {},
     channels: {},

@@ -29,6 +29,9 @@
     remote_dm: "New direct message on {node}",
     test: "Push notifications work on this device.",
     generic: "New notification",
+    report_title: "New report",
+    report: "New report in {room}",
+    report_node: "A report for the node admins",
   };
 
   var DB_NAME = "tavrn-push";
@@ -46,6 +49,8 @@
 
   /** Route of the web client for a payload; `homeNode` is the account's home node (its rooms need no `/n/` prefix). */
   function targetUrl(p, homeNode) {
+    // Reports (MODERATION.md §1.5) come from the home node: the room's Reports tab, or the admin inbox.
+    if (p && p.type === "report") return typeof p.room_id === "string" ? "/rooms/" + encodeURIComponent(p.room_id) + "/settings/reports" : "/admin/reports";
     if (!p || typeof p.conversation_id !== "string") return "/";
     var id = encodeURIComponent(p.conversation_id);
     var prefix = !p.node || p.node === homeNode ? "" : "/n/" + encodeURIComponent(p.node);
@@ -86,8 +91,13 @@
     } else if (p.type === "notice") {
       title = typeof p.title === "string" && p.title ? p.title : app;
       body = typeof p.body === "string" && p.body ? p.body : s("generic");
+    } else if (p.type === "report") {
+      // Only the report's kind and room travel; the inbox shows the rest.
+      title = s("report_title");
+      body = typeof p.room === "string" && p.room ? fill(s("report"), { room: p.room }) : s("report_node");
     }
-    var tag = (p.node || "") + "|" + (p.conversation_id || p.type || "tavrn");
+    var key = p.type === "report" ? "report:" + (typeof p.room_id === "string" ? p.room_id : "node") : p.conversation_id || p.type || "tavrn";
+    var tag = (p.node || "") + "|" + key;
     var important = p.type === "mention" || p.type === "dm" || p.type === "call" || p.type === "test";
     return {
       title: title,

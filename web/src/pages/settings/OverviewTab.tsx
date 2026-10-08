@@ -13,6 +13,7 @@ import { ConfirmDialog, Section, Select, Textarea } from "./common";
 import { RoomIconSection } from "./RoomIconSection";
 import { RoomPresenceSection } from "./RoomPresenceSection";
 import { RetentionSection } from "./RetentionSection";
+import { MessageRetentionSection } from "./MessageRetentionSection";
 import { BotsInEncryptedSection } from "./BotsEncryptionSection";
 import { UPLOAD_CATEGORIES } from "../../lib/uploads";
 
@@ -90,6 +91,7 @@ export function OverviewTab({ room }: { room: RoomDetail }) {
       <NoBotsSection room={room} canManage={canManage} />
       <BotsInEncryptedSection room={room} canManage={canManage} />
       <UploadCategoriesSection room={room} />
+      <MessageRetentionSection room={room} />
       <RetentionSection room={room} />
 
       <TransferSection room={room} />

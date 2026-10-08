@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate, useParams } from "react-router";
 import { api, publicApi } from "../lib/api";
 import { useAuth } from "../stores/auth";
 import { useNodeRealtime, useRealtime, useRealtimeState } from "../hooks/useRealtime";
-import { useT } from "../i18n";
+import { useLocale, useT } from "../i18n";
+import { syncMailLocale } from "../lib/mailLocale";
 import { AppShell, useShell } from "../components/AppShell";
 import { Toaster } from "../components/Toaster";
 import { RoomIcon } from "../components/Avatar";
@@ -294,12 +295,30 @@ function useNotificationSetup(token: string | null, address: string | undefined)
  * node's size cap and the friends list (shared with the friends views through the query cache).
  */
 function usePrivacySetup(token: string | null, address: string | undefined) {
+  // The language of the node's mails follows the client's (lib/mailLocale.ts): checked at start, sent on a switch.
+  const locale = useLocale((s) => s.locale);
+  const mailLocale = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (!token || !address || mailLocale.current === undefined || mailLocale.current === locale) return;
+    void syncMailLocale(api, mailLocale.current, locale)
+      .then(() => {
+        mailLocale.current = locale;
+      })
+      .catch(() => undefined);
+  }, [token, address, locale]);
   const friends = useQuery({ queryKey: ["friends"], queryFn: () => api.friends.list(), enabled: !!token && !!address, staleTime: 30_000 });
   useEffect(() => {
     if (!token || !address) return;
+    mailLocale.current = undefined;
     void api.users
       .me()
-      .then((me) => usePrivacy.getState().hydrate(me.auto_preview))
+      .then((me) => {
+        usePrivacy.getState().hydrate(me.auto_preview);
+        mailLocale.current = me.locale ?? null;
+        return syncMailLocale(api, me.locale, useLocale.getState().locale).then((sent) => {
+          if (sent) mailLocale.current = useLocale.getState().locale;
+        });
+      })
       .catch(() => undefined);
     void api.node
       .info()
