@@ -70,7 +70,27 @@ fn the_capability_grants_only_the_app_commands_to_the_main_window() {
     assert_eq!(cap["windows"], serde_json::json!([crate::MAIN_WINDOW]));
     assert!(cap.get("remote").is_none(), "no remote origin may call the shell");
     let permissions: Vec<&str> = cap["permissions"].as_array().map(|p| p.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
-    assert_eq!(permissions, ["allow-get-config", "allow-set-node", "allow-app-info", "allow-open-external", "allow-check-update", "allow-install-update"]);
+    assert_eq!(
+        permissions,
+        [
+            "allow-get-config",
+            "allow-set-node",
+            "allow-app-info",
+            "allow-open-external",
+            "allow-check-update",
+            "allow-install-update",
+            "allow-keychain-get",
+            "allow-keychain-set",
+            "allow-keychain-delete",
+            "allow-keychain-status",
+            "allow-notify",
+            "allow-shell-events",
+            "allow-tray-set",
+            "allow-tray-status",
+            "allow-set-close-to-tray",
+        ]
+    );
+    assert!(permissions.iter().all(|p| p.starts_with("allow-")), "no plugin or core permissions: the shell's own commands only");
     assert_eq!(conf()["app"]["security"]["capabilities"], serde_json::json!(["main"]));
 }
 
@@ -95,4 +115,18 @@ fn updates_come_from_the_github_releases_and_are_signed() {
 #[test]
 fn installers_for_linux_and_windows() {
     assert_eq!(conf()["bundle"]["targets"], serde_json::json!(["deb", "appimage", "msi", "nsis"]));
+}
+
+#[test]
+fn the_installers_show_the_licence_and_terms() {
+    let c = conf();
+    assert_eq!(c["bundle"]["licenseFile"], "../LICENSE.txt", "NSIS shows it as the licence page to accept, the MSI as its licence dialog");
+    let text = include_str!("../../LICENSE.txt");
+    assert!(text.len() > 10_000, "the licence file is the Apache-2.0 text, the NOTICE and the terms");
+    for part in ["Apache License", "Version 2.0, January 2004", "Terms of use and privacy notice for the Tavrn desktop app", "https://tavrn.org", "github.com"]
+    {
+        assert!(text.contains(part), "LICENSE.txt lacks {part:?}");
+    }
+    // .deb has no accept step: the same file is shipped in the package.
+    assert_eq!(c["bundle"]["linux"]["deb"]["files"]["/usr/share/doc/tavrn/LICENSE.txt"], "../LICENSE.txt");
 }

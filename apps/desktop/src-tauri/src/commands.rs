@@ -51,11 +51,18 @@ pub fn set_node(settings: State<'_, Settings>, url: String) -> Result<String, St
 
 pub fn set_node_in(settings: &Settings, url: &str) -> Result<String, String> {
     let node = node_url::validate(url).map_err(|e| e.code().to_string())?;
+    update_config(settings, |c| c.node = Some(node.clone()))?;
+    Ok(node)
+}
+
+/// Changes the settings and writes them; the settings in memory change only when the file was written.
+pub fn update_config(settings: &Settings, change: impl FnOnce(&mut config::Config)) -> Result<(), String> {
     let mut current = settings.config.lock().map_err(|_| "config.unavailable".to_string())?;
-    let next = config::Config { node: Some(node.clone()) };
+    let mut next = current.clone();
+    change(&mut next);
     config::save(&settings.path, &next).map_err(|e| format!("config.write_failed: {e}"))?;
     *current = next;
-    Ok(node)
+    Ok(())
 }
 
 #[tauri::command]
@@ -123,6 +130,18 @@ mod tests {
         assert_eq!(set_node_in(&s, "http://evil"), Err("node_url.insecure".into()));
         assert_eq!(set_node_in(&s, "https://x.example/path"), Err("node_url.path".into()));
         assert_eq!(config::load(&s.path).node.as_deref(), Some("https://tavrn.example"));
+        let _ = std::fs::remove_dir_all(s.path.parent().unwrap_or(&s.path));
+    }
+
+    #[test]
+    fn changing_one_setting_keeps_the_others() {
+        let s = settings("keep");
+        assert!(set_node_in(&s, "https://tavrn.example").is_ok());
+        assert_eq!(update_config(&s, |c| c.close_to_tray = Some(false)), Ok(()));
+        assert!(set_node_in(&s, "https://other.example").is_ok());
+        let stored = config::load(&s.path);
+        assert_eq!(stored.node.as_deref(), Some("https://other.example"));
+        assert_eq!(stored.close_to_tray, Some(false));
         let _ = std::fs::remove_dir_all(s.path.parent().unwrap_or(&s.path));
     }
 

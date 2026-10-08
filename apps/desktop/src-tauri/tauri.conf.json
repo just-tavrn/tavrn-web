@@ -54,6 +54,10 @@
     "publisher": "tavrn",
     "homepage": "https://github.com/just-tavrn/tavrn",
     "license": "Apache-2.0",
+    "licenseFile": "../LICENSE.txt",
+    "linux": {
+      "deb": { "files": { "/usr/share/doc/tavrn/LICENSE.txt": "../LICENSE.txt" } }
+    },
     "windows": {
       "webviewInstallMode": { "type": "downloadBootstrapper" },
       "nsis": { "installMode": "currentUser" }

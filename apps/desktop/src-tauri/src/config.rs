@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The app's settings in `<app config dir>/config.json` (Linux `~/.config/org.tavrn.desktop/`, Windows
-//! `%APPDATA%\org.tavrn.desktop\`): today only the home node chosen in the node picker. A missing, unreadable or
-//! corrupt file means "no settings" (the node picker asks again); a stored node that no longer passes the
-//! validation is dropped.
+//! `%APPDATA%\org.tavrn.desktop\`): the home node chosen in the node picker and "close to tray". A missing,
+//! unreadable or corrupt file means "no settings" (the node picker asks again); a stored node that no longer passes
+//! the validation is dropped.
 
 use std::fs;
 use std::io;
@@ -19,6 +19,9 @@ pub struct Config {
     /// Origin of the home node, or none before the first choice.
     #[serde(default)]
     pub node: Option<String>,
+    /// Closing the window hides it into the tray; none: the platform's default (`tray::close_to_tray_default`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub close_to_tray: Option<bool>,
 }
 
 /// Reads the settings; never fails (see the module documentation).
@@ -67,7 +70,7 @@ mod tests {
     fn writes_and_reads_the_node() -> io::Result<()> {
         let d = dir("roundtrip");
         let path = d.join("nested").join(FILE_NAME);
-        let config = Config { node: Some("https://tavrn.example".into()) };
+        let config = Config { node: Some("https://tavrn.example".into()), close_to_tray: Some(true) };
         save(&path, &config)?;
         assert_eq!(load(&path), config);
         assert!(!path.with_extension("json.tmp").exists(), "no temporary file is left behind");
@@ -96,6 +99,7 @@ mod tests {
         fs::write(&path, r#"{"node": "http://evil.example"}"#)?;
         assert_eq!(load(&path).node, None);
         fs::write(&path, r#"{"node": "https://Tavrn.Example/", "future": true}"#)?;
+        assert_eq!(load(&path).close_to_tray, None, "an older file has no close-to-tray choice");
         assert_eq!(load(&path).node.as_deref(), Some("https://tavrn.example"), "normalized; unknown fields ignored");
         fs::remove_dir_all(d)
     }
