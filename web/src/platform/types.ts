@@ -8,6 +8,7 @@
  * hotkeys, OS keychain, native notifications, tray). Code that uses them checks for presence.
  */
 import type { AuthResponse, DeviceProof, NodeEndpoints, TavrnApi } from "@tavrn/sdk";
+import type { UnlockMaterial } from "../crypto/sealedUnlock";
 
 export type PlatformKind = "browser" | "desktop";
 
@@ -82,6 +83,8 @@ export interface ResolveFailure {
 }
 
 export type NodePageMode = "login" | "register";
+/** A sign-in method the node's page starts at once instead of showing its whole form. */
+export type NodePageMethod = "passkey" | "sso";
 
 /** A sign-in on the home node's own web client. */
 export interface NodePageSignIn {
@@ -93,6 +96,8 @@ export interface NodePageSignIn {
   next: string;
   /** Desktop: open the page's registration. */
   mode?: NodePageMode;
+  /** Desktop: start this method on the page at once (the user chose it in the app). */
+  method?: NodePageMethod;
   /** The account the user named, if any (its device in this client is continued). */
   address?: string;
   /** Desktop: a proof of this app's device of the account (the exchange continues that device). */
@@ -103,14 +108,35 @@ export interface NodePageSignIn {
   onPage?: (url: string) => void;
 }
 
+/** A sign-in on the node's page: the session of the new device and, after a passkey ceremony, what unlocks its keys. */
+export interface NodePageResult {
+  session: AuthResponse;
+  /** The passkey's credential id and PRF output, sealed by the page to this handoff's key (FEDERATION.md §8 step 3). */
+  unlock: UnlockMaterial | null;
+}
+
+/** Passkey unlock of the signed-in app on the node's page (an unlock session). */
+export interface NodePageUnlock {
+  /** API client of the home node with the app's session. */
+  api: TavrnApi;
+  endpoints: NodeEndpoints;
+  signal?: AbortSignal;
+  onPage?: (url: string) => void;
+}
+
 export interface PlatformAuth {
   /**
    * Browser: the connect flow with this origin (FEDERATION.md §8 step 3: redirect to `<web>/connect`, back at
    * `/connect/callback`); the promise never settles because the page leaves. Desktop: an app session (`connect.app`),
    * the page in a window of the shell without any native API, polling and the exchange with the PKCE verifier; the
-   * session of the new device, or null when cancelled.
+   * session of the new device (with the sealed unlock material of a passkey sign-in), or null when cancelled.
    */
-  signInOnNodePage(req: NodePageSignIn): Promise<AuthResponse | null>;
+  signInOnNodePage(req: NodePageSignIn): Promise<NodePageResult | null>;
+  /**
+   * Desktop: unlock the signed-in app's key store with a passkey on the node's page (FEDERATION.md §8 step 3, unlock
+   * sessions). Rejects with `connect.unlock_unsupported` for nodes without it; null when cancelled.
+   */
+  unlockOnNodePage?(req: NodePageUnlock): Promise<UnlockMaterial | null>;
   /** Desktop: shows the page of a running sign-in again (the user closed its window). */
   reopen?(url: string): Promise<void>;
 }
@@ -137,17 +163,26 @@ export interface HotkeyEvent {
 }
 
 /**
- * Global hotkeys of the desktop app. The shell validates a combination (`Ctrl+Alt+Shift+Super+<KeyboardEvent.code>`),
- * refuses one that another action uses and grabs it through the OS; the client keeps the bindings in its voice
- * settings and registers them at start.
+ * System-wide hotkeys of the desktop app (issue #36). The shell validates a binding (`Ctrl+Alt+Shift+Super+<code>`,
+ * a key alone, a modifier alone), refuses one that another action uses and observes the bound keys with a system-wide
+ * key listener (never a grab: other programs still get them); the client keeps the bindings in its voice settings
+ * and registers them at start.
  */
 export interface PlatformHotkeys {
-  /** Binds `combo` to `action`; resolves to its canonical spelling, rejects with a `hotkey.*` code. */
+  /**
+   * Binds `combo` to `action`; resolves to its canonical spelling, rejects with a `hotkey.*` code
+   * (`hotkey.unavailable`: kept, but this system has no key listener).
+   */
   register(action: HotkeyAction, combo: string): Promise<string>;
   /** Removes the binding of `action`. */
   unregister(action: HotkeyAction): Promise<void>;
-  /** Presses and releases of the bound combinations; returns the unsubscriber. */
+  /** Presses and releases of the bound actions; returns the unsubscriber. */
   subscribe(handler: (event: HotkeyEvent) => void): () => void;
+  /**
+   * Signed in or out: the key listener runs only while signed in and bindings exist. Resolves whether it runs now,
+   * rejects with `hotkey.unavailable` when it should but cannot.
+   */
+  setEnabled(enabled: boolean): Promise<boolean>;
 }
 
 /* Extension points: their members are defined by the steps that implement them. */

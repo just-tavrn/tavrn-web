@@ -24,6 +24,7 @@ fn main() {
         "register_hotkey",
         "unregister_hotkey",
         "listen_hotkeys",
+        "set_hotkeys_enabled",
     ];
     let attributes = tauri_build::Attributes::new().app_manifest(tauri_build::AppManifest::new().commands(commands));
     if let Err(e) = tauri_build::try_build(attributes) {

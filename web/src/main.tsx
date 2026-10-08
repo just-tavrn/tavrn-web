@@ -7,7 +7,7 @@ import "./styles.css";
 import { useLocale } from "./i18n";
 import { registerServiceWorker } from "./lib/push";
 import { initPlatform } from "./platform";
-import { startDesktopHotkeys } from "./voice/hotkeys";
+import { startHotkeys } from "./voice/hotkeys";
 
 document.documentElement.lang = useLocale.getState().locale;
 
@@ -24,8 +24,8 @@ void initPlatform()
   .then(() => {
     // Web push only (no caching, no offline mode): the worker shows pushes of the home node while no tab is open.
     void registerServiceWorker();
-    // Desktop app: global hotkeys restored and wired to the voice session (no-op in the browser).
-    startDesktopHotkeys();
+    // Hotkeys: the window's keys, and in the desktop app the shell's system-wide key listener, wired to the voice session.
+    startHotkeys();
     createRoot(root).render(
       <StrictMode>
         <QueryClientProvider client={queryClient}>

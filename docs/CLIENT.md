@@ -30,7 +30,11 @@ home node's own web client (the connect flow with PKCE, needed for passkeys and 
 the recovery key unlocks the encrypted messages. The same `/connect` page also confirms the sign-in of the
 desktop app (`/connect?session=…`, app sessions of FEDERATION.md §8 step 3): sign in there with any method, the page
 names the app's device and, after "Sign in to the app", says "return to the app" instead of redirecting; a sign-in on
-the page for such a confirmation skips the encryption step, because the app creates its own device keys. Encryption works across nodes: the MLS group of a
+the page for such a confirmation skips the encryption step, because the app creates its own device keys. `method=passkey`
+(or `sso`) starts that method at once with only "Signing in with a passkey…" and "Use another method". After a passkey
+ceremony with the PRF extension the page seals the passkey's unlock secret to the app's key from the URL fragment
+(`#k=`, never sent to a server) and sends it with the confirmation, so the passkey unlocks the app's encrypted messages
+as it does in the browser; an *unlock* request of a signed-in app ("Unlock the Tavrn app?") asks only for the passkey. Encryption works across nodes: the MLS group of a
 conversation lives on the node that hosts it, while every user's keys are checked against that user's own
 home node. Friends and DMs work by full address (`bob@other.example`); a DM lives on the home node of the
 person who starts it and shows its node's domain in the DM list; DMs started by a friend on another node
@@ -74,7 +78,10 @@ tiles and controls as voice channels, end-to-end encrypted with the conversation
 
 Media is end-to-end encrypted with keys from the channel's MLS group: the client never publishes before
 LiveKit confirmed encryption and refuses to join in browsers without insertable streams. **Settings →
-Voice & video** (kept per device, applied live): microphone and speaker with a level meter, two microphone
+Voice & video** (kept per device, applied live): microphone and speaker with a level meter (browsers name
+the devices only once the page may use the microphone: the desktop app asks for it when the tab opens, the
+browser offers **Show devices**, also on the first click into a list, and the lists follow devices plugged in or
+out), two microphone
 tests with the same processing as in a call (**Hear yourself** plays the microphone back live with a timer
 and stops after one minute, when you leave the settings or when you join a voice channel, and is not available
 while you are in one; it asks for headphones and mutes itself while the sound is loud and concentrated on one
@@ -84,8 +91,9 @@ five seconds), a test tone, input/output volume, automatic gain, echo cancellati
 with a live "transmitting" light or push-to-talk (key and release delay), camera with preview, resolution and
 frame rate within the node's limits, mirroring and background blur (strength slider, quality fast/balanced/high
 with mask smoothing) or an image (MediaPipe served by the node, turned off automatically on machines that cannot
-keep up, with the measured numbers), soft notification sounds (join, leave, mute, deafen, streams, connection;
-volume and a switch per sound), the ringtone volume, and a **connection test** that tries every path to the
+keep up, with the measured numbers), soft notification sounds (join, leave, mute, deafen, streams, connection, and a soft rising and falling
+tone when push-to-talk or the priority key opens and closes the microphone, heard only by you, never while the server
+keeps the microphone closed; volume and a switch per sound), the ringtone volume, and a **connection test** that tries every path to the
 node's media server (UDP per address, TCP, TURN) and says what to fix when one fails. Room owners upload soundboard clips under room
 settings → Soundboard; members with `use_soundboard` play them from the call controls into their own
 (encrypted) microphone track. LiveKit, RNNoise and the background effects are only loaded once voice is used.
@@ -218,7 +226,9 @@ node over https and wss. The client's platform layer (`src/platform/`) tells the
 builders where the node lives. The node picker and the login page take the account's address first
 (`alice@home.example`): the shell finds the node of that domain (well-known, SRV, direct) and the app switches to it.
 Flows that need the node's own origin (passkeys, single sign-on, the captcha) run on the node's own page in a window of
-the app without any native API ("Sign in on <node>'s page"), and the app takes over the session; on nodes without
+the app without any native API ("Sign in on <node>'s page"), and the app takes over the session; a passkey used there
+also unlocks the encrypted messages, and "Unlock with a passkey" on the app's unlock screen runs just the passkey on
+that page; on nodes without
 app sessions the password with TOTP or a recovery code is what works. Web push is not offered. Details in DESKTOP.md
 "Signing in" and "Limitations".
 
@@ -229,13 +239,12 @@ window is not in front (a click opens the conversation; Settings → Notificatio
 and a tray icon shows the voice state (in a channel, speaking, muted, deafened) with mute, deafen, leave voice,
 show/hide and quit in its menu; closing the window keeps the app in the tray (Settings → App).
 
-**Global hotkeys** (app only): Settings → Voice & video → Global hotkeys binds push-to-talk and the priority speaker
-(held), mute and deafen (toggles) to key combinations that also work while the app is in the background or minimized,
-for example during a game. A recorder per action takes the combination (Escape cancels, Backspace removes it) and
-shows the key names of the platform (Super, Win or Cmd). The bindings are kept with the voice settings, apart from the
-push-to-talk and priority keys of the window, and are handed to the shell at every start; a combination that another
-action or a key of the window already uses is refused. The browser shows a hint instead (DESKTOP.md "Global
-hotkeys").
+**Hotkeys:** push-to-talk (Settings → Voice & video → Input mode), the priority speaker and, under **More hotkeys**,
+mute and deafen have one binding each: a single key, a modifier alone (left Ctrl, right Shift, …) or a combination,
+taken by a recorder (Escape cancels, Backspace removes the binding) that shows the key names of the platform (Super,
+Win or Cmd) and lights the key up while it is held. In the browser they work while the tab has focus; the desktop app
+also observes them system-wide, while a game has the focus, without taking the keys away from it (DESKTOP.md
+"Hotkeys"). A key of another action is refused; a character typed into a text field never triggers.
 
 ## Translations
 

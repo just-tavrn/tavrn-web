@@ -14,11 +14,18 @@ export type BackgroundQuality = "fast" | "balanced" | "high";
 export type Resolution = "360p" | "720p" | "1080p" | "1440p" | "4k";
 
 /** Notification sounds (`cues.ts`). */
-export const CUE_NAMES = ["join", "leave", "mute", "unmute", "deafen", "undeafen", "stream_on", "stream_off", "connection_lost", "connection_restored"] as const;
+export const CUE_NAMES = ["join", "leave", "mute", "unmute", "deafen", "undeafen", "stream_on", "stream_off", "connection_lost", "connection_restored", "ptt_on", "ptt_off", "priority_on", "priority_off"] as const;
 export type Cue = (typeof CUE_NAMES)[number];
 
-/** Global hotkeys of the desktop app per action (`voice/hotkeys.ts`); `""` = none. */
-export type DesktopHotkeys = Record<HotkeyAction, string>;
+/**
+ * One binding per hotkey action (`voice/hotkeys.ts`, issue #36): it works in the window and, in the desktop app,
+ * system-wide. `""` = none. The shell's canonical spelling: `Ctrl+Alt+Shift+Super+<KeyboardEvent.code>`, a key alone
+ * as its code (`KeyV`, `F13`), a modifier alone as its own code (`ControlLeft`).
+ */
+export type Hotkeys = Record<HotkeyAction, string>;
+
+/** The actions in their order (a migrated conflict keeps the earlier one). */
+const ACTIONS: readonly HotkeyAction[] = ["push_to_talk", "priority", "toggle_mute", "toggle_deafen"];
 
 export interface VoiceSettings {
   /** Empty = the system default device. */
@@ -34,12 +41,8 @@ export interface VoiceSettings {
   inputMode: InputMode;
   /** Voice activation threshold in dBFS (-100–0). */
   vadThreshold: number;
-  /** `KeyboardEvent.code` of the push-to-talk key. */
-  pttKey: string;
   /** Push-to-talk stays open this long after the key is released (ms). */
   pttReleaseMs: number;
-  /** `KeyboardEvent.code` of the priority speaker key held while talking over others; empty = none. */
-  priorityKey: string;
   noiseGate: boolean;
   /** Noise gate threshold in dBFS. */
   gateThreshold: number;
@@ -67,11 +70,8 @@ export interface VoiceSettings {
   cuesDisabled: Cue[];
   /** Volume of the ringtone of incoming calls in percent (0 = silent, the banner still shows). */
   ringVolume: number;
-  /**
-   * Desktop app: global hotkeys in the shell's canonical spelling (`Ctrl+Alt+Shift+Super+<KeyboardEvent.code>`), kept
-   * apart from the keys of the window above (`pttKey`, `priorityKey`); restored at start (docs/DESKTOP.md).
-   */
-  desktopHotkeys: DesktopHotkeys;
+  /** Push-to-talk, priority speaker (held), mute and deafen (toggles): one binding each, window and system-wide. */
+  hotkeys: Hotkeys;
 }
 
 export const DEFAULT_SETTINGS: VoiceSettings = {
@@ -85,9 +85,7 @@ export const DEFAULT_SETTINGS: VoiceSettings = {
   noiseSuppression: "browser",
   inputMode: "vad",
   vadThreshold: -55,
-  pttKey: "Backquote",
   pttReleaseMs: 250,
-  priorityKey: "",
   noiseGate: false,
   gateThreshold: -65,
   cameraResolution: "720p",
@@ -104,7 +102,7 @@ export const DEFAULT_SETTINGS: VoiceSettings = {
   cuesOff: false,
   cuesDisabled: [],
   ringVolume: 60,
-  desktopHotkeys: { push_to_talk: "", priority: "", toggle_mute: "", toggle_deafen: "" },
+  hotkeys: { push_to_talk: "Backquote", priority: "", toggle_mute: "", toggle_deafen: "" },
 };
 
 export const SETTINGS_KEY = "tavrn.voice.settings";
@@ -139,12 +137,36 @@ function volumeMap(raw: unknown): Record<string, number> {
 /** Modifiers in the fixed order and one `KeyboardEvent.code`; the shell validates the key itself. */
 const COMBO = /^(Ctrl\+)?(Alt\+)?(Shift\+)?(Super\+)?[A-Za-z][A-Za-z0-9]{0,23}$/;
 
-function desktopHotkeys(raw: unknown): DesktopHotkeys {
-  const r = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
-  const out = { ...DEFAULT_SETTINGS.desktopHotkeys };
-  for (const action of Object.keys(out) as HotkeyAction[]) {
-    const v = r[action];
-    if (typeof v === "string" && v.length <= 64 && COMBO.test(v)) out[action] = v;
+/** A binding in the canonical spelling, or `""`. */
+function binding(v: unknown): string {
+  if (typeof v !== "string" || v.length > 64 || !COMBO.test(v)) return "";
+  return v.replace(/(^|\+)OS(Left|Right)$/, "$1Meta$2");
+}
+
+/**
+ * The bindings; settings stored before issue #36 kept the keys of the window (`pttKey`, `priorityKey`) apart from the
+ * desktop app's global hotkeys (`desktopHotkeys`): the window's key is the binding now, a global binding fills in where
+ * the window had none (push-to-talk: the untouched default), mute and deafen come from the global ones.
+ */
+function hotkeys(r: Record<string, unknown>): Hotkeys {
+  const out = { ...DEFAULT_SETTINGS.hotkeys };
+  if (r.hotkeys && typeof r.hotkeys === "object") {
+    const h = r.hotkeys as Record<string, unknown>;
+    for (const a of ACTIONS) if (a in h) out[a] = binding(h[a]);
+  } else {
+    const legacy = r.desktopHotkeys && typeof r.desktopHotkeys === "object" ? (r.desktopHotkeys as Record<string, unknown>) : {};
+    const global = (a: HotkeyAction) => binding(legacy[a]);
+    const ptt = binding(r.pttKey) || DEFAULT_SETTINGS.hotkeys.push_to_talk;
+    out.push_to_talk = ptt === DEFAULT_SETTINGS.hotkeys.push_to_talk && global("push_to_talk") ? global("push_to_talk") : ptt;
+    out.priority = binding(r.priorityKey) || global("priority");
+    out.toggle_mute = global("toggle_mute");
+    out.toggle_deafen = global("toggle_deafen");
+  }
+  // Never one binding for two actions.
+  const seen = new Set<string>();
+  for (const a of ACTIONS) {
+    if (out[a] && seen.has(out[a])) out[a] = "";
+    else if (out[a]) seen.add(out[a]);
   }
   return out;
 }
@@ -167,9 +189,7 @@ export function normalizeSettings(raw: unknown): VoiceSettings {
     noiseSuppression: oneOf(r.noiseSuppression, ["off", "browser", "rnnoise"] as const, d.noiseSuppression),
     inputMode: oneOf(r.inputMode, ["vad", "ptt"] as const, d.inputMode),
     vadThreshold: num(r.vadThreshold, d.vadThreshold, -100, 0),
-    pttKey: str(r.pttKey, d.pttKey, 64),
     pttReleaseMs: num(r.pttReleaseMs, d.pttReleaseMs, 0, 2000),
-    priorityKey: str(r.priorityKey, d.priorityKey, 64),
     noiseGate: bool(r.noiseGate, d.noiseGate),
     gateThreshold: num(r.gateThreshold, d.gateThreshold, -100, 0),
     cameraResolution: oneOf(r.cameraResolution, ["360p", "720p", "1080p"] as const, "720p"),
@@ -186,7 +206,7 @@ export function normalizeSettings(raw: unknown): VoiceSettings {
     cuesOff: bool(r.cuesOff, d.cuesOff),
     cuesDisabled: Array.isArray(r.cuesDisabled) ? CUE_NAMES.filter((c) => (r.cuesDisabled as unknown[]).includes(c)) : [],
     ringVolume: num(r.ringVolume, d.ringVolume, 0, 100),
-    desktopHotkeys: desktopHotkeys(r.desktopHotkeys),
+    hotkeys: hotkeys(r),
   };
 }
 

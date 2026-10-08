@@ -10,6 +10,7 @@ const base: VoiceLimits = {
   stream_max_height: 0,
   stream_max_fps: 0,
   camera_max_height: 0,
+  audio_fec: true,
 };
 
 describe("voice entitlement caps", () => {

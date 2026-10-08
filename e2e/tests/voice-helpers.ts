@@ -101,3 +101,26 @@ export async function hooks(page: Page): Promise<HookState> {
 export async function inboundPeak(page: Page, identity: string): Promise<number> {
   return page.evaluate(async (id) => (window as unknown as { __tavrnVoice: { inboundAudioPeak: (i: string) => Promise<number> } }).__tavrnVoice.inboundAudioPeak(id), identity);
 }
+
+/**
+ * Init script: device names and ids stay hidden until the page asked for the microphone, as browsers do without
+ * Chromium's test flags (which reveal them at once). `window.__e2eAsked` counts the requests.
+ */
+export function hideDeviceNamesUntilAsked() {
+  const md = navigator.mediaDevices;
+  const enumerate = md.enumerateDevices.bind(md);
+  const gum = md.getUserMedia.bind(md);
+  const w = window as unknown as { __e2eAsked: number };
+  w.__e2eAsked = 0;
+  md.getUserMedia = async (c?: MediaStreamConstraints) => {
+    const stream = await gum(c);
+    if (c?.audio) w.__e2eAsked += 1;
+    return stream;
+  };
+  md.enumerateDevices = async () => {
+    const all = await enumerate();
+    if (w.__e2eAsked > 0) return all;
+    const kinds = [...new Set(all.map((d) => d.kind))];
+    return kinds.map((kind) => ({ kind, deviceId: "", groupId: "", label: "", toJSON: () => ({}) }) as MediaDeviceInfo);
+  };
+}

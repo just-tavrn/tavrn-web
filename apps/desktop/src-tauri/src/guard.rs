@@ -73,7 +73,9 @@ pub enum ConnectUrlError {
 }
 
 /// `open_connect` command: the chosen node's sign-in page for an app session,
-/// `<web origin>/connect?session=<43 characters of base64url>[&state=…][&mode=register]`, nothing else.
+/// `<web origin>/connect?session=<43 characters of base64url>[&state=…][&mode=register][&method=passkey|sso]` with an
+/// optional fragment `#k=<43 characters of base64url>` (the app's key for sealed unlock material, FEDERATION.md §8
+/// step 3), nothing else.
 pub fn connect_url(url: &str, web: &str) -> Result<Url, ConnectUrlError> {
     let url = Url::parse(url).map_err(|_| ConnectUrlError::Invalid)?;
     let web = Url::parse(web).map_err(|_| ConnectUrlError::Invalid)?;
@@ -83,16 +85,18 @@ pub fn connect_url(url: &str, web: &str) -> Result<Url, ConnectUrlError> {
     if url.scheme() == "http" && !DEV_HOSTS.contains(&url.host_str().unwrap_or_default()) {
         return Err(ConnectUrlError::Invalid);
     }
-    if url.path() != "/connect" || url.fragment().is_some() || !url.username().is_empty() || url.password().is_some() {
+    let b64url_43 = |v: &str| v.len() == 43 && v.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+    let fragment_ok = url.fragment().is_none_or(|f| f.strip_prefix("k=").is_some_and(b64url_43));
+    if url.path() != "/connect" || !fragment_ok || !url.username().is_empty() || url.password().is_some() {
         return Err(ConnectUrlError::Invalid);
     }
-    let session_ok = |v: &str| v.len() == 43 && v.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
-    let mut session = false;
+    let (mut session, mut method) = (false, false);
     for (key, value) in url.query_pairs() {
         match key.as_ref() {
-            "session" if session_ok(&value) && !session => session = true,
+            "session" if b64url_43(&value) && !session => session = true,
             "state" if (16..=128).contains(&value.len()) && value.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') => {}
             "mode" if value == "register" => {}
+            "method" if matches!(value.as_ref(), "passkey" | "sso") && !method => method = true,
             _ => return Err(ConnectUrlError::Invalid),
         }
     }
@@ -198,10 +202,16 @@ mod tests {
         let s = "S".repeat(43);
         let state = "s".repeat(22);
         let web = "https://web.tavrn.example";
+        // The app's key for sealed unlock material (32 bytes, base64url).
+        let k = "K".repeat(43);
         for ok in [
             format!("{web}/connect?session={s}"),
             format!("{web}/connect?session={s}&state={state}"),
             format!("{web}/connect?session={s}&state={state}&mode=register"),
+            format!("{web}/connect?session={s}&state={state}&method=passkey"),
+            format!("{web}/connect?session={s}&state={state}&method=sso"),
+            format!("{web}/connect?session={s}&state={state}&method=passkey#k={k}"),
+            format!("{web}/connect?session={s}&mode=register#k={k}"),
         ] {
             assert!(connect_url(&ok, web).is_ok(), "{ok}");
         }
@@ -217,6 +227,11 @@ mod tests {
             (format!("{web}/connect?session={s}&origin=https://evil.example"), ConnectUrlError::Invalid),
             (format!("{web}/connect?session={s}&session={s}"), ConnectUrlError::Invalid),
             (format!("{web}/connect?session={s}#x"), ConnectUrlError::Invalid),
+            (format!("{web}/connect?session={s}#k=short"), ConnectUrlError::Invalid),
+            (format!("{web}/connect?session={s}#k={k}&x=1"), ConnectUrlError::Invalid),
+            (format!("{web}/connect?session={s}#k={}", "+".repeat(43)), ConnectUrlError::Invalid),
+            (format!("{web}/connect?session={s}&method=password"), ConnectUrlError::Invalid),
+            (format!("{web}/connect?session={s}&method=passkey&method=sso"), ConnectUrlError::Invalid),
             ("javascript:alert(1)".into(), ConnectUrlError::OtherOrigin),
         ] {
             assert_eq!(connect_url(&bad, web).map(|_| ()), Err(why), "{bad}");

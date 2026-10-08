@@ -49,6 +49,32 @@ describe("notification sounds (design note 4.9)", () => {
     expect(PATTERNS.leave[1]!.freq).toBeLessThan(PATTERNS.leave[0]!.freq);
   });
 
+  it("push-to-talk and priority speaker: one soft tone each, rising when the microphone opens, falling when it closes (issue #37)", () => {
+    for (const [on, off] of [
+      ["ptt_on", "ptt_off"],
+      ["priority_on", "priority_off"],
+    ] as const) {
+      for (const cue of [on, off]) {
+        expect(PATTERNS[cue], cue).toHaveLength(1);
+        expect(PATTERNS[cue][0]!.gain, cue).toBeLessThanOrEqual(0.6);
+        expect(cueLength(cue), cue).toBeLessThan(0.15);
+      }
+      const [up, down] = [PATTERNS[on][0]!, PATTERNS[off][0]!];
+      expect(up.to!).toBeGreaterThan(up.freq);
+      expect(down.to!).toBeLessThan(down.freq);
+    }
+    // The priority speaker's tones sit higher, so the two keys sound apart.
+    expect(PATTERNS.priority_on[0]!.freq).toBeGreaterThan(PATTERNS.ptt_on[0]!.freq);
+    // The glide is scheduled on the oscillator's frequency.
+    const { ctx, events } = mockContext(1);
+    scheduleCue(ctx, "ptt_on", 0.5);
+    const glide = events.find((e) => e.op === "frequency.exp" || e.op === "frequency.linear");
+    expect(glide?.args[0]).toBeCloseTo(PATTERNS.ptt_on[0]!.to!, 3);
+    // On by default, switched off one by one like the others.
+    expect(DEFAULT_SETTINGS.cuesDisabled).toEqual([]);
+    expect(normalizeSettings({ cuesDisabled: ["ptt_on", "priority_off", "nope"] }).cuesDisabled).toEqual(["ptt_on", "priority_off"]);
+  });
+
   it("schedules each note with a soft envelope scaled by the volume", () => {
     const { ctx, events } = mockContext(2);
     expect(scheduleCue(ctx, "join", 0.5)).toBe(2);

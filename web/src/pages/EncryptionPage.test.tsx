@@ -2,9 +2,9 @@
 import "fake-indexeddb/auto";
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { Route, Routes } from "react-router";
-import { MasterSecret, RecoveryKey, wrapMasterSecret } from "@tavrn/crypto";
+import { MasterSecret, RecoveryKey, passkeyMethod, passkeyWrappingKey, wrapMasterSecret } from "@tavrn/crypto";
 import { b64urlEncode } from "@tavrn/sdk";
 import { EncryptionPage } from "./EncryptionPage";
 import { useAuth } from "../stores/auth";
@@ -12,6 +12,7 @@ import { useAuthFlow } from "../stores/authFlow";
 import { cryptoStore } from "../crypto/store";
 import { mockFetch, renderWithProviders } from "../test/render";
 import { initCryptoForTests } from "../test/wasm";
+import { resetPlatform, setPlatform, type NodePageUnlock, type Platform } from "../platform";
 
 const DEV = "01J9ZK3G5M8Q2W4E6R8T0Y2VA1";
 let n = 0;
@@ -118,5 +119,89 @@ describe("EncryptionPage", () => {
     await u.click(screen.getByTestId("skip-unlock"));
     expect(await screen.findByText("Raumseite")).toBeInTheDocument();
     expect(sessionStorage.getItem("tavrn.e2ee.skip")).toBe("1");
+  });
+});
+
+describe("EncryptionPage in the desktop app: passkey unlock on the node's page", () => {
+  const CRED = "Y3JlZC1hcHA";
+  const prf = () => new Uint8Array(32).fill(3);
+
+  function desktop(unlock: (req: NodePageUnlock) => Promise<{ credentialId: string; prf: Uint8Array } | null>) {
+    const fn = vi.fn(unlock);
+    const platform: Platform = {
+      kind: "desktop",
+      isDesktop: true,
+      nodeBase: () => "https://t.local",
+      webOrigin: () => "https://t.local",
+      openExternal: async () => {},
+      appVersion: async () => "0.2.0",
+      auth: { signInOnNodePage: async () => null, unlockOnNodePage: fn },
+    };
+    setPlatform(platform);
+    return fn;
+  }
+
+  function account() {
+    const user = signIn(true);
+    const master = MasterSecret.generate();
+    const wrapped = b64urlEncode(wrapMasterSecret(master, passkeyWrappingKey(prf()), user.address, passkeyMethod(CRED)));
+    const routes = {
+      "/.well-known/tavrn": { body: { tavrn: 1, domain: "t.local", api: "https://t.local/api/v1", ws: "wss://t.local/api/v1/ws", web: "https://t.local", capabilities: ["connect.app"] } },
+      "/users/me/secret-storage": { body: { items: [{ method: passkeyMethod(CRED), wrapped, params: {}, updated_at: "" }] } },
+      [`/users/me/devices/${DEV}/key-packages`]: (init: RequestInit) => ({ body: { count: init.method === "POST" ? 20 : 0 } }),
+      [`/users/me/devices/${DEV}/key`]: { body: {} },
+      [`/users/${user.username}/keys`]: { body: { user: user.address, identity_public_key: b64urlEncode(master.identityPublicKey()), devices: [] } },
+      "/api/v1/users/me": { body: user },
+    };
+    return { user, master, routes };
+  }
+
+  afterEach(() => resetPlatform());
+
+  it("opens the node's page for the passkey, waits with Cancel and unlocks with the sealed PRF output", async () => {
+    const { master, routes } = account();
+    let finish: (v: { credentialId: string; prf: Uint8Array } | null) => void = () => {};
+    const unlock = desktop(() => new Promise((resolve) => (finish = resolve)));
+    mockFetch(routes);
+    renderPage();
+    const u = userEvent.setup();
+    await u.click(await screen.findByRole("button", { name: "Mit Passkey entsperren" }));
+    expect(await screen.findByTestId("unlock-waiting")).toHaveTextContent("t.local");
+    // No second form while the window is open.
+    expect(screen.queryByTestId("recovery-key-input")).toBeNull();
+    expect(unlock.mock.calls[0]![0].endpoints).toMatchObject({ domain: "t.local", web: "https://t.local" });
+    expect(unlock.mock.calls[0]![0].api).toBeTruthy();
+    finish({ credentialId: CRED, prf: prf() });
+    expect(await screen.findByText("Raumseite")).toBeInTheDocument();
+    expect(cryptoStore.masterSecret()).toEqual(master.toBytes());
+  });
+
+  it("cancel returns to the recovery key; a node without unlock sessions says so", async () => {
+    const { routes } = account();
+    const unlock = desktop((req) => new Promise((resolve) => req.signal?.addEventListener("abort", () => resolve(null))));
+    mockFetch(routes);
+    renderPage();
+    const u = userEvent.setup();
+    await u.click(await screen.findByRole("button", { name: "Mit Passkey entsperren" }));
+    await u.click(await screen.findByRole("button", { name: "Abbrechen" }));
+    expect(await screen.findByTestId("recovery-key-input")).toBeInTheDocument();
+    expect(unlock.mock.calls[0]![0].signal?.aborted).toBe(true);
+
+    unlock.mockImplementation(async () => {
+      throw Object.assign(new Error("unsupported"), { problem: { code: "connect.unlock_unsupported" } });
+    });
+    await u.click(screen.getByRole("button", { name: "Mit Passkey entsperren" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("noch nicht mit einem Passkey");
+    expect(screen.getByTestId("recovery-key-input")).toBeInTheDocument();
+  });
+
+  it("without a passkey entry or app sessions there is no passkey button", async () => {
+    const { routes } = account();
+    desktop(async () => null);
+    mockFetch({ ...routes, "/.well-known/tavrn": { body: { tavrn: 1, domain: "t.local", capabilities: [] } } });
+    renderPage();
+    expect(await screen.findByTestId("recovery-key-input")).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByRole("button", { name: "Mit Passkey entsperren" })).toBeNull();
   });
 });

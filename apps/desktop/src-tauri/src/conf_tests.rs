@@ -95,6 +95,7 @@ fn the_capability_grants_only_the_app_commands_to_the_main_window() {
             "allow-register-hotkey",
             "allow-unregister-hotkey",
             "allow-listen-hotkeys",
+            "allow-set-hotkeys-enabled",
         ]
     );
     assert!(permissions.iter().all(|p| p.starts_with("allow-")), "no plugin or core permissions: the shell's own commands only");

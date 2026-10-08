@@ -1,34 +1,42 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
- * Global hotkeys of the desktop app (docs/DESKTOP.md "Global hotkeys"): push-to-talk and the priority speaker while
- * held, mute and deafen as toggles, also while the app is in the background. The bindings live in the voice settings
- * (`desktopHotkeys`, apart from the keys of the window `pttKey` and `priorityKey`, which `session.ts` handles while the
- * window has focus); the shell (`platform.hotkeys`) validates and grabs them and reports presses and releases, which
- * reach the voice session here. In the browser nothing of this runs.
+ * Hotkeys of the voice client (docs/DESKTOP.md "Hotkeys", issue #36): push-to-talk and the priority speaker while
+ * held, mute and deafen as toggles. One binding per action (`hotkeys` of the voice settings): it works while the
+ * window has focus (the window's key events, here) and, in the desktop app, system-wide: the shell observes the bound
+ * keys with a key listener and reports presses and releases (`platform.hotkeys`). `hotkeyHolds.ts` merges both sources
+ * so a key the window and the shell both see fires once. The shell's listener runs only while the client is signed in.
  */
+import { create } from "zustand";
 import { platform, type HotkeyAction, type HotkeyEvent } from "../platform";
 import { t } from "../i18n";
+import { useAuth } from "../stores/auth";
 import { useToasts } from "../stores/toasts";
+import { HotkeyHolds } from "./hotkeyHolds";
+import { normalizeCode } from "./hotkeyRecorder";
 import { pushToTalk, setPrioritySpeaker, toggleDeafen, toggleMute } from "./index";
-import { useVoiceSettings, type VoiceSettings } from "./settings";
+import { useVoiceSettings, type Hotkeys } from "./settings";
 import { useVoice } from "./store";
 
 export const HOTKEY_ACTIONS: readonly HotkeyAction[] = ["push_to_talk", "priority", "toggle_mute", "toggle_deafen"];
 
-type KeyState = Pick<KeyboardEvent, "code" | "ctrlKey" | "altKey" | "shiftKey" | "metaKey">;
+// ---------------------------------------------------------------- bindings and their names
 
-/** Keys that only modify (the recorder keeps waiting for the real key). */
-const MODIFIER_CODES = /^(Control|Shift|Alt|Meta|OS|Super|Hyper)(Left|Right)?$|^(AltGraph|CapsLock|NumLock|Fn|FnLock|ContextMenu)$/;
-
-/** The combination of a key press in the shell's canonical spelling, or null while only modifiers are held. */
-export function comboFromEvent(e: KeyState): string | null {
-  if (!e.code || MODIFIER_CODES.test(e.code)) return null;
-  return `${e.ctrlKey ? "Ctrl+" : ""}${e.altKey ? "Alt+" : ""}${e.shiftKey ? "Shift+" : ""}${e.metaKey ? "Super+" : ""}${e.code}`;
+export interface Binding {
+  ctrl: boolean;
+  alt: boolean;
+  shift: boolean;
+  super: boolean;
+  /** `KeyboardEvent.code`; may itself be a modifier key (`ControlLeft`). */
+  key: string;
 }
 
-/** The modifiers held so far, for the recorder's "Ctrl + …". */
-export function heldModifiers(e: KeyState): string {
-  return `${e.ctrlKey ? "Ctrl+" : ""}${e.altKey ? "Alt+" : ""}${e.shiftKey ? "Shift+" : ""}${e.metaKey ? "Super+" : ""}`;
+/** A binding in the canonical spelling, or null. */
+export function parseBinding(combo: string): Binding | null {
+  if (!combo) return null;
+  const parts = combo.split("+");
+  const key = parts.pop() ?? "";
+  if (!key) return null;
+  return { ctrl: parts.includes("Ctrl"), alt: parts.includes("Alt"), shift: parts.includes("Shift"), super: parts.includes("Super"), key };
 }
 
 export type KeyOs = "linux" | "windows" | "mac";
@@ -45,6 +53,10 @@ const MODIFIER_NAMES: Record<KeyOs, Record<string, string>> = {
   windows: { Ctrl: "Ctrl", Alt: "Alt", Shift: "Shift", Super: "Win" },
   mac: { Ctrl: "Control", Alt: "Option", Shift: "Shift", Super: "Cmd" },
 };
+
+/** Modifier keys bound alone: which modifier, which side. */
+const SIDED = /^(Control|Alt|Shift|Meta)(Left|Right)$/;
+const SIDED_NAMES: Record<string, string> = { Control: "Ctrl", Alt: "Alt", Shift: "Shift", Meta: "Super" };
 
 const KEY_NAMES: Record<string, string> = {
   Backquote: "`",
@@ -74,47 +86,37 @@ const KEY_NAMES: Record<string, string> = {
   PrintScreen: "Print Screen",
 };
 
-/** A key (`KeyboardEvent.code`) as it is printed on the keyboard. */
-export function keyLabel(code: string): string {
+/** A key (`KeyboardEvent.code`) as it is printed on the keyboard; a lone modifier with its side. */
+export function keyLabel(code: string, os: KeyOs = keyOs()): string {
   if (KEY_NAMES[code]) return KEY_NAMES[code];
+  const sided = SIDED.exec(code);
+  if (sided) {
+    const name = MODIFIER_NAMES[os][SIDED_NAMES[sided[1]!]!] ?? sided[1]!;
+    return t(sided[2] === "Left" ? "voice.hotkeys.key_left" : "voice.hotkeys.key_right", { key: name });
+  }
   const m = /^(?:Key([A-Z])|Digit(\d)|Numpad(\d))$/.exec(code);
   if (m) return m[1] ?? m[2] ?? `Num ${m[3]}`;
   return code;
 }
 
-/** A combination with the platform's key names: `Ctrl + Shift + M`, `Win + 1`, `Cmd + K`. */
+/** A binding with the platform's key names: `Ctrl + Shift + M`, `Win + 1`, `Cmd + K`, `Ctrl links`. */
 export function comboLabel(combo: string, os: KeyOs = keyOs()): string {
   const parts = combo.split("+");
   const key = parts.pop() ?? "";
-  return [...parts.map((m) => MODIFIER_NAMES[os][m] ?? m), keyLabel(key)].join(" + ");
-}
-
-export type Conflict = { key: "voice.hotkeys.conflict_desktop"; action: HotkeyAction } | { key: "voice.hotkeys.conflict_browser" };
-
-/**
- * Why `combo` cannot be bound to `action`: another global action uses it, or it is the push-to-talk or priority key
- * of the window (both would fire). Null when it is free.
- */
-export function hotkeyConflict(s: VoiceSettings, action: HotkeyAction, combo: string): Conflict | null {
-  const other = HOTKEY_ACTIONS.find((a) => a !== action && s.desktopHotkeys[a] === combo);
-  if (other) return { key: "voice.hotkeys.conflict_desktop", action: other };
-  if (combo === s.pttKey || (s.priorityKey && combo === s.priorityKey)) return { key: "voice.hotkeys.conflict_browser" };
-  return null;
-}
-
-/** Whether a key of the window (`KeyboardEvent.code`) is bound as a global hotkey. */
-export function browserKeyConflict(s: VoiceSettings, code: string): boolean {
-  return HOTKEY_ACTIONS.some((a) => s.desktopHotkeys[a] === code);
+  return [...parts.map((m) => MODIFIER_NAMES[os][m] ?? m), keyLabel(key, os)].join(" + ");
 }
 
 export const actionLabel = (action: HotkeyAction) => t(`voice.hotkeys.action.${action}`);
+
+/** The other action that already uses `combo`, or null. */
+export function hotkeyConflict(bindings: Hotkeys, action: HotkeyAction, combo: string): HotkeyAction | null {
+  return HOTKEY_ACTIONS.find((a) => a !== action && bindings[a] === combo) ?? null;
+}
 
 /** The translated reason of a refusal (`hotkey.*` codes of the shell). */
 export function hotkeyError(e: unknown): string {
   const code = typeof e === "string" ? e : e instanceof Error ? e.message : "";
   switch (code) {
-    case "hotkey.typing_key":
-      return t("voice.hotkeys.error.typing_key", { super: MODIFIER_NAMES[keyOs()].Super ?? "Super" });
     case "hotkey.duplicate":
       return t("voice.hotkeys.error.duplicate");
     case "hotkey.unavailable":
@@ -124,83 +126,25 @@ export function hotkeyError(e: unknown): string {
   }
 }
 
-/** Binds `combo` to `action` through the shell and stores it; resolves to the translated refusal, or null. */
-export async function bindHotkey(action: HotkeyAction, combo: string): Promise<string | null> {
-  const hotkeys = platform().hotkeys;
-  if (!hotkeys) return t("voice.hotkeys.browser_hint");
-  const { settings, update } = useVoiceSettings.getState();
-  const conflict = hotkeyConflict(settings, action, combo);
-  if (conflict) return conflict.key === "voice.hotkeys.conflict_desktop" ? t(conflict.key, { action: actionLabel(conflict.action) }) : t(conflict.key);
-  try {
-    const canonical = await hotkeys.register(action, combo);
-    release(action);
-    update({ desktopHotkeys: { ...useVoiceSettings.getState().settings.desktopHotkeys, [action]: canonical } });
-    return null;
-  } catch (e) {
-    return hotkeyError(e);
-  }
+// ---------------------------------------------------------------- state for the settings
+
+export type ListenerState = "off" | "on" | "unavailable";
+
+interface HotkeyState {
+  /** Actions held right now (the settings light the key up). */
+  held: Partial<Record<HotkeyAction, boolean>>;
+  /** The shell's key listener: running, not needed (browser, signed out, nothing bound) or not available here. */
+  listener: ListenerState;
 }
 
-/** Removes the binding of `action`. */
-export async function clearHotkey(action: HotkeyAction): Promise<void> {
-  await platform().hotkeys?.unregister(action);
-  release(action);
-  const { settings, update } = useVoiceSettings.getState();
-  update({ desktopHotkeys: { ...settings.desktopHotkeys, [action]: "" } });
+export const useHotkeyState = create<HotkeyState>(() => ({ held: {}, listener: "off" }));
+
+/** Whether `action` is held right now (window or system-wide). */
+export function hotkeyHeld(action: HotkeyAction): boolean {
+  return holds.held(action);
 }
 
-/**
- * Hands the stored bindings to the shell at start (a reloaded page re-registers the same ones, which the shell
- * accepts). A combination the system refuses stays stored, another program may free it later; the user hears once.
- */
-export async function restoreHotkeys(): Promise<void> {
-  const hotkeys = platform().hotkeys;
-  if (!hotkeys) return;
-  const stored = useVoiceSettings.getState().settings.desktopHotkeys;
-  const failed: string[] = [];
-  for (const action of HOTKEY_ACTIONS) {
-    try {
-      if (stored[action]) await hotkeys.register(action, stored[action]);
-      else await hotkeys.unregister(action);
-    } catch (e) {
-      failed.push(`${actionLabel(action)} (${comboLabel(stored[action])}): ${hotkeyError(e)}`);
-    }
-  }
-  if (failed.length) useToasts.getState().push({ kind: "warning", title: t("voice.hotkeys.restore_failed"), detail: failed.join("\n") });
-}
-
-const held = new Set<HotkeyAction>();
-
-/** Whether a global hotkey of `action` is held right now (focus changes of the window do not release it). */
-export function desktopHeld(action: HotkeyAction): boolean {
-  return held.has(action);
-}
-
-/** Ends a hold whose binding changed or went away (its release would never come). */
-function release(action: HotkeyAction): void {
-  if (held.has(action)) handleHotkey({ action, pressed: false });
-}
-
-/** A press or release of the shell: push-to-talk and the priority speaker follow the hold, the toggles the press. */
-export function handleHotkey(e: HotkeyEvent): void {
-  if (e.pressed === held.has(e.action)) return;
-  if (e.pressed) held.add(e.action);
-  else held.delete(e.action);
-  switch (e.action) {
-    case "push_to_talk":
-      pushToTalk(e.pressed);
-      break;
-    case "priority":
-      setPrioritySpeaker(e.pressed);
-      break;
-    case "toggle_mute":
-      if (e.pressed) void toggleMute().then(announceOutsideCall);
-      break;
-    case "toggle_deafen":
-      if (e.pressed) void toggleDeafen().then(announceOutsideCall);
-      break;
-  }
-}
+// ---------------------------------------------------------------- what a hold does
 
 /** Outside a call nothing shows the toggled state (in a call the cues and the controls do): say what the next join gets. */
 function announceOutsideCall(): void {
@@ -210,19 +154,202 @@ function announceOutsideCall(): void {
   useToasts.getState().push({ kind: "info", title: t(key), testId: "hotkey-voice-state" });
 }
 
-/** At start of the desktop app: listen to the shell and restore the bindings. Returns the stopper. */
-export function startDesktopHotkeys(): () => void {
+function act(action: HotkeyAction, held: boolean): void {
+  useHotkeyState.setState((s) => ({ held: { ...s.held, [action]: held } }));
+  switch (action) {
+    case "push_to_talk":
+      pushToTalk(held);
+      break;
+    case "priority":
+      setPrioritySpeaker(held);
+      break;
+    case "toggle_mute":
+      if (held) void toggleMute().then(announceOutsideCall);
+      break;
+    case "toggle_deafen":
+      if (held) void toggleDeafen().then(announceOutsideCall);
+      break;
+  }
+}
+
+const focused = () => typeof document === "undefined" || document.hasFocus();
+const holds = new HotkeyHolds(act, focused);
+
+/** A press or release reported by the shell's key listener. */
+export function handleHotkey(e: HotkeyEvent): void {
+  holds.global(e.action, e.pressed);
+}
+
+// ---------------------------------------------------------------- the window's keys
+
+let recording = false;
+
+/** While a recorder of the settings listens, the window's keys bind instead of acting. */
+export function setRecording(on: boolean): void {
+  recording = on;
+}
+
+type KeyState = Pick<KeyboardEvent, "code" | "ctrlKey" | "altKey" | "shiftKey" | "metaKey">;
+
+/** Whether the modifiers a binding needs are held (more may be held: Shift to run while holding push-to-talk). */
+function modifiersHeld(b: Binding, e: KeyState): boolean {
+  return (!b.ctrl || e.ctrlKey) && (!b.alt || e.altKey) && (!b.shift || e.shiftKey) && (!b.super || e.metaKey);
+}
+
+const modifierCount = (b: Binding) => Number(b.ctrl) + Number(b.alt) + Number(b.shift) + Number(b.super);
+
+/** The action a keydown in the window presses: its key with its modifiers held, the most specific binding wins. */
+export function actionOfKeyDown(bindings: Hotkeys, e: KeyState): HotkeyAction | null {
+  const code = normalizeCode(e.code);
+  let best: { action: HotkeyAction; n: number } | null = null;
+  for (const action of HOTKEY_ACTIONS) {
+    const b = parseBinding(bindings[action]);
+    if (!b || b.key !== code || !modifiersHeld(b, e)) continue;
+    if (!best || modifierCount(b) > best.n) best = { action, n: modifierCount(b) };
+  }
+  return best?.action ?? null;
+}
+
+/** Whether a keyup in the window ends the hold of a binding: its key, or one of its modifiers, went up. */
+export function releasesBinding(combo: string, e: KeyState): boolean {
+  const b = parseBinding(combo);
+  return !!b && (b.key === normalizeCode(e.code) || !modifiersHeld(b, e));
+}
+
+/** A key that types text into a field (a plain character, no Ctrl, Alt or Super). */
+function typesIntoField(e: KeyboardEvent): boolean {
+  const el = e.target as HTMLElement | null;
+  const editable = !!el && (el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName));
+  return editable && e.key?.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey;
+}
+
+function onKeyDown(e: KeyboardEvent): void {
+  if (recording || e.repeat || typesIntoField(e)) return;
+  const action = actionOfKeyDown(useVoiceSettings.getState().settings.hotkeys, e);
+  if (action) holds.window(action, true);
+}
+
+function onKeyUp(e: KeyboardEvent): void {
+  const bindings = useVoiceSettings.getState().settings.hotkeys;
+  for (const action of HOTKEY_ACTIONS) if (bindings[action] && releasesBinding(bindings[action], e)) holds.window(action, false);
+}
+
+// ---------------------------------------------------------------- the shell
+
+const signedIn = () => !!useAuth.getState().token;
+
+async function enableListener(): Promise<void> {
   const hotkeys = platform().hotkeys;
-  if (!hotkeys) return () => undefined;
-  const off = hotkeys.subscribe(handleHotkey);
-  void restoreHotkeys();
+  if (!hotkeys) return;
+  try {
+    const on = await hotkeys.setEnabled(signedIn());
+    useHotkeyState.setState({ listener: on ? "on" : "off" });
+  } catch {
+    useHotkeyState.setState({ listener: "unavailable" });
+  }
+}
+
+/** Ends a hold whose binding changed or went away (its release would never come). */
+function releaseBinding(action: HotkeyAction): void {
+  holds.release(action);
+}
+
+/**
+ * Binds `combo` to `action`: refuses a binding of another action, lets the desktop shell validate it, stores it.
+ * Resolves to the translated refusal, or null. Without a key listener on this system the binding is kept (it works
+ * while the window has focus) and the settings say so.
+ */
+export async function bindHotkey(action: HotkeyAction, combo: string): Promise<string | null> {
+  const { settings, update } = useVoiceSettings.getState();
+  const other = hotkeyConflict(settings.hotkeys, action, combo);
+  if (other) return t("voice.hotkeys.conflict", { action: actionLabel(other) });
+  let canonical = combo;
+  const hotkeys = platform().hotkeys;
+  if (hotkeys) {
+    try {
+      canonical = await hotkeys.register(action, combo);
+      if (useHotkeyState.getState().listener === "off") await enableListener();
+    } catch (e) {
+      if (e !== "hotkey.unavailable") return hotkeyError(e);
+      useHotkeyState.setState({ listener: "unavailable" });
+    }
+  }
+  releaseBinding(action);
+  update({ hotkeys: { ...useVoiceSettings.getState().settings.hotkeys, [action]: canonical } });
+  return null;
+}
+
+/** Removes the binding of `action`. */
+export async function clearHotkey(action: HotkeyAction): Promise<void> {
+  releaseBinding(action);
+  const { settings, update } = useVoiceSettings.getState();
+  update({ hotkeys: { ...settings.hotkeys, [action]: "" } });
+  const hotkeys = platform().hotkeys;
+  if (!hotkeys) return;
+  await hotkeys.unregister(action);
+  await enableListener();
+}
+
+/**
+ * Hands the stored bindings to the shell (at start; a reloaded page registers the same ones again) and switches its
+ * key listener with the sign-in. A binding the shell refuses stays stored and is reported once.
+ */
+export async function restoreHotkeys(): Promise<void> {
+  const hotkeys = platform().hotkeys;
+  if (!hotkeys) return;
+  const stored = useVoiceSettings.getState().settings.hotkeys;
+  const failed: string[] = [];
+  for (const action of HOTKEY_ACTIONS) {
+    try {
+      if (stored[action]) await hotkeys.register(action, stored[action]);
+      else await hotkeys.unregister(action);
+    } catch (e) {
+      if (e !== "hotkey.unavailable") failed.push(`${actionLabel(action)} (${comboLabel(stored[action])}): ${hotkeyError(e)}`);
+    }
+  }
+  await enableListener();
+  if (failed.length) useToasts.getState().push({ kind: "warning", title: t("voice.hotkeys.restore_failed"), detail: failed.join("\n") });
+}
+
+/**
+ * At start of the app: the window's keys, the shell's presses and releases, the bindings restored in the shell and its
+ * listener following the sign-in. Returns the stopper.
+ */
+export function startHotkeys(): () => void {
+  const target = typeof window === "undefined" ? null : window;
+  const blur = () => holds.blur();
+  target?.addEventListener("keydown", onKeyDown);
+  target?.addEventListener("keyup", onKeyUp);
+  target?.addEventListener("blur", blur);
+  const offs: Array<() => void> = [
+    () => {
+      target?.removeEventListener("keydown", onKeyDown);
+      target?.removeEventListener("keyup", onKeyUp);
+      target?.removeEventListener("blur", blur);
+    },
+  ];
+  const hotkeys = platform().hotkeys;
+  if (hotkeys) {
+    offs.push(hotkeys.subscribe(handleHotkey));
+    // Signing in or out switches the listener (a sign-out also ends what is held).
+    offs.push(
+      useAuth.subscribe((now, prev) => {
+        if (!!now.token === !!prev.token) return;
+        if (!now.token) holds.releaseAll();
+        void enableListener();
+      }),
+    );
+    void restoreHotkeys();
+  }
   return () => {
-    off();
-    held.clear();
+    for (const off of offs) off();
+    holds.releaseAll();
   };
 }
 
-/** Tests: forget the held keys. */
+/** Tests: forget the held keys and the recorder. */
 export function resetHotkeysForTest(): void {
-  held.clear();
+  holds.releaseAll();
+  recording = false;
+  useHotkeyState.setState({ held: {}, listener: "off" });
 }
