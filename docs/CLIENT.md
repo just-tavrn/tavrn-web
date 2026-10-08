@@ -74,7 +74,10 @@ tiles and controls as voice channels, end-to-end encrypted with the conversation
 
 Media is end-to-end encrypted with keys from the channel's MLS group: the client never publishes before
 LiveKit confirmed encryption and refuses to join in browsers without insertable streams. **Settings →
-Voice & video** (kept per device, applied live): microphone and speaker with a level meter, two microphone
+Voice & video** (kept per device, applied live): microphone and speaker with a level meter (browsers name
+the devices only once the page may use the microphone: the desktop app asks for it when the tab opens, the
+browser offers **Show devices**, also on the first click into a list, and the lists follow devices plugged in or
+out), two microphone
 tests with the same processing as in a call (**Hear yourself** plays the microphone back live with a timer
 and stops after one minute, when you leave the settings or when you join a voice channel, and is not available
 while you are in one; it asks for headphones and mutes itself while the sound is loud and concentrated on one

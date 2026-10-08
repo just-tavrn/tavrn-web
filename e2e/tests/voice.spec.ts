@@ -506,6 +506,24 @@ test.describe("Voice channels", () => {
     await page.getByRole("button", { name: "Gong löschen" }).click();
     await expect(page.getByTestId("soundboard-list")).not.toContainText("Gong");
   });
+  test("Device lists: filled without the microphone test (the browser asks once through “Show devices”)", async ({ browser, request }) => {
+    const { owner } = await setup(request);
+    // A context without a granted permission: the browser lists the devices without names until it is asked.
+    const context = await browser.newContext({ ...test.info().project.use, permissions: [] });
+    opened.push(context);
+    const page = await context.newPage();
+    await loginAs(page, owner);
+    await page.goto("/settings/voice");
+    await expect(page.getByTestId("devices-hidden")).toBeVisible();
+    await expect(page.getByTestId("mic-select").locator("option")).toHaveCount(1);
+    await page.getByTestId("devices-unlock").click();
+    await expect.poll(async () => page.getByTestId("mic-select").locator("option").count(), { timeout: 10_000 }).toBeGreaterThan(1);
+    await expect(page.getByTestId("devices-hidden")).toHaveCount(0);
+    // The microphone test never ran.
+    await expect(page.getByTestId("mic-check-start")).toBeVisible();
+    await expect(page.getByTestId("mic-meter")).toHaveAttribute("data-level", "-100");
+  });
+
   test("Hear yourself: the live loopback starts, shows its timer and stops next to record and play back; leaving the settings ends it", async ({ page, request }) => {
     test.setTimeout(90_000);
     const { owner } = await setup(request);

@@ -17,30 +17,16 @@ import { ConnectionTestPanel } from "../../voice/ui/ConnectionTestPanel";
 import { browserKeyConflict } from "../../voice/hotkeys";
 import { platform } from "../../platform";
 import { DesktopHotkeysSection } from "./DesktopHotkeysSection";
+import { useMediaDevices } from "../../voice/devices";
 
-/** Devices of one kind, refreshed when devices change (labels need a granted permission). */
-function useDevices(kind: MediaDeviceKind, refresh: number): MediaDeviceInfo[] {
-  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
-  useEffect(() => {
-    const md = navigator.mediaDevices;
-    if (!md?.enumerateDevices) return;
-    const load = () => void md.enumerateDevices().then((all) => setDevices(all.filter((d) => d.kind === kind && d.deviceId)));
-    load();
-    md.addEventListener?.("devicechange", load);
-    return () => md.removeEventListener?.("devicechange", load);
-  }, [kind, refresh]);
-  return devices;
-}
-
-function DeviceSelect({ label, kind, value, onChange, refresh, testid }: { label: string; kind: MediaDeviceKind; value: string; onChange: (id: string) => void; refresh: number; testid: string }) {
+function DeviceSelect({ label, kind, devices, value, onChange, onFocus, testid }: { label: string; kind: MediaDeviceKind; devices: MediaDeviceInfo[]; value: string; onChange: (id: string) => void; onFocus?: () => void; testid: string }) {
   const t = useT();
-  const devices = useDevices(kind, refresh);
   return (
     <Field label={label}>
-      <Select value={value} onChange={(e) => onChange(e.target.value)} data-testid={testid}>
+      <Select value={value} onChange={(e) => onChange(e.target.value)} onFocus={onFocus} onPointerDown={onFocus} data-testid={testid}>
         <option value="">{t("voice.settings.default_device")}</option>
         {devices
-          .filter((d) => d.deviceId !== "default")
+          .filter((d) => d.kind === kind && d.deviceId && d.deviceId !== "default")
           .map((d, i) => (
             <option key={d.deviceId} value={d.deviceId}>
               {d.label || `${label} ${i + 1}`}
@@ -345,6 +331,9 @@ export function VoiceSettingsTab() {
   const setStreamVolume = useVoiceSettings((s) => s.setStreamVolume);
   const autoOff = useVoice((s) => s.backgroundAutoOff);
   const [refresh, setRefresh] = useState(0);
+  // The desktop app's window holds the microphone permission: the device names come without a prompt.
+  const media = useMediaDevices({ autoUnlock: platform().isDesktop, refresh });
+  const unlockDevices = media.needsPermission ? () => void media.unlock() : undefined;
   const [capturing, setCapturing] = useState(false);
   const [capturingPriority, setCapturingPriority] = useState(false);
   // A key of the window equal to a global hotkey of the desktop app is refused (both would fire).
@@ -404,13 +393,21 @@ export function VoiceSettingsTab() {
     <div className="space-y-4" data-testid="voice-settings">
       <Section title={t("voice.settings.devices")} description={t("voice.settings.devices_hint")}>
         <div className="grid gap-3 md:grid-cols-2">
-          <DeviceSelect label={t("voice.settings.microphone")} kind="audioinput" value={settings.inputDeviceId} onChange={(id) => update({ inputDeviceId: id })} refresh={refresh} testid="mic-select" />
+          <DeviceSelect label={t("voice.settings.microphone")} kind="audioinput" devices={media.devices} value={settings.inputDeviceId} onChange={(id) => update({ inputDeviceId: id })} onFocus={unlockDevices} testid="mic-select" />
           {sinkSupported ? (
-            <DeviceSelect label={t("voice.settings.speaker")} kind="audiooutput" value={settings.outputDeviceId} onChange={(id) => update({ outputDeviceId: id })} refresh={refresh} testid="speaker-select" />
+            <DeviceSelect label={t("voice.settings.speaker")} kind="audiooutput" devices={media.devices} value={settings.outputDeviceId} onChange={(id) => update({ outputDeviceId: id })} onFocus={unlockDevices} testid="speaker-select" />
           ) : (
             <p className="text-xs text-fg-2">{t("voice.settings.speaker_system")}</p>
           )}
         </div>
+        {media.needsPermission && (
+          <div className="flex flex-wrap items-center gap-2 text-xs text-fg-2" data-testid="devices-hidden">
+            <span className="min-w-0 flex-1 basis-48">{t("voice.settings.devices_hidden")}</span>
+            <Button variant="ghost" onClick={() => void media.unlock()} data-testid="devices-unlock">
+              {t("voice.settings.devices_show")}
+            </Button>
+          </div>
+        )}
         <div className="grid gap-3 md:grid-cols-2">
           <Slider label={t("voice.settings.input_volume")} value={settings.inputVolume} min={0} max={200} step={5} unit="%" onChange={(v) => update({ inputVolume: v })} />
           <Slider label={t("voice.settings.output_volume")} value={settings.outputVolume} min={0} max={200} step={5} unit="%" onChange={(v) => update({ outputVolume: v })} />
@@ -497,7 +494,7 @@ export function VoiceSettingsTab() {
 
       <Section title={t("voice.settings.video")} description={camera.enabled ? t("voice.settings.video_hint", { resolution: camera.max_resolution, fps: camera.max_fps }) : t("voice.settings.camera_disabled")}>
         <div className="grid gap-3 md:grid-cols-3">
-          <DeviceSelect label={t("voice.settings.camera")} kind="videoinput" value={settings.cameraDeviceId} onChange={(id) => update({ cameraDeviceId: id })} refresh={refresh} testid="camera-select" />
+          <DeviceSelect label={t("voice.settings.camera")} kind="videoinput" devices={media.devices} value={settings.cameraDeviceId} onChange={(id) => update({ cameraDeviceId: id })} testid="camera-select" />
           <Field label={t("voice.settings.resolution")}>
             <Select value={limitResolution(settings.cameraResolution, camera.max_resolution)} onChange={(e) => update({ cameraResolution: e.target.value as Resolution })}>
               {cameraResolutions.map((r) => (

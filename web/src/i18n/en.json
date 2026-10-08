@@ -234,6 +234,8 @@
   "voice.settings.speaker": "Speaker",
   "voice.settings.speaker_system": "This browser plays sound on the system's output device.",
   "voice.settings.default_device": "System default",
+  "voice.settings.devices_hidden": "The names of your microphones and speakers appear once Tavrn may use the microphone.",
+  "voice.settings.devices_show": "Show devices",
   "voice.settings.camera": "Camera",
   "voice.settings.input_volume": "Input volume",
   "voice.settings.output_volume": "Output volume",

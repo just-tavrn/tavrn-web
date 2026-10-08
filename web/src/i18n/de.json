@@ -234,6 +234,8 @@
   "voice.settings.speaker": "Lautsprecher",
   "voice.settings.speaker_system": "Dieser Browser gibt den Ton auf dem Ausgabegerät des Systems aus.",
   "voice.settings.default_device": "Systemstandard",
+  "voice.settings.devices_hidden": "Die Namen deiner Mikrofone und Lautsprecher erscheinen, sobald Tavrn das Mikrofon verwenden darf.",
+  "voice.settings.devices_show": "Geräte anzeigen",
   "voice.settings.camera": "Kamera",
   "voice.settings.input_volume": "Eingangslautstärke",
   "voice.settings.output_volume": "Ausgangslautstärke",
