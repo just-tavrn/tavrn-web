@@ -366,6 +366,8 @@ export interface RoomMenuContext {
   notify: NotifyMenuState;
   /** The room's node takes reports (MODERATION.md); owners do not report their own room. */
   canReport?: boolean;
+  /** Open reports of the room's inbox for its moderators (badge text, "99+" at most); shown on "Room settings". */
+  openReports?: string | null;
 }
 
 export interface RoomMenuActions extends NotifyMenuActions {
@@ -377,14 +379,17 @@ export interface RoomMenuActions extends NotifyMenuActions {
   report?: () => void;
 }
 
+/** Invite and settings come first: the room header of the sidebar opens this menu too. */
 export function roomMenu(c: RoomMenuContext, a: RoomMenuActions, t: T): MenuEntry[] {
+  const reports = c.openReports ? t(c.openReports === "1" ? "reports.open_reports_one" : "reports.open_reports_many", { count: c.openReports }) : null;
   return normalizeMenu([
+    c.canInvite && menuItem("invite", t("menu.room.invite"), a.invite, { icon: "✉" }),
+    menuItem("settings", t("menu.room.settings"), a.settings, { icon: "⚙", testId: "room-settings-button", ...(reports ? { hint: c.openReports!, hintBadge: true, ariaLabel: `${t("menu.room.settings")} · ${reports}` } : {}) }),
+    separator("sep-read"),
     menuItem("mark-read", t("menu.mark_read"), a.markRead, { icon: "✓", disabled: !c.unread, reason: c.unread ? undefined : t("menu.reason.nothing_unread") }),
     separator("sep-notify"),
     ...notifyEntries("room", c.notify, a, t),
     separator("sep-room"),
-    c.canInvite && menuItem("invite", t("menu.room.invite"), a.invite, { icon: "✉" }),
-    menuItem("settings", t("menu.room.settings"), a.settings, { icon: "⚙" }),
     menuItem("copy-id", t("menu.copy_id"), a.copyId, { icon: "#" }),
     !c.isOwner && c.canReport && a.report && menuItem("report", t("menu.room.report"), a.report, { icon: "⚑" }),
     separator("sep-leave"),

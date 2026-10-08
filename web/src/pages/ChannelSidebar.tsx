@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { RoomIcon } from "../components/Avatar";
-import { NavLink, useNavigate } from "react-router";
+import { NavLink } from "react-router";
 import { Permission, hasPermission, parsePermissions, type Channel, type RoomDetail } from "@tavrn/sdk";
 import { useT } from "../i18n";
 import { useNode } from "../components/NodeScope";
@@ -22,6 +22,7 @@ import { useChannelMenu } from "../components/menus/ChannelMenu";
 import { mutedNow, useNotifications } from "../stores/notifications";
 import { DEFAULT_EXPIRY_HOURS, expiryChoices } from "../lib/inviteExpiry";
 import { useRoomMenu } from "../components/menus/RoomMenu";
+import { ChevronDownIcon } from "../components/icons";
 import { badgeText, useCapabilities, useOpenRoomReports } from "../moderation/hooks";
 
 /** Room detail; its `read_states` seed the unread counts of the channels (design note 4.4). */
@@ -119,22 +120,19 @@ export function ChannelSidebar({ roomId }: { roomId: string }) {
   const t = useT();
   const room = useRoom(roomId);
   const { closeNav } = useShell();
-  const navigate = useNavigate();
   const node = useNode();
   const [createOpen, setCreateOpen] = useState(false);
-  const [inviteOpen, setInviteOpen] = useState(false);
-  // The room's menu in the header too (report, notifications, …) and the moderators' open reports on the ⚙ button.
+  // The room header opens the room's menu (invite, settings, notifications, …); moderators see the open reports on it.
   const nodeKey = node.home ? null : node.domain;
-  const headerMenu = useRoomMenu({ id: roomId, name: room.data?.name ?? "" }, nodeKey);
   const moderates = hasPermission(parsePermissions(room.data?.my_permissions), Permission.MODERATE_MEMBERS);
   const reportsOffered = !!useCapabilities(nodeKey)?.includes("reports.v1");
   const openReports = badgeText(useOpenRoomReports(node.api, nodeKey, roomId, moderates && reportsOffered));
+  const headerMenu = useRoomMenu({ id: roomId, name: room.data?.name ?? "" }, nodeKey, { openReports });
   if (room.isPending) return <p className="p-3 text-sm text-fg-2">{t("room.loading")}</p>;
   if (room.isError) return <p className="p-3 text-sm text-danger">{describeError(room.error)}</p>;
   const r = room.data;
   const perms = parsePermissions(r.my_permissions);
   const canManageChannels = hasPermission(perms, Permission.MANAGE_CHANNELS);
-  const canInvite = hasPermission(perms, Permission.CREATE_INVITES);
 
   // The welcome channel (kind `system`, design note 4.11) is pinned at the very top, outside the categories.
   const pinned = r.channels.filter((c) => c.kind === "system");
@@ -151,33 +149,45 @@ export function ChannelSidebar({ roomId }: { roomId: string }) {
 
   return (
     <div className="flex flex-col">
-      <div className="flex h-12 items-center gap-1 border-b border-line px-3">
-        <span className="mr-1"><RoomIcon room={r} size={28} testId="room-header-icon" /></span>
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-semibold" data-testid="room-name">
-            {r.name}
-          </h2>
-          {/* Rooms of other nodes always show their node (design note 9d). */}
-          {!node.home && (
-            <p className="truncate text-[11px] text-fg-2" data-testid="room-node" title={t("node.room_on", { domain: node.domain })}>
-              {node.domain}
-            </p>
-          )}
-        </div>
-        {canInvite && (
-          <button type="button" aria-label={t("room.invite")} title={t("room.invite")} onClick={() => setInviteOpen(true)} className="min-h-10 min-w-10 rounded-md text-fg-2 hover:bg-bg-3 hover:text-fg-0">
-            ✉
-          </button>
-        )}
-        <button type="button" aria-label={openReports ? `${t("room.settings")} · ${t("reports.open_count", { count: openReports })}` : t("room.settings")} title={t("room.settings")} onClick={() => { closeNav(); navigate(node.roomPath(roomId, undefined, openReports ? "settings/reports" : "settings")); }} className="relative min-h-10 min-w-10 rounded-md text-fg-2 hover:bg-bg-3 hover:text-fg-0" data-testid="room-settings-button">
-          ⚙
-          {openReports && (
-            <span className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-danger-solid px-1 text-[10px] font-semibold leading-4 text-white" data-testid="room-reports-badge">
-              {openReports}
+      <div className="flex h-12 shrink-0 items-center border-b border-line px-2" data-testid="room-header">
+        {/* One menu button: icon, name (with the node of a remote room below it) and the chevron with the reports badge. */}
+        <h2 className="min-w-0 flex-1">
+          <button
+            type="button"
+            aria-haspopup="menu"
+            aria-expanded={headerMenu.menu.open}
+            aria-label={[r.name, !node.home && node.domain, openReports && t(openReports === "1" ? "reports.open_reports_one" : "reports.open_reports_many", { count: openReports })].filter(Boolean).join(", ")}
+            title={t("menu.label", { name: r.name })}
+            data-testid="room-header-menu"
+            className="flex min-h-10 w-full min-w-0 items-center gap-2 rounded-md px-1 text-left hover:bg-bg-3"
+            onClick={(e) => {
+              if (headerMenu.menu.open) headerMenu.menu.close();
+              else headerMenu.menu.openAt(e.currentTarget);
+            }}
+            onContextMenu={headerMenu.menu.triggerProps.onContextMenu}
+          >
+            <RoomIcon room={r} size={28} testId="room-header-icon" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-semibold text-fg-0" data-testid="room-name">
+                {r.name}
+              </span>
+              {/* Rooms of other nodes always show their node (design note 9d). */}
+              {!node.home && (
+                <span className="block truncate text-[11px] font-normal text-fg-2" data-testid="room-node" title={t("node.room_on", { domain: node.domain })}>
+                  {node.domain}
+                </span>
+              )}
             </span>
-          )}
-        </button>
-        <MenuButton menu={headerMenu.menu} label={t("menu.label", { name: r.name })} className="min-h-10 min-w-10" testId="room-header-menu" />
+            <span className="relative flex h-6 w-6 shrink-0 items-center justify-center text-fg-2" aria-hidden="true">
+              <ChevronDownIcon size={18} />
+              {openReports && (
+                <span className="absolute -right-1.5 -top-1.5 min-w-4 rounded-full bg-danger-solid px-1 text-center text-[10px] font-semibold leading-4 text-white" data-testid="room-reports-badge">
+                  {openReports}
+                </span>
+              )}
+            </span>
+          </button>
+        </h2>
         {headerMenu.overlay}
       </div>
       <nav aria-label={t("shell.channels")} className="p-2">
@@ -209,7 +219,6 @@ export function ChannelSidebar({ roomId }: { roomId: string }) {
         )}
       </nav>
       <CreateChannelDialog roomId={roomId} open={createOpen} onClose={() => setCreateOpen(false)} categories={r.categories} />
-      <InviteDialog roomId={roomId} open={inviteOpen} onClose={() => setInviteOpen(false)} />
     </div>
   );
 }
