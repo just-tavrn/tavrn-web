@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { loginViaUi, openNavIfMobile, registerViaUi, tokenOf, type UiAccount } from "./helpers";
+import { loginViaUi, openNavIfMobile, registerViaUi, tokenOf, type UiAccount, openRoomInvite } from "./helpers";
 import { freshIdentityKey } from "./crypto-helpers";
 import { A, B, BROWSER_API_A, FEDERATION_BROWSER, NODE_A, NODE_B, WEB_A, WEB_B, chromiumOnly, indexOf } from "./federation-helpers";
 
@@ -81,8 +81,7 @@ test.describe("Encryption across nodes", () => {
     await send(bobPage, "Vor Alices Beitritt");
 
     // Direct invite by address: it travels to Alice's home node a.test and shows up live.
-    await openNavIfMobile(bobPage);
-    await bobPage.getByRole("button", { name: "Einladen" }).click();
+    await openRoomInvite(bobPage);
     const dialog = bobPage.getByRole("dialog");
     await dialog.getByLabel("Eine Person direkt einladen").fill(alice.address);
     await dialog.getByRole("button", { name: "Einladung senden" }).click();

@@ -197,6 +197,16 @@ export async function openNavIfMobile(page: Page) {
 }
 
 /**
+ * The room header of the sidebar is one menu button (icon, name, chevron); "Invite people" is the room menu's first
+ * entry. Opens the navigation drawer on phones first.
+ */
+export async function openRoomInvite(page: Page) {
+  await openNavIfMobile(page);
+  await page.getByTestId("room-header-menu").click();
+  await page.getByTestId("room-menu").getByRole("menuitem", { name: "Leute einladen" }).click();
+}
+
+/**
  * Logout lives at the bottom of the presence menu behind a confirmation (design note 4.11). The caller opens
  * the navigation drawer on phones first (the footer with the menu is inside it).
  */

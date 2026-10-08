@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { NODE, createRoomViaApi, inviteCode, loginAs, loginViaUi, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, type UiAccount } from "./helpers";
+import { NODE, createRoomViaApi, inviteCode, loginAs, loginViaUi, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, type UiAccount, openRoomInvite } from "./helpers";
 import { createGroup, cryptoAccountViaApi, externalJoin, freshIdentityKey, sendEncrypted } from "./crypto-helpers";
 
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
@@ -34,8 +34,7 @@ async function createRoomInUi(page: Page, name: string): Promise<string> {
 }
 
 async function inviteLink(page: Page): Promise<string> {
-  await openNavIfMobile(page);
-  await page.getByRole("button", { name: "Einladen" }).click();
+  await openRoomInvite(page);
   await page.getByRole("button", { name: "Link erzeugen" }).click();
   const link = await page.getByTestId("invite-link").inputValue();
   await page.getByRole("button", { name: "Fertig" }).click();

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test } from "@playwright/test";
-import { NODE, createRoomViaApi, inviteCode, loginAs, openNavIfMobile, registerViaApi } from "./helpers";
+import { NODE, createRoomViaApi, inviteCode, loginAs, openNavIfMobile, registerViaApi, openRoomInvite } from "./helpers";
 
 // Invites overview (design note 4.13 item 8): the room settings tab for manage_room and the expiry choice of
 // the invite dialog for members with create_invites only.
@@ -45,8 +45,7 @@ test.describe("Invites", () => {
 
     await loginAs(page, member);
     await page.goto(`/rooms/${room.id}`);
-    await openNavIfMobile(page);
-    await page.getByRole("button", { name: "Einladen" }).click();
+    await openRoomInvite(page);
     const expiry = page.getByTestId("invite-dialog-expiry");
     await expect(expiry).toHaveValue("168");
     await expect(expiry.locator("option")).toHaveText(["1 Stunde", "1 Tag", "7 Tage", "30 Tage"]);
@@ -67,8 +66,7 @@ test.describe("Invites", () => {
     await expect(row.getByTestId("invite-uses")).toHaveText("0 Nutzungen");
     // Owners also get "never" in the dialog.
     await ownerPage.goto(`/rooms/${room.id}`);
-    await openNavIfMobile(ownerPage);
-    await ownerPage.getByRole("button", { name: "Einladen" }).click();
+    await openRoomInvite(ownerPage);
     await expect(ownerPage.getByTestId("invite-dialog-expiry").locator("option")).toHaveText(["1 Stunde", "1 Tag", "7 Tage", "30 Tage", "Nie"]);
     await ownerContext.close();
   });

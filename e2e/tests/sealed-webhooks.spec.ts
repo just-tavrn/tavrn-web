@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import sodium from "libsodium-wrappers";
-import { NODE, openNavIfMobile, registerViaUi, tokenOf } from "./helpers";
+import { NODE, openNavIfMobile, registerViaUi, tokenOf, openRoomInvite } from "./helpers";
 
 // Write-only webhooks in encrypted channels (APPLICATIONS.md §6.1a, ENCRYPTION.md §5b): created in the room settings
 // with the sealing mode, a service seals with libsodium (`crypto_box_seal`) to the channel's inbox key, the node seals
@@ -126,8 +126,7 @@ test.describe("Sealed webhooks in encrypted channels", () => {
     await expect(page.getByTestId("undecryptable")).toHaveCount(0);
 
     // Bob joins later: the history keys of the older epoch let him read both sealed posts.
-    await openNavIfMobile(page);
-    await page.getByRole("button", { name: "Einladen" }).click();
+    await openRoomInvite(page);
     await page.getByRole("button", { name: "Link erzeugen" }).click();
     const link = await page.getByTestId("invite-link").inputValue();
     await page.getByRole("button", { name: "Fertig" }).click();

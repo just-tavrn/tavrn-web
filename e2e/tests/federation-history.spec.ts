@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { openNavIfMobile, registerViaUi, tokenOf } from "./helpers";
+import { openNavIfMobile, registerViaUi, tokenOf, openRoomInvite } from "./helpers";
 import { A, B, FEDERATION_BROWSER, NODE_A, WEB_A, WEB_B, chromiumOnly } from "./federation-helpers";
 
 test.use(FEDERATION_BROWSER);
@@ -55,8 +55,7 @@ test.describe("History for new members across nodes", () => {
     expect(patch.ok(), await patch.text()).toBeTruthy();
 
     // Direct invite by address: it travels to Bob's home node b.test.
-    await openNavIfMobile(page);
-    await page.getByRole("button", { name: "Einladen" }).click();
+    await openRoomInvite(page);
     const dialog = page.getByRole("dialog");
     await dialog.getByLabel("Eine Person direkt einladen").fill(bob.address);
     await dialog.getByRole("button", { name: "Einladung senden" }).click();
