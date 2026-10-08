@@ -79,7 +79,7 @@ What the browser gets from "the client is served by the node" and what the app d
 | Captcha on login or registration | not shown (notice instead) | the widget is a third-party script (CSP `script-src 'self'`) bound to the node's host name. Use the browser for that step, or the operator turns the captcha off for logins. |
 | Web push | not offered | there is no service worker in the app (its pages are not served by the node). Native notifications come with the next step. |
 | Desktop notifications of the browser | as far as the webview supports them | native notifications come with the next step. |
-| Voice and video | Windows (WebView2): as in Chromium; Linux: depends on the distribution's WebKitGTK | end-to-end encrypted media needs WebRTC with encoded transforms; WebKitGTK builds often ship without WebRTC. The client refuses to join without them, as in browsers that lack them. |
+| Voice and video | Windows (WebView2, Chromium): expected to work as in Chromium (to be confirmed by hand); Linux: not available with the distributions' WebKitGTK | end-to-end encrypted media needs WebRTC with encoded transforms. The WebKitGTK of Ubuntu 26.04 ships without WebRTC (no `RTCPeerConnection`, checked in the built app), so the client refuses to join, as in browsers that lack it. Screen and window sharing through the platform APIs is a later step. |
 | Popping out the whiteboard, "open original" in the media viewer | not offered | the app opens no second window; maximize and the download icon cover it. |
 | The terms and other pages that open in a new tab | open on the node's web client in the system browser | the app opens no second window. |
 | Updates while the repository is private | do not download | the updater fetches `latest.json` and the installers from the public release URLs. |
@@ -113,8 +113,10 @@ picker accepts `http://127.0.0.1:8080`).
   does not offer.
 - `node --test` of the update manifest script (`pnpm --filter @tavrn/desktop test`).
 - WebDriver smoke test of the built Linux app (`apps/desktop/e2e/smoke.mjs`, plain WebDriver over HTTP): the app
-  starts, shows the node picker, refuses `http://evil`, accepts a development node and reaches the login page. It
-  needs `tauri-driver` (`cargo install tauri-driver --locked`) and a built app:
+  starts, shows the node picker, refuses `http://evil`, accepts a development node and reaches the login page; an
+  account with TOTP (registered over the API) signs in with password and code, sets up its recovery key (the
+  encryption core runs in the webview) and sends a message in an end-to-end encrypted channel, which the node stores
+  as ciphertext only. It needs `tauri-driver` (`cargo install tauri-driver --locked`) and a built app:
 
   ```sh
   just desktop-build
