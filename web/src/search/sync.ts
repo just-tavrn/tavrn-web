@@ -19,6 +19,8 @@ import { DEFAULT_WINDOW_DAYS } from "@tavrn/e2ee";
 import { apiFor, isHome } from "../stores/nodes";
 import { getMls } from "../stores/mls";
 import { indexEntry, indexMessages, localIndex, onLocalConversationAdded, refreshLocalState, useLocalSearch } from "./local";
+import { archiveMessages } from "../history/local";
+import type { ArchiveItem } from "../history/archive";
 
 export const SYNC_PAGE = 100;
 /** Pause between two pages (visible tab) and while there is nothing to do. */
@@ -95,15 +97,23 @@ export async function rememberRoom(conversation: string, roomId: string): Promis
 
 async function decryptPage(mls: MlsManager, conversation: string, page: Awaited<ReturnType<ReturnType<typeof apiFor>["conversations"]["messages"]>>, room?: string) {
   const entries = [];
+  const archive: ArchiveItem[] = [];
   for (const m of page) {
-    if (!m.encrypted) continue;
+    if (!m.encrypted) {
+      archive.push({ message: m, decrypted: null });
+      continue;
+    }
     try {
-      const entry = indexEntry(conversation, m, await mls.decrypt(conversation, m), room);
+      const decrypted = await mls.decrypt(conversation, m);
+      const entry = indexEntry(conversation, m, decrypted, room);
       if (entry) entries.push(entry);
+      if (decrypted.ok) archive.push({ message: m, decrypted });
     } catch {
       /* not decryptable on this device: skipped */
     }
   }
+  // "Keep the full history on this device" (#4): the decrypted page also goes into the device's archive.
+  await archiveMessages(conversation, archive);
   return entries;
 }
 

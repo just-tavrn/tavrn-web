@@ -138,6 +138,17 @@ member or not confirmed by its user's key shows a warning and blocks sending unt
 keys are backed up encrypted on the home node so that a new device unlocked with the recovery key reads
 the history. Friends (requests, accept, block) live under "Friends" on the home view.
 
+History is lazy: a conversation's pages are dropped when it closes, and the local search index keeps text and file
+names of the last 90 days. **Keep the full history on this device** (the menu of an encrypted channel, DM or group DM;
+default off) keeps the conversation's whole history here instead: the background sync pages it back to the start, the
+search index keeps all of it, and the messages with their decrypted content stay in an encrypted local archive
+(IndexedDB `tavrn-history`, sealed with keys derived from this device's local storage key, so it locks with the device
+and reveals no ids or text; `web/src/history/`). The message list then uses the archived content instead of
+decrypting again and reads from the archive while the node cannot be reached. Each conversation may take up to the
+space set under Settings → Privacy → Local search index (default 50 MB; the oldest messages go first); the menu entry
+shows what it takes, the settings the total. Turning the setting off, clearing the index or signing out (which wipes the
+device) deletes the archive.
+
 ## Threads, forum and announcement channels
 
 Threads ([PROTOCOL.md §7e](https://github.com/just-tavrn/tavrn-protocol/blob/main/PROTOCOL.md)) are

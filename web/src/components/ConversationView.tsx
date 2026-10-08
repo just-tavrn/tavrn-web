@@ -17,6 +17,7 @@ import { useMarkRead } from "../hooks/useMarkRead";
 import { MESSAGE_QUERY_OPTIONS, PAGE, fetchPage, flatten, isDetached, mapMessages, messagesKey, newerParam, olderParam, prependMessage, trimPages, type MessagePages, type PageParam } from "../lib/messagePages";
 import { useThreadMarkRead } from "../threads/useThreadMarkRead";
 import { indexEntry, indexMessages } from "../search/local";
+import { archiveMessages, pageWithArchive } from "../history/local";
 import { rememberRoom } from "../search/sync";
 import { SearchButton } from "../search/SearchPanel";
 import { useDecrypted, useE2eeConversation, usePlainSignatures } from "../hooks/useE2eeConversation";
@@ -121,10 +122,13 @@ export function ConversationView(p: ConversationViewProps) {
   const nodeInfo = useQuery({ queryKey: home ? ["node"] : ["node", domain], queryFn: () => api.node.info(), staleTime: 10 * 60_000 });
   const threadId = p.threadId;
   const messageKey = useMemo(() => messagesKey(conversationId, threadId), [conversationId, threadId]);
-  // Lazy history (design note 4.4): newest page on open, older pages on demand; dropped when closed.
+  // MLS names the conversation by its qualified id: the node hosting it and the ULID (ENCRYPTION.md §0.1).
+  const q = qualify(domain, conversationId);
+  // Lazy history (design note 4.4): newest page on open, older pages on demand; dropped when closed. With "keep the
+  // full history on this device" the pages come from the device's archive while the node cannot be reached (#4).
   const messages = useInfiniteQuery({
     queryKey: messageKey,
-    queryFn: ({ pageParam }) => fetchPage(api, conversationId, pageParam, threadId),
+    queryFn: ({ pageParam }) => pageWithArchive(q, () => fetchPage(api, conversationId, pageParam, threadId), pageParam, threadId),
     initialPageParam: undefined as PageParam,
     getNextPageParam: (last) => olderParam(last),
     // After a jump into the history (`around`): newer pages up to the live end.
@@ -168,8 +172,6 @@ export function ConversationView(p: ConversationViewProps) {
   const location = useLocation();
   const uploadPolicy = useQuery({ queryKey: ["upload-policy", domain, conversationId], queryFn: () => api.attachments.policy(conversationId), enabled: p.canAttach, staleTime: 60_000 });
 
-  // MLS names the conversation by its qualified id: the node hosting it and the ULID (ENCRYPTION.md §0.1).
-  const q = qualify(domain, conversationId);
   // Room channels with an effective "no bots" flag: bot leaves are ghosts (APPLICATIONS.md §3.5). The client also
   // applies the room's `bots_in_encrypted_channels` itself (design note 4.7).
   const noBots = ghostNoBots(p.room?.channels.find((c) => c.id === conversationId), p.room);
@@ -194,6 +196,21 @@ export function ConversationView(p: ConversationViewProps) {
     }
     if (entries.length) void indexMessages(entries);
   }, [decrypted, loaded, q, p.roomId]);
+  // "Keep the full history on this device" (#4): what is shown goes into the device's archive (decrypted content of
+  // encrypted messages once it is there, plaintext ones as they are); every message version once.
+  const archivedRef = useRef(new Set<string>());
+  useEffect(() => {
+    const items = [];
+    for (const m of fetched) {
+      const key = `${m.id}|${m.edited_at ?? ""}`;
+      if (archivedRef.current.has(key)) continue;
+      const d = m.encrypted ? decrypted[m.id] : null;
+      if (m.encrypted && !d?.ok) continue;
+      archivedRef.current.add(key);
+      items.push({ message: m, decrypted: d ?? null });
+    }
+    if (items.length) void archiveMessages(q, items);
+  }, [decrypted, fetched, q]);
   useEffect(() => {
     if (p.roomId && e2ee.phase === "ready") void rememberRoom(q, p.roomId);
   }, [q, p.roomId, e2ee.phase]);
