@@ -145,8 +145,11 @@ events on desktop and would replace the webview's `Notification` with an IPC bri
 
 ## Tray and close to tray
 
-The tray icon is the logo with a badge for the voice state; the badges are drawn at start from the bundled logo
-(`icons/32x32.png`), each with a dark outline, so they stand out on light and dark panels and against the teal logo:
+The tray icon is the logo with a badge for the voice state; the icons are drawn at start from the bundled logo
+(`icons/128x128@2x.png`): the logo is cropped to its visible mark and scaled to fill the 32 px canvas with at most 1 px
+of margin (a unit test checks at 16, 22 and 32 px that the mark covers at least 85 % of the canvas), so it is as large
+as its neighbours in the tray. Each badge has a dark outline, so it stands out on light and dark panels and against the
+teal logo:
 
 | State | Icon |
 |---|---|
@@ -168,10 +171,19 @@ extension; without it, start the app again to get the window back.
 
 ## Icons
 
-The app icons are generated from the project logo: `pnpm --filter @tavrn/desktop tauri icon ../../web/public/icon-512.png`
-writes `src-tauri/icons/` (32, 64, 128 and 256 pixel PNGs and `icon.png` for Linux and the window, `icon.ico` for the
-Windows installer, taskbar and window, `icon.icns` for macOS later); delete the generated `android/`, `ios/` and
-Windows Store images, the app does not use them. A unit test checks that every icon of `tauri.conf.json` exists. The
+The app icons are generated from the project logo, cropped first (the web icon keeps a wide margin for the browser's
+masks; a window, taskbar or tray icon should fill its canvas):
+
+```sh
+magick web/public/icon-512.png -trim +repage -set option:side "%[fx:round(max(w,h)*32/30)]" -background none \
+  -gravity center -extent "%[side]x%[side]" -resize 512x512 /tmp/tavrn-icon.png
+pnpm --filter @tavrn/desktop tauri icon /tmp/tavrn-icon.png
+```
+
+This writes `src-tauri/icons/` (32, 64, 128 and 256 pixel PNGs and `icon.png` for Linux and the window, `icon.ico` for
+the Windows installer, taskbar and window, `icon.icns` for macOS later); delete the generated `android/`, `ios/` and
+Windows Store images, the app does not use them. Unit tests check that every icon of `tauri.conf.json` exists and that
+the PNG icons fill at least 85 % of their canvas. The
 logo and the icons are not covered by the Apache License ([TRADEMARK.md](../TRADEMARK.md)).
 
 ## Licence and terms in the installers
