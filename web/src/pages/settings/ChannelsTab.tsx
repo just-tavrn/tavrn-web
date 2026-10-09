@@ -9,7 +9,7 @@ import { toastError, useToasts } from "../../stores/toasts";
 import { Button, Field, Input } from "../../components/ui";
 import { ConfirmDialog, OverrideTriState, Section, Select } from "./common";
 import { categoryName, channelName } from "../../lib/names";
-import { BotsAllowedIcon, NoBotsIcon } from "../../components/Badges";
+import { BotsAllowedIcon, LockMark, NoBotsIcon } from "../../components/Badges";
 import { botMarker } from "../../lib/botAccess";
 import { ChannelBotsAllowed } from "./BotsEncryptionSection";
 import { HistoryPolicySection } from "./HistoryPolicy";
@@ -80,7 +80,6 @@ export function ChannelsTab({ room }: { room: RoomDetail }) {
 }
 
 function ChannelButtons({ room, channels, selectedId, onSelect }: { room: RoomDetail; channels: Channel[]; selectedId?: string; onSelect: (id: string) => void }) {
-  const t = useT();
   return (
     <ul className="mt-1 space-y-0.5">
       {channels.map((c) => (
@@ -88,7 +87,7 @@ function ChannelButtons({ room, channels, selectedId, onSelect }: { room: RoomDe
           <button type="button" onClick={() => onSelect(c.id)} className={`flex min-h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm ${selectedId === c.id ? "bg-bg-3 text-fg-0" : "text-fg-1 hover:bg-bg-3/60"}`}>
             <span className="text-fg-2">{c.kind === "voice" ? "🔊" : c.kind === "files" ? "📁" : "#"}</span>
             <span className="truncate">{channelName(c)}</span>
-            {!c.encrypted && c.kind !== "voice" && <span title={t("channel.unencrypted")} className="text-[10px]">🔓</span>}
+            {!c.encrypted && c.kind !== "voice" && <LockMark open />}
             {botMarker(c, room) === "no_bots" && <NoBotsIcon />}
             {botMarker(c, room) === "bots_allowed" && <BotsAllowedIcon />}
           </button>

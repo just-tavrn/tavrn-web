@@ -19,6 +19,7 @@ import { useThreadTitles } from "./titles";
 import { startThread } from "./actions";
 import { useThreads } from "./store";
 import { formatCount } from "../stores/unread";
+import { LockMark } from "../components/Badges";
 
 type Sort = "activity" | "created";
 
@@ -83,9 +84,7 @@ export function ForumView({ room, channel, perms, roomMembers, members, refreshM
           {channelName(channel)}
         </h1>
         {channel.encrypted && (
-          <span role="img" className="shrink-0 text-xs text-fg-2" title={t("e2ee.encrypted_hint")} aria-label={t("e2ee.encrypted_hint")} data-testid="encrypted-marker">
-            🔒
-          </span>
+          <LockMark size={18} title={t("e2ee.encrypted_hint")} testId="encrypted-marker" />
         )}
         <span className="flex-1" />
         {canPost && (
@@ -158,7 +157,7 @@ function PostCard({ thread, title, tags, author, preview, onOpen }: { thread: Th
     <button type="button" onClick={onOpen} className="block w-full rounded-md border border-line bg-bg-1 p-3 text-left hover:border-accent" data-testid="forum-post" data-thread-id={thread.id}>
       <span className="flex items-start gap-2">
         <span className={`min-w-0 flex-1 truncate text-sm ${unread > 0 ? "font-semibold text-fg-0" : "font-medium text-fg-0"}`} data-testid="forum-post-title">
-          {thread.encrypted && <span role="img" className="mr-1 text-xs" aria-label={t("e2ee.encrypted_hint")}>🔒</span>}
+          {thread.encrypted && <LockMark title={t("e2ee.encrypted_hint")} className="mr-1 align-[-3px]" />}
           {title ?? (title === null ? t("threads.title_unreadable") : t("common.loading"))}
         </span>
         {unread > 0 && (
