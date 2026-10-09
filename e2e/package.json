@@ -20,7 +20,7 @@
     "@types/libsodium-wrappers": "^0.8.2",
     "@types/node": "^26.6.4",
     "libsodium-wrappers": "^0.8.4",
-    "typescript": "^5.9.0",
+    "typescript": "^5.9.3",
     "vite-node": "^6.0.0"
   }
 }
