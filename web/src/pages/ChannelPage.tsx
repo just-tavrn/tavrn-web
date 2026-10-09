@@ -2,7 +2,8 @@
 import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Navigate, useNavigate, useParams } from "react-router";
-import { Permission, computePermissions, hasPermission, isBotKind, type Member, type Message, type RoomDetail, type TavrnApi } from "@tavrn/sdk";
+import { Permission, hasPermission, isBotKind, type Member, type Message, type TavrnApi } from "@tavrn/sdk";
+import { channelPermissions } from "../lib/channelPermissions";
 import { useT } from "../i18n";
 import { useNode } from "../components/NodeScope";
 import { describeError } from "../stores/toasts";
@@ -42,28 +43,8 @@ export async function fetchRoomMembers(api: TavrnApi, roomId: string): Promise<M
   return all;
 }
 
-/** Permissions of the signed-in user in a channel, computed client-side with the same logic as the node. */
-export function channelPermissions(room: RoomDetail, channelId: string, userId: string): bigint {
-  const channel = room.channels.find((c) => c.id === channelId);
-  if (!channel) return 0n;
-  const everyone = room.roles.find((r) => r.is_everyone);
-  const memberRoles = room.roles.filter((r) => room.my_roles.includes(r.id) && !r.is_everyone).map((r) => [r.id, r.permissions] as [string, string]);
-  const toEval = (o: { subject_type: string; subject_id: string; allow: string; deny: string }) => ({ subject_type: o.subject_type as "role" | "member", subject_id: o.subject_id, allow: o.allow, deny: o.deny });
-  const perms = computePermissions({
-    user_id: userId,
-    is_owner: room.is_owner,
-    everyone_role_id: everyone?.id ?? "",
-    everyone_permissions: everyone?.permissions ?? "0",
-    member_roles: memberRoles,
-    category_overrides: room.overrides.filter((o) => o.target_type === "category" && o.target_id === channel.category_id).map(toEval),
-    channel_overrides: room.overrides.filter((o) => o.target_type === "channel" && o.target_id === channel.id).map(toEval),
-    sync_with_category: channel.sync_with_category && !!channel.category_id,
-    timed_out: false,
-    // The welcome channel is visible and read-only for everyone, owners included (SYSTEM_CHANNEL_FORCED/DENIED).
-    system_channel: channel.kind === "system",
-  });
-  return perms;
-}
+/** Permissions of the signed-in user in a channel (lib/channelPermissions.ts; re-exported for the existing imports). */
+export { channelPermissions } from "../lib/channelPermissions";
 
 export function RoomIndexRedirect() {
   const t = useT();

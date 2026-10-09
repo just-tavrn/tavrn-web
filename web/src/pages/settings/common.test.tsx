@@ -34,6 +34,25 @@ describe("OverrideTriState", () => {
   });
 });
 
+describe("OverrideTriState: channel-scoped bits only, inherited values", () => {
+  it("lists only channel-scoped bits in five groups", () => {
+    render(<OverrideTriState allow={0n} deny={0n} onChange={() => {}} />);
+    expect(screen.getAllByRole("group")).toHaveLength(5);
+    expect(screen.getByRole("radiogroup", { name: "Channel ansehen" })).toBeInTheDocument();
+    expect(screen.getByRole("radiogroup", { name: "Rollen verwalten" })).toBeInTheDocument();
+    for (const roomWide of ["Mitglieder bannen", "Administrator", "Raum verwalten"]) expect(screen.queryByRole("radiogroup", { name: roomWide })).toBeNull();
+  });
+
+  it("shows the inherited value in grey and as the accessible description", () => {
+    const inherited = (bit: bigint) => (bit === Permission.SEND_MESSAGES ? { allowed: false, source: "category" as const } : { allowed: true, source: "role" as const });
+    render(<OverrideTriState allow={0n} deny={0n} onChange={() => {}} inherited={inherited} />);
+    expect(screen.getByTestId("inherited-SEND_MESSAGES")).toHaveTextContent("Geerbt: von der Kategorie verboten");
+    expect(screen.getByTestId("inherited-SEND_MESSAGES")).toHaveClass("text-fg-2");
+    expect(screen.getByRole("radio", { name: "Nachrichten senden: neutral" })).toHaveAccessibleDescription("Geerbt: von der Kategorie verboten");
+    expect(screen.getByRole("radiogroup", { name: "Channel ansehen" })).toHaveAccessibleDescription("Geerbt: von den Rollen erlaubt");
+  });
+});
+
 describe("ConfirmDialog", () => {
   it("enables the action only after the confirmation word", async () => {
     const onConfirm = vi.fn(async () => {});

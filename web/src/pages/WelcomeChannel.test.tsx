@@ -9,7 +9,7 @@ import { useUnread } from "../stores/unread";
 import { useMlsUi } from "../stores/mls";
 
 // The welcome channel (design note 4.11): kind `system`, pinned at the top, join/leave entries, read-only.
-const channel = (id: string, kind: string, name: string, position: number, category_id: string | null = "cat") => ({ id, room_id: "r1", category_id, kind, name, topic: "", position, encrypted: false, sync_with_category: false, slowmode_secs: 0, bitrate_kbps: 64, user_limit: 0, system_name: kind === "system" ? "welcome" : null });
+const channel = (id: string, kind: string, name: string, position: number, category_id: string | null = "cat") => ({ id, room_id: "r1", category_id, kind, name, topic: "", position, encrypted: false, slowmode_secs: 0, bitrate_kbps: 64, user_limit: 0, system_name: kind === "system" ? "welcome" : null });
 const room: RoomDetail = {
   id: "r1", name: "Gilde", description: "", rules: "", join_mode: "invite", owner_id: "owner", icon_blob_id: null, icon_animated: false, banner_blob_id: null, created_at: "", discoverable: false, no_bots: false, bots_in_encrypted_channels: "allowed",
   member_count: 2, categories: [{ id: "cat", room_id: "r1", name: "Allgemein", position: 0, no_bots: false }],

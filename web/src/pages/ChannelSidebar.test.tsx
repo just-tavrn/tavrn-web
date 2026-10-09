@@ -9,7 +9,7 @@ import { ChannelSidebar } from "./ChannelSidebar";
 import { mockFetch, renderWithProviders } from "../test/render";
 import { useUnread } from "../stores/unread";
 
-const channel = (id: string, kind: string, name: string, position: number) => ({ id, room_id: "r1", category_id: null, kind, name, topic: "", position, encrypted: false, sync_with_category: false, slowmode_secs: 0, bitrate_kbps: 64, user_limit: 0, system_name: null });
+const channel = (id: string, kind: string, name: string, position: number) => ({ id, room_id: "r1", category_id: null, kind, name, topic: "", position, encrypted: false, slowmode_secs: 0, bitrate_kbps: 64, user_limit: 0, system_name: null });
 const perms = (...bits: bigint[]) => bits.reduce((a, b) => a | b, 0n).toString();
 const room = (my_permissions: string): RoomDetail => ({
   id: "r1", name: "Gilde der sehr langen Raumnamen", description: "", rules: "", join_mode: "invite", owner_id: "owner", icon_blob_id: null, icon_animated: false, banner_blob_id: null, created_at: "", discoverable: false, no_bots: false, bots_in_encrypted_channels: "allowed",
@@ -119,5 +119,44 @@ describe("channel encryption marks", () => {
     expect(open).toHaveAccessibleName("Unverschlüsselt");
     expect(open.querySelector("svg")).toHaveAttribute("width", "16");
     expect(container.querySelector("nav")?.textContent ?? "").not.toMatch(/[\u{1F512}\u{1F513}]/u);
+  });
+});
+
+describe("visible channels and categories (layered overrides)", () => {
+  beforeEach(() => useUnread.setState({ states: {}, held: {} }));
+
+  const layered = (my_permissions: string): RoomDetail => ({
+    ...room(my_permissions),
+    // @everyone without view_channel; one channel allows it.
+    roles: [{ id: "everyone", room_id: "r1", name: "@everyone", color: null, position: 0, permissions: perms(Permission.SEND_MESSAGES), hoist: false, mentionable: false, is_everyone: true }],
+    categories: [
+      { id: "team", room_id: "r1", name: "Team", position: 0, no_bots: false },
+      { id: "staff", room_id: "r1", name: "Staff", position: 1, no_bots: false },
+    ],
+    channels: [
+      { ...channel("w", "system", "welcome", -1), system_name: "welcome" },
+      { ...channel("open", "text", "offen", 0), category_id: "team" },
+      { ...channel("secret", "text", "geheim", 1), category_id: "team" },
+      { ...channel("staff-room", "text", "intern", 2), category_id: "staff" },
+    ],
+    overrides: [{ id: "o1", target_type: "channel", target_id: "open", subject_type: "role", subject_id: "everyone", allow: perms(Permission.VIEW_CHANNEL), deny: "0" }],
+  });
+
+  it("a member sees exactly the visible channel and its category, plus the welcome channel", async () => {
+    mockFetch({ "/rooms/r1/reports": { body: { open: 0, reports: [] } }, "/rooms/r1": { body: layered(perms(Permission.SEND_MESSAGES)) }, "/node": { body: { capabilities: [] } } });
+    const { container } = renderSidebar();
+    await screen.findByText("offen");
+    const rows = [...container.querySelectorAll("[data-testid='channel-row']")].map((e) => e.getAttribute("data-channel"));
+    expect(rows).toEqual(["w", "open"]);
+    expect(screen.getByText("Team")).toBeInTheDocument();
+    expect(screen.queryByText("Staff")).toBeNull();
+  });
+
+  it("channel managers also see empty categories", async () => {
+    mockFetch({ "/rooms/r1/reports": { body: { open: 0, reports: [] } }, "/rooms/r1": { body: layered(perms(Permission.SEND_MESSAGES, Permission.MANAGE_CHANNELS)) }, "/node": { body: { capabilities: [] } } });
+    renderSidebar();
+    await screen.findByText("offen");
+    expect(screen.getByText("Staff")).toBeInTheDocument();
+    expect(screen.queryByText("intern")).toBeNull();
   });
 });
