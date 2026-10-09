@@ -88,6 +88,13 @@ Before: 3 critical + 325 serious + 241 moderate + 25 minor nodes. After: 0 criti
 - **Icons** in the sidebar bars are SVG (2 px stroke, `currentColor`, `components/icons.tsx`) on 40 px targets;
   the voice bar's padlock sits in the signal bars and their text alternative names encryption and quality
   ("Encrypted · connection good"), so neither depends on colour.
+- **Room rail folders** (`components/RoomRail.tsx`): rooms stay links in a list; a folder is a disclosure button
+  (`aria-expanded`, `aria-controls` to the nested list of its rooms) named by its name, room count, mention or
+  unread count and "contains the open room" (the folder colour is decoration only). ↑/↓, Home/End move through the
+  rail, →/← expand, enter, leave and collapse folders, Enter/Space toggle, the context-menu key or Shift+F10 open
+  the menus. Every drag-and-drop action is a menu entry too (WCAG 2.5.7). Badges and the drop indicator use
+  `danger-solid` (3.2:1 on `bg-0`) and `accent` (6.97:1); targets stay 48 × 48 px. `e2e/tests/rail-folders.spec.ts`
+  scans the rail with axe with a folder collapsed and expanded.
 - **Tabs**: the sign-in/registration switch is a tab list with arrow keys and a tab panel (`lib/a11y.ts`
   `tabListKeyDown`); the settings and admin sections are navigation links with `aria-current="page"`.
 - **Pickers**: the emoji picker is a dialog with a menu grid (arrow keys, Escape, focus return) and one tab stop
