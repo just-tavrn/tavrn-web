@@ -57,8 +57,11 @@ with mute, deafen, camera and screen icons and the user limit as `3/5`). While c
 shows the stage: one tile per participant with avatar or camera, a glowing border and level meter while
 someone speaks, screen shares as large tiles (enlarge, picture-in-picture); phones get a swipeable grid of
 four and a bottom control bar. The voice bar at the bottom of the sidebar keeps mute, deafen, leave and the
-connection quality at hand while you read text channels; its signal bars carry a small padlock (voice is always
-end-to-end encrypted), and their tooltip names both, for example "Encrypted · connection good". Moderators open a participant's menu (right click
+connection quality at hand while you read text channels: its first line is the signal bars with a small padlock
+(voice is always end-to-end encrypted; the tooltip names both, for example "Encrypted · connection good"), a short
+status ("Connected") and the quality, the second line the channel and room. The channel list marks every channel
+with an SVG lock next to its kind icon: closed for end-to-end encrypted channels (all voice channels), open in the
+warning colour for plaintext channels; channel headers show the same lock. Moderators open a participant's menu (right click
 or ⋯) to server-mute, disconnect or move them, drag people onto another voice channel, or move everybody at
 once from a voice channel's menu (with a confirmation; the target's user limit holds); everybody can set a
 per-person volume there. A dropped connection rejoins by itself; others see an amber plug on your avatar

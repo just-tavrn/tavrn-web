@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useT } from "../i18n";
+import { LockIcon, UnlockIcon } from "./icons";
 import { acknowledgeKeyChange, useMlsUi } from "../stores/mls";
 import { formatCount, useUnread } from "../stores/unread";
 
@@ -23,6 +24,21 @@ export function WebhookBadge() {
   return (
     <span className="rounded bg-accent-soft px-1 text-[10px] font-semibold uppercase tracking-wide text-accent" title={t("badge.webhook_hint")} data-testid="webhook-badge">
       {t("badge.webhook")}
+    </span>
+  );
+}
+
+/**
+ * The encryption of a channel or conversation as an SVG lock (16 px in lists, 18 px in headers): named "Encrypted" or
+ * "Unencrypted"; `title` can explain more in the tooltip. Plaintext uses the warning colour, but the open shackle and
+ * the name carry the meaning, not the colour.
+ */
+export function LockMark({ open = false, size = 16, title, testId, className = "" }: { open?: boolean; size?: number; title?: string; testId?: string; className?: string }) {
+  const t = useT();
+  const label = open ? t("channel.unencrypted") : t("channel.lock");
+  return (
+    <span role="img" aria-label={label} title={title ?? label} className={`inline-flex shrink-0 ${open ? "text-warn" : "text-fg-1"} ${className}`} data-testid={testId}>
+      {open ? <UnlockIcon size={size} /> : <LockIcon size={size} />}
     </span>
   );
 }

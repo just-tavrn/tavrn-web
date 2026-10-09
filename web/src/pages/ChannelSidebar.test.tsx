@@ -103,3 +103,21 @@ describe("room header", () => {
     expect(screen.getByTestId("reports-page")).toBeInTheDocument();
   });
 });
+
+describe("channel encryption marks", () => {
+  beforeEach(() => useUnread.setState({ states: {}, held: {} }));
+
+  it("encrypted and plaintext channels show 16 px SVG locks with a name, no text glyph", async () => {
+    const detail = { ...room(perms()), channels: [{ ...channel("c1", "text", "geheim", 0), encrypted: true }, channel("c2", "text", "offen", 1), channel("v1", "voice", "Sprache", 2)] };
+    mockFetch({ "/rooms/r1/reports": { body: { open: 0, reports: [] } }, "/rooms/r1": { body: detail }, "/node": { body: { capabilities: [] } } });
+    const { container } = renderSidebar();
+    const lock = await screen.findByTestId("channel-lock");
+    expect(lock).toHaveAccessibleName("Verschlüsselt");
+    expect(lock).toHaveAttribute("title", "Verschlüsselt");
+    expect(lock.querySelector("svg")).toHaveAttribute("width", "16");
+    const open = screen.getByTestId("channel-unlocked");
+    expect(open).toHaveAccessibleName("Unverschlüsselt");
+    expect(open.querySelector("svg")).toHaveAttribute("width", "16");
+    expect(container.querySelector("nav")?.textContent ?? "").not.toMatch(/[\u{1F512}\u{1F513}]/u);
+  });
+});

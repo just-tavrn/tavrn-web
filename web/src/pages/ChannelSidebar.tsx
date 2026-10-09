@@ -14,7 +14,7 @@ import { Button, Dialog, ErrorText, Field, Input } from "../components/ui";
 import { describeError, toastError, useToasts } from "../stores/toasts";
 import { useUnread } from "../stores/unread";
 import { syncInboxChannels } from "../stores/mls";
-import { BotsAllowedIcon, NoBotsIcon, UnreadBadges, useHasUnread } from "../components/Badges";
+import { BotsAllowedIcon, LockMark, NoBotsIcon, UnreadBadges, useHasUnread } from "../components/Badges";
 import { botMarker } from "../lib/botAccess";
 import { VoiceChannelRow } from "../voice/ui/VoiceChannelRow";
 import { MenuButton } from "../components/ContextMenu";
@@ -99,19 +99,11 @@ const VoiceRowWithMenu = VoiceChannelRow;
 function ChannelIcon({ kind, encrypted }: { kind: string; encrypted: boolean }) {
   const t = useT();
   const icon = kind === "voice" ? "🔊" : kind === "announcement" ? "📣" : kind === "forum" ? "🗂" : kind === "files" ? "📁" : kind === "system" ? "👋" : "#";
+  // The kind glyph and a 16 px lock slot (empty for voice and the welcome channel, so the names stay aligned).
   return (
-    <span className="flex w-5 shrink-0 items-center justify-center gap-0.5 text-fg-2">
-      <span aria-hidden="true">{icon}</span>
-      {kind !== "voice" && kind !== "system" &&
-        (encrypted ? (
-          <span role="img" aria-label={t("channel.encrypted")} title={t("channel.encrypted")} className="text-[10px]" data-testid="channel-lock">
-            🔒
-          </span>
-        ) : (
-          <span role="img" aria-label={t("channel.unencrypted")} title={t("channel.unencrypted")} className="text-[10px]" data-testid="channel-unlocked">
-            🔓
-          </span>
-        ))}
+    <span className="flex w-9 shrink-0 items-center gap-1 text-fg-2">
+      <span aria-hidden="true" className="w-4 text-center">{icon}</span>
+      {kind !== "voice" && kind !== "system" ? encrypted ? <LockMark testId="channel-lock" /> : <LockMark open title={t("channel.unencrypted")} testId="channel-unlocked" /> : <span className="w-4" aria-hidden="true" />}
     </span>
   );
 }

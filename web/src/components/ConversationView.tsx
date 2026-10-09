@@ -49,6 +49,7 @@ import { ReportDialog } from "../moderation/ReportDialog";
 import { evidenceCandidates } from "../moderation/evidence";
 import { isAutomodBlock } from "../moderation/blocked";
 import { wasDeleted } from "../moderation/deletedIds";
+import { LockMark } from "./Badges";
 
 /** An error that was already shown to the user. */
 class AlreadyReported extends Error {}
@@ -546,9 +547,7 @@ export function ConversationView(p: ConversationViewProps) {
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-4">
         {p.header}
         {p.encrypted && (
-          <span role="img" className="shrink-0 text-xs text-fg-2" title={t("e2ee.encrypted_hint")} aria-label={t("e2ee.encrypted_hint")} data-testid="encrypted-marker">
-            🔒
-          </span>
+          <LockMark size={18} title={t("e2ee.encrypted_hint")} testId="encrypted-marker" />
         )}
         {!threadId && (
           <>
