@@ -500,10 +500,11 @@ test.describe("Voice channels", () => {
       await expect.poll(async () => Number(await page.getByTestId("mic-meter").getAttribute("data-level")), { timeout: 15_000 }).toBeGreaterThan(-90);
     }
 
-    // Push-to-talk: the gate stays closed without the key; the key can be changed.
+    // Push-to-talk: the key can be changed. The microphone test judges the microphone, not the key, so its gate
+    // stays open without the key (voice/gate.ts gateModeFor).
     await page.getByTestId("mode-ptt").check();
     await expect(page.getByTestId("ptt-settings")).toBeVisible();
-    await expect(page.getByTestId("vad-indicator")).not.toHaveAttribute("data-open", "true", { timeout: 10_000 });
+    await expect(page.getByTestId("vad-indicator")).toHaveAttribute("data-open", "true");
     await page.getByTestId("ptt-capture").click();
     await page.keyboard.press("KeyB");
     await expect(page.getByTestId("ptt-key")).toHaveText("B");
