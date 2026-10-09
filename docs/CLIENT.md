@@ -379,6 +379,17 @@ with name, size and a **Load** button (and "Load all" for several in one message
 section there; the role list in the room settings is reordered by drag and drop (or the arrows). `@everyone`
 can never get management permissions; the editor greys them out.
 
+**Channel permissions are layered** ([permissions.md](https://github.com/just-tavrn/tavrn-protocol/blob/main/permissions.md)
+"Evaluation"): roles give the base, a category's overrides apply to all its channels, and a channel's own overrides
+win over the category's; a bit left at "–" inherits from the layer below. In **Room settings → Channels** the
+category name opens **Permissions in this category**, a channel shows **Permissions in this channel** (the former
+"sync with category" switch is gone). Both editors list only the channel-scoped permissions, grouped as general,
+text, voice, files and management; under every permission the value it inherits is shown in grey ("Inherited:
+allowed by the category" / "by the roles"), which is also the accessible description of its allow/neutral/deny
+choice. **Reset to category** removes a channel's own overrides after a confirmation. The sidebar lists only the
+channels the user may view, and a category only when one of its channels is visible (channel managers also see
+empty ones); `channelPermissions` (`web/src/lib/channelPermissions.ts`) computes exactly like the node.
+
 ## Reports, auto-moderation and ownership
 
 Specified in [MODERATION.md](https://github.com/just-tavrn/tavrn-protocol/blob/main/MODERATION.md); the client shows

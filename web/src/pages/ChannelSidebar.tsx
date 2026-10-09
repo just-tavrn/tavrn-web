@@ -16,6 +16,7 @@ import { useUnread } from "../stores/unread";
 import { syncInboxChannels } from "../stores/mls";
 import { BotsAllowedIcon, LockMark, NoBotsIcon, UnreadBadges, useHasUnread } from "../components/Badges";
 import { botMarker } from "../lib/botAccess";
+import { channelPermissions } from "../lib/channelPermissions";
 import { VoiceChannelRow } from "../voice/ui/VoiceChannelRow";
 import { MenuButton } from "../components/ContextMenu";
 import { AdultsOnlyBadge } from "../components/age/LockedChannel";
@@ -128,17 +129,20 @@ export function ChannelSidebar({ roomId }: { roomId: string }) {
   const perms = parsePermissions(r.my_permissions);
   const canManageChannels = hasPermission(perms, Permission.MANAGE_CHANNELS);
 
+  // Only channels the user may view (layered overrides; nodes list only those, older ones listed all).
+  const channels = r.channels.filter((c) => hasPermission(channelPermissions(r, c.id, node.me?.id ?? ""), Permission.VIEW_CHANNEL));
   // The welcome channel (kind `system`, design note 4.11) is pinned at the very top, outside the categories.
-  const pinned = r.channels.filter((c) => c.kind === "system");
+  const pinned = channels.filter((c) => c.kind === "system");
   const byCategory = new Map<string | null, Channel[]>();
-  for (const c of r.channels) {
+  for (const c of channels) {
     if (c.kind === "system") continue;
     const key = c.category_id ?? null;
     byCategory.set(key, [...(byCategory.get(key) ?? []), c]);
   }
   const groups: { id: string | null; name: string | null; channels: Channel[] }[] = [
     ...(byCategory.get(null)?.length ? [{ id: null, name: null, channels: byCategory.get(null)! }] : []),
-    ...r.categories.map((cat) => ({ id: cat.id, name: categoryName(cat), channels: byCategory.get(cat.id) ?? [] })),
+    // A category is a container: shown when one of its channels is visible (empty ones only to channel managers).
+    ...r.categories.filter((cat) => canManageChannels || byCategory.get(cat.id)?.length).map((cat) => ({ id: cat.id, name: categoryName(cat), channels: byCategory.get(cat.id) ?? [] })),
   ];
 
   return (
