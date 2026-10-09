@@ -134,6 +134,8 @@ test.describe("File channels", () => {
     await loginAs(page, owner);
     await page.goto(`/rooms/${room.id}/channels/${ch.id}`);
     await expect(page.getByTestId("files-view")).toBeVisible();
+    // The channel's rights are loaded (a real drag repeats dragover; the test sends it once).
+    await expect(page.getByTestId("files-upload-button")).toBeVisible();
 
     // Drag and drop of files from the desktop.
     const data = await page.evaluateHandle(() => {
