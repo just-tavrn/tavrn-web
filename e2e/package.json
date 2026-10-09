@@ -13,10 +13,10 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.56.0",
-    "@tavrn/bot": "file:/home/baton/tavrn-split/tavrn-js/.claude/worktrees/js-web-deps/bot",
+    "@tavrn/bot": "file:/home/baton/tavrn-split/tavrn-js/bot",
     "@tavrn/crypto": "github:just-tavrn/tavrn-crypto#a240c3aeebff4e0e413f8f49e6e06e9d02a96cc5&path:pkg",
-    "@tavrn/e2ee": "file:/home/baton/tavrn-split/tavrn-js/.claude/worktrees/js-web-deps/e2ee",
-    "@tavrn/sdk": "file:/home/baton/tavrn-split/tavrn-js/.claude/worktrees/js-web-deps/sdk",
+    "@tavrn/e2ee": "file:/home/baton/tavrn-split/tavrn-js/e2ee",
+    "@tavrn/sdk": "file:/home/baton/tavrn-split/tavrn-js/sdk",
     "@types/libsodium-wrappers": "^0.8.2",
     "@types/node": "^26.6.4",
     "libsodium-wrappers": "^0.8.4",
