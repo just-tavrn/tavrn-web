@@ -8,7 +8,7 @@ import { AccountBar } from "./AccountBar";
 import { renderWithProviders } from "../test/render";
 import { useAuth } from "../stores/auth";
 
-const user = (isAdmin: boolean) => ({ id: "u1", username: "babatonga", domain: "t.local", address: "babatonga@t.local", display_name: "babatonga der Lange", kind: "user", is_node_admin: isAdmin, avatar_blob_id: null, created_at: "", email: null, email_verified: false, has_identity_key: true });
+const user = (isAdmin: boolean) => ({ id: "u1", username: "alice", domain: "t.local", address: "alice@t.local", display_name: "alice der Lange", kind: "user", is_node_admin: isAdmin, avatar_blob_id: null, created_at: "", email: null, email_verified: false, has_identity_key: true });
 
 function renderBar() {
   return renderWithProviders(
@@ -31,8 +31,8 @@ describe("account bar", () => {
   it("shows the name with its full text, one bell and one gear as SVG icons, and no wrench button", () => {
     const { container } = renderBar();
     const name = screen.getByTestId("me-name");
-    expect(name).toHaveTextContent("babatonga der Lange");
-    expect(name).toHaveAttribute("title", "babatonga der Lange");
+    expect(name).toHaveTextContent("alice der Lange");
+    expect(name).toHaveAttribute("title", "alice der Lange");
     const bar = screen.getByTestId("account-bar");
     expect(within(bar).getAllByTestId("notification-bell")).toHaveLength(1);
     // Phones show the bell in the header (AppShell headerExtra); the bar's own bell starts at the tablet width.
