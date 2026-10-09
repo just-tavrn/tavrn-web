@@ -17,3 +17,17 @@ overrides:
   "@tavrn/sdk": "github:just-tavrn/tavrn-js#1571b20b78ee8e451155ac917d31abe3d52c17f5&path:sdk"
   "@tavrn/e2ee": "github:just-tavrn/tavrn-js#1571b20b78ee8e451155ac917d31abe3d52c17f5&path:e2ee"
   "@tavrn/crypto": "github:just-tavrn/tavrn-crypto#a240c3aeebff4e0e413f8f49e6e06e9d02a96cc5&path:pkg"
+  # Security overrides for @excalidraw/excalidraw 0.18.1 (the newest release; `pnpm audit` must stay clean).
+  # Drop each one once Excalidraw ships a release without the problem.
+  # - nanoid: Excalidraw pins 3.3.3 exactly (GHSA-mwcw-c2x4-8c55 and three newer advisories: predictable or endless
+  #   generation with odd sizes); 3.3.20 is the fixed release of the same minor with the same API.
+  "nanoid@>=3.0.0 <3.3.18": "^3.3.20"
+  # - The Mermaid converter is never bundled: vite.config.ts aliases it to src/whiteboard/mermaid-stub.ts (the
+  #   whiteboard offers no text-to-diagram). Removing it drops Mermaid, KaTeX, Chevrotain and their pinned
+  #   nanoid 4.0.2 / lodash-es 4.17.21 / katex 0.16 (all with advisories) from the install, instead of forcing
+  #   them across majors.
+  "@excalidraw/excalidraw>@excalidraw/mermaid-to-excalidraw": "-"
+  # - sass is a leftover build dependency of Excalidraw (its dist ships compiled CSS and never imports sass; the
+  #   web client has no Sass sources). Removing it drops chokidar 3 and braces 3.0.3, whose stack-exhaustion
+  #   advisory has no fixed release.
+  "@excalidraw/excalidraw>sass": "-"
