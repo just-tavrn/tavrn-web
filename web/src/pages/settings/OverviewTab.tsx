@@ -128,7 +128,7 @@ export function OverviewTab({ room }: { room: RoomDetail }) {
             ))}
             {(filesUsage.data ?? []).some(({ info }) => deletionCase(info) === "external_plain") && (
               <label className="flex min-h-10 items-center gap-2 text-sm">
-                <input type="checkbox" className="h-4 w-4 accent-accent" checked={keepExternal} onChange={(e) => setKeepExternal(e.target.checked)} data-testid="files-keep-external" />
+                <input type="checkbox" className="h-6 w-6 accent-accent" checked={keepExternal} onChange={(e) => setKeepExternal(e.target.checked)} data-testid="files-keep-external" />
                 {t("files.delete_keep_external_room")}
               </label>
             )}

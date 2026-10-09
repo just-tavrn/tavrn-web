@@ -47,7 +47,7 @@ test.describe("Encrypted files channels", () => {
     await page.getByRole("button", { name: "Channel erstellen" }).click();
     const create = page.getByRole("dialog");
     await create.getByLabel("Art").selectOption("files");
-    await create.getByLabel("Name").fill("Tresor");
+    await create.getByLabel("Name", { exact: true }).fill("Tresor");
     const toggle = create.getByTestId("files-encrypted-toggle");
     await expect(toggle).toBeChecked();
     await expect(create).toContainText("Lässt sich später nicht ändern.");

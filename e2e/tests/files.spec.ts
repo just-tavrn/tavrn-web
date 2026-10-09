@@ -26,7 +26,7 @@ test.describe("File channels", () => {
     await page.getByRole("button", { name: "Channel erstellen" }).click();
     const create = page.getByRole("dialog");
     await create.getByLabel("Art").selectOption("files");
-    await create.getByLabel("Name").fill("Ablage");
+    await create.getByLabel("Name", { exact: true }).fill("Ablage");
     // End-to-end encryption is the default for files channels; this test covers the unencrypted kind.
     await expect(create.getByTestId("files-encrypted-toggle")).toBeChecked();
     await create.getByTestId("files-encrypted-toggle").uncheck();

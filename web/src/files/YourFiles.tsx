@@ -74,7 +74,7 @@ export function YourFilesPanel({ roomId, channelId, onChanged }: { roomId: strin
         <>
           <div className="flex flex-wrap items-center gap-2">
             <label className="flex min-h-10 items-center gap-2 text-sm text-fg-1">
-              <input type="checkbox" className="h-4 w-4 accent-accent" checked={all} onChange={() => setSelected(all ? new Set() : new Set(entries.map((e) => e.id)))} data-testid="your-files-all" />
+              <input type="checkbox" className="h-6 w-6 accent-accent" checked={all} onChange={() => setSelected(all ? new Set() : new Set(entries.map((e) => e.id)))} data-testid="your-files-all" />
               {t("files.select_all")}
             </label>
             <span className="flex-1" />
@@ -88,7 +88,7 @@ export function YourFilesPanel({ roomId, channelId, onChanged }: { roomId: strin
               const label = t(e.kind === "folder" ? "files.your_folder_label" : "files.your_file_label", { date: when, size: formatBytes(e.size + (e.thumbnail_size ?? 0)) });
               return (
                 <li key={e.id} className="flex min-h-11 items-center gap-2 px-2 text-sm" data-testid="your-files-row" data-entry={e.id}>
-                  <input type="checkbox" className="h-4 w-4 accent-accent" checked={selected.has(e.id)} onChange={() => toggle(e.id)} aria-label={label} />
+                  <input type="checkbox" className="h-6 w-6 accent-accent" checked={selected.has(e.id)} onChange={() => toggle(e.id)} aria-label={label} />
                   <span aria-hidden="true">{e.kind === "folder" ? "📁" : "📄"}</span>
                   <span className="min-w-0 flex-1 truncate text-fg-1">{t(e.kind === "folder" ? "files.locked_folder" : "files.locked_file")}</span>
                   <span className="hidden text-xs tabular-nums text-fg-2 sm:inline">{e.kind === "folder" ? "—" : formatBytes(e.size)}</span>

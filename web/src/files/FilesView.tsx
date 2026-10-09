@@ -38,7 +38,7 @@ import {
   uploadEncrypted,
   type EncryptedContext,
 } from "./e2ee";
-import { useT } from "../i18n";
+import { useLocale, useT } from "../i18n";
 import { useNode } from "../components/NodeScope";
 import { useNodeSockets, useRealtimeState } from "../hooks/useRealtime";
 import { ContextMenu, menuItem, normalizeMenu, separator, type MenuEntry } from "../components/ContextMenu";
@@ -205,10 +205,10 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
     return r?.ok ? r.record : null;
   }, [records]);
   const lockState = encrypted ? filesLockState(e2ee.phase, records) : null;
-  const shownRaw = useMemo(
-    () => (encrypted ? displayEntries(raw, records, { file: t("files.locked_file"), folder: t("files.locked_folder") }) : raw),
-    [encrypted, raw, records, t],
-  );
+  // `t` is a new function on every render: the labels change with the language only.
+  const locale = useLocale((s) => s.locale);
+  const lockedLabels = useMemo(() => ({ file: t("files.locked_file"), folder: t("files.locked_folder") }), [locale]); // eslint-disable-line react-hooks/exhaustive-deps
+  const shownRaw = useMemo(() => (encrypted ? displayEntries(raw, records, lockedLabels) : raw), [encrypted, raw, records, lockedLabels]);
   const entries = useMemo(() => {
     const needle = encrypted ? search.toLowerCase() : "";
     return sortEntries(needle ? shownRaw.filter((e) => e.name.toLowerCase().includes(needle)) : shownRaw, sort);
@@ -216,7 +216,7 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
   const order = useMemo(() => entries.map((e) => e.id), [entries]);
   const byId = useMemo(() => new Map(entries.map((e) => [e.id, e])), [entries]);
   const rawById = useMemo(() => new Map(raw.map((e) => [e.id, e])), [raw]);
-  const path = useMemo(() => (encrypted ? rawPath.map((c) => ({ ...c, name: recordOf(c.id)?.name ?? t("files.locked_folder") })) : rawPath), [encrypted, rawPath, recordOf, t]);
+  const path = useMemo(() => (encrypted ? rawPath.map((c) => ({ ...c, name: recordOf(c.id)?.name ?? lockedLabels.folder })) : rawPath), [encrypted, rawPath, recordOf, lockedLabels]);
   // The local search index gets every entry this device decrypted (SEARCH.md §3.6), once per record.
   const indexed = useRef(new Set<string>());
   useEffect(() => {
@@ -230,8 +230,10 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
   }, [encrypted, nodeSearch, raw, records, path, q, room.id, addresses]);
   // A search result opens the folder with its entry selected (`?entry=`).
   const wanted = params.get("entry");
+  const handled = useRef<string | null>(null);
   useEffect(() => {
-    if (!wanted || !byId.has(wanted)) return;
+    if (!wanted || !byId.has(wanted) || handled.current === wanted) return;
+    handled.current = wanted;
     setSelection(selectWith(EMPTY_SELECTION, order, wanted));
     setFocus(wanted);
     listRef.current?.querySelector<HTMLElement>(`[data-entry="${wanted}"]`)?.scrollIntoView({ block: "nearest" });
@@ -253,7 +255,9 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
     return () => {
       stale = true;
     };
-  }, [encrypted, wanted, listing.isSuccess, listing.hasNextPage, byId, api, room.id, channel.id, q, t]);
+    // `t` is left out on purpose (a new function per render).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [encrypted, wanted, listing.isSuccess, listing.hasNextPage, byId, api, room.id, channel.id, q]);
   const decryptFolderNames = useCallback(
     async (list: Parameters<typeof decryptRecords>[2]) => {
       const out = new Map<string, string>();
@@ -1028,7 +1032,9 @@ function EncryptedThumb({ entry, thumb }: { entry: FileEntry; thumb: { record: F
     return () => {
       stale = true;
     };
-  }, [api, thumb, entry]);
+    // The record's key and the entry id identify the thumbnail.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api, thumb?.record.key, entry.id]);
   if (url) return <img src={url} alt="" className="h-20 w-full rounded object-cover" draggable={false} data-testid="file-thumbnail" />;
   return (
     <span aria-hidden="true" className="flex h-20 w-full items-center justify-center text-4xl">

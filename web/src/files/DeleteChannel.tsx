@@ -34,7 +34,7 @@ export function FilesDeletionFacts({ name, info, keep, onKeep }: { name?: string
       {c === "external_encrypted" && <p className="text-fg-2">{t("files.delete_external_encrypted")}</p>}
       {c === "external_plain" && onKeep && (
         <label className="flex min-h-10 items-center gap-2">
-          <input type="checkbox" className="h-4 w-4 accent-accent" checked={keep} onChange={(e) => onKeep(e.target.checked)} data-testid="files-keep-external" />
+          <input type="checkbox" className="h-6 w-6 accent-accent" checked={keep} onChange={(e) => onKeep(e.target.checked)} data-testid="files-keep-external" />
           {t("files.delete_keep_external")}
         </label>
       )}
