@@ -2897,9 +2897,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9528a26c807f49d3fa6d075c01db5fd77bf32454b1e700c530fb8c670892008"
 dependencies = [
  "async-trait",
+ "base64 0.21.7",
+ "bytes",
+ "futures-util",
  "http",
  "log",
  "reqwest 0.12.28",
+ "tokio",
  "tokio-tungstenite",
  "url",
 ]
@@ -5518,6 +5522,7 @@ name = "tavrn-desktop"
 version = "0.0.0"
 dependencies = [
  "apple-native-keyring-store",
+ "base64 0.22.1",
  "cpal",
  "futures-util",
  "hickory-resolver",
@@ -5525,6 +5530,7 @@ dependencies = [
  "livekit",
  "notify-rust",
  "reqwest 0.13.5",
+ "ring",
  "rustls",
  "serde",
  "serde_json",

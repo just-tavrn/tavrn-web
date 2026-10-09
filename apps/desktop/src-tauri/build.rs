@@ -36,7 +36,11 @@ fn main() {
         "voice_configure",
         "voice_set_volumes",
     ];
-    let attributes = tauri_build::Attributes::new().app_manifest(tauri_build::AppManifest::new().commands(commands));
+    // Windows: the whole C runtime is linked statically (+crt-static in .cargo/config.toml, for the prebuilt libwebrtc
+    // of the native voice engine), so Tauri's own hybrid runtime (static vcruntime, dynamic ucrt) must stay out.
+    let attributes = tauri_build::Attributes::new()
+        .app_manifest(tauri_build::AppManifest::new().commands(commands))
+        .windows_attributes(tauri_build::WindowsAttributes::new().static_vc_runtime(false));
     if let Err(e) = tauri_build::try_build(attributes) {
         eprintln!("tauri-build failed: {e:#}");
         std::process::exit(1);
