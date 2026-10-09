@@ -25,6 +25,12 @@ fn main() {
         "unregister_hotkey",
         "listen_hotkeys",
         "set_hotkeys_enabled",
+        // Downloads (src/download.rs).
+        "save_file_begin",
+        "save_file_chunk",
+        "save_file_end",
+        "save_file_abort",
+        "save_file_reveal",
     ];
     let attributes = tauri_build::Attributes::new().app_manifest(tauri_build::AppManifest::new().commands(commands));
     if let Err(e) = tauri_build::try_build(attributes) {

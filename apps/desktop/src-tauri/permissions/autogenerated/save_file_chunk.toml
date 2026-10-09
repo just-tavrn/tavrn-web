@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-save-file-chunk"
+description = "Enables the save_file_chunk command without any pre-configured scope."
+commands.allow = ["save_file_chunk"]
+
+[[permission]]
+identifier = "deny-save-file-chunk"
+description = "Denies the save_file_chunk command without any pre-configured scope."
+commands.deny = ["save_file_chunk"]

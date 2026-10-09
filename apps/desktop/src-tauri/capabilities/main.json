@@ -26,6 +26,11 @@
     "allow-register-hotkey",
     "allow-unregister-hotkey",
     "allow-listen-hotkeys",
-    "allow-set-hotkeys-enabled"
+    "allow-set-hotkeys-enabled",
+    "allow-save-file-begin",
+    "allow-save-file-chunk",
+    "allow-save-file-end",
+    "allow-save-file-abort",
+    "allow-save-file-reveal"
   ]
 }

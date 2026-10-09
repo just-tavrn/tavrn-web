@@ -7,6 +7,7 @@
 
 pub mod commands;
 pub mod config;
+pub mod download;
 pub mod events;
 pub mod guard;
 pub mod hotkeys;
@@ -75,6 +76,8 @@ pub fn run() {
         if cfg!(windows) || session_bus() { builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| events::show_main(app))) } else { builder };
     let result = builder
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
+        .manage(download::Downloads::from_env())
         .manage(hotkeys::Hotkeys::default())
         .invoke_handler(tauri::generate_handler![
             commands::get_config,
@@ -100,6 +103,12 @@ pub fn run() {
             hotkeys::unregister_hotkey,
             hotkeys::listen_hotkeys,
             hotkeys::set_hotkeys_enabled,
+            // Downloads through the save dialog (download.rs).
+            download::save_file_begin,
+            download::save_file_chunk,
+            download::save_file_end,
+            download::save_file_abort,
+            download::save_file_reveal,
         ])
         .on_window_event(|window, event| {
             if window.label() != MAIN_WINDOW {
@@ -141,6 +150,7 @@ pub fn run() {
                     NewWindowResponse::Deny
                 })
                 .on_permission_request(|_, kind| media::permission(kind))
+                .on_download(download::webview_download)
                 .build()?;
             #[cfg(target_os = "linux")]
             media::enable_webrtc(&main)?;

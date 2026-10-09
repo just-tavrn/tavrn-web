@@ -96,8 +96,15 @@ fn the_capability_grants_only_the_app_commands_to_the_main_window() {
             "allow-unregister-hotkey",
             "allow-listen-hotkeys",
             "allow-set-hotkeys-enabled",
+            "allow-save-file-begin",
+            "allow-save-file-chunk",
+            "allow-save-file-end",
+            "allow-save-file-abort",
+            "allow-save-file-reveal",
         ]
     );
+    // Downloads: the shell opens the save dialog and writes the file itself; the dialog, opener and fs plugins stay
+    // out of the webview's reach.
     assert!(permissions.iter().all(|p| p.starts_with("allow-")), "no plugin or core permissions: the shell's own commands only");
     assert_eq!(conf()["app"]["security"]["capabilities"], serde_json::json!(["main"]));
 }
