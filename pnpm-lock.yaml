@@ -163,8 +163,8 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@tavrn/sdk': file:/home/baton/tavrn-split/tavrn-js/sdk
-  '@tavrn/e2ee': file:/home/baton/tavrn-split/tavrn-js/e2ee
+  '@tavrn/sdk': file:/home/baton/tavrn-split/tavrn-js/.claude/worktrees/age-basics/sdk
+  '@tavrn/e2ee': file:/home/baton/tavrn-split/tavrn-js/.claude/worktrees/age-basics/e2ee
   '@tavrn/crypto': github:just-tavrn/tavrn-crypto#v0.1.0&path:pkg
 
 importers:
@@ -186,17 +186,17 @@ importers:
         specifier: ^1.56.0
         version: 1.63.0
       '@tavrn/bot':
-        specifier: file:/home/baton/tavrn-split/tavrn-js/bot
-        version: file:../tavrn-js/bot
+        specifier: file:/home/baton/tavrn-split/tavrn-js/.claude/worktrees/age-basics/bot
+        version: file:../../../../tavrn-js/.claude/worktrees/age-basics/bot
       '@tavrn/crypto':
         specifier: github:just-tavrn/tavrn-crypto#v0.1.0&path:pkg
         version: git+https://github.com/just-tavrn/tavrn-crypto.git#5b5929a573fd573ed1417132b26b8fe72c1027b5&path:pkg
       '@tavrn/e2ee':
-        specifier: file:/home/baton/tavrn-split/tavrn-js/e2ee
-        version: file:../tavrn-js/e2ee
+        specifier: file:/home/baton/tavrn-split/tavrn-js/.claude/worktrees/age-basics/e2ee
+        version: file:../../../../tavrn-js/.claude/worktrees/age-basics/e2ee
       '@tavrn/sdk':
-        specifier: file:/home/baton/tavrn-split/tavrn-js/sdk
-        version: file:../tavrn-js/sdk
+        specifier: file:/home/baton/tavrn-split/tavrn-js/.claude/worktrees/age-basics/sdk
+        version: file:../../../../tavrn-js/.claude/worktrees/age-basics/sdk
       '@types/libsodium-wrappers':
         specifier: ^0.8.2
         version: 0.8.2
@@ -237,11 +237,11 @@ importers:
         specifier: github:just-tavrn/tavrn-crypto#v0.1.0&path:pkg
         version: git+https://github.com/just-tavrn/tavrn-crypto.git#5b5929a573fd573ed1417132b26b8fe72c1027b5&path:pkg
       '@tavrn/e2ee':
-        specifier: file:/home/baton/tavrn-split/tavrn-js/e2ee
-        version: file:../tavrn-js/e2ee
+        specifier: file:/home/baton/tavrn-split/tavrn-js/.claude/worktrees/age-basics/e2ee
+        version: file:../../../../tavrn-js/.claude/worktrees/age-basics/e2ee
       '@tavrn/sdk':
-        specifier: file:/home/baton/tavrn-split/tavrn-js/sdk
-        version: file:../tavrn-js/sdk
+        specifier: file:/home/baton/tavrn-split/tavrn-js/.claude/worktrees/age-basics/sdk
+        version: file:../../../../tavrn-js/.claude/worktrees/age-basics/sdk
       dompurify:
         specifier: ^3.4.16
         version: 3.4.16
@@ -1243,19 +1243,19 @@ packages:
     engines: {node: '>= 10'}
     hasBin: true
 
-  '@tavrn/bot@file:../tavrn-js/bot':
-    resolution: {directory: ../tavrn-js/bot, type: directory}
+  '@tavrn/bot@file:../../../../tavrn-js/.claude/worktrees/age-basics/bot':
+    resolution: {directory: ../../../../tavrn-js/.claude/worktrees/age-basics/bot, type: directory}
     engines: {node: '>=20'}
 
   '@tavrn/crypto@git+https://github.com/just-tavrn/tavrn-crypto.git#5b5929a573fd573ed1417132b26b8fe72c1027b5&path:pkg':
     resolution: {commit: 5b5929a573fd573ed1417132b26b8fe72c1027b5, path: pkg, repo: https://github.com/just-tavrn/tavrn-crypto.git, type: git}
     version: 0.1.0
 
-  '@tavrn/e2ee@file:../tavrn-js/e2ee':
-    resolution: {directory: ../tavrn-js/e2ee, type: directory}
+  '@tavrn/e2ee@file:../../../../tavrn-js/.claude/worktrees/age-basics/e2ee':
+    resolution: {directory: ../../../../tavrn-js/.claude/worktrees/age-basics/e2ee, type: directory}
 
-  '@tavrn/sdk@file:../tavrn-js/sdk':
-    resolution: {directory: ../tavrn-js/sdk, type: directory}
+  '@tavrn/sdk@file:../../../../tavrn-js/.claude/worktrees/age-basics/sdk':
+    resolution: {directory: ../../../../tavrn-js/.claude/worktrees/age-basics/sdk, type: directory}
 
   '@testing-library/dom@10.4.2':
     resolution: {integrity: sha512-yzr2S9HyAIdhz2/6qHgbs665Q7PKVcDF05vsOlHPxG1mo36gKVesdYVeDLnXgfjJ03CrKRk08knc6+E/9m8v2Q==}
@@ -3462,20 +3462,20 @@ snapshots:
       '@tauri-apps/cli-win32-ia32-msvc': 2.12.1
       '@tauri-apps/cli-win32-x64-msvc': 2.12.1
 
-  '@tavrn/bot@file:../tavrn-js/bot':
+  '@tavrn/bot@file:../../../../tavrn-js/.claude/worktrees/age-basics/bot':
     dependencies:
       '@tavrn/crypto': git+https://github.com/just-tavrn/tavrn-crypto.git#5b5929a573fd573ed1417132b26b8fe72c1027b5&path:pkg
-      '@tavrn/e2ee': file:../tavrn-js/e2ee
-      '@tavrn/sdk': file:../tavrn-js/sdk
+      '@tavrn/e2ee': file:../../../../tavrn-js/.claude/worktrees/age-basics/e2ee
+      '@tavrn/sdk': file:../../../../tavrn-js/.claude/worktrees/age-basics/sdk
 
   '@tavrn/crypto@git+https://github.com/just-tavrn/tavrn-crypto.git#5b5929a573fd573ed1417132b26b8fe72c1027b5&path:pkg': {}
 
-  '@tavrn/e2ee@file:../tavrn-js/e2ee':
+  '@tavrn/e2ee@file:../../../../tavrn-js/.claude/worktrees/age-basics/e2ee':
     dependencies:
       '@tavrn/crypto': git+https://github.com/just-tavrn/tavrn-crypto.git#5b5929a573fd573ed1417132b26b8fe72c1027b5&path:pkg
-      '@tavrn/sdk': file:../tavrn-js/sdk
+      '@tavrn/sdk': file:../../../../tavrn-js/.claude/worktrees/age-basics/sdk
 
-  '@tavrn/sdk@file:../tavrn-js/sdk': {}
+  '@tavrn/sdk@file:../../../../tavrn-js/.claude/worktrees/age-basics/sdk': {}
 
   '@testing-library/dom@10.4.2':
     dependencies:
