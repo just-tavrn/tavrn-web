@@ -15,7 +15,7 @@ vi.mock("../calls/CallUi", () => ({ CallOverlay: () => null, openCallView: vi.fn
 vi.mock("./QualityBadge", () => ({ QualityBadge: () => <span data-testid="voice-quality">Hoch</span> }));
 vi.mock("../../stores/nodes", () => ({ apiFor: () => ({ rooms: { get: async () => ({ name: "Stammtisch", channels: [] }) }, conversations: { get: async () => ({}) } }) }));
 
-const { VoiceBar } = await import("./VoiceBar");
+const { VoiceBar, ControlButton } = await import("./VoiceBar");
 const { toggleDeafen, toggleMute } = await import("../index");
 const { useVoice, IDLE } = await import("../store");
 const { DEFAULT_SETTINGS, useVoiceSettings } = await import("../settings");
@@ -264,5 +264,23 @@ describe("VoiceBar layout", () => {
     expect(screen.getByTestId("voice-bar-status")).toHaveTextContent(/^Verbinde neu…$/);
     expect(screen.getByTestId("voice-bar-cancel")).toBeInTheDocument();
     expect(screen.getAllByRole("button").map((b) => b.getAttribute("data-testid"))).toEqual([null, "voice-bar-mute", "voice-bar-deafen", "voice-bar-leave", "voice-bar-cancel"]);
+  });
+});
+
+describe("an unavailable control", () => {
+  it("stays focusable, names the reason and does nothing (the native voice engine has no camera)", async () => {
+    const onClick = vi.fn();
+    render(
+      <ControlButton label="Kamera einschalten" unavailable="mit der nativen Sprach-Engine nicht verfügbar" onClick={onClick} testid="voice-camera">
+        x
+      </ControlButton>,
+    );
+    const button = screen.getByRole("button", { name: "Kamera einschalten: mit der nativen Sprach-Engine nicht verfügbar" });
+    expect(button).toHaveAttribute("aria-disabled", "true");
+    expect(button).not.toHaveAttribute("aria-pressed");
+    button.focus();
+    expect(button).toHaveFocus();
+    await userEvent.click(button);
+    expect(onClick).not.toHaveBeenCalled();
   });
 });

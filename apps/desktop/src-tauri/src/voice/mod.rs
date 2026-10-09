@@ -172,6 +172,8 @@ pub struct JoinReply {
 pub struct VoiceInfo {
     /// This build has the native engine.
     pub available: bool,
+    /// `linux`, `windows`, `macos`: the client uses the engine always on Linux, on Windows when the setting is on.
+    pub os: &'static str,
 }
 
 /// At most this many per-participant volumes per call (a call has far fewer participants).
@@ -217,7 +219,7 @@ const UNAVAILABLE: &str = "voice.native_unavailable";
 
 #[tauri::command]
 pub fn voice_info() -> VoiceInfo {
-    VoiceInfo { available: cfg!(feature = "native-voice") }
+    VoiceInfo { available: cfg!(feature = "native-voice"), os: std::env::consts::OS }
 }
 
 #[tauri::command]

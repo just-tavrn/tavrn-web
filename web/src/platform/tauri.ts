@@ -8,6 +8,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { externalUrl } from "./links";
 import { runAppSession, runAppUnlock } from "./appSession";
 import { shellMembers } from "./tauriShell";
+import { voiceMember } from "./tauriVoice";
 import type { AppUpdater, HotkeyEvent, Platform, PlatformHotkeys, ResolvedNode } from "./types";
 
 interface ShellConfig {
@@ -118,6 +119,8 @@ export async function createTauriPlatform(doc: Document = document): Promise<Pla
     },
     ...(info.updater ? { updater } : {}),
     hotkeys: createHotkeys(),
+    // The native voice engine (tauriVoice.ts): Linux always, Windows behind a setting (voice/engine.ts).
+    voice: voiceMember(),
     // OS keychain, native notifications, tray (tauriShell.ts).
     ...shellMembers(),
   };

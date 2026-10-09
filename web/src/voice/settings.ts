@@ -74,6 +74,11 @@ export interface VoiceSettings {
   hotkeys: Hotkeys;
   /** Keep the screen on while in a voice channel or call (Screen Wake Lock, `wakeLock.ts`; browsers: visible page only). */
   keepScreenOn: boolean;
+  /** Desktop app on Windows: voice through the shell's native engine (`engine.ts`; Linux always uses it). */
+  nativeEngine: boolean;
+  /** The native engine's microphone and speakers (its own device ids; empty = the system default). */
+  nativeInputDeviceId: string;
+  nativeOutputDeviceId: string;
 }
 
 export const DEFAULT_SETTINGS: VoiceSettings = {
@@ -106,6 +111,9 @@ export const DEFAULT_SETTINGS: VoiceSettings = {
   ringVolume: 60,
   hotkeys: { push_to_talk: "Backquote", priority: "", toggle_mute: "", toggle_deafen: "" },
   keepScreenOn: true,
+  nativeEngine: false,
+  nativeInputDeviceId: "",
+  nativeOutputDeviceId: "",
 };
 
 export const SETTINGS_KEY = "tavrn.voice.settings";
@@ -211,6 +219,9 @@ export function normalizeSettings(raw: unknown): VoiceSettings {
     ringVolume: num(r.ringVolume, d.ringVolume, 0, 100),
     hotkeys: hotkeys(r),
     keepScreenOn: bool(r.keepScreenOn, d.keepScreenOn),
+    nativeEngine: bool(r.nativeEngine, d.nativeEngine),
+    nativeInputDeviceId: str(r.nativeInputDeviceId, d.nativeInputDeviceId, 512),
+    nativeOutputDeviceId: str(r.nativeOutputDeviceId, d.nativeOutputDeviceId, 512),
   };
 }
 

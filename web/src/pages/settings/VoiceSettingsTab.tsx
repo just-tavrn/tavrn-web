@@ -18,6 +18,8 @@ import { platform } from "../../platform";
 import { MoreHotkeysSection } from "./MoreHotkeysSection";
 import { HotkeyRecorder } from "./HotkeyRecorder";
 import { outputSelectable, useMediaDevices } from "../../voice/devices";
+import { nativeSettingOffered, useVoiceEngine } from "../../voice/engine";
+import { devicePatch, deviceView, useNativeDevices, useNativeVoice } from "../../voice/nativeDevices";
 
 function DeviceSelect({ label, kind, devices, value, onChange, onFocus, testid }: { label: string; kind: MediaDeviceKind; devices: MediaDeviceInfo[]; value: string; onChange: (id: string) => void; onFocus?: () => void; testid: string }) {
   const t = useT();
@@ -340,13 +342,20 @@ export function VoiceSettingsTab() {
   const setStreamVolume = useVoiceSettings((s) => s.setStreamVolume);
   const autoOff = useVoice((s) => s.backgroundAutoOff);
   const [refresh, setRefresh] = useState(0);
+  // The native voice engine (desktop app on Linux, or the Windows setting) has devices of its own (`nativeDevices.ts`).
+  const native = useNativeVoice();
+  const engine = useVoiceEngine();
+  const nativeDevices = useNativeDevices(native, refresh);
+  const devices = deviceView(settings, native);
+  const chooseDevice = (patch: Partial<VoiceSettings>) => update(devicePatch(patch, native));
   // The desktop app's window holds the microphone permission: the device names come without a prompt.
   const media = useMediaDevices({ autoUnlock: platform().isDesktop, refresh });
-  const unlockDevices = media.needsPermission ? () => void media.unlock() : undefined;
+  const audioDevices = native ? nativeDevices : media.devices;
+  const unlockDevices = !native && media.needsPermission ? () => void media.unlock() : undefined;
   const [bgNote, setBgNote] = useState<string | null>(null);
   const node = useQuery({ queryKey: ["node", "origin"], queryFn: () => publicApi.node.info(), staleTime: 10 * 60_000 });
   const camera = node.data?.voice?.camera ?? { enabled: true, max_resolution: "720p", max_fps: 30 };
-  const sinkSupported = outputSelectable();
+  const sinkSupported = native || outputSelectable();
   const cameraResolutions = (["360p", "720p", "1080p"] as Resolution[]).filter((r) => limitResolution(r, camera.max_resolution) === r);
   const fpsChoices = [15, 24, 30, 60].filter((f) => f <= camera.max_fps);
 
@@ -363,16 +372,35 @@ export function VoiceSettingsTab() {
 
   return (
     <div className="space-y-4" data-testid="voice-settings">
+      {platform().isDesktop && engine.available && (
+        <Section title={t("voice.settings.engine")} description={t("voice.settings.engine_hint")}>
+          {nativeSettingOffered(engine) ? (
+            <Check label={t("voice.settings.native_engine")} hint={t("voice.settings.native_engine_hint")} checked={settings.nativeEngine} onChange={(v) => update({ nativeEngine: v })} testid="native-engine" />
+          ) : (
+            engine.os === "linux" && (
+              <p className="text-sm text-fg-1" data-testid="native-engine-linux">
+                {t("voice.settings.native_engine_linux")}
+              </p>
+            )
+          )}
+          {native && (
+            <p className="text-xs text-fg-2" data-testid="native-engine-limits">
+              {t("voice.settings.native_engine_limits")}
+            </p>
+          )}
+        </Section>
+      )}
+
       <Section title={t("voice.settings.devices")} description={t("voice.settings.devices_hint")}>
         <div className="grid gap-3 md:grid-cols-2">
-          <DeviceSelect label={t("voice.settings.microphone")} kind="audioinput" devices={media.devices} value={settings.inputDeviceId} onChange={(id) => update({ inputDeviceId: id })} onFocus={unlockDevices} testid="mic-select" />
+          <DeviceSelect label={t("voice.settings.microphone")} kind="audioinput" devices={audioDevices} value={devices.inputDeviceId} onChange={(id) => chooseDevice({ inputDeviceId: id })} onFocus={unlockDevices} testid="mic-select" />
           {sinkSupported ? (
-            <DeviceSelect label={t("voice.settings.speaker")} kind="audiooutput" devices={media.devices} value={settings.outputDeviceId} onChange={(id) => update({ outputDeviceId: id })} onFocus={unlockDevices} testid="speaker-select" />
+            <DeviceSelect label={t("voice.settings.speaker")} kind="audiooutput" devices={audioDevices} value={devices.outputDeviceId} onChange={(id) => chooseDevice({ outputDeviceId: id })} onFocus={unlockDevices} testid="speaker-select" />
           ) : (
             <p className="text-xs text-fg-2">{t("voice.settings.speaker_system")}</p>
           )}
         </div>
-        {media.needsPermission && (
+        {!native && media.needsPermission && (
           <div className="flex flex-wrap items-center gap-2 text-xs text-fg-2" data-testid="devices-hidden">
             <span className="min-w-0 flex-1 basis-48">{t("voice.settings.devices_hidden")}</span>
             <Button variant="ghost" onClick={() => void media.unlock()} data-testid="devices-unlock">
