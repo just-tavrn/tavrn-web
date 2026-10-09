@@ -13,12 +13,13 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { expect, test } from "@playwright/test";
 import { NODE, createRoomViaApi, inviteCode, nextTotpCode, registerViaApi, tokenOf } from "./helpers";
-import { closeOpened, hooks, inboundPeak, voiceUser } from "./voice-helpers";
+import { FAKE_MEDIA, closeOpened, hooks, inboundPeak, voiceUser } from "./voice-helpers";
 import { DesktopApp, until } from "./desktop-driver";
 
 const app = process.env.E2E_DESKTOP_APP;
 
 test.describe.configure({ mode: "serial" });
+test.use({ launchOptions: { args: FAKE_MEDIA }, permissions: ["microphone", "camera"] });
 test.skip(!app, "needs the built desktop app (E2E_DESKTOP_APP, just desktop-voice-e2e)");
 
 /** axe-core in the app's webview (WebKitGTK): the WCAG A/AA rules, serious and critical violations fail. */
@@ -26,12 +27,13 @@ const AXE = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.mi
 
 async function scanApp(desktop: DesktopApp, screen: string): Promise<void> {
   await new Promise((r) => setTimeout(r, 400));
+  // The app's CSP allows no inline script: the source runs as the WebDriver script itself (automation, not the page).
+  if ((await desktop.script<string>(`${AXE}\nreturn typeof window.axe;`)) !== "object") throw new Error("axe-core did not load in the app");
   const result = await desktop.wd<{ value?: unknown } | Array<{ id: string; impact: string | null; nodes: { target: string[] }[] }>>("POST", `/session/${desktop.session}/execute/async`, {
     script: `const done = arguments[arguments.length - 1];
-      if (!window.axe) { const s = document.createElement("script"); s.textContent = arguments[0]; document.head.appendChild(s); }
       window.axe.run(document, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22a", "wcag22aa"] } })
         .then((r) => done(r.violations.map((v) => ({ id: v.id, impact: v.impact, nodes: v.nodes.slice(0, 5).map((n) => ({ target: n.target })) }))), (e) => done({ error: String(e) }));`,
-    args: [AXE],
+    args: [],
   });
   if (!Array.isArray(result)) throw new Error(`axe in the app (${screen}): ${JSON.stringify(result)}`);
   const failing = result.filter((v) => v.impact === "serious" || v.impact === "critical");
@@ -64,7 +66,7 @@ function appProcesses(binary: string): { shell: number; webkit: number[] } {
       return [];
     }
   };
-  const shell = pids(`^${binary.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`)[0];
+  const shell = pids(`^${binary.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}( .*)?$`)[0];
   if (!shell) throw new Error(`no process of ${binary}`);
   const children = pids("WebKit(Web|Network)Process").filter((p) => readFileSync(`/proc/${p}/stat`, "utf8").split(") ")[1]!.split(" ")[1] === String(shell));
   return { shell, webkit: children };

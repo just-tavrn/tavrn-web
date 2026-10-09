@@ -448,6 +448,14 @@ picker accepts `http://127.0.0.1:8080`).
   media permissions; the security properties of `tauri.conf.json` and the capabilities, the `.deb`
   dependencies, the keychain with the in-memory mock store of keyring-core and its entry names, notification
   validation, the tray's states, icons and labels, the installer licence and the icons of the bundle).
+  The native voice engine: the gate and level meter (thresholds, hysteresis, hold, ramps, push-to-talk), the
+  microphone path (any device rate and channel count to 10 ms frames at 48 kHz, processing before the volume, the
+  push-to-talk release delay, nothing sent while muted), the mix (gains, deafen, start buffer, bounded delay,
+  speaking levels), the resampler, the key index and key ring, the validation of every command argument (keys and
+  tokens never in the debug output) and the events as the client reads them.
+  `just desktop-voice-test` (`cargo test --test voice_livekit -- --ignored`, needs `livekit-server`): two native
+  engines with the fake audio backend join one room end-to-end encrypted with a fixed key and hear each other, a third
+  engine with another key hears nothing, the voice keeps flowing after a key change, mute and deafen stop it.
   `cargo test -- --ignored os_keychain` writes, reads and deletes an entry in the real keychain of the machine;
   desktop.yml runs it with gnome-keyring in a D-Bus session. `xvfb-run -a cargo test -- --ignored x11_` drives the X11
   key listener with `xdotool` (a lone modifier, an unwatched key, key repeat).
@@ -498,6 +506,18 @@ picker accepts `http://127.0.0.1:8080`).
   placeholder instead). The app is a single instance: the test waits for a quit app to exit before starting it again
   and refuses to start while the same binary runs; an installed Tavrn that is running takes over the test's start too,
   so quit it first.
+
+- Voice between a browser and the app (`e2e/tests/desktop-voice.spec.ts`, `just desktop-voice-e2e`, under xvfb-run):
+  a Chromium participant with the fake microphone and the built Linux app with its native engine
+  (`TAVRN_DESKTOP_FAKE_AUDIO=1`: a tone in, a level meter out, for machines without sound hardware) join one channel
+  of the test node; Chromium sees the app's microphone track encrypted and decodes its tone, the app shows the
+  browser user speaking (decrypted and measured by the engine), axe (WCAG A/AA) scans the app's Settings → Voice and
+  the joined channel, and the app's CPU is measured talking and muted (`test-results/desktop-voice-cpu.json`).
+
+  ```sh
+  pnpm --filter @tavrn/web build && pnpm --filter @tavrn/desktop tauri build --no-bundle
+  E2E_NODE_BIN=/path/to/release/tavrn-node E2E_NODE_PORT=8600 E2E_WEB_PORT=5600 just desktop-voice-e2e
+  ```
 
 ## Builds and releases
 
