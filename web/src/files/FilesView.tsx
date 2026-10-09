@@ -5,12 +5,40 @@
  * or dragging onto a folder), delete, download, media in the viewer, the context menu, selection with
  * Shift/Ctrl, keyboard navigation, the storage meter and the permanent "not end-to-end encrypted" banner.
  * Phones get the list only and the row menu as their action sheet.
+ *
+ * End-to-end encrypted channels (FILES.md §8, `./e2ee`): the channel's MLS group like a text channel, entry records
+ * decrypted on this device (names, types, folder names), encrypted uploads with client-made thumbnails, downloads
+ * decrypted chunk by chunk, the folder filter instead of the node's search, the decrypted entries in the local search
+ * index, the lock state of the message list ("Your files" when nothing can be decrypted) and the SVG lock in the
+ * header.
  */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router";
 import type { Channel, FileEntry, FilesInfo, RoomDetail } from "@tavrn/sdk";
-import { useT } from "../i18n";
+import { decryptFileRecord, grantsHistory, parseHistoryPolicy, qualify, type FileRecord, type FileRecordResult } from "@tavrn/e2ee";
+import { historyPending, historyReceive } from "../crypto/history";
+import { useE2eeConversation } from "../hooks/useE2eeConversation";
+import { LockMark } from "../components/Badges";
+import { E2eeStatusLine, LockedNotice } from "../components/E2eeNotices";
+import { indexMessages, unindexMessages } from "../search/local";
+import { rememberFilesChannel } from "../search/sync";
+import { registerFilesChannel, useHistoryKeys } from "./registry";
+import { YourFilesDialog, YourFilesPanel } from "./YourFiles";
+import {
+  createFolderEncrypted,
+  decryptRecords,
+  displayEntries,
+  fileIndexEntries,
+  filesLockState,
+  loadEncrypted,
+  renameEncrypted,
+  thumbnailUrl,
+  uniqueName,
+  uploadEncrypted,
+  type EncryptedContext,
+} from "./e2ee";
+import { useLocale, useT } from "../i18n";
 import { useNode } from "../components/NodeScope";
 import { useNodeSockets, useRealtimeState } from "../hooks/useRealtime";
 import { ContextMenu, menuItem, normalizeMenu, separator, type MenuEntry } from "../components/ContextMenu";
@@ -94,6 +122,10 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
   const phone = usePhone();
   const [params, setParams] = useSearchParams();
   const folder = params.get("folder");
+  // End-to-end encrypted channel (FILES.md §8): records instead of names, the channel's MLS group.
+  const encrypted = channel.encrypted;
+  const q = qualify(domain, channel.id);
+  const [yourFiles, setYourFiles] = useState(false);
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");
   const [viewPref, setViewPref] = useState(readView);
@@ -116,16 +148,23 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
     return () => clearTimeout(id);
   }, [query]);
 
+  // Encrypted channels: the node cannot search, the box filters the decrypted folder (the global search covers the
+  // channel through the local index, SEARCH.md §3.6).
+  const nodeSearch = encrypted ? "" : search;
   const filesKey = ["files", domain, channel.id] as const;
   const listing = useInfiniteQuery({
-    queryKey: [...filesKey, search ? null : folder, search],
-    queryFn: ({ pageParam }) => api.files.list(room.id, channel.id, { parent: search ? null : folder, q: search || undefined, after: pageParam, limit: 100 }),
+    queryKey: [...filesKey, nodeSearch ? null : folder, nodeSearch],
+    queryFn: ({ pageParam }) => api.files.list(room.id, channel.id, { parent: nodeSearch ? null : folder, q: nodeSearch || undefined, after: pageParam, limit: 100 }),
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.next_after ?? undefined,
   });
   const info = useQuery({ queryKey: ["files-usage", domain, channel.id], queryFn: () => api.files.usage(room.id, channel.id) });
   const members = useRoomMembers(room.id);
   const names = useMemo(() => new Map((members.data ?? []).map((m) => [m.user.id, memberName(m)])), [members.data]);
+  const addresses = useMemo(() => new Map((members.data ?? []).map((m) => [m.user.id, m.user.address])), [members.data]);
+  const memberAddresses = useMemo(() => (members.data ? members.data.map((m) => m.user.address) : null), [members.data]);
+  const e2ee = useE2eeConversation({ conversationId: q, encrypted, canCreate: !!info.data?.can_upload, members: memberAddresses, mayManage: false });
+  useEffect(() => (encrypted ? registerFilesChannel(q, room.id) : undefined), [encrypted, q, room.id]);
   const refresh = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: filesKey });
     void queryClient.invalidateQueries({ queryKey: ["files-usage", domain, channel.id] });
@@ -135,14 +174,108 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
   }, [queryClient, domain, channel.id]);
   useFilesRealtime(domain, home, channel.id, refresh);
 
-  const entries = useMemo(() => sortEntries(listing.data?.pages.flatMap((p) => p.entries) ?? [], sort), [listing.data, sort]);
+  const raw = useMemo(() => listing.data?.pages.flatMap((p) => p.entries) ?? [], [listing.data]);
+  const rawPath = useMemo(() => (nodeSearch ? [] : (listing.data?.pages[0]?.path ?? [])), [listing.data, nodeSearch]);
+  // Records of the listed entries and of the folder chain, decrypted on this device (cached by the manager).
+  const [records, setRecords] = useState<Map<string, FileRecordResult>>(() => new Map());
+  // History for new members (ENCRYPTION.md §7b, FILES.md §8.7): take shared keys, share ours with members who wait.
+  const [keysArrived, setKeysArrived] = useState(0);
+  const historyKeys = useHistoryKeys((s) => s.version);
+  const historyPolicy = useMemo(() => (encrypted ? parseHistoryPolicy(channel.history_for_new_members) : null), [encrypted, channel.history_for_new_members]);
+  useEffect(() => {
+    if (!historyPolicy || !grantsHistory(historyPolicy) || e2ee.phase !== "ready") return;
+    void historyReceive(q).then((n) => n > 0 && setKeysArrived((k) => k + 1));
+    historyPending(q, historyPolicy);
+  }, [historyPolicy, e2ee.phase, q]);
+  useEffect(() => {
+    if (!encrypted || !e2ee.mls) return;
+    let stale = false;
+    const mls = e2ee.mls;
+    void (async () => {
+      const crumbEntries = rawPath.map((c) => ({ ...c, kind: "folder", size: 0 }));
+      const next = await decryptRecords(mls, q, raw);
+      for (const c of crumbEntries) next.set(c.id, await decryptFileRecord(mls, q, c).catch(() => ({ ok: false, reason: "invalid" }) as const));
+      if (!stale) setRecords(next);
+    })();
+    return () => {
+      stale = true;
+    };
+  }, [encrypted, e2ee.mls, e2ee.tick, q, raw, rawPath, keysArrived, historyKeys]);
+  const recordOf = useCallback((id: string): FileRecord | null => {
+    const r = records.get(id);
+    return r?.ok ? r.record : null;
+  }, [records]);
+  const lockState = encrypted ? filesLockState(e2ee.phase, records) : null;
+  // `t` is a new function on every render: the labels change with the language only.
+  const locale = useLocale((s) => s.locale);
+  const lockedLabels = useMemo(() => ({ file: t("files.locked_file"), folder: t("files.locked_folder") }), [locale]); // eslint-disable-line react-hooks/exhaustive-deps
+  const shownRaw = useMemo(() => (encrypted ? displayEntries(raw, records, lockedLabels) : raw), [encrypted, raw, records, lockedLabels]);
+  const entries = useMemo(() => {
+    const needle = encrypted ? search.toLowerCase() : "";
+    return sortEntries(needle ? shownRaw.filter((e) => e.name.toLowerCase().includes(needle)) : shownRaw, sort);
+  }, [shownRaw, sort, encrypted, search]);
   const order = useMemo(() => entries.map((e) => e.id), [entries]);
   const byId = useMemo(() => new Map(entries.map((e) => [e.id, e])), [entries]);
-  const path = search ? [] : (listing.data?.pages[0]?.path ?? []);
+  const rawById = useMemo(() => new Map(raw.map((e) => [e.id, e])), [raw]);
+  const path = useMemo(() => (encrypted ? rawPath.map((c) => ({ ...c, name: recordOf(c.id)?.name ?? lockedLabels.folder })) : rawPath), [encrypted, rawPath, recordOf, lockedLabels]);
+  // The local search index gets every entry this device decrypted (SEARCH.md §3.6), once per record.
+  const indexed = useRef(new Set<string>());
+  useEffect(() => {
+    if (!encrypted || nodeSearch) return;
+    const fresh = raw.filter((e) => records.get(e.id)?.ok && !indexed.current.has(`${e.id}|${e.record_at ?? ""}|${e.parent_id ?? ""}`));
+    if (!fresh.length) return;
+    const folderPath = path.map((c) => c.name).join("/");
+    const docs = fileIndexEntries(q, room.id, fresh, records, () => folderPath, (e) => (e.created_by ? addresses.get(e.created_by) : undefined) ?? e.record_author ?? "");
+    for (const e of fresh) indexed.current.add(`${e.id}|${e.record_at ?? ""}|${e.parent_id ?? ""}`);
+    void indexMessages(docs).then(() => rememberFilesChannel(q, room.id));
+  }, [encrypted, nodeSearch, raw, records, path, q, room.id, addresses]);
+  // A search result opens the folder with its entry selected (`?entry=`).
+  const wanted = params.get("entry");
+  const handled = useRef<string | null>(null);
+  useEffect(() => {
+    if (!wanted || !byId.has(wanted) || handled.current === wanted) return;
+    handled.current = wanted;
+    setSelection(selectWith(EMPTY_SELECTION, order, wanted));
+    setFocus(wanted);
+    listRef.current?.querySelector<HTMLElement>(`[data-entry="${wanted}"]`)?.scrollIntoView({ block: "nearest" });
+    const next = new URLSearchParams(params);
+    next.delete("entry");
+    setParams(next, { replace: true });
+    // Once per wanted entry.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wanted, byId]);
+  // A search result whose entry is gone: it leaves the local index (SEARCH.md §3.6).
+  useEffect(() => {
+    if (!encrypted || !wanted || !listing.isSuccess || listing.hasNextPage || byId.has(wanted)) return;
+    let stale = false;
+    void api.files.get(room.id, channel.id, wanted).catch((e: unknown) => {
+      if (stale || (e as { status?: number }).status !== 404) return;
+      void unindexMessages(q, [wanted]);
+      useToasts.getState().push({ kind: "info", title: t("files.entry_gone") });
+    });
+    return () => {
+      stale = true;
+    };
+    // `t` is left out on purpose (a new function per render).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [encrypted, wanted, listing.isSuccess, listing.hasNextPage, byId, api, room.id, channel.id, q]);
+  const decryptFolderNames = useCallback(
+    async (list: Parameters<typeof decryptRecords>[2]) => {
+      const out = new Map<string, string>();
+      if (!e2ee.mls) return out;
+      for (const [id, r] of await decryptRecords(e2ee.mls, q, list)) if (r.ok) out.set(id, r.record.name);
+      return out;
+    },
+    [e2ee.mls, q],
+  );
+  const ctx = (): EncryptedContext | null => (e2ee.mls ? { api, mls: e2ee.mls, conversation: q, roomId: room.id, channelId: channel.id } : null);
   useEffect(() => setSelection((s) => pruneSelection(s, order)), [order]);
   useEffect(() => {
+    if (params.get("entry")) return;
     setSelection(EMPTY_SELECTION);
     setFocus(null);
+    // Reset when the folder or the search changes, not when the wanted entry is consumed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [folder, search]);
 
   const i: FilesInfo | undefined = info.data;
@@ -160,11 +293,19 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
     setParams(next);
   };
 
-  const asView = (e: FileEntry): ViewAttachment => ({ id: e.id, name: e.name, mime: e.mime, size: e.size, encrypted: null, load: () => api.files.download(room.id, channel.id, e.id) });
+  /** The content of an entry: plain from the node, or decrypted chunk by chunk with the record's key. */
+  const loadEntry = (e: FileEntry): Promise<Blob> => {
+    if (!encrypted) return api.files.download(room.id, channel.id, e.id);
+    const record = recordOf(e.id);
+    const stored = rawById.get(e.id);
+    if (!record || !stored) return Promise.reject(new Error(t("files.cannot_decrypt")));
+    return loadEncrypted(api, room.id, channel.id, stored, record);
+  };
+  const asView = (e: FileEntry): ViewAttachment => ({ id: e.id, name: e.name, mime: e.mime, size: e.size, encrypted: null, load: () => loadEntry(e) });
 
   const download = async (e: FileEntry) => {
     try {
-      const blob = await api.files.download(room.id, channel.id, e.id);
+      const blob = await loadEntry(e);
       const url = URL.createObjectURL(blob.slice(0, blob.size, "application/octet-stream"));
       saveUrl(url, e.name);
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
@@ -174,6 +315,7 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
   };
 
   const open = (e: FileEntry) => {
+    if (encrypted && !recordOf(e.id)) return toastError(new Error(t("files.cannot_decrypt")));
     if (e.kind === "folder") return openFolder(e.id);
     const kind = mediaKind(e.mime, e.name);
     if (kind === "image" || kind === "video") {
@@ -185,8 +327,25 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
 
   // ---------------------------------------------------------------- Uploads
 
+  /** Names in a folder (encrypted channels: decrypted; the node cannot check uniqueness, FILES.md §8.5). */
+  const namesIn = async (target: string | null): Promise<string[]> => {
+    if (target === (search ? null : folder) && !search) return shownRaw.map((e) => e.name);
+    const all: FileEntry[] = [];
+    let after: string | null = null;
+    do {
+      const page = await api.files.list(room.id, channel.id, { parent: target, after, limit: 200 });
+      all.push(...page.entries);
+      after = page.next_after ?? null;
+    } while (after);
+    const res = e2ee.mls ? await decryptRecords(e2ee.mls, q, all) : new Map<string, FileRecordResult>();
+    return [...res.values()].flatMap((r) => (r.ok ? [r.record.name] : []));
+  };
+
   const uploadFiles = async (files: File[], target: string | null = search ? null : folder) => {
     if (!i) return;
+    const enc = encrypted ? ctx() : null;
+    if (encrypted && !enc) return toastError(new Error(t("files.e2ee_not_ready")));
+    const taken = enc ? await namesIn(target).catch(() => [] as string[]) : [];
     const items = files.map((f, n) => ({ key: `${Date.now()}-${n}-${f.name}`, name: f.name, size: f.size, file: f }));
     dispatchUploads({ type: "add", items: items.map(({ key, name, size }) => ({ key, name, size })) });
     for (const item of items) {
@@ -199,7 +358,12 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
       aborts.current.set(item.key, abort);
       dispatchUploads({ type: "start", key: item.key });
       try {
-        await api.files.upload(room.id, channel.id, item.file, item.name, { parentId: target, rename: true, signal: abort.signal, onProgress: (p) => dispatchUploads({ type: "progress", key: item.key, progress: p }) });
+        const onProgress = (p: number) => dispatchUploads({ type: "progress", key: item.key, progress: p });
+        if (enc) {
+          const name = uniqueName(item.name.normalize("NFC").trim(), taken);
+          taken.push(name);
+          await uploadEncrypted(enc, item.file, { parentId: target, name, signal: abort.signal, onProgress });
+        } else await api.files.upload(room.id, channel.id, item.file, item.name, { parentId: target, rename: true, signal: abort.signal, onProgress });
         dispatchUploads({ type: "done", key: item.key });
       } catch (err) {
         if (abort.signal.aborted) dispatchUploads({ type: "cancel", key: item.key });
@@ -362,27 +526,42 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
         <h1 className="min-w-0 truncate text-sm font-semibold" data-testid="channel-name">
           {channelName(channel)}
         </h1>
+        {encrypted && <LockMark size={18} title={t("files.e2ee_hint")} testId="encrypted-marker" />}
         {channel.topic && <span className="hidden truncate text-sm text-fg-2 md:inline">· {channel.topic}</span>}
         <span className="flex-1" />
         <input
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder={t("files.search")}
-          aria-label={t("files.search")}
+          placeholder={encrypted ? t("files.filter") : t("files.search")}
+          aria-label={encrypted ? t("files.filter") : t("files.search")}
           className="h-8 w-28 min-w-0 rounded-md border border-line-strong bg-bg-0 px-2 text-sm outline-none focus:border-accent sm:w-48"
           data-testid="files-search"
         />
       </header>
-      {/* Permanent: files channels are never end-to-end encrypted (PROTOCOL.md §8, FILES.md §1). */}
-      <div role="status" data-testid="files-banner" data-backend={i?.backend ?? "internal"} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-warn/30 bg-warn/10 px-4 py-2 text-sm text-warn">
-        <span aria-hidden="true">🔓</span>
-        <span>{t("files.banner")}</span>
-        {external && <span data-testid="files-banner-external">{t(i.encrypt_files ? "files.banner_external_encrypted" : "files.banner_external", { kind: t(`files.backend.${i.backend}`) })}</span>}
-      </div>
-      {/* History restore after a key reset (ENCRYPTION.md §7b): the requester's banner in encrypted files channels.
-          TODO(files-e2ee): show it with FilesView's "cannot decrypt" state once records are end-to-end encrypted. */}
-      {channel.encrypted && <HistoryRestoreBanner room={room} />}
+      {/* Permanent for unencrypted files channels (PROTOCOL.md §8, FILES.md §1). */}
+      {!encrypted && (
+        <div role="status" data-testid="files-banner" data-backend={i?.backend ?? "internal"} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-warn/30 bg-warn/10 px-4 py-2 text-sm text-warn">
+          <LockMark open size={16} />
+          <span>{t("files.banner")}</span>
+          {external && <span data-testid="files-banner-external">{t(i.encrypt_files ? "files.banner_external_encrypted" : "files.banner_external", { kind: t(`files.backend.${i.backend}`) })}</span>}
+        </div>
+      )}
+      {encrypted && external && (
+        <p className="border-b border-line px-4 py-1.5 text-xs text-fg-2" data-testid="files-banner-external">
+          {t("files.banner_external_e2ee", { kind: t(`files.backend.${i.backend}`) })}
+        </p>
+      )}
+      {encrypted && lockState === "locked" && <LockedNotice />}
+      {encrypted && (lockState === "joining" || lockState === "no_group" || lockState === "error") && <E2eeStatusLine kind={lockState} detail={e2ee.error ?? undefined} />}
+      {encrypted && lockState === "missing_keys" && (
+        <p role="status" className="border-b border-line bg-bg-1 px-4 py-2 text-sm text-fg-1" data-testid="files-missing-keys">
+          {t("files.missing_keys")}
+        </p>
+      )}
+      {/* History restore after a key reset (ENCRYPTION.md §7b): the requester's banner, next to the states above when
+          entries cannot be decrypted. */}
+      {encrypted && <HistoryRestoreBanner room={room} />}
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-3 py-2">
         <nav aria-label={t("files.breadcrumbs")} className="flex min-w-0 flex-1 flex-wrap items-center gap-1 text-sm" data-testid="files-breadcrumbs">
           {search ? (
@@ -444,6 +623,11 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
             >
               {viewPref === "list" ? "▦" : "☰"}
             </button>
+          )}
+          {encrypted && (
+            <Button variant="ghost" className="min-h-8 px-2 text-xs" onClick={() => setYourFiles(true)} data-testid="files-your-files">
+              {t("files.your_files")}
+            </Button>
           )}
           {canUpload && (
             <>
@@ -518,9 +702,10 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
         data-testid="files-list"
         data-view={view}
       >
+        {encrypted && lockState === "locked" && <YourFilesPanel roomId={room.id} channelId={channel.id} onChanged={refresh} />}
         {listing.isPending && <p className="p-4 text-sm text-fg-2">{t("common.loading")}</p>}
         {listing.isError && <p className="p-4 text-sm text-danger">{describeError(listing.error)}</p>}
-        {listing.isSuccess && entries.length === 0 && (
+        {listing.isSuccess && entries.length === 0 && lockState !== "locked" && (
           <div className="flex flex-col items-center gap-2 px-4 py-16 text-center text-sm text-fg-2" data-testid="files-empty">
             <span aria-hidden="true" className="text-4xl">
               {search ? "🔍" : "📂"}
@@ -528,7 +713,7 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
             <p>{search ? t("files.no_results") : canUpload ? t("files.empty_upload") : t("files.empty")}</p>
           </div>
         )}
-        {entries.length > 0 && view === "list" && (
+        {entries.length > 0 && lockState !== "locked" && view === "list" && (
           <div className="min-w-0">
             <div className="hidden grid-cols-[minmax(0,1fr)_7rem_9rem_9rem_2.5rem] gap-2 px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-fg-2 md:grid" aria-hidden="true">
               <span>{t("common.name")}</span>
@@ -555,12 +740,14 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
                 onOpen={() => open(e)}
                 onMenu={(el, point) => openMenu(e, el, point)}
                 load={asView(e)}
+                thumb={encrypted ? (recordOf(e.id) ? { record: recordOf(e.id)!, roomId: room.id, channelId: channel.id } : null) : undefined}
+                locked={encrypted && !recordOf(e.id)}
                 menuLabel={t("files.menu", { name: e.name })}
               />
             ))}
           </div>
         )}
-        {entries.length > 0 && view === "grid" && (
+        {entries.length > 0 && lockState !== "locked" && view === "grid" && (
           <div data-grid className="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-2">
             {entries.map((e) => (
               <EntryRow
@@ -580,6 +767,8 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
                 onOpen={() => open(e)}
                 onMenu={(el, point) => openMenu(e, el, point)}
                 load={asView(e)}
+                thumb={encrypted ? (recordOf(e.id) ? { record: recordOf(e.id)!, roomId: room.id, channelId: channel.id } : null) : undefined}
+                locked={encrypted && !recordOf(e.id)}
                 menuLabel={t("files.menu", { name: e.name })}
               />
             ))}
@@ -629,7 +818,12 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
           action={t("common.create")}
           onClose={() => setDialog(null)}
           onSubmit={async (name) => {
-            await api.files.createFolder(room.id, channel.id, name, search ? null : folder);
+            const enc = encrypted ? ctx() : null;
+            if (encrypted && !enc) throw new Error(t("files.e2ee_not_ready"));
+            if (enc) {
+              if (shownRaw.some((e) => e.name.toLowerCase() === name.normalize("NFC").trim().toLowerCase())) throw new Error(t("files.name_taken", { name }));
+              await createFolderEncrypted(enc, name, search ? null : folder);
+            } else await api.files.createFolder(room.id, channel.id, name, search ? null : folder);
             refresh();
           }}
         />
@@ -642,12 +836,29 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
           action={t("common.save")}
           onClose={() => setDialog(null)}
           onSubmit={async (name) => {
-            await api.files.update(room.id, channel.id, dialog.entry.id, { name });
+            const enc = encrypted ? ctx() : null;
+            const record = recordOf(dialog.entry.id);
+            if (encrypted && (!enc || !record)) throw new Error(t("files.e2ee_not_ready"));
+            if (enc && record) {
+              const clean = name.normalize("NFC").trim().toLowerCase();
+              if (shownRaw.some((e) => e.id !== dialog.entry.id && e.name.toLowerCase() === clean)) throw new Error(t("files.name_taken", { name }));
+              await renameEncrypted(enc, dialog.entry, record, name);
+            } else await api.files.update(room.id, channel.id, dialog.entry.id, { name });
             refresh();
           }}
         />
       )}
-      {dialog?.kind === "move" && <MoveDialog open roomId={room.id} channelId={channel.id} moving={dialog.entries} onClose={() => setDialog(null)} onMove={(target) => moveEntries(dialog.entries, target)} />}
+      {dialog?.kind === "move" && (
+        <MoveDialog
+          open
+          roomId={room.id}
+          channelId={channel.id}
+          moving={dialog.entries}
+          onClose={() => setDialog(null)}
+          onMove={(target) => moveEntries(dialog.entries, target)}
+          decryptNames={encrypted && e2ee.mls ? decryptFolderNames : undefined}
+        />
+      )}
       {dialog?.kind === "delete" && (
         <ConfirmDialog
           open
@@ -669,6 +880,8 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
               files += r.files;
               folders += r.folders;
             }
+            // Deleted entries leave the local search index (SEARCH.md §3.6).
+            if (encrypted) void unindexMessages(q, dialog.entries.map((e) => e.id));
             setDialog(null);
             refresh();
             useToasts.getState().push({ kind: "info", title: t("files.deleted", { files, folders }) });
@@ -680,6 +893,7 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
           <AudioPlayer a={asView(dialog.entry)} />
         </Dialog>
       )}
+      {yourFiles && <YourFilesDialog roomId={room.id} channelId={channel.id} onClose={() => setYourFiles(false)} onChanged={refresh} />}
       {viewer && (
         <Suspense fallback={null}>
           <MediaViewer items={viewer.items} start={viewer.start} onClose={() => setViewer(null)} />
@@ -702,6 +916,10 @@ function EntryRow(p: {
   onOpen: () => void;
   onMenu: (el: Element | null, point?: { x: number; y: number }) => void;
   load: ViewAttachment;
+  /** Encrypted channels: the record for the client-made thumbnail (null: unreadable). */
+  thumb?: { record: FileRecord; roomId: string; channelId: string } | null;
+  /** Encrypted channels: the record cannot be decrypted on this device. */
+  locked?: boolean;
   menuLabel: string;
 }) {
   const t = useT();
@@ -718,6 +936,7 @@ function EntryRow(p: {
     "data-testid": "file-row",
     "data-name": e.name,
     "data-kind": e.kind,
+    "data-locked": p.locked ? "true" : undefined,
     draggable: p.draggable,
     onDragStart: (ev: DragEvent) => {
       ev.dataTransfer.setData(DRAG_TYPE, JSON.stringify(p.drag));
@@ -763,7 +982,7 @@ function EntryRow(p: {
   if (p.grid) {
     return (
       <div {...common} className={`group relative flex cursor-default select-none flex-col items-center gap-1 rounded-md p-2 text-center text-sm ${ring}`}>
-        <Thumb entry={e} view={p.load} />
+        {p.thumb !== undefined ? <EncryptedThumb entry={e} thumb={p.thumb} /> : <Thumb entry={e} view={p.load} />}
         <span className="w-full cursor-pointer truncate text-xs hover:underline" title={e.name} onClick={(ev) => { ev.stopPropagation(); p.onOpen(); }} data-testid="file-open">
           {e.name}
         </span>
@@ -776,7 +995,7 @@ function EntryRow(p: {
     <div {...common} className={`grid min-h-11 cursor-default select-none grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 text-sm md:grid-cols-[minmax(0,1fr)_7rem_9rem_9rem_2.5rem] ${ring}`}>
       <span className="flex min-w-0 items-center gap-2">
         <span aria-hidden="true" className="w-5 shrink-0 text-center">
-          {entryIcon(e)}
+          {p.locked ? <LockMark size={14} /> : entryIcon(e)}
         </span>
         <span className="min-w-0 cursor-pointer truncate text-left hover:underline" title={e.name} onClick={(ev) => { ev.stopPropagation(); p.onOpen(); }} data-testid="file-open">
           {e.name}
@@ -802,6 +1021,28 @@ function Thumb({ entry, view }: { entry: FileEntry; view: ViewAttachment }) {
   return (
     <span aria-hidden="true" className="flex h-20 w-full items-center justify-center text-4xl">
       {entryIcon(entry)}
+    </span>
+  );
+}
+
+/** Grid tile picture of an encrypted channel: the client-made thumbnail, decrypted once per session, else the icon. */
+function EncryptedThumb({ entry, thumb }: { entry: FileEntry; thumb: { record: FileRecord; roomId: string; channelId: string } | null }) {
+  const { api } = useNode();
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!thumb?.record.thumbnail) return;
+    let stale = false;
+    void thumbnailUrl(api, thumb.roomId, thumb.channelId, entry, thumb.record).then((u) => !stale && setUrl(u));
+    return () => {
+      stale = true;
+    };
+    // The record's key and the entry id identify the thumbnail.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api, thumb?.record.key, entry.id]);
+  if (url) return <img src={url} alt="" className="h-20 w-full rounded object-cover" draggable={false} data-testid="file-thumbnail" />;
+  return (
+    <span aria-hidden="true" className="flex h-20 w-full items-center justify-center text-4xl">
+      {thumb ? entryIcon(entry) : <LockMark size={28} />}
     </span>
   );
 }

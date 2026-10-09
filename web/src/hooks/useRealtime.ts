@@ -30,6 +30,7 @@ import { isAttentive } from "./useMarkRead";
 import { loadRoomDetails, notifyMessage } from "../lib/notify";
 import { historyPending, historyReceive } from "../crypto/history";
 import { historyDecidedEvent, historyRequestEvent } from "../history/restore";
+import { registerFilesChannel, useHistoryKeys } from "../files/registry";
 import { parseHistoryPolicy } from "@tavrn/e2ee";
 import { alertText, reportCreated, type ModerationAlert, type ReportCreated } from "../moderation/realtime";
 import { rememberDeleted } from "../moderation/deletedIds";
@@ -54,6 +55,15 @@ function channelHistoryPolicy(queryClient: QueryClient, conversationId: string) 
     if (channel) return channel.encrypted ? parseHistoryPolicy(channel.history_for_new_members) : null;
   }
   return null;
+}
+
+/** Registers an encrypted files channel found in the cached rooms for the history key checks; returns the cleanup. */
+function registerKnownFilesChannel(queryClient: QueryClient, qualified: string, conversationId: string): () => void {
+  for (const [, room] of queryClient.getQueriesData<RoomDetail>({ queryKey: ["room"] })) {
+    const channel = room?.channels?.find((c) => c.id === conversationId);
+    if (channel?.kind === "files" && channel.encrypted) return registerFilesChannel(qualified, room!.id);
+  }
+  return () => undefined;
 }
 
 /** `identity.changed` of another user (of any node): re-check the key on the user's home node (notice, §3.3). */
@@ -90,7 +100,16 @@ export function mlsHandlers(socket: TavrnSocket, queryClient: QueryClient, domai
     }),
     socket.on<{ conversation_id: string }>("history.keys_available", (d) => {
       const c = q(d.conversation_id);
-      if (c) void historyReceive(c).then(() => queryClient.invalidateQueries({ queryKey: ["history-pending"] }));
+      if (!c) return;
+      // Encrypted files channels check shared keys against entry records (FILES.md §8.7): they need the room id.
+      const done = registerKnownFilesChannel(queryClient, c, d.conversation_id);
+      void historyReceive(c)
+        .then(() => {
+          void queryClient.invalidateQueries({ queryKey: ["history-pending"] });
+          // Entry records of files channels may open now (FILES.md §8.7).
+          useHistoryKeys.getState().bump();
+        })
+        .finally(done);
     }),
     // A user's devices changed (FEDERATION.md §5.2): forget the cached list, the next lookup asks the home node.
     socket.on<{ user: string }>("devices.changed", (d) => void getMls().then((m) => m?.forgetDevices(d.user)).catch(() => undefined)),

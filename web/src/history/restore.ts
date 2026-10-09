@@ -10,6 +10,7 @@ import type { HistoryRequest, HistoryRequestChannel, TavrnApi } from "@tavrn/sdk
 import { t as translate } from "../i18n";
 import { roomPath } from "../components/NodeScope";
 import { historyRestore, historyRestorePlan } from "../crypto/history";
+import { filesChannelRoom, registerFilesChannel } from "../files/registry";
 import { useNotifications } from "../stores/notifications";
 import { useToasts } from "../stores/toasts";
 import { useCapabilities } from "../moderation/hooks";
@@ -64,11 +65,26 @@ export interface ChannelPlan {
   unknown: boolean;
 }
 
+/**
+ * Runs `fn` on the channel's qualified id; a files channel is known with its room meanwhile, so that the key checks
+ * read its entry records (FILES.md §8.7) exactly as they read a text channel's messages.
+ */
+async function withFilesRoom<T>(domain: string, roomId: string, c: HistoryRequestChannel, fn: (q: string) => Promise<T>): Promise<T> {
+  const q = qualify(domain, c.channel_id);
+  // An open files view registered it already (and keeps it registered).
+  const release = c.kind === "files" && !filesChannelRoom(q) ? registerFilesChannel(q, roomId) : () => undefined;
+  try {
+    return await fn(q);
+  } finally {
+    release();
+  }
+}
+
 /** What this device would share for each channel of a request (shown before approving). */
 export async function planRestore(domain: string, request: HistoryRequest): Promise<ChannelPlan[]> {
   const out: ChannelPlan[] = [];
   for (const c of request.channels) {
-    const plan = await historyRestorePlan(qualify(domain, c.channel_id), restoreChannel(c));
+    const plan = await withFilesRoom(domain, request.room_id, c, (q) => historyRestorePlan(q, restoreChannel(c)));
     out.push({ channelId: c.channel_id, epochs: plan.epochs.length, first: plan.epochs[0] ?? null, last: plan.epochs[plan.epochs.length - 1] ?? null, missing: plan.missing, unknown: plan.unknown });
   }
   return out;
@@ -91,7 +107,7 @@ export async function shareRestore(domain: string, request: HistoryRequest): Pro
   const result: RestoreResult = { channels: request.channels.length, shared: 0, partial: 0, skipped: 0 };
   for (const c of request.channels) {
     try {
-      const r = await historyRestore(qualify(domain, c.channel_id), request.user, restoreChannel(c));
+      const r = await withFilesRoom(domain, request.room_id, c, (q) => historyRestore(q, request.user, restoreChannel(c)));
       if (r.skipped) result.skipped++;
       else {
         result.shared++;

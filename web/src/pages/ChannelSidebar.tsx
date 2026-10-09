@@ -221,6 +221,8 @@ function CreateChannelDialog({ roomId, open, onClose, categories }: { roomId: st
   const t = useT();
   const [name, setName] = useState("");
   const [kind, setKind] = useState("text");
+  // Files channels: end-to-end encrypted by default, fixed after creation (FILES.md §1).
+  const [filesEncrypted, setFilesEncrypted] = useState(true);
   const [categoryId, setCategoryId] = useState<string>(categories[0]?.id ?? "");
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
@@ -233,7 +235,7 @@ function CreateChannelDialog({ roomId, open, onClose, categories }: { roomId: st
           e.preventDefault();
           setError(null);
           try {
-            await api.channels.create(roomId, { kind, name, category_id: categoryId || null });
+            await api.channels.create(roomId, { kind, name, category_id: categoryId || null, ...(kind === "files" ? { encrypted: filesEncrypted } : {}) });
             await queryClient.invalidateQueries({ queryKey: ["room", roomId] });
             setName("");
             onClose();
@@ -254,6 +256,15 @@ function CreateChannelDialog({ roomId, open, onClose, categories }: { roomId: st
         <Field label={t("common.name")}>
           <Input name="channel_name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={100} />
         </Field>
+        {kind === "files" && (
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" className="mt-0.5 h-4 w-4 accent-accent" checked={filesEncrypted} onChange={(e) => setFilesEncrypted(e.target.checked)} data-testid="files-encrypted-toggle" />
+            <span>
+              {t("files.create_encrypted")}
+              <span className="block text-xs text-fg-2">{t("files.create_encrypted_hint")}</span>
+            </span>
+          </label>
+        )}
         {categories.length > 0 && (
           <Field label={t("channel.category")}>
             <select name="category" value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="min-h-10 w-full rounded-md border border-line-strong bg-bg-0 px-3 text-sm">

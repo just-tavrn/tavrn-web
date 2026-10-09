@@ -5,7 +5,9 @@
  * `history.keys_available`, own Adds) and by opening a channel. Keys go straight from the share into the
  * MLS client state (the encrypted key store and the history backup); nothing here keeps or logs them.
  */
-import { HistorySync, type HistoryPolicy, type MlsManager, type RestoreChannel, type RestorePlan } from "@tavrn/e2ee";
+import { HistorySync, recordSamples, type HistoryPolicy, type MlsManager, type RestoreChannel, type RestorePlan } from "@tavrn/e2ee";
+import { ulidTime, type Message, type TavrnApi } from "@tavrn/sdk";
+import { filesChannelRoom } from "../files/registry";
 import { getMls } from "../stores/mls";
 import { useAuth } from "../stores/auth";
 import { apiFor, homeKeys } from "../stores/nodes";
@@ -34,6 +36,25 @@ export function identityResetAt(address: string, now = Date.now()): Promise<numb
   return value;
 }
 
+/**
+ * The entry records of a files channel as message-shaped key samples, oldest first (FILES.md §8.7): by `epoch`, or
+ * from a time on (`after` as a ULID floor or `since` in milliseconds). `before` cannot be answered from records (the
+ * listing only ascends): it throws, so that a reset-aware share without `min_epoch` sends nothing rather than too much.
+ */
+export async function fileRecordSamples(
+  a: TavrnApi,
+  room: string,
+  c: string,
+  q: { limit?: number; after?: string; before?: string; epoch?: number; since?: number },
+): Promise<Message[]> {
+  if (q.before !== undefined) throw new Error("records cannot be listed backwards");
+  const fromMs = q.since ?? (q.after !== undefined ? ulidTime(q.after) : null);
+  if (q.epoch === undefined && fromMs === null) return [];
+  const since = fromMs !== null && fromMs > 0 ? new Date(fromMs).toISOString() : undefined;
+  const { entries } = await a.files.records(room, c, { epoch: q.epoch, since, limit: q.limit });
+  return recordSamples(entries) as unknown as Message[];
+}
+
 async function historySync(): Promise<HistorySync | null> {
   const mls = await getMls();
   const { user, deviceId } = useAuth.getState();
@@ -51,13 +72,26 @@ async function historySync(): Promise<HistorySync | null> {
         shares: (c) => a.history.shares(c),
         ack: (c, id) => a.history.ack(c, id),
         pending: (c) => a.history.pending(c),
-        messages: (c, q) => a.conversations.messages(c, q),
+        // Files channels have no messages: entry records stand in for them (FILES.md §8.7), for the key checks and the
+        // reset-aware windows alike (ENCRYPTION.md §7b).
+        messages: async (c, q) => {
+          const room = filesChannelRoom(`${domain}/${c}`);
+          return room ? fileRecordSamples(a, room, c, q) : a.conversations.messages(c, q);
+        },
       };
     },
     isOnline: (address) => address === user.address || !!usePresence.getState().users[address],
     resetAt: identityResetAt,
-    // TODO(files-e2ee): files channels with a window start: the oldest record epoch from `GET records?since=` (FILES.md
-    // §8.7) once FilesView decrypts records; until then such channels are restored only for a window without start.
+    // Files channels with a window start: the oldest record epoch since then (`GET records?since=`, FILES.md §8.7).
+    firstEpoch: async (q, kind, sinceMs) => {
+      const slash = q.indexOf("/");
+      const domain = q.slice(0, slash);
+      const c = q.slice(slash + 1);
+      const room = filesChannelRoom(q);
+      if (kind !== "files" || slash < 0 || !room) throw new Error("unknown channel");
+      const samples = await fileRecordSamples(apiFor(domain), room, c, { after: undefined, since: sinceMs, limit: 20 });
+      return samples.length ? Math.min(...samples.map((m) => m.epoch as number)) : null;
+    },
     // Only the kind of event: never ids, payloads or keys.
     onLog: (event) => console.warn(`tavrn: history ${event.replace("_", " ")}`),
   });

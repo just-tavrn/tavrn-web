@@ -120,7 +120,7 @@ test.describe("Accessibility (axe, WCAG 2.2 AA)", () => {
     const code = await inviteCode(request, owner.token, room.id);
     await request.post(`${NODE}/api/v1/invites/${code}/join`, { headers: auth(member.token), data: {} });
     const channel = room.channels.find((c: { kind: string }) => c.kind === "text") as { id: string };
-    const files = await (await request.post(`${NODE}/api/v1/rooms/${room.id}/channels`, { headers: auth(owner.token), data: { kind: "files", name: "ablage" } })).json();
+    const files = await (await request.post(`${NODE}/api/v1/rooms/${room.id}/channels`, { headers: auth(owner.token), data: { kind: "files", name: "ablage", encrypted: false } })).json();
     const first = await postMessage(request, owner.token, channel.id, "Willkommen in **Lesbar**, schaut auf https://example.org");
     await postMessage(request, member.token, channel.id, "Danke!", { reply_to_id: first.id });
     await postMessage(request, owner.token, channel.id, "```rust\nfn main() { println!(\"hi\"); }\n```");

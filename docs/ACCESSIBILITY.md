@@ -23,7 +23,9 @@ member list, a modal dialog (create channel), the search panel with results, a f
 room settings tabs, all user settings tabs, Discover, Home; friends with an incoming request, a direct message,
 the whiteboard, a joined voice channel (fake microphone and camera) muted and unmuted, the voice bar and account
 bar; the room header menu, the account menu (also a node admin's) and the settings navigation with the admin link;
-every admin tab.
+every admin tab. `e2e/tests/files-e2ee.spec.ts` scans an end-to-end encrypted files channel with entries, the "Your
+files" panel of a locked device (checkboxes named by kind, size and date; the delete buttons name their entry) and the
+channel deletion dialog with its file facts (the keep option is a labelled checkbox).
 
 Run it alone (with `E2E_NODE_BIN` or `E2E_NODE_IMAGE` set, README.md "End-to-end tests"): `cd e2e && npx playwright test tests/a11y.spec.ts --project chromium --project mobile-android
 --project tablet-chromium --workers=2`. `A11Y_REPORT_DIR=<dir>` writes every finding as JSON,
