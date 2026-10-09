@@ -485,6 +485,10 @@ window is not in front (a click opens the conversation; Settings → Notificatio
 and a tray icon shows the voice state (in a channel, speaking, muted, deafened) with mute, deafen, leave voice,
 show/hide and quit in its menu; closing the window keeps the app in the tray (Settings → App).
 
+**Downloads** in the app open the system's save dialog; the app writes the file and says where it went ("Saved to
+Downloads", with **Show in folder**). Every download of the client goes through one function, `saveFile` in
+`src/platform/saveFile.ts` (in the browser: the browser's download as before); DESKTOP.md "Downloads".
+
 **Hotkeys:** push-to-talk (Settings → Voice & video → Input mode), the priority speaker and, under **More hotkeys**,
 mute and deafen have one binding each: a single key, a modifier alone (left Ctrl, right Shift, …) or a combination,
 taken by a recorder (Escape cancels, Backspace removes the binding) that shows the key names of the platform (Super,

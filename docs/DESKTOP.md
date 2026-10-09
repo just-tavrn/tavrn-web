@@ -27,6 +27,7 @@ Tauri CLI) and the Rust crate `tavrn-desktop` in `apps/desktop/src-tauri` with a
 | The sign-in window (`connect`) shows only the chosen node's `/connect?session=…` page (`open_connect` checks origin, path and parameters) and follows https pages from there (identity providers redirect), plain http only on this computer; it never loads the bundled client or `tauri:`, `file:`, `data:`, `javascript:` or `blob:` URLs, and new windows go to the system browser. The node's web client there runs as a plain web client: only the main window counts as the app (`platform/tauriDetect.ts`). | `src-tauri/src/guard.rs`, `src/lib.rs` |
 | The microphone and the camera are granted to the main window without a prompt of the webview (it shows only the bundled client); screen capture and every other permission keep the webview's default. | `src-tauri/src/media.rs` |
 | The node URL is validated twice: in the client and again in the shell before it is stored. | `web/src/platform/nodeUrl.ts`, `src-tauri/src/node_url.rs` |
+| Downloads are written by the shell: the webview names only a file name to suggest and a save's id, never a path; the user picks the target in the native save dialog, the shell writes a temporary file next to it and renames it into place. The dialog, opener and fs plugins have no permission in the webview. | `src-tauri/src/download.rs` |
 
 Unit tests in `src-tauri/src/conf_tests.rs` keep these properties of `tauri.conf.json` and the capability from eroding.
 
@@ -50,6 +51,7 @@ runs Tauri code. Everything that imports Tauri APIs lives under `platform/tauri*
 | `keystore` | — | the OS keychain for the key of the local key store (commands `keychain_get`, `keychain_set`, `keychain_delete`, `keychain_status`) |
 | `notifications` | — | native notifications and their clicks (`notify`, `shell_events`) |
 | `tray` | — | the tray icon with the voice state, close to tray, quit (`tray_set`, `tray_status`, `set_close_to_tray`, `quit_app`) |
+| `saveFile(file)` | the browser's download (an anchor with `download` on an object URL) | the native save dialog, the shell writes the file ("Downloads"; `save_file_begin`, `save_file_chunk`, `save_file_end`, `save_file_abort`, `save_file_reveal`) |
 
 The helpers `apiBase()`, `originUrl()`, `originWsUrl()`, `webOrigin()`, `originHost()` and `allowsInsecureNodes()`
 of `platform/index.ts` are the single place the API client (`lib/api.ts`), the WebSocket, node discovery
@@ -142,6 +144,29 @@ events on desktop and would replace the webview's `Notification` with an IPC bri
 | Linux | the desktop's notification server (D-Bus) | focuses the window and opens the conversation (the server's default action; GNOME, KDE and most others support it) |
 | Windows | a toast under the app's id (the installer's Start menu entry; a development build shows the default id) | focuses the window and opens the conversation while the toast is on screen; a toast clicked later in the notification center starts the app, and the running one comes to the front (to be confirmed by hand on Windows) |
 | macOS | (later) | — |
+
+## Downloads
+
+The webview of the app (WebView2, WebKitGTK) does nothing with the blob downloads a browser handles, so every download
+of the client (attachments, files channels, the data export, recovery keys and codes, whiteboard images) goes through
+one entry point, `saveFile({ name, data, mime })` in `web/src/platform/saveFile.ts`. In the browser it is the anchor
+download of before; in the app the shell shows the native save dialog and writes the file (`src-tauri/src/download.rs`):
+
+| Command | What it does |
+|---|---|
+| `save_file_begin(name, size)` | shows the save dialog (the name, cleaned of path parts and characters Windows refuses, is its suggestion; a filter for its extension) and answers `{ status: "ready", id }`, or `{ status: "cancelled" }` when the user closes it; at most 8 saves at once |
+| `save_file_chunk` | appends a raw IPC body (header `x-tavrn-save: <id>`) to a temporary file next to the target; the client streams the blob in 4 MiB slices, so a large decrypted file never sits twice in memory; more bytes than `size` are refused |
+| `save_file_end(id)` | checks that `size` bytes arrived, flushes the file and renames it into place; answers the path and the name of its folder |
+| `save_file_abort(id)` | removes the temporary file (the client calls it when reading or writing fails) |
+| `save_file_reveal(id)` | shows a finished save in the file manager (by its id: the webview never names a path) |
+
+After a save the client shows "Saved to <folder>" with a **Show in folder** button (in the live region of the toasts);
+a cancelled dialog shows nothing. Previews and playback keep their object URLs. A download the webview still starts by
+itself (an `<a download>` or a navigation to a file) is caught too: the webview writes it into the app's cache, then
+the same save dialog asks where it goes (cancelled: the file is removed).
+
+Test hook: when the app starts with `TAVRN_DESKTOP_TEST_SAVE_DIR=<dir>`, no dialog is shown and every save goes into
+that directory (never overwriting: `name (1).ext`). It exists for the WebDriver smoke test only; never set it otherwise.
 
 ## Tray and close to tray
 
@@ -384,7 +409,9 @@ picker accepts `http://127.0.0.1:8080`).
   the key filter and the listener's lifecycle (only while signed in with bindings, holds released when it stops); the
   media permissions; the security properties of `tauri.conf.json` and the capabilities, the `.deb`
   dependencies, the keychain with the in-memory mock store of keyring-core and its entry names, notification
-  validation, the tray's states, icons and labels, the installer licence and the icons of the bundle).
+  validation, the tray's states, icons and labels, the installer licence and the icons of the bundle; downloads: the
+  chunk writer (temporary file, rename, size limit, abort and cleanup), the registry of running saves (no second begin
+  with the same id, at most 8), file names from the webview that cannot leave the chosen directory).
   `cargo test -- --ignored os_keychain` writes, reads and deletes an entry in the real keychain of the machine;
   desktop.yml runs it with gnome-keyring in a D-Bus session. `xvfb-run -a cargo test -- --ignored x11_` drives the X11
   key listener with `xdotool` (a lone modifier, an unwatched key, key repeat).
@@ -393,7 +420,8 @@ picker accepts `http://127.0.0.1:8080`).
   does not offer, the key store with the keychain (migration, fallback, lock on close, sign-out), the routing of
   notifications, the notification settings of the app, the tray wiring; the hotkeys (the settings and their migration,
   conflict check, recorder with lone modifiers, matching the window's keys, merging them with the shell's, the bridge to
-  the shell and its listener switch, the voice session's reaction to presses and releases).
+  the shell and its listener switch, the voice session's reaction to presses and releases); downloads (`saveFile` in the
+  browser and through the shell: 4 MiB chunks, cancel, abort on errors, the "saved to" toast).
 - `node --test` of the update manifest script and of the installer licence (`pnpm --filter @tavrn/desktop test`).
 - Playwright (`e2e/tests/desktop.spec.ts`, simulated shell): the node picker with address first and the advanced URL,
   Settings → App, the sign-in on the node's page with the page in a second browser context (as a browser tab, which
@@ -409,7 +437,9 @@ picker accepts `http://127.0.0.1:8080`).
   native command from that page is refused), the main window takes over the session (the page signed its own session
   out: the account has no extra device), sets up its recovery key (the
   encryption core runs in the webview) and sends a message in an end-to-end encrypted channel, which the node stores
-  as ciphertext only. The node needs the web client bundle (a node built with `web/dist`). That first start runs
+  as ciphertext only; a file attached there is downloaded with its button, decrypted in the app and written by the
+  shell (the test hook `TAVRN_DESKTOP_TEST_SAVE_DIR` instead of the dialog), byte for byte, with the "saved to" toast.
+  The node needs the web client bundle (a node built with `web/dist`). That first start runs
   without a keychain (`TAVRN_DESKTOP_KEYCHAIN=unavailable`): the key stays in IndexedDB and Settings → App warns; the
   test checks the tray state the client reported (`tray_status`), gives the shell a state, and shows a notification.
   The app then starts again with the keyring crates' in-memory mock store (`TAVRN_DESKTOP_KEYCHAIN=memory`, because
