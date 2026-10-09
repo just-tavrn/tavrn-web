@@ -21,7 +21,7 @@ export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       {...props}
-      className={`min-h-10 w-full rounded-md border border-line bg-bg-0 px-3 text-sm text-fg-0 outline-none placeholder:text-fg-2 focus:border-accent disabled:cursor-not-allowed disabled:opacity-50 read-only:cursor-not-allowed read-only:bg-bg-3 read-only:text-fg-2 ${props.className ?? ""}`}
+      className={`min-h-10 w-full rounded-md border border-line-strong bg-bg-0 px-3 text-sm text-fg-0 outline-none placeholder:text-fg-2 focus:border-accent disabled:cursor-not-allowed disabled:opacity-50 read-only:cursor-not-allowed read-only:bg-bg-3 read-only:text-fg-2 ${props.className ?? ""}`}
     />
   );
 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { readFileSync } from "node:fs";
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { openNavIfMobile, registerViaUi } from "./helpers";
+import { openNavIfMobile, registerViaUi, openRoomInvite } from "./helpers";
 
 // Whiteboard (design note 4.10, tavrn-protocol/WHITEBOARD.md): two users in an encrypted channel. The board is
 // state-synced through encrypted ephemeral events; the owner's device is the source of truth.
@@ -26,8 +26,7 @@ async function createRoomInUi(page: Page, name: string): Promise<string> {
 }
 
 async function inviteLink(page: Page): Promise<string> {
-  await openNavIfMobile(page);
-  await page.getByRole("button", { name: "Einladen" }).click();
+  await openRoomInvite(page);
   await page.getByRole("button", { name: "Link erzeugen" }).click();
   const link = await page.getByTestId("invite-link").inputValue();
   await page.getByRole("button", { name: "Fertig" }).click();

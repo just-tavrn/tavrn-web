@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useState, type ReactNode } from "react";
-import { PERMISSION_LABELS, Permission, hasPermission, type PermissionName } from "@tavrn/sdk";
+import { useId, useState, type ReactNode } from "react";
+import { CHANNEL_SCOPED_GROUPS, PERMISSION_LABELS, Permission, hasPermission, type PermissionName } from "@tavrn/sdk";
 import { useT } from "../../i18n";
 import { describeError } from "../../stores/toasts";
 import { Button, Dialog, ErrorText, Input } from "../../components/ui";
@@ -16,11 +16,11 @@ export function Section({ title, children, description }: { title: string; descr
 }
 
 export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...props} className={`min-h-10 w-full rounded-md border border-line bg-bg-0 px-3 text-sm ${props.className ?? ""}`} />;
+  return <select {...props} className={`min-h-10 w-full rounded-md border border-line-strong bg-bg-0 px-3 text-sm ${props.className ?? ""}`} />;
 }
 
 export function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea {...props} className={`w-full rounded-md border border-line bg-bg-0 px-3 py-2 text-sm text-fg-0 outline-none placeholder:text-fg-2 focus:border-accent ${props.className ?? ""}`} />;
+  return <textarea {...props} className={`w-full rounded-md border border-line-strong bg-bg-0 px-3 py-2 text-sm text-fg-0 outline-none placeholder:text-fg-2 focus:border-accent ${props.className ?? ""}`} />;
 }
 
 const GROUPS = [...new Set(PERMISSION_LABELS.map((p) => p.group))];
@@ -93,10 +93,19 @@ export function overrideStateOf(allow: bigint, deny: bigint, bit: bigint): Overr
   return "neutral";
 }
 
-/** Three-way choice per permission (allow / neutral / deny) for overrides; `restricted` bits cannot be allowed (`@everyone`). */
-export function OverrideTriState({ allow, deny, onChange, restricted = 0n }: { allow: bigint; deny: bigint; onChange: (allow: bigint, deny: bigint) => void; restricted?: bigint }) {
+/** What a neutral override leaves a bit at, and which layer decides it (`inheritedOverrideValue` of the SDK). */
+export type Inherited = { allowed: boolean; source: "role" | "category" };
+
+/**
+ * Three-way choice per permission (allow / neutral / deny) for overrides, listing only the channel-scoped bits in the
+ * groups of `CHANNEL_SCOPED_GROUPS` (layered overrides, tavrn-protocol permissions.md). `restricted` bits cannot be
+ * allowed (`@everyone`). `inherited` gives the value a neutral bit keeps from the layers below; it is shown in grey
+ * under the label and is the accessible description of the bit's radio group and buttons.
+ */
+export function OverrideTriState({ allow, deny, onChange, restricted = 0n, inherited }: { allow: bigint; deny: bigint; onChange: (allow: bigint, deny: bigint) => void; restricted?: bigint; inherited?: (bit: bigint) => Inherited }) {
   const t = useT();
-  const { label, group } = usePermissionLabel();
+  const id = useId();
+  const { label } = usePermissionLabel();
   const set = (name: PermissionName, state: OverrideState) => {
     const bit = Permission[name];
     let a = allow & ~bit;
@@ -107,17 +116,27 @@ export function OverrideTriState({ allow, deny, onChange, restricted = 0n }: { a
   };
   return (
     <div className="space-y-3" data-testid="override-tristate">
-      {GROUPS.map((g) => (
-        <fieldset key={g}>
-          <legend className="text-[11px] font-semibold uppercase tracking-wide text-fg-2">{group(g)}</legend>
+      {CHANNEL_SCOPED_GROUPS.map((g) => (
+        <fieldset key={g.group} data-group={g.group}>
+          <legend className="text-[11px] font-semibold uppercase tracking-wide text-fg-2">{t(`channels.perm_group.${g.group}`)}</legend>
           <ul className="mt-1 divide-y divide-line">
-            {PERMISSION_LABELS.filter((p) => p.group === g).map((p) => {
-              const state = overrideStateOf(allow, deny, Permission[p.name]);
-              const locked = (restricted & Permission[p.name]) !== 0n;
+            {g.permissions.map((name) => {
+              const bit = Permission[name];
+              const state = overrideStateOf(allow, deny, bit);
+              const locked = (restricted & bit) !== 0n;
+              const inh = inherited?.(bit);
+              const descId = `${id}-${name}-inherited`;
               return (
-                <li key={p.name} className="flex min-h-10 items-center justify-between gap-2 text-sm">
-                  <span>{label(p.name)}</span>
-                  <div role="radiogroup" aria-label={label(p.name)} className="flex rounded-md border border-line">
+                <li key={name} className="flex min-h-10 items-center justify-between gap-2 py-1 text-sm" data-permission={name}>
+                  <span className="min-w-0">
+                    {label(name)}
+                    {inh && (
+                      <span id={descId} className="block text-xs text-fg-2" data-testid={`inherited-${name}`} data-allowed={inh.allowed} data-source={inh.source}>
+                        {t(`override.inherited.${inh.allowed ? "allowed" : "denied"}_${inh.source}`)}
+                      </span>
+                    )}
+                  </span>
+                  <div role="radiogroup" aria-label={label(name)} aria-describedby={inh ? descId : undefined} className="flex shrink-0 rounded-md border border-line-strong">
                     {(["deny", "neutral", "allow"] as OverrideState[]).map((s) => (
                       <button
                         key={s}
@@ -126,8 +145,9 @@ export function OverrideTriState({ allow, deny, onChange, restricted = 0n }: { a
                         disabled={locked && s === "allow" && state !== "allow"}
                         title={locked && s === "allow" ? t("members.everyone_restricted_hint") : undefined}
                         aria-checked={state === s}
-                        aria-label={`${label(p.name)}: ${t(`override.${s}`)}`}
-                        onClick={() => set(p.name, s)}
+                        aria-label={`${label(name)}: ${t(`override.${s}`)}`}
+                        aria-describedby={inh ? descId : undefined}
+                        onClick={() => set(name, s)}
                         className={`min-h-9 min-w-9 px-2 text-sm disabled:cursor-not-allowed disabled:opacity-30 ${state === s ? (s === "allow" ? "bg-ok/15 text-ok" : s === "deny" ? "bg-danger/15 text-danger" : "bg-bg-3 text-fg-0") : "text-fg-2 hover:bg-bg-3/60"}`}
                       >
                         {s === "allow" ? "✓" : s === "deny" ? "✗" : "–"}

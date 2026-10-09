@@ -19,6 +19,8 @@ import { RoomApplicationsTab } from "./RoomApplicationsTab";
 import { AutomodTab } from "../../moderation/AutomodTab";
 import { ReportsInbox } from "../../moderation/ReportsInbox";
 import { badgeText, useCapabilities, useOpenRoomReports } from "../../moderation/hooks";
+import { HistoryRequestsTab } from "./HistoryRequestsTab";
+import { RESTORE_CAPABILITY, useRestoreRequests } from "../../history/restore";
 
 /** `anyOf`: one of these bits is enough; `cap`: only on nodes announcing the capability (MODERATION.md). */
 const TABS: readonly { id: string; needs: bigint; label?: string; anyOf?: bigint[]; cap?: string }[] = [
@@ -35,6 +37,7 @@ const TABS: readonly { id: string; needs: bigint; label?: string; anyOf?: bigint
   { id: "soundboard", needs: Permission.MANAGE_EMOJIS },
   { id: "reports", needs: Permission.MODERATE_MEMBERS, label: "reports.tab", cap: "reports.v1" },
   { id: "automod", needs: 0n, anyOf: [Permission.MANAGE_ROOM, Permission.MODERATE_MEMBERS], label: "automod.tab", cap: "automod.v1" },
+  { id: "history", needs: Permission.RESTORE_HISTORY, label: "history_restore.tab", cap: RESTORE_CAPABILITY },
   { id: "moderation", needs: Permission.PURGE },
   { id: "audit", needs: Permission.VIEW_AUDIT_LOG },
 ];
@@ -48,6 +51,8 @@ export function RoomSettingsPage() {
   const caps = useCapabilities(home ? null : domain);
   const moderates = hasPermission(parsePermissions(room.data?.my_permissions), Permission.MODERATE_MEMBERS);
   const openReports = badgeText(useOpenRoomReports(api, home ? null : domain, roomId, moderates && !!caps?.includes("reports.v1")));
+  const restores = hasPermission(parsePermissions(room.data?.my_permissions), Permission.RESTORE_HISTORY);
+  const openRestores = badgeText(useRestoreRequests(api, home ? null : domain, roomId, restores).data?.items.length);
   if (room.isPending) return <p className="p-4 text-sm text-fg-2">{t("room.loading")}</p>;
   if (room.isError) return <p className="p-4 text-sm text-danger">{describeError(room.error)}</p>;
   const perms = parsePermissions(room.data.my_permissions);
@@ -74,6 +79,11 @@ export function RoomSettingsPage() {
                   {openReports}
                 </span>
               )}
+              {x.id === "history" && openRestores && (
+                <span className="ml-2 rounded-full bg-danger-solid px-1.5 text-[11px] font-semibold text-white" data-testid="history-tab-badge">
+                  {openRestores}
+                </span>
+              )}
             </NavLink>
           ))}
         </nav>
@@ -91,6 +101,7 @@ export function RoomSettingsPage() {
           {tab === "soundboard" && <SoundboardTab room={room.data} />}
           {tab === "reports" && <ReportsInbox client={api} mode={{ kind: "room", roomId: room.data.id, node: home ? null : domain }} meId={me?.id} />}
           {tab === "automod" && <AutomodTab room={room.data} />}
+          {tab === "history" && <HistoryRequestsTab room={room.data} />}
           {tab === "moderation" && <ModerationTab room={room.data} />}
           {tab === "audit" && <AuditTab room={room.data} />}
         </div>

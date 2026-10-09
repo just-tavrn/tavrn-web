@@ -246,9 +246,19 @@ While it waits the app offers "Open the page again", **"Open in the browser inst
 browser; the app keeps polling) and "Cancel" instead of its own form. On Linux the sign-in window cannot use passkeys (WebKitGTK has no
 WebAuthn) and the app says so: passkeys work through the browser there (the key in the fragment goes along, so the
 passkey unlocks the app from the browser too); on Windows (WebView2) they work in the window.
-Nodes without `connect.app` keep password and TOTP in the app; their passkeys, SSO and captcha need a browser. The page
-in the sign-in window keeps its own sign-in on the node's origin (like a browser tab), so the next handoff only asks for
-the confirmation.
+Nodes without `connect.app` keep password and TOTP in the app; their passkeys, SSO and captcha need a browser.
+
+**The page's own session after the handoff.** Signing in on the node's page creates a session (a device) of the page
+itself. In the sign-in window the page signs that session out once the handoff is done, so no orphan device of the page
+stays in the account's device list: after an unlock at once (nothing is exchanged), after a sign-in as soon as the app
+has exchanged the code (the node accepts a code only while the page's device still has a session, so the page watches
+its own device list until the app's device appears or its last login moves; once the code expired after 120 seconds it
+signs out anyway). The app continues at once and closes the window a few seconds later
+(`APP_CLOSE_GRACE_MS` in `web/src/platform/appSession.ts`), after the page signed out. The page knows the sign-in window
+by the Tauri window label `connect` (`inSignInWindow`, `web/src/platform/tauriDetect.ts`). The same page in a browser
+tab (the Linux fallback, "Open in the browser instead") keeps its session, as a browser user expects. The window's
+storage is persistent, not private: the node's page keeps its local settings (such as the language) between
+handoffs; only the session goes, so every handoff asks for a sign-in on the page.
 
 ## Hotkeys
 
@@ -386,7 +396,8 @@ picker accepts `http://127.0.0.1:8080`).
   the shell and its listener switch, the voice session's reaction to presses and releases).
 - `node --test` of the update manifest script and of the installer licence (`pnpm --filter @tavrn/desktop test`).
 - Playwright (`e2e/tests/desktop.spec.ts`, simulated shell): the node picker with address first and the advanced URL,
-  Settings → App, the sign-in on the node's page with the page in a second browser context, "Unlock with a passkey" and
+  Settings → App, the sign-in on the node's page with the page in a second browser context (as a browser tab, which
+  keeps its session, and as the sign-in window, which signs itself out: no extra device), "Unlock with a passkey" and
   a passkey sign-in through the page that unlocks the app; `desktop-connect.spec.ts`: the node's `/connect` page in
   session mode with password and TOTP, registration with a passkey, a passkey-only sign-in and single sign-on,
   `method=passkey` with the sealed unlock material (opened with libsodium in the test) and an unlock session; `desktop-shell.spec.ts`: the keychain fallback and migration, native notifications and
@@ -395,7 +406,8 @@ picker accepts `http://127.0.0.1:8080`).
   starts, shows the node picker, the shell's resolver reports a domain without a node, the advanced URL refuses
   `http://evil`, the address of an account (registered over the API with TOTP) on a development node finds the node
   and its login page; the account signs in on the node's page in the sign-in window (password and code there, a
-  native command from that page is refused), the main window takes over the session, sets up its recovery key (the
+  native command from that page is refused), the main window takes over the session (the page signed its own session
+  out: the account has no extra device), sets up its recovery key (the
   encryption core runs in the webview) and sends a message in an end-to-end encrypted channel, which the node stores
   as ciphertext only. The node needs the web client bundle (a node built with `web/dist`). That first start runs
   without a keychain (`TAVRN_DESKTOP_KEYCHAIN=unavailable`): the key stays in IndexedDB and Settings → App warns; the

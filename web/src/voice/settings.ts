@@ -72,6 +72,8 @@ export interface VoiceSettings {
   ringVolume: number;
   /** Push-to-talk, priority speaker (held), mute and deafen (toggles): one binding each, window and system-wide. */
   hotkeys: Hotkeys;
+  /** Keep the screen on while in a voice channel or call (Screen Wake Lock, `wakeLock.ts`; browsers: visible page only). */
+  keepScreenOn: boolean;
 }
 
 export const DEFAULT_SETTINGS: VoiceSettings = {
@@ -103,6 +105,7 @@ export const DEFAULT_SETTINGS: VoiceSettings = {
   cuesDisabled: [],
   ringVolume: 60,
   hotkeys: { push_to_talk: "Backquote", priority: "", toggle_mute: "", toggle_deafen: "" },
+  keepScreenOn: true,
 };
 
 export const SETTINGS_KEY = "tavrn.voice.settings";
@@ -207,6 +210,7 @@ export function normalizeSettings(raw: unknown): VoiceSettings {
     cuesDisabled: Array.isArray(r.cuesDisabled) ? CUE_NAMES.filter((c) => (r.cuesDisabled as unknown[]).includes(c)) : [],
     ringVolume: num(r.ringVolume, d.ringVolume, 0, 100),
     hotkeys: hotkeys(r),
+    keepScreenOn: bool(r.keepScreenOn, d.keepScreenOn),
   };
 }
 

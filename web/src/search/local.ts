@@ -14,6 +14,10 @@ import { SearchIndex, contentAttachments, searchKeysFromStore, type Coverage, ty
 import type { Message } from "@tavrn/sdk";
 import { cryptoStore } from "../crypto/store";
 import { IdbSearchBackend } from "./idbBackend";
+import { HistoryArchive } from "../history/archive";
+
+/** Database of the archived full history (#4, `history/archive.ts`); the same backend kind as the index. */
+const HISTORY_DB = "tavrn-history";
 
 export interface LocalSearchState {
   /** Coverage per qualified conversation id (what the index holds, the complete flag, the sync state). */
@@ -23,11 +27,13 @@ export interface LocalSearchState {
   syncing: Record<string, boolean>;
   /** The index is open (unlocked store). */
   ready: boolean;
+  /** Bytes of the archived full history per qualified conversation id (#4). */
+  history: Record<string, number>;
 }
 
-export const useLocalSearch = create<LocalSearchState>(() => ({ coverage: {}, stats: null, syncing: {}, ready: false }));
+export const useLocalSearch = create<LocalSearchState>(() => ({ coverage: {}, stats: null, syncing: {}, ready: false, history: {} }));
 
-let current: { account: string; index: Promise<SearchIndex | null>; backend: IdbSearchBackend } | null = null;
+let current: { account: string; index: Promise<SearchIndex | null>; backend: IdbSearchBackend; archive: Promise<HistoryArchive | null> } | null = null;
 
 /**
  * Development builds only: a shorter window (days) for the end-to-end tests of the budget
@@ -53,11 +59,17 @@ export function localIndex(): Promise<SearchIndex | null> {
   if (current?.account === account) return current.index;
   closeLocalIndex();
   const backend = new IdbSearchBackend(account);
+  const keys = searchKeysFromStore(cryptoStore);
+  keys.catch(() => undefined);
+  // The archived full history uses the index's keys: it locks and unlocks with it.
+  const archive = keys.then(
+    (k) => new HistoryArchive(new IdbSearchBackend(account, HISTORY_DB), k),
+    () => null,
+  );
   const index = (async () => {
     try {
-      const keys = await searchKeysFromStore(cryptoStore);
       const windowDays = devWindowDays();
-      const idx = await SearchIndex.open(backend, keys, windowDays ? { windowDays } : {});
+      const idx = await SearchIndex.open(backend, await keys, windowDays ? { windowDays } : {});
       useLocalSearch.setState({ ready: true });
       void refreshLocalState(idx);
       return idx;
@@ -65,17 +77,24 @@ export function localIndex(): Promise<SearchIndex | null> {
       return null;
     }
   })();
-  current = { account, index, backend };
+  current = { account, index, backend, archive };
   return index;
+}
+
+/** The archived full history of the signed-in account, or null while the store is locked. */
+export async function localArchive(): Promise<HistoryArchive | null> {
+  if (!(await localIndex())) return null;
+  return current?.archive ?? null;
 }
 
 /** Forgets the keys of the open index (sign-out, lock). */
 export function closeLocalIndex(): void {
   if (!current) return;
-  const { index } = current;
+  const { index, archive } = current;
   current = null;
   void index.then((i) => i?.lock()).catch(() => undefined);
-  useLocalSearch.setState({ coverage: {}, stats: null, syncing: {}, ready: false });
+  void archive.then((a) => a?.lock()).catch(() => undefined);
+  useLocalSearch.setState({ coverage: {}, stats: null, syncing: {}, ready: false, history: {} });
 }
 
 /** Deletes the index of `account` from this device (sign-out wipes it with the other local data). */
@@ -83,6 +102,8 @@ export async function wipeLocalIndex(account: string): Promise<void> {
   const backend = current?.account === account ? current.backend : new IdbSearchBackend(account);
   closeLocalIndex();
   await backend.clear().catch(() => undefined);
+  // The archived full history goes with it (#4).
+  await new IdbSearchBackend(account, HISTORY_DB).clear().catch(() => undefined);
 }
 
 /** Reloads coverage and stats into {@link useLocalSearch}. */
@@ -91,7 +112,10 @@ export async function refreshLocalState(index?: SearchIndex | null): Promise<voi
   if (!idx) return;
   try {
     const [coverage, stats] = await Promise.all([idx.coverage(), idx.stats()]);
-    useLocalSearch.setState({ coverage: Object.fromEntries(coverage.map((c) => [c.conversation, c])), stats });
+    const archive = await current?.archive;
+    const history: Record<string, number> = {};
+    for (const c of (await archive?.conversations()) ?? []) history[c] = await archive!.usage(c);
+    useLocalSearch.setState({ coverage: Object.fromEntries(coverage.map((c) => [c.conversation, c])), stats, history });
   } catch {
     /* locked meanwhile */
   }
@@ -164,6 +188,7 @@ export async function indexMessages(entries: IndexedMessage[]): Promise<void> {
 export async function unindexMessages(conversation: string, ids: string[]): Promise<void> {
   const idx = await localIndex();
   await idx?.remove(conversation, ids).catch(() => undefined);
+  await (await current?.archive)?.remove(conversation, ids).catch(() => undefined);
 }
 
 /** Drops a conversation (left, deleted, purged); the sync fills it again when it is opened. */
@@ -171,6 +196,7 @@ export async function unindexConversation(conversation: string): Promise<void> {
   const idx = await localIndex();
   if (!idx) return;
   await idx.removeConversation(conversation).catch(() => undefined);
+  await (await current?.archive)?.removeConversation(conversation).catch(() => undefined);
   await refreshLocalState(idx);
 }
 
@@ -182,8 +208,23 @@ export async function setKeepFullHistory(conversation: string, on: boolean): Pro
   const idx = await localIndex();
   if (!idx) throw new Error("locked");
   await idx.setComplete(conversation, on);
-  if (on) await idx.setSync(conversation, { done: false });
-  else await idx.enforceBudget();
+  if (on) {
+    // From the newest message back again (the cursor keeps only the room): what the window sync paged before is
+    // decrypted once more for the archive of the full history (#4).
+    const [cov] = await idx.coverage(conversation);
+    let room: unknown;
+    try {
+      room = (JSON.parse(cov?.sync.cursor ?? "{}") as { r?: unknown }).r;
+    } catch {
+      room = undefined;
+    }
+    await idx.setSync(conversation, { done: false, reachedStart: false, cursor: JSON.stringify(typeof room === "string" ? { b: null, f: null, r: room } : { b: null, f: null }) });
+  }
+  else {
+    await idx.enforceBudget();
+    // Turned off: the archived messages of the conversation are deleted (#4).
+    await (await current?.archive)?.removeConversation(conversation);
+  }
   await refreshLocalState(idx);
 }
 
@@ -192,6 +233,8 @@ export async function clearLocalIndex(): Promise<void> {
   const idx = await localIndex();
   if (!idx) return;
   await idx.clear();
+  // Every "full history" choice is gone with the index: so is the archived history.
+  await (await current?.archive)?.clear();
   await refreshLocalState(idx);
 }
 

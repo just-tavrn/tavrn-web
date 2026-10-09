@@ -169,7 +169,7 @@ export function VerifyDialog({ address, onClose }: { address: string; onClose: (
                 {t("safety.own_code")}
               </label>
               <div className="flex gap-2">
-                <input id="verify-own-code" readOnly value={ready.payload} onFocus={(e) => e.currentTarget.select()} className="min-h-10 w-full min-w-0 rounded-md border border-line bg-bg-3 px-3 font-mono text-xs text-fg-1 outline-none" data-testid="verify-payload" />
+                <input id="verify-own-code" readOnly value={ready.payload} onFocus={(e) => e.currentTarget.select()} className="min-h-10 w-full min-w-0 rounded-md border border-line-strong bg-bg-3 px-3 font-mono text-xs text-fg-1 outline-none" data-testid="verify-payload" />
                 <Button variant="ghost" onClick={() => void navigator.clipboard?.writeText(ready.payload)}>
                   {t("common.copy")}
                 </Button>
@@ -194,7 +194,7 @@ export function VerifyDialog({ address, onClose }: { address: string; onClose: (
                   setResult(null);
                 }}
                 placeholder="tavrn:verify?v=1&…"
-                className="w-full rounded-md border border-line bg-bg-0 px-3 py-2 font-mono text-xs text-fg-0 outline-none focus:border-accent"
+                className="w-full rounded-md border border-line-strong bg-bg-0 px-3 py-2 font-mono text-xs text-fg-0 outline-none focus:border-accent"
               />
               <Button type="submit" variant="ghost" disabled={!pasted.trim()}>
                 {t("safety.compare")}

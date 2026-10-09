@@ -13,7 +13,7 @@ export interface RoomPermissionData {
   no_bots?: boolean;
   roles: Pick<Role, "id" | "permissions" | "is_everyone">[];
   overrides: Pick<PermissionOverride, "target_type" | "target_id" | "subject_type" | "subject_id" | "allow" | "deny">[];
-  channels: (Pick<Channel, "id" | "category_id" | "sync_with_category" | "no_bots_effective"> & { kind?: string })[];
+  channels: (Pick<Channel, "id" | "category_id" | "no_bots_effective"> & { kind?: string })[];
 }
 
 export function memberChannelPermissions(
@@ -34,7 +34,6 @@ export function memberChannelPermissions(
     member_roles: room.roles.filter((r) => !r.is_everyone && member.roles.includes(r.id)).map((r) => [r.id, r.permissions] as [string, string]),
     category_overrides: room.overrides.filter((o) => o.target_type === "category" && o.target_id === channel.category_id).map(toEval),
     channel_overrides: room.overrides.filter((o) => o.target_type === "channel" && o.target_id === channel.id).map(toEval),
-    sync_with_category: channel.sync_with_category && !!channel.category_id,
     timed_out: !!member.timeout_until && Date.parse(member.timeout_until) > now,
     kind: member.user.kind,
     no_bots: channel.no_bots_effective ?? room.no_bots ?? false,

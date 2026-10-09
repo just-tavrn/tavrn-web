@@ -434,6 +434,7 @@ type Shown =
   | { kind: "system"; text: string }
   | { kind: "member_event"; event: "join" | "leave"; user: string; name: string }
   | { kind: "key_event"; user: string; name: string; rotated: boolean }
+  | { kind: "restore_event"; approved: boolean; user: string; name: string; by: string }
   | { kind: "bot_event"; added: boolean; bot: string; name: string; channel: string; by: string | null; reason: string }
   | { kind: "call_event"; outcome: "missed" | "ended"; by: string; name: string; duration: number }
   | { kind: "cipher" }
@@ -476,6 +477,13 @@ function contentOf(m: Message, d: Decrypted | undefined, signature: PlainStatus 
     const user = typeof raw.user === "string" ? raw.user : m.author;
     const name = typeof raw.display_name === "string" && raw.display_name ? raw.display_name : (user.split("@")[0] ?? user);
     return { kind: "key_event", user, name, rotated: raw.rotated === true };
+  }
+  // A member with `restore_history` decided a request to restore the history after a key reset (ENCRYPTION.md §7b).
+  if (c?.type === "system.history_restored" || c?.type === "system.history_restore_denied") {
+    const raw = c as AnyContent & { user?: unknown; display_name?: unknown; by?: unknown };
+    const user = typeof raw.user === "string" ? raw.user : m.author;
+    const name = typeof raw.display_name === "string" && raw.display_name ? raw.display_name : (user.split("@")[0] ?? user);
+    return { kind: "restore_event", approved: c.type === "system.history_restored", user, name, by: typeof raw.by === "string" ? raw.by : "?" };
   }
   // The security log names every bot that joins or leaves an encrypted channel's group (design note 4.7).
   if (c?.type === "system.bot_added" || c?.type === "system.bot_removed") {
@@ -626,7 +634,7 @@ const MessageRow = memo(function MessageRow({ m, grouped, own, bot, author, repl
   // Context menu (design note 4.11): right-click, long press or the ⋯ button.
   const menu = useContextMenu();
   // The welcome channel's entries cannot be deleted by anyone (MODERATION.md §3); no system line can be reported.
-  const welcomeEntry = c.kind === "member_event" || c.kind === "key_event" || c.kind === "bot_event";
+  const welcomeEntry = c.kind === "member_event" || c.kind === "key_event" || c.kind === "bot_event" || c.kind === "restore_event";
   const systemLine = welcomeEntry || c.kind === "call_event" || c.kind === "system";
   const startEdit = () => {
     if (c.kind !== "text") return;
@@ -683,6 +691,26 @@ const MessageRow = memo(function MessageRow({ m, grouped, own, bot, author, repl
         <MessageAvatar address={c.user} name={c.name} small />
         <span className="min-w-0 flex-1">
           {t(c.rotated ? "members.key_rotated" : "members.key_changed", { name: c.name })} <KeyCheck address={c.user} at={m.created_at} />
+          <time className="ml-2 text-xs text-fg-2" dateTime={m.created_at} title={formatFullTime(m.created_at)}>
+            {formatTime(m.created_at)}
+          </time>
+        </span>
+        <ReactionBar reactions={m.reactions ?? []} canReact={canReact} roomId={roomId} customEmojis={customEmojis} onToggle={onToggleReaction} />
+        {canReact && onReact && <EmojiPicker customEmojis={customEmojis} onPick={(e) => onReact(m, e, false)} />}
+        {menu.open && menu.anchor && <ContextMenu entries={menuEntries} anchor={menu.anchor} onClose={menu.close} label={t("menu.message.label")} testId="message-menu" />}
+      </div>
+    );
+  }
+
+  if (c.kind === "restore_event") {
+    return (
+      <div className="group flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-2 py-1 text-sm text-fg-1 hover:bg-bg-3/60" data-testid="restore-event" data-event={c.approved ? "restored" : "denied"} data-message-id={m.id} {...menu.triggerProps}>
+        <span className="flex w-9 shrink-0 justify-center text-base" aria-hidden="true">
+          {c.approved ? "🗝" : "⛔"}
+        </span>
+        <MessageAvatar address={c.user} name={c.name} small />
+        <span className="min-w-0 flex-1">
+          {t(c.approved ? "members.history_restored" : "members.history_restore_denied", { name: c.name, by: c.by })}
           <time className="ml-2 text-xs text-fg-2" dateTime={m.created_at} title={formatFullTime(m.created_at)}>
             {formatTime(m.created_at)}
           </time>
@@ -835,7 +863,7 @@ const MessageRow = memo(function MessageRow({ m, grouped, own, bot, author, repl
                     e.currentTarget.form?.requestSubmit();
                   }
                 }}
-                className="w-full rounded-md border border-line bg-bg-0 px-2 py-1 text-sm text-fg-0 outline-none focus:border-accent"
+                className="w-full rounded-md border border-line-strong bg-bg-0 px-2 py-1 text-sm text-fg-0 outline-none focus:border-accent"
               />
               <div className="flex gap-2 text-xs">
                 <button type="submit" className="min-h-8 rounded-md bg-accent px-2 text-accent-text hover:bg-accent-hover">

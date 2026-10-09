@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { RoomIcon } from "../components/Avatar";
-import { NavLink, useNavigate } from "react-router";
+import { NavLink } from "react-router";
 import { Permission, hasPermission, parsePermissions, type Channel, type RoomDetail } from "@tavrn/sdk";
 import { useT } from "../i18n";
 import { useNode } from "../components/NodeScope";
@@ -14,14 +14,17 @@ import { Button, Dialog, ErrorText, Field, Input } from "../components/ui";
 import { describeError, toastError, useToasts } from "../stores/toasts";
 import { useUnread } from "../stores/unread";
 import { syncInboxChannels } from "../stores/mls";
-import { BotsAllowedIcon, NoBotsIcon, UnreadBadges, useHasUnread } from "../components/Badges";
+import { BotsAllowedIcon, LockMark, NoBotsIcon, UnreadBadges, useHasUnread } from "../components/Badges";
 import { botMarker } from "../lib/botAccess";
+import { channelPermissions } from "../lib/channelPermissions";
 import { VoiceChannelRow } from "../voice/ui/VoiceChannelRow";
 import { MenuButton } from "../components/ContextMenu";
+import { AdultsOnlyBadge } from "../components/age/LockedChannel";
 import { useChannelMenu } from "../components/menus/ChannelMenu";
 import { mutedNow, useNotifications } from "../stores/notifications";
 import { DEFAULT_EXPIRY_HOURS, expiryChoices } from "../lib/inviteExpiry";
 import { useRoomMenu } from "../components/menus/RoomMenu";
+import { ChevronDownIcon } from "../components/icons";
 import { badgeText, useCapabilities, useOpenRoomReports } from "../moderation/hooks";
 
 /** Room detail; its `read_states` seed the unread counts of the channels (design note 4.4). */
@@ -73,6 +76,7 @@ function ChannelLink({ room, channel, onClick }: { room: RoomDetail; channel: Ch
         <MutedMark conversationId={channel.id} roomId={room.id} />
         {botMarker(channel, room) === "no_bots" && <NoBotsIcon />}
         {botMarker(channel, room) === "bots_allowed" && <BotsAllowedIcon />}
+        {channel.age_gate_effective === "adults_only" && <AdultsOnlyBadge />}
       </NavLink>
       <MenuButton menu={menu} label={t("menu.channel.open", { name: channelName(channel) })} className="pointer-events-none absolute right-1 bg-bg-1 opacity-0 focus:pointer-events-auto focus:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100 pointer-coarse:hidden" testId="channel-menu-button" />
       {overlay}
@@ -98,19 +102,11 @@ const VoiceRowWithMenu = VoiceChannelRow;
 function ChannelIcon({ kind, encrypted }: { kind: string; encrypted: boolean }) {
   const t = useT();
   const icon = kind === "voice" ? "🔊" : kind === "announcement" ? "📣" : kind === "forum" ? "🗂" : kind === "files" ? "📁" : kind === "system" ? "👋" : "#";
+  // The kind glyph and a 16 px lock slot (empty for voice and the welcome channel, so the names stay aligned).
   return (
-    <span className="flex w-5 shrink-0 items-center justify-center gap-0.5 text-fg-2">
-      <span aria-hidden="true">{icon}</span>
-      {kind !== "voice" && kind !== "system" &&
-        (encrypted ? (
-          <span role="img" aria-label={t("channel.encrypted")} title={t("channel.encrypted")} className="text-[10px]" data-testid="channel-lock">
-            🔒
-          </span>
-        ) : (
-          <span role="img" aria-label={t("channel.unencrypted")} title={t("channel.unencrypted")} className="text-[10px]" data-testid="channel-unlocked">
-            🔓
-          </span>
-        ))}
+    <span className="flex w-9 shrink-0 items-center gap-1 text-fg-2">
+      <span aria-hidden="true" className="w-4 text-center">{icon}</span>
+      {kind !== "voice" && kind !== "system" ? encrypted ? <LockMark testId="channel-lock" /> : <LockMark open title={t("channel.unencrypted")} testId="channel-unlocked" /> : <span className="w-4" aria-hidden="true" />}
     </span>
   );
 }
@@ -119,65 +115,77 @@ export function ChannelSidebar({ roomId }: { roomId: string }) {
   const t = useT();
   const room = useRoom(roomId);
   const { closeNav } = useShell();
-  const navigate = useNavigate();
   const node = useNode();
   const [createOpen, setCreateOpen] = useState(false);
-  const [inviteOpen, setInviteOpen] = useState(false);
-  // The room's menu in the header too (report, notifications, …) and the moderators' open reports on the ⚙ button.
+  // The room header opens the room's menu (invite, settings, notifications, …); moderators see the open reports on it.
   const nodeKey = node.home ? null : node.domain;
-  const headerMenu = useRoomMenu({ id: roomId, name: room.data?.name ?? "" }, nodeKey);
   const moderates = hasPermission(parsePermissions(room.data?.my_permissions), Permission.MODERATE_MEMBERS);
   const reportsOffered = !!useCapabilities(nodeKey)?.includes("reports.v1");
   const openReports = badgeText(useOpenRoomReports(node.api, nodeKey, roomId, moderates && reportsOffered));
+  const headerMenu = useRoomMenu({ id: roomId, name: room.data?.name ?? "" }, nodeKey, { openReports });
   if (room.isPending) return <p className="p-3 text-sm text-fg-2">{t("room.loading")}</p>;
   if (room.isError) return <p className="p-3 text-sm text-danger">{describeError(room.error)}</p>;
   const r = room.data;
   const perms = parsePermissions(r.my_permissions);
   const canManageChannels = hasPermission(perms, Permission.MANAGE_CHANNELS);
-  const canInvite = hasPermission(perms, Permission.CREATE_INVITES);
 
+  // Only channels the user may view (layered overrides; nodes list only those, older ones listed all).
+  const channels = r.channels.filter((c) => hasPermission(channelPermissions(r, c.id, node.me?.id ?? ""), Permission.VIEW_CHANNEL));
   // The welcome channel (kind `system`, design note 4.11) is pinned at the very top, outside the categories.
-  const pinned = r.channels.filter((c) => c.kind === "system");
+  const pinned = channels.filter((c) => c.kind === "system");
   const byCategory = new Map<string | null, Channel[]>();
-  for (const c of r.channels) {
+  for (const c of channels) {
     if (c.kind === "system") continue;
     const key = c.category_id ?? null;
     byCategory.set(key, [...(byCategory.get(key) ?? []), c]);
   }
   const groups: { id: string | null; name: string | null; channels: Channel[] }[] = [
     ...(byCategory.get(null)?.length ? [{ id: null, name: null, channels: byCategory.get(null)! }] : []),
-    ...r.categories.map((cat) => ({ id: cat.id, name: categoryName(cat), channels: byCategory.get(cat.id) ?? [] })),
+    // A category is a container: shown when one of its channels is visible (empty ones only to channel managers).
+    ...r.categories.filter((cat) => canManageChannels || byCategory.get(cat.id)?.length).map((cat) => ({ id: cat.id, name: categoryName(cat), channels: byCategory.get(cat.id) ?? [] })),
   ];
 
   return (
     <div className="flex flex-col">
-      <div className="flex h-12 items-center gap-1 border-b border-line px-3">
-        <span className="mr-1"><RoomIcon room={r} size={28} testId="room-header-icon" /></span>
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-semibold" data-testid="room-name">
-            {r.name}
-          </h2>
-          {/* Rooms of other nodes always show their node (design note 9d). */}
-          {!node.home && (
-            <p className="truncate text-[11px] text-fg-2" data-testid="room-node" title={t("node.room_on", { domain: node.domain })}>
-              {node.domain}
-            </p>
-          )}
-        </div>
-        {canInvite && (
-          <button type="button" aria-label={t("room.invite")} title={t("room.invite")} onClick={() => setInviteOpen(true)} className="min-h-10 min-w-10 rounded-md text-fg-2 hover:bg-bg-3 hover:text-fg-0">
-            ✉
-          </button>
-        )}
-        <button type="button" aria-label={openReports ? `${t("room.settings")} · ${t("reports.open_count", { count: openReports })}` : t("room.settings")} title={t("room.settings")} onClick={() => { closeNav(); navigate(node.roomPath(roomId, undefined, openReports ? "settings/reports" : "settings")); }} className="relative min-h-10 min-w-10 rounded-md text-fg-2 hover:bg-bg-3 hover:text-fg-0" data-testid="room-settings-button">
-          ⚙
-          {openReports && (
-            <span className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-danger-solid px-1 text-[10px] font-semibold leading-4 text-white" data-testid="room-reports-badge">
-              {openReports}
+      <div className="flex h-12 shrink-0 items-center border-b border-line px-2" data-testid="room-header">
+        {/* One menu button: icon, name (with the node of a remote room below it) and the chevron with the reports badge. */}
+        <h2 className="min-w-0 flex-1">
+          <button
+            type="button"
+            aria-haspopup="menu"
+            aria-expanded={headerMenu.menu.open}
+            aria-label={[r.name, !node.home && node.domain, openReports && t(openReports === "1" ? "reports.open_reports_one" : "reports.open_reports_many", { count: openReports })].filter(Boolean).join(", ")}
+            title={t("menu.label", { name: r.name })}
+            data-testid="room-header-menu"
+            className="flex min-h-10 w-full min-w-0 items-center gap-2 rounded-md px-1 text-left hover:bg-bg-3"
+            onClick={(e) => {
+              if (headerMenu.menu.open) headerMenu.menu.close();
+              else headerMenu.menu.openAt(e.currentTarget);
+            }}
+            onContextMenu={headerMenu.menu.triggerProps.onContextMenu}
+          >
+            <RoomIcon room={r} size={28} testId="room-header-icon" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-semibold text-fg-0" data-testid="room-name">
+                {r.name}
+              </span>
+              {/* Rooms of other nodes always show their node (design note 9d). */}
+              {!node.home && (
+                <span className="block truncate text-[11px] font-normal text-fg-2" data-testid="room-node" title={t("node.room_on", { domain: node.domain })}>
+                  {node.domain}
+                </span>
+              )}
             </span>
-          )}
-        </button>
-        <MenuButton menu={headerMenu.menu} label={t("menu.label", { name: r.name })} className="min-h-10 min-w-10" testId="room-header-menu" />
+            <span className="relative flex h-6 w-6 shrink-0 items-center justify-center text-fg-2" aria-hidden="true">
+              <ChevronDownIcon size={18} />
+              {openReports && (
+                <span className="absolute -right-1.5 -top-1.5 min-w-4 rounded-full bg-danger-solid px-1 text-center text-[10px] font-semibold leading-4 text-white" data-testid="room-reports-badge">
+                  {openReports}
+                </span>
+              )}
+            </span>
+          </button>
+        </h2>
         {headerMenu.overlay}
       </div>
       <nav aria-label={t("shell.channels")} className="p-2">
@@ -209,7 +217,6 @@ export function ChannelSidebar({ roomId }: { roomId: string }) {
         )}
       </nav>
       <CreateChannelDialog roomId={roomId} open={createOpen} onClose={() => setCreateOpen(false)} categories={r.categories} />
-      <InviteDialog roomId={roomId} open={inviteOpen} onClose={() => setInviteOpen(false)} />
     </div>
   );
 }
@@ -218,6 +225,8 @@ function CreateChannelDialog({ roomId, open, onClose, categories }: { roomId: st
   const t = useT();
   const [name, setName] = useState("");
   const [kind, setKind] = useState("text");
+  // Files channels: end-to-end encrypted by default, fixed after creation (FILES.md §1).
+  const [filesEncrypted, setFilesEncrypted] = useState(true);
   const [categoryId, setCategoryId] = useState<string>(categories[0]?.id ?? "");
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
@@ -230,7 +239,7 @@ function CreateChannelDialog({ roomId, open, onClose, categories }: { roomId: st
           e.preventDefault();
           setError(null);
           try {
-            await api.channels.create(roomId, { kind, name, category_id: categoryId || null });
+            await api.channels.create(roomId, { kind, name, category_id: categoryId || null, ...(kind === "files" ? { encrypted: filesEncrypted } : {}) });
             await queryClient.invalidateQueries({ queryKey: ["room", roomId] });
             setName("");
             onClose();
@@ -240,7 +249,7 @@ function CreateChannelDialog({ roomId, open, onClose, categories }: { roomId: st
         }}
       >
         <Field label={t("channel.kind")}>
-          <select name="kind" value={kind} onChange={(e) => setKind(e.target.value)} className="min-h-10 w-full rounded-md border border-line bg-bg-0 px-3 text-sm">
+          <select name="kind" value={kind} onChange={(e) => setKind(e.target.value)} className="min-h-10 w-full rounded-md border border-line-strong bg-bg-0 px-3 text-sm">
             {["text", "announcement", "forum", "voice", "files"].map((k) => (
               <option key={k} value={k}>
                 {t(`channel.kind.${k}`)}
@@ -251,9 +260,18 @@ function CreateChannelDialog({ roomId, open, onClose, categories }: { roomId: st
         <Field label={t("common.name")}>
           <Input name="channel_name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={100} />
         </Field>
+        {kind === "files" && (
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" className="mt-0.5 h-4 w-4 accent-accent" checked={filesEncrypted} onChange={(e) => setFilesEncrypted(e.target.checked)} data-testid="files-encrypted-toggle" />
+            <span>
+              {t("files.create_encrypted")}
+              <span className="block text-xs text-fg-2">{t("files.create_encrypted_hint")}</span>
+            </span>
+          </label>
+        )}
         {categories.length > 0 && (
           <Field label={t("channel.category")}>
-            <select name="category" value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="min-h-10 w-full rounded-md border border-line bg-bg-0 px-3 text-sm">
+            <select name="category" value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="min-h-10 w-full rounded-md border border-line-strong bg-bg-0 px-3 text-sm">
               <option value="">{t("common.none")}</option>
               {categories.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -321,7 +339,7 @@ export function InviteDialog({ roomId, open, onClose }: { roomId: string; open: 
           <p className="text-sm text-fg-1">{t("invite.create_hint")}</p>
           <label className="flex flex-col gap-1 text-xs text-fg-2">
             {t("invites.expires")}
-            <select value={hours} onChange={(e) => setHours(Number(e.target.value))} className="min-h-10 w-full rounded-md border border-line bg-bg-0 px-3 text-sm" data-testid="invite-dialog-expiry">
+            <select value={hours} onChange={(e) => setHours(Number(e.target.value))} className="min-h-10 w-full rounded-md border border-line-strong bg-bg-0 px-3 text-sm" data-testid="invite-dialog-expiry">
               {expiryChoices(manage).map((h) => (
                 <option key={h} value={h}>
                   {t(`invite.expiry.${h}`)}

@@ -8,6 +8,7 @@ import { secretStoragePrfInput } from "@tavrn/crypto";
 import { b64urlDecode, credentialToJSON, parseCreationOptions, parseRequestOptions, prfEnabled, prfFirst, stripPrfResults, type AuthResponse, type TavrnApi, type WebauthnRegistered, type DeviceProof } from "@tavrn/sdk";
 import { ensureCrypto } from "@tavrn/e2ee";
 import { platform } from "../platform";
+import { publicApi } from "./api";
 
 /** WebAuthn is there; never in the desktop app, whose origin is not the node's (passkeys are bound to the node's domain). */
 export function passkeysSupported(): boolean {
@@ -60,14 +61,41 @@ export async function passkeyLogin(api: TavrnApi, opts: { preauthToken?: string;
   return { session, credentialId: cred.id, prf };
 }
 
+let rpIdPromise: Promise<string | null> | null = null;
+
+/**
+ * The WebAuthn relying party id this node publishes (`webauthn.rp_id`, PROTOCOL.md §5a.4): with delegation a
+ * parent domain of the page's host, which the browser would not use by itself. Asked once per page; an older node
+ * without the field or a failed request gives null (the browser default) and is asked again next time.
+ */
+function relyingPartyId(): Promise<string | null> {
+  rpIdPromise ??= publicApi.node
+    .info()
+    .then((info) => info.webauthn?.rp_id || null)
+    .catch(() => null)
+    .then((id) => {
+      if (!id) rpIdPromise = null;
+      return id;
+    });
+  return rpIdPromise;
+}
+
+/** Tests: forget the cached relying party id. */
+export function resetRelyingPartyId(): void {
+  rpIdPromise = null;
+}
+
 /**
  * Evaluates the secret storage PRF with one of `credentialIds` without involving the node (local
  * challenge; the result is only used to unwrap locally). Returns null if the authenticator has no PRF.
+ * The assertion names the node's relying party id (the node's own ceremonies carry it in their options).
  */
 export async function evaluatePrf(credentialIds: string[]): Promise<{ credentialId: string; prf: Uint8Array } | null> {
   await ensureCrypto();
+  const rpId = await relyingPartyId();
   const cred = (await navigator.credentials.get({
     publicKey: {
+      ...(rpId ? { rpId } : {}),
       challenge: crypto.getRandomValues(new Uint8Array(32)),
       allowCredentials: credentialIds.map((id) => ({ type: "public-key" as const, id: b64urlDecode(id) })),
       userVerification: "required",

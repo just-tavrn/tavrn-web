@@ -29,6 +29,7 @@ import { HeadphonesIcon, HeadphonesOffIcon, MicIcon, MicOffIcon, MinimizeIcon, P
 import { StageGrid } from "../ui/StageGrid";
 import { answerCall, applyCall, callTitle, declineCall, startCall } from "./actions";
 import { callKey, expireRings, useCalls, type Ring } from "./state";
+import { LockMark } from "../../components/Badges";
 
 /** The conversation of a call (members, name) from its node; shared cache with the DM page. */
 function useConversation(domain: string, conversationId: string, enabled = true) {
@@ -259,9 +260,7 @@ function ActiveCall() {
         <h2 className="min-w-0 flex-1 truncate text-sm font-semibold" data-testid="call-title">
           {title}
         </h2>
-        <span role="img" className="text-[11px]" aria-label={t("voice.encrypted")} title={t("voice.encrypted")}>
-          🔒
-        </span>
+        <LockMark size={18} title={t("voice.encrypted")} />
         <span className="text-xs tabular-nums text-fg-2" data-testid="call-status">
           {status === "reconnecting" ? t("voice.status.reconnecting") : answered ? duration : ringing.length ? t("calls.ringing") : status === "joining" ? t("voice.status.joining") : t("calls.waiting")}
         </span>

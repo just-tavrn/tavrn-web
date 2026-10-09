@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useEffect, useMemo, useRef, useState } from "react";
+import { archivedDecrypted } from "../history/local";
 import type { Message } from "@tavrn/sdk";
 import { useE2ee } from "../stores/e2ee";
 import { getMls, useMlsUi } from "../stores/mls";
@@ -53,6 +54,8 @@ export function useE2eeConversation(opts: {
   const status = useE2ee((s) => s.status);
   const tick = useMlsUi((s) => s.epochs[opts.conversationId] ?? 0);
   const rejoined = useMlsUi((s) => !!s.rejoined[opts.conversationId]);
+  // Acknowledging a changed security key lets its devices count (ENCRYPTION.md §3.3): add them and check again.
+  const changedKey = useMlsUi((s) => Object.keys(s.changedKeys).sort().join(","));
   const [state, setState] = useState<Omit<E2eeConversation, "tick" | "rejoined">>({ phase: "joining", mls: null, waiting: [], ghosts: [], error: null });
   const membersKey = opts.members ? [...opts.members].sort().join(",") : null;
   const directKey = opts.direct ? [...opts.direct].sort().join(",") : "";
@@ -109,7 +112,7 @@ export function useE2eeConversation(opts: {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId, encrypted, canCreate, status, membersKey, directKey, mayManage, noBots, tick, retry]);
+  }, [conversationId, encrypted, canCreate, status, membersKey, directKey, mayManage, noBots, tick, retry, changedKey]);
 
   // Members still without a device: drop their cached device list and check again after a while.
   useEffect(() => {
@@ -162,11 +165,21 @@ export function useDecrypted(conversationId: string, messages: Message[] | undef
   const [map, setMap] = useState<Record<string, Decrypted>>({});
   const encrypted = useMemo(() => (messages ?? []).filter((m) => m.encrypted), [messages]);
   useEffect(() => {
-    if (!mls || encrypted.length === 0) return;
+    if (encrypted.length === 0) return;
     let cancelled = false;
     void (async () => {
+      // "Keep the full history on this device" (#4): content this device archived is used as it is (also offline,
+      // before the session manager is there); the rest is decrypted.
+      const archived = await archivedDecrypted(conversationId, encrypted);
+      if (!mls && archived.size === 0) return;
       const next: Record<string, Decrypted> = {};
       for (const m of encrypted) {
+        const kept = archived.get(m.id);
+        if (kept) {
+          next[m.id] = kept;
+          continue;
+        }
+        if (!mls) continue;
         try {
           next[m.id] = await mls.decrypt(conversationId, m);
         } catch {

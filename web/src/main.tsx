@@ -8,6 +8,7 @@ import { useLocale } from "./i18n";
 import { registerServiceWorker } from "./lib/push";
 import { initPlatform } from "./platform";
 import { startHotkeys } from "./voice/hotkeys";
+import { startWakeLock } from "./voice/wakeLock";
 
 document.documentElement.lang = useLocale.getState().locale;
 
@@ -26,6 +27,8 @@ void initPlatform()
     void registerServiceWorker();
     // Hotkeys: the window's keys, and in the desktop app the shell's system-wide key listener, wired to the voice session.
     startHotkeys();
+    // The screen stays on while in a voice channel or call (the voice setting `keepScreenOn`).
+    startWakeLock();
     createRoot(root).render(
       <StrictMode>
         <QueryClientProvider client={queryClient}>

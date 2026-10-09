@@ -143,3 +143,36 @@ describe("static accessibility checks", () => {
     expect(missing).toEqual([]);
   });
 });
+
+/** The design tokens of `styles.css` (`--color-<name>: #rrggbb`). */
+function tokens(): Record<string, string> {
+  const css = readFileSync(join(SRC, "styles.css"), "utf8");
+  return Object.fromEntries([...css.matchAll(/--color-([a-z0-9-]+):\s*(#[0-9a-f]{6})\b/gi)].map((m) => [m[1]!, m[2]!.toLowerCase()]));
+}
+
+/** WCAG 2.2 contrast ratio of two `#rrggbb` colors. */
+function contrast(a: string, b: string): number {
+  const lum = (hex: string) => {
+    const [r, g, bl] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r! + 0.7152 * g! + 0.0722 * bl!;
+  };
+  const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+  return (hi! + 0.05) / (lo! + 0.05);
+}
+
+describe("form control borders (WCAG 1.4.11 non-text contrast, docs/ACCESSIBILITY.md)", () => {
+  it("the line-strong token has at least 3:1 against every background a field sits on or is filled with", () => {
+    const t = tokens();
+    expect(t["line-strong"], "--color-line-strong in styles.css").toMatch(/^#[0-9a-f]{6}$/);
+    for (const bg of ["bg-0", "bg-1", "bg-2", "bg-3"]) expect(contrast(t["line-strong"]!, t[bg]!), `line-strong on ${bg}`).toBeGreaterThanOrEqual(3);
+    // The focus border (accent) stays well above it.
+    for (const bg of ["bg-0", "bg-1", "bg-2", "bg-3"]) expect(contrast(t.accent!, t[bg]!), `accent on ${bg}`).toBeGreaterThanOrEqual(3);
+  });
+
+  it("text fields, selects and text areas draw their border with line-strong, not the divider token", () => {
+    const controls = [...elements("input"), ...elements("select"), ...elements("textarea")].filter((c) => !/type="(checkbox|radio|range|file|color|hidden)"/.test(c.attrs));
+    expect(controls.length).toBeGreaterThan(25);
+    const weak = controls.filter((c) => /\bborder-line(?!-)/.test(c.attrs)).map(where);
+    expect(weak).toEqual([]);
+  });
+});

@@ -11,7 +11,8 @@
  *   in the conversation index like every other join.
  */
 import { discoverNode, verifyDirectoryRooms, type DirectoryNodeList, type DirectoryRoom, type PublicKeyInfo, type TavrnApi, type VerifiedRoom, type WellKnown } from "@tavrn/sdk";
-import { publicApi } from "../lib/api";
+import { api, publicApi } from "../lib/api";
+import { useAuth } from "./auth";
 import { roomPath } from "../components/NodeScope";
 import { indexJoinedRoom } from "./conversationIndex";
 import { DISCOVERY_TTL_MS, apiFor, connectNode, isHome, useNodes } from "./nodes";
@@ -34,8 +35,11 @@ export interface RoomPage {
 /** Replaceable pieces (tests). */
 export const discoverDeps = {
   now: () => Date.now(),
-  /** The directory of the node this client was loaded from. */
-  directory: () => publicApi.directory,
+  /**
+   * The directory of the node this client was loaded from: with the session of an account of that node, so it lists
+   * rooms with an age gate to adults (PROTOCOL.md §5e); anonymously otherwise.
+   */
+  directory: () => (useAuth.getState().token && !useAuth.getState().home ? api.directory : publicApi.directory),
   /** Discovery document of `domain` (the client's own node on this origin). */
   document: async (domain: string): Promise<WellKnown> => {
     const own = await originDocument();

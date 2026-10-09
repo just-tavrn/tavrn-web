@@ -19,6 +19,9 @@ import { DEFAULT_WINDOW_DAYS } from "@tavrn/e2ee";
 import { apiFor, isHome } from "../stores/nodes";
 import { getMls } from "../stores/mls";
 import { indexEntry, indexMessages, localIndex, onLocalConversationAdded, refreshLocalState, useLocalSearch } from "./local";
+import { archiveMessages } from "../history/local";
+import type { ArchiveItem } from "../history/archive";
+import { filesSyncPage } from "./filesSync";
 
 export const SYNC_PAGE = 100;
 /** Pause between two pages (visible tab) and while there is nothing to do. */
@@ -40,12 +43,14 @@ export interface SyncCursor {
   f: string | null;
   /** Room of a room channel (to open a local result). */
   r?: string;
+  /** "files": an encrypted files channel, synced through its entry records (`b` = the last entry id). */
+  k?: "files";
 }
 
 export function parseCursor(raw: string | null | undefined): SyncCursor {
   try {
     const v = raw ? (JSON.parse(raw) as Partial<SyncCursor>) : {};
-    return { b: typeof v.b === "string" ? v.b : null, f: typeof v.f === "string" ? v.f : null, ...(typeof v.r === "string" ? { r: v.r } : {}) };
+    return { b: typeof v.b === "string" ? v.b : null, f: typeof v.f === "string" ? v.f : null, ...(typeof v.r === "string" ? { r: v.r } : {}), ...(v.k === "files" ? { k: "files" as const } : {}) };
   } catch {
     return { b: null, f: null };
   }
@@ -83,6 +88,16 @@ export function wakeSearchSync(): void {
   wake?.();
 }
 
+/** Marks an encrypted files channel (SEARCH.md §3.6): the sync pages through its entry records. */
+export async function rememberFilesChannel(conversation: string, roomId: string): Promise<void> {
+  const idx = await localIndex();
+  if (!idx) return;
+  const [cov] = await idx.coverage(conversation);
+  const cursor = parseCursor(cov?.sync.cursor);
+  if (cursor.r === roomId && cursor.k === "files") return;
+  await idx.setSync(conversation, { cursor: JSON.stringify({ ...cursor, r: roomId, k: "files" }) }).catch(() => undefined);
+}
+
 /** Remembers the room of a room channel for the conversation's local results (once per conversation). */
 export async function rememberRoom(conversation: string, roomId: string): Promise<void> {
   const idx = await localIndex();
@@ -95,15 +110,23 @@ export async function rememberRoom(conversation: string, roomId: string): Promis
 
 async function decryptPage(mls: MlsManager, conversation: string, page: Awaited<ReturnType<ReturnType<typeof apiFor>["conversations"]["messages"]>>, room?: string) {
   const entries = [];
+  const archive: ArchiveItem[] = [];
   for (const m of page) {
-    if (!m.encrypted) continue;
+    if (!m.encrypted) {
+      archive.push({ message: m, decrypted: null });
+      continue;
+    }
     try {
-      const entry = indexEntry(conversation, m, await mls.decrypt(conversation, m), room);
+      const decrypted = await mls.decrypt(conversation, m);
+      const entry = indexEntry(conversation, m, decrypted, room);
       if (entry) entries.push(entry);
+      if (decrypted.ok) archive.push({ message: m, decrypted });
     } catch {
       /* not decryptable on this device: skipped */
     }
   }
+  // "Keep the full history on this device" (#4): the decrypted page also goes into the device's archive.
+  await archiveMessages(conversation, archive);
   return entries;
 }
 
@@ -116,6 +139,17 @@ export async function runJob(job: Job, deps: { mls: MlsManager; now: number; las
   const cursor = parseCursor(cov.sync.cursor);
   const { domain, id } = splitQualified(job.conversation);
   const api = apiFor(isHome(domain) ? null : domain);
+  if (cursor.k === "files") {
+    // Encrypted files channels: their entry records in the order they were written, newer ones on later rounds.
+    if (!cursor.r) return false;
+    const res = await filesSyncPage(api, deps.mls, job.conversation, cursor.r, id, cursor.b);
+    await indexMessages(res.docs);
+    const done = res.next === null;
+    await idx.setSync(job.conversation, { cursor: JSON.stringify({ ...cursor, b: res.last }), reachedStart: done, done });
+    if (done) deps.lastForward.set(job.conversation, deps.now);
+    else deps.lastForward.delete(job.conversation);
+    return true;
+  }
   if (job.direction === "forward") {
     deps.lastForward.set(job.conversation, deps.now);
     if (!cursor.f) return true;

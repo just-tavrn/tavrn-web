@@ -13,6 +13,8 @@ import { renderWithProviders } from "../test/render";
 import { deviceProofFor, rememberPrf, takePrf } from "../crypto/e2ee";
 import { evaluatePrf, passkeyLogin } from "../lib/passkeys";
 import { sealForApp } from "../crypto/sealedUnlock";
+import { inSignInWindow } from "../platform/tauriDetect";
+import { signOutAfterHandoff } from "../lib/handoffSignOut";
 
 // The browser's stored device (IndexedDB) is replaced by a stub: no device unless a test provides a proof.
 vi.mock("../crypto/e2ee", async (original) => ({ ...(await original<typeof import("../crypto/e2ee")>()), deviceProofFor: vi.fn(async () => null) }));
@@ -23,6 +25,9 @@ vi.mock("../lib/passkeys", async (original) => ({
   passkeyLogin: vi.fn(),
   evaluatePrf: vi.fn(),
 }));
+// The page in the desktop app's sign-in window signs itself out after the handoff (#24; the waiting: lib/handoffSignOut.test.ts).
+vi.mock("../platform/tauriDetect", async (original) => ({ ...(await original<typeof import("../platform/tauriDetect")>()), inSignInWindow: vi.fn(() => false) }));
+vi.mock("../lib/handoffSignOut", async (original) => ({ ...(await original<typeof import("../lib/handoffSignOut")>()), signOutAfterHandoff: vi.fn(async () => {}) }));
 vi.mock("../crypto/sealedUnlock", async (original) => ({ ...(await original<typeof import("../crypto/sealedUnlock")>()), sealForApp: vi.fn(async () => "sealed-box") }));
 
 const HOME = "home.example";
@@ -98,6 +103,7 @@ function renderAt(route: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(inSignInWindow).mockReturnValue(false);
   useAuth.getState().logout();
   useNodes.getState().clear();
   resetNodeCaches();
@@ -255,6 +261,36 @@ describe("connect flow: app sessions of the desktop app (FEDERATION.md §8 step 
     expect(calls.filter((c) => c.url.includes("/auth/connect/session/"))).toHaveLength(1);
   });
 
+  it("in the app's sign-in window the page signs itself out once the app exchanged the code; a browser tab keeps its session", async () => {
+    const devices = [{ id: "D", name: "Browser", client: "c", created_at: "", last_seen_at: "t0", current: true, stale: false }];
+    const overrides = {
+      [`origin/api/v1/auth/connect/session/${SESSION}`]: pendingSession,
+      "origin/api/v1/auth/connect/code": () => ({ body: { code: "one-time", expires_in: 120 } }),
+      "origin/api/v1/users/me/devices": () => ({ body: devices }),
+    };
+    vi.mocked(inSignInWindow).mockReturnValue(true);
+    network(overrides);
+    useAuth.setState({ token: "local", refresh: "r", user: localUser, deviceId: "D", home: null });
+    const { unmount } = renderAt(sessionUrl());
+    await userEvent.setup().click(await screen.findByRole("button", { name: "In der App anmelden" }));
+    expect(await screen.findByTestId("connect-done")).toHaveTextContent("Kehre zur Tavrn-App zurück");
+    await waitFor(() => expect(signOutAfterHandoff).toHaveBeenCalledTimes(1));
+    const args = vi.mocked(signOutAfterHandoff).mock.calls[0]![0];
+    expect(args).toMatchObject({ before: devices, waitForExchange: true });
+    unmount();
+
+    vi.mocked(inSignInWindow).mockReturnValue(false);
+    vi.mocked(signOutAfterHandoff).mockClear();
+    sessionStorage.clear();
+    const calls = network(overrides);
+    renderAt(sessionUrl());
+    await userEvent.setup().click(await screen.findByRole("button", { name: "In der App anmelden" }));
+    await screen.findByTestId("connect-done");
+    expect(signOutAfterHandoff).not.toHaveBeenCalled();
+    expect(calls.some((c) => c.url.endsWith("/users/me/devices"))).toBe(false);
+    expect(useAuth.getState().token).toBe("local");
+  });
+
   it("does not read the session again after the confirmation (a reload of the page)", async () => {
     const calls = network({ [`origin/api/v1/auth/connect/session/${SESSION}`]: pendingSession, "origin/api/v1/auth/connect/code": () => ({ body: { code: "c", expires_in: 120 } }) });
     useAuth.setState({ token: "local", refresh: "r", user: localUser, deviceId: "D", home: null });
@@ -381,6 +417,22 @@ describe("connect flow: app sessions of the desktop app (FEDERATION.md §8 step 
     expect(await screen.findByTestId("connect-done")).toHaveTextContent("Die App ist entsperrt");
     expect(calls.find((c) => c.url.endsWith("/auth/connect/code"))).toMatchObject({ body: { session_id: SESSION, sealed_unlock: "sealed-box" } });
     expect(calls.find((c) => c.url.endsWith("/auth/connect/code"))!.body).not.toHaveProperty("code_challenge");
+  });
+
+  it("unlock session in the app's sign-in window: the page signs out right after the unlock (no code to exchange)", async () => {
+    vi.mocked(inSignInWindow).mockReturnValue(true);
+    vi.mocked(evaluatePrf).mockResolvedValue({ credentialId: "Y3JlZA", prf: new Uint8Array(32).fill(7) });
+    network({
+      [`origin/api/v1/auth/connect/session/${SESSION}`]: () => ({ body: { status: "pending", device_name: "Laptop", purpose: "unlock", expires_in: 580 } }),
+      "origin/api/v1/auth/connect/code": () => ({ status: 204, body: null }),
+      "origin/api/v1/users/me/secret-storage": () => ({ body: { items: [{ method: "passkey:Y3JlZA" }] } }),
+    });
+    useAuth.setState({ token: "local", refresh: "r", user: localUser, deviceId: "D", home: null });
+    renderAt(`${sessionUrl("&method=passkey")}#k=${KEY}`);
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Mit Passkey entsperren" }));
+    expect(await screen.findByTestId("connect-done")).toHaveTextContent("Die App ist entsperrt");
+    await waitFor(() => expect(signOutAfterHandoff).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(signOutAfterHandoff).mock.calls[0]![0]).toMatchObject({ waitForExchange: false });
   });
 
   it("unlock session: a passkey sign-in on this page unlocks without a second ceremony", async () => {

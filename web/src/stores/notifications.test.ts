@@ -55,6 +55,12 @@ describe("normalizeSettings", () => {
     });
     expect(normalizeSettings(null)).toEqual(DEFAULT_SETTINGS);
   });
+
+  it("keeps the report push switch only while it is off, like the node", () => {
+    expect(normalizeSettings({ global: { mode: "all", reports: false } }).global).toEqual({ mode: "all", sound: true, browser: false, reports: false });
+    expect(normalizeSettings({ global: { mode: "all", reports: true } }).global).toEqual({ mode: "all", sound: true, browser: false });
+    expect(normalizeSettings({ global: { mode: "all", reports: "no" } }).global).toEqual({ mode: "all", sound: true, browser: false });
+  });
 });
 
 describe("useNotifications", () => {

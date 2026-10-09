@@ -78,7 +78,12 @@ test.describe("Reports", () => {
     await mod.goto(`/rooms/${room.id}/channels/${channel}`);
     await openNavIfMobile(mod);
     await expect(mod.getByTestId("room-reports-badge")).toHaveText("1", { timeout: 20_000 });
-    await mod.goto(`/rooms/${room.id}/settings/reports`);
+    // The badge sits on the room header's chevron; "Room settings" in its menu shows the count and opens the inbox.
+    await mod.getByTestId("room-header-menu").click();
+    const settings = mod.getByTestId("room-menu").getByTestId("room-settings-button");
+    await expect(settings).toHaveAccessibleName("Raumeinstellungen · 1 offene Meldung");
+    await settings.click();
+    await expect(mod).toHaveURL(new RegExp(`/rooms/${room.id}/settings/reports$`));
     await expect(mod.getByTestId("reports-tab-badge")).toHaveText("1");
     const row = mod.getByTestId("report-row");
     await expect(row).toHaveCount(1);

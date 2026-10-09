@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+import { AgeGateSection } from "../../components/age/AgeGateSection";
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { EVERYONE_RESTRICTED, Permission, hasPermission, parsePermissions, type Channel, type RoomDetail } from "@tavrn/sdk";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { EVERYONE_RESTRICTED, Permission, hasPermission, inheritedOverrideValue, parsePermissions, type Category, type Channel, type RoomDetail } from "@tavrn/sdk";
 import { useSearchParams } from "react-router";
 import { useNode } from "../../components/NodeScope";
 import { useT } from "../../i18n";
@@ -9,12 +10,13 @@ import { toastError, useToasts } from "../../stores/toasts";
 import { Button, Field, Input } from "../../components/ui";
 import { ConfirmDialog, OverrideTriState, Section, Select } from "./common";
 import { categoryName, channelName } from "../../lib/names";
-import { BotsAllowedIcon, NoBotsIcon } from "../../components/Badges";
+import { BotsAllowedIcon, LockMark, NoBotsIcon } from "../../components/Badges";
 import { botMarker } from "../../lib/botAccess";
 import { ChannelBotsAllowed } from "./BotsEncryptionSection";
 import { HistoryPolicySection } from "./HistoryPolicy";
 import { ThreadSettingsSection } from "../../threads/ThreadSettings";
 import { StorageSection } from "../../files/StorageSection";
+import { FilesDeletionFacts, deletionCase } from "../../files/DeleteChannel";
 import { VoiceQualitySection } from "./VoiceQualitySection";
 
 export function ChannelsTab({ room }: { room: RoomDetail }) {
@@ -22,13 +24,21 @@ export function ChannelsTab({ room }: { room: RoomDetail }) {
   const t = useT();
   // `?channel=<id>`: opened from a channel's context menu ("Edit channel"); otherwise the first regular
   // channel (the welcome channel, kind "system", is fixed).
+  // `?category=<id>`: the category's permissions.
   const [params] = useSearchParams();
   const [selectedId, setSelectedId] = useState(params.get("channel") ?? (room.channels.find((c) => c.kind !== "system") ?? room.channels[0])?.id ?? "");
+  const [categoryId, setCategoryId] = useState<string | null>(params.get("category"));
+  const selectedCategory = room.categories.find((c) => c.id === categoryId) ?? null;
   const selected = room.channels.find((c) => c.id === selectedId) ?? room.channels[0];
+  const selectChannel = (id: string) => {
+    setCategoryId(null);
+    setSelectedId(id);
+  };
   const [newCategory, setNewCategory] = useState("");
   const queryClient = useQueryClient();
   const perms = parsePermissions(room.my_permissions);
   const canManage = hasPermission(perms, Permission.MANAGE_CHANNELS);
+  const canManageRoles = hasPermission(perms, Permission.MANAGE_ROLES);
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["room", room.id] });
 
   return (
@@ -37,20 +47,35 @@ export function ChannelsTab({ room }: { room: RoomDetail }) {
         {room.categories.map((cat) => (
           <div key={cat.id}>
             <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wide text-fg-2">
-              <span>{categoryName(cat)}</span>
+              {canManageRoles ? (
+                <button
+                  type="button"
+                  onClick={() => setCategoryId(cat.id)}
+                  aria-label={t("channels.category_permissions_open", { name: categoryName(cat) })}
+                  aria-pressed={selectedCategory?.id === cat.id}
+                  data-testid="category-permissions"
+                  data-category={cat.id}
+                  className={`flex min-h-9 min-w-0 flex-1 items-center gap-1 rounded-md px-2 text-left uppercase ${selectedCategory?.id === cat.id ? "bg-bg-3 text-fg-0" : "hover:bg-bg-3/60 hover:text-fg-0"}`}
+                >
+                  <span className="truncate">{categoryName(cat)}</span>
+                  <span className="ml-auto shrink-0 text-[10px] font-normal normal-case">{t("channels.category_permissions_short")}</span>
+                </button>
+              ) : (
+                <span>{categoryName(cat)}</span>
+              )}
               {canManage && (
                 <button type="button" aria-label={t("channels.delete_category", { name: categoryName(cat) })} className="min-h-6 min-w-6 text-fg-2 hover:text-danger" onClick={async () => { try { await api.channels.deleteCategory(room.id, cat.id); await refresh(); } catch (e) { toastError(e); } }}>
                   ×
                 </button>
               )}
             </div>
-            <ChannelButtons room={room} channels={room.channels.filter((c) => c.category_id === cat.id)} selectedId={selected?.id} onSelect={setSelectedId} />
+            <ChannelButtons room={room} channels={room.channels.filter((c) => c.category_id === cat.id)} selectedId={selectedCategory ? undefined : selected?.id} onSelect={selectChannel} />
           </div>
         ))}
         {room.channels.some((c) => !c.category_id) && (
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-wide text-fg-2">{t("channels.uncategorized")}</div>
-            <ChannelButtons room={room} channels={room.channels.filter((c) => !c.category_id)} selectedId={selected?.id} onSelect={setSelectedId} />
+            <ChannelButtons room={room} channels={room.channels.filter((c) => !c.category_id)} selectedId={selectedCategory ? undefined : selected?.id} onSelect={selectChannel} />
           </div>
         )}
         {canManage && (
@@ -74,13 +99,18 @@ export function ChannelsTab({ room }: { room: RoomDetail }) {
           </form>
         )}
       </Section>
-      {selected && <ChannelEditor key={selected.id} channel={selected} room={room} canManage={canManage} onChanged={refresh} />}
+      {selectedCategory ? (
+        <div className="space-y-4" data-testid="category-editor">
+          <OverridesEditor key={`category:${selectedCategory.id}`} target={{ type: "category", category: selectedCategory }} room={room} onChanged={refresh} />
+        </div>
+      ) : (
+        selected && <ChannelEditor key={selected.id} channel={selected} room={room} canManage={canManage} onChanged={refresh} />
+      )}
     </div>
   );
 }
 
 function ChannelButtons({ room, channels, selectedId, onSelect }: { room: RoomDetail; channels: Channel[]; selectedId?: string; onSelect: (id: string) => void }) {
-  const t = useT();
   return (
     <ul className="mt-1 space-y-0.5">
       {channels.map((c) => (
@@ -88,7 +118,7 @@ function ChannelButtons({ room, channels, selectedId, onSelect }: { room: RoomDe
           <button type="button" onClick={() => onSelect(c.id)} className={`flex min-h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm ${selectedId === c.id ? "bg-bg-3 text-fg-0" : "text-fg-1 hover:bg-bg-3/60"}`}>
             <span className="text-fg-2">{c.kind === "voice" ? "🔊" : c.kind === "files" ? "📁" : "#"}</span>
             <span className="truncate">{channelName(c)}</span>
-            {!c.encrypted && c.kind !== "voice" && <span title={t("channel.unencrypted")} className="text-[10px]">🔓</span>}
+            {!c.encrypted && c.kind !== "voice" && <LockMark open />}
             {botMarker(c, room) === "no_bots" && <NoBotsIcon />}
             {botMarker(c, room) === "bots_allowed" && <BotsAllowedIcon />}
           </button>
@@ -99,24 +129,25 @@ function ChannelButtons({ room, channels, selectedId, onSelect }: { room: RoomDe
 }
 
 function ChannelEditor({ channel, room, canManage, onChanged }: { channel: Channel; room: RoomDetail; canManage: boolean; onChanged: () => Promise<void> }) {
-  const { api } = useNode();
+  const { api, domain } = useNode();
   const t = useT();
   const [name, setName] = useState(channel.name);
   const [topic, setTopic] = useState(channel.topic);
   const [categoryId, setCategoryId] = useState(channel.category_id ?? "");
   const [slowmode, setSlowmode] = useState(channel.slowmode_secs);
   const [encrypted, setEncrypted] = useState(channel.encrypted);
-  const [sync, setSync] = useState(channel.sync_with_category);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmEncryption, setConfirmEncryption] = useState(false);
   const isVoice = channel.kind === "voice";
-  // Files channels have no messages and are never end-to-end encrypted (design note 4.13 item 9).
+  // Files channels have no messages; their encryption is chosen at creation and fixed (FILES.md §1).
   const isFiles = channel.kind === "files";
+  const filesUsage = useQuery({ queryKey: ["files-usage", domain, channel.id], queryFn: () => api.files.usage(room.id, channel.id), enabled: isFiles && confirmDelete });
+  const [keepExternal, setKeepExternal] = useState(false);
   const canManageRoles = hasPermission(parsePermissions(room.my_permissions), Permission.MANAGE_ROLES);
 
   const save = async () => {
     try {
-      await api.channels.update(room.id, channel.id, { name, topic, category_id: categoryId || null, slowmode_secs: slowmode, sync_with_category: sync, encrypted: isVoice || isFiles ? null : encrypted });
+      await api.channels.update(room.id, channel.id, { name, topic, category_id: categoryId || null, slowmode_secs: slowmode, encrypted: isVoice || isFiles ? null : encrypted });
       await onChanged();
       useToasts.getState().push({ kind: "info", title: t("channels.saved") });
     } catch (err) {
@@ -160,9 +191,6 @@ function ChannelEditor({ channel, room, canManage, onChanged }: { channel: Chann
               </Field>
             )}
           </div>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" className="h-4 w-4" checked={sync} onChange={(e) => setSync(e.target.checked)} disabled={!canManage || !categoryId} /> {t("channels.sync")}
-          </label>
           {!isVoice && !isFiles && (
             <label className="flex items-start gap-2 text-sm">
               <input type="checkbox" className="mt-0.5 h-4 w-4" checked={encrypted} onChange={(e) => setEncrypted(e.target.checked)} disabled={!canManage} data-testid="encrypted-toggle" />
@@ -171,6 +199,15 @@ function ChannelEditor({ channel, room, canManage, onChanged }: { channel: Chann
                 <span className="block text-xs text-fg-2">{t("channels.encrypted_hint")}</span>
               </span>
             </label>
+          )}
+          {isFiles && (
+            <p className="flex items-start gap-2 text-sm text-fg-1" data-testid="files-encryption-fixed">
+              <LockMark open={!channel.encrypted} />
+              <span>
+                {t(channel.encrypted ? "files.fixed_encrypted" : "files.fixed_unencrypted")}
+                <span className="block text-xs text-fg-2">{t("files.fixed_hint")}</span>
+              </span>
+            </p>
           )}
           {canManage && (
             <div className="flex flex-wrap justify-end gap-2">
@@ -182,14 +219,44 @@ function ChannelEditor({ channel, room, canManage, onChanged }: { channel: Chann
           )}
         </Section>
       </form>
+      <AgeGateSection
+        key={channel.id}
+        scope="channel"
+        value={channel.age_gate ?? "none"}
+        inherited={room.age_gate === "adults_only"}
+        canManage={canManage}
+        onSave={async (gate) => {
+          await api.channels.update(room.id, channel.id, { age_gate: gate });
+          await onChanged();
+        }}
+      />
       {isVoice && <VoiceQualitySection channel={channel} room={room} canManage={canManage} onChanged={onChanged} />}
       {isFiles && <StorageSection room={room} channel={channel} />}
       <NoBotsToggles channel={channel} room={room} onChanged={onChanged} />
       <ChannelBotsAllowed channel={channel} room={room} onChanged={onChanged} />
       {channel.encrypted && !isVoice && channel.kind !== "system" && <HistoryPolicySection channel={channel} room={room} canManage={canManage} onChanged={onChanged} />}
       {["text", "announcement", "forum"].includes(channel.kind) && <ThreadSettingsSection channel={channel} room={room} canManage={canManage} onChanged={onChanged} />}
-      {canManageRoles && <OverridesEditor channel={channel} room={room} onChanged={onChanged} />}
-      <ConfirmDialog open={confirmDelete} title={t("channels.delete")} text={t("channels.delete_text", { name: channel.name })} confirmWord={channel.name} actionLabel={t("room.delete_action")} onClose={() => setConfirmDelete(false)} onConfirm={async () => { await api.channels.delete(room.id, channel.id); setConfirmDelete(false); await onChanged(); }} />
+      {canManageRoles && channel.kind !== "system" && <OverridesEditor target={{ type: "channel", channel }} room={room} onChanged={onChanged} />}
+      <ConfirmDialog
+        open={confirmDelete}
+        title={t("channels.delete")}
+        text={
+          <div className="space-y-2">
+            <p>{t("channels.delete_text", { name: channel.name })}</p>
+            {isFiles && filesUsage.data && <FilesDeletionFacts info={filesUsage.data} keep={keepExternal} onKeep={setKeepExternal} />}
+            {isFiles && filesUsage.isPending && <p className="text-xs text-fg-2">{t("common.loading")}</p>}
+          </div>
+        }
+        confirmWord={channel.name}
+        actionLabel={t("room.delete_action")}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={async () => {
+          const keep = isFiles && keepExternal && !!filesUsage.data && deletionCase(filesUsage.data) === "external_plain";
+          await api.channels.delete(room.id, channel.id, { keepExternal: keep });
+          setConfirmDelete(false);
+          await onChanged();
+        }}
+      />
       <ConfirmDialog open={confirmEncryption} title={t("channels.encryption_off_title")} text={t("channels.encryption_off_text")} actionLabel={t("channels.encryption_off_action")} onClose={() => setConfirmEncryption(false)} onConfirm={async () => { setConfirmEncryption(false); await save(); }} />
     </div>
   );
@@ -233,16 +300,41 @@ function NoBotsToggles({ channel, room, onChanged }: { channel: Channel; room: R
   );
 }
 
-function OverridesEditor({ channel, room, onChanged }: { channel: Channel; room: RoomDetail; onChanged: () => Promise<void> }) {
+type OverrideTarget = { type: "channel"; channel: Channel } | { type: "category"; category: Category };
+
+/**
+ * Overrides of a channel or a category (layered, tavrn-protocol permissions.md "Evaluation"): a category's apply to
+ * every channel in it, a channel's own win over the category's. Only channel-scoped bits are offered; each shows the
+ * value it inherits when left neutral. Channels with own overrides can be reset to their category.
+ */
+function OverridesEditor({ target, room, onChanged }: { target: OverrideTarget; room: RoomDetail; onChanged: () => Promise<void> }) {
   const { api } = useNode();
   const t = useT();
-  const overrides = room.overrides.filter((o) => o.target_type === "channel" && o.target_id === channel.id);
+  const targetId = target.type === "channel" ? target.channel.id : target.category.id;
+  const overrides = room.overrides.filter((o) => o.target_type === target.type && o.target_id === targetId);
+  const everyone = room.roles.find((r) => r.is_everyone);
   const subjects = room.roles.map((r) => ({ type: "role" as const, id: r.id, name: r.name }));
-  const [subject, setSubject] = useState(`role:${room.roles.find((r) => r.is_everyone)?.id ?? ""}`);
+  const [subject, setSubject] = useState(`role:${everyone?.id ?? ""}`);
   const [subjectType, subjectId] = subject.split(":") as ["role" | "member", string];
   const current = overrides.find((o) => o.subject_type === subjectType && o.subject_id === subjectId);
   const [allow, setAllow] = useState(parsePermissions(current?.allow));
   const [deny, setDeny] = useState(parsePermissions(current?.deny));
+  const [confirmReset, setConfirmReset] = useState(false);
+  const categoryId = target.type === "channel" ? target.channel.category_id : null;
+  const category = room.categories.find((c) => c.id === categoryId);
+  // What a neutral bit keeps: the roles and, in a channel, its category's overrides.
+  const categoryOverrides = target.type === "category" ? null : room.overrides.filter((o) => o.target_type === "category" && o.target_id === categoryId);
+  const inherited = (bit: bigint) =>
+    inheritedOverrideValue(
+      {
+        everyone_role_id: everyone?.id ?? "",
+        everyone_permissions: everyone?.permissions ?? "0",
+        roles: room.roles.filter((r) => !r.is_everyone).map((r) => [r.id, r.permissions] as [string, string]),
+        subject: subjectType === "member" ? { type: "member", id: subjectId, roles: [] } : { type: "role", id: subjectId },
+        category_overrides: categoryOverrides?.map((o) => ({ subject_type: o.subject_type as "role" | "member", subject_id: o.subject_id, allow: o.allow, deny: o.deny })) ?? null,
+      },
+      bit,
+    );
   const pick = (value: string) => {
     setSubject(value);
     const [ty, id] = value.split(":");
@@ -252,15 +344,17 @@ function OverridesEditor({ channel, room, onChanged }: { channel: Channel; room:
   };
   const save = async () => {
     try {
-      await api.channels.setOverride(room.id, { target_type: "channel", target_id: channel.id, subject_type: subjectType, subject_id: subjectId, allow: allow.toString(), deny: deny.toString() });
+      await api.channels.setOverride(room.id, { target_type: target.type, target_id: targetId, subject_type: subjectType, subject_id: subjectId, allow: allow.toString(), deny: deny.toString() });
       await onChanged();
       useToasts.getState().push({ kind: "info", title: t("channels.overrides_saved") });
     } catch (e) {
       toastError(e);
     }
   };
+  const isEveryone = subjectType === "role" && subjectId === everyone?.id;
+  const title = target.type === "channel" ? t("channels.overrides") : t("channels.category_overrides", { name: categoryName(target.category) });
   return (
-    <Section title={t("channels.overrides")} description={t("channels.overrides_hint")}>
+    <Section title={title} description={target.type === "channel" ? t(category ? "channels.overrides_hint" : "channels.overrides_hint_no_category") : t("channels.category_overrides_hint")}>
       <Field label={t("channels.override_target")}>
         <Select value={subject} onChange={(e) => pick(e.target.value)} aria-label={t("channels.override_target")}>
           {subjects.map((s) => (
@@ -270,11 +364,31 @@ function OverridesEditor({ channel, room, onChanged }: { channel: Channel; room:
           ))}
         </Select>
       </Field>
-      {subjectType === "role" && subjectId === room.roles.find((r) => r.is_everyone)?.id && <p className="text-xs text-fg-2">{t("members.everyone_restricted")}</p>}
-      <OverrideTriState allow={allow} deny={deny} onChange={(a, d) => { setAllow(a); setDeny(d); }} restricted={subjectType === "role" && subjectId === room.roles.find((r) => r.is_everyone)?.id ? EVERYONE_RESTRICTED : 0n} />
-      <div className="flex justify-end">
+      {isEveryone && <p className="text-xs text-fg-2">{t("members.everyone_restricted")}</p>}
+      <OverrideTriState allow={allow} deny={deny} onChange={(a, d) => { setAllow(a); setDeny(d); }} restricted={isEveryone ? EVERYONE_RESTRICTED : 0n} inherited={inherited} />
+      <div className="flex flex-wrap justify-end gap-2">
+        {target.type === "channel" && category && overrides.length > 0 && (
+          <Button variant="ghost" onClick={() => setConfirmReset(true)} data-testid="reset-to-category">
+            {t("channels.reset_to_category")}
+          </Button>
+        )}
         <Button onClick={() => void save()}>{t("channels.save_overrides")}</Button>
       </div>
+      <ConfirmDialog
+        open={confirmReset}
+        title={t("channels.reset_to_category")}
+        text={t("channels.reset_to_category_text", { count: overrides.length, name: category ? categoryName(category) : "" })}
+        actionLabel={t("channels.reset_to_category_action")}
+        onClose={() => setConfirmReset(false)}
+        onConfirm={async () => {
+          await api.channels.clearOverrides(room.id, overrides);
+          setConfirmReset(false);
+          setAllow(0n);
+          setDeny(0n);
+          await onChanged();
+          useToasts.getState().push({ kind: "info", title: t("channels.reset_done") });
+        }}
+      />
     </Section>
   );
 }

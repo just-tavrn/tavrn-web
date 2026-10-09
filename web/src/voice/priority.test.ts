@@ -18,8 +18,8 @@ const room: RoomPermissionData = {
     { target_type: "channel", target_id: "quiet", subject_type: "role", subject_id: "lead", allow: "0", deny: bits(Permission.PRIORITY_SPEAKER) },
   ],
   channels: [
-    { id: "voice", category_id: null, sync_with_category: false },
-    { id: "quiet", category_id: null, sync_with_category: false },
+    { id: "voice", category_id: null },
+    { id: "quiet", category_id: null },
   ],
 };
 

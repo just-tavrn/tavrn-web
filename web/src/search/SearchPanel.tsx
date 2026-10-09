@@ -18,7 +18,8 @@ import { channelName } from "../lib/names";
 import { conversationPath, roomPath, useNode } from "../components/NodeScope";
 import { apiFor, homeDomain, isHome, useNodes } from "../stores/nodes";
 import { localIndex, useLocalSearch } from "./local";
-import { MAX_ROOMS, runSearch, searchable, snippetParts, type Filters, type LocalRef, type RoomRef, type Scope, type SearchRow, type SearchStatus } from "./combined";
+import { MAX_ROOMS, runSearch, searchable, snippetParts, splitRows, type Filters, type LocalRef, type RoomRef, type Scope, type SearchRow, type SearchStatus } from "./combined";
+import { FileResult } from "./FileResult";
 
 interface SearchUi {
   open: boolean;
@@ -129,6 +130,8 @@ function SearchPanel(p: { conversationId: string; encrypted: boolean; roomId?: s
   }, [context]);
 
   const textChannels = useMemo(() => (p.room?.channels ?? []).filter((c) => !["voice", "files", "system"].includes(c.kind)), [p.room]);
+  // Encrypted files channels are in the local index too (SEARCH.md §3.6).
+  const localChannels = useMemo(() => (p.room?.channels ?? []).filter((c) => c.encrypted && !["voice", "system"].includes(c.kind)), [p.room]);
   const nameOf = useMemo(() => {
     const names = new Map<string, string>();
     for (const [, room] of queryClient.getQueriesData<RoomDetail>({ queryKey: ["room"] })) {
@@ -155,7 +158,7 @@ function SearchPanel(p: { conversationId: string; encrypted: boolean; roomId?: s
       let roomsSkipped = 0;
       if (scope === "room" && p.roomId) {
         rooms = [{ node: domain, roomId: p.roomId, api }];
-        local = textChannels.filter((c) => c.encrypted).map((c) => ({ node: domain, conversationId: c.id, roomId: p.roomId }));
+        local = localChannels.map((c) => ({ node: domain, conversationId: c.id, roomId: p.roomId }));
       } else if (scope === "conversation") {
         local = p.encrypted ? [{ node: domain, conversationId: p.conversationId }] : [];
       } else {
@@ -175,7 +178,7 @@ function SearchPanel(p: { conversationId: string; encrypted: boolean; roomId?: s
         const known: LocalRef[] = [];
         for (const [, room] of queryClient.getQueriesData<RoomDetail>({ queryKey: ["room"] })) {
           const node = all.find((r) => r.room.id === room?.id)?.node ?? home;
-          for (const c of room?.channels ?? []) if (c.encrypted && !["voice", "files", "system"].includes(c.kind)) known.push({ node, conversationId: c.id, roomId: room!.id });
+          for (const c of room?.channels ?? []) if (c.encrypted && !["voice", "system"].includes(c.kind)) known.push({ node, conversationId: c.id, roomId: room!.id });
         }
         for (const [key, list] of queryClient.getQueriesData<Conversation[]>({ queryKey: ["conversations"] })) {
           const node = typeof key[1] === "string" ? key[1] : home;
@@ -205,13 +208,24 @@ function SearchPanel(p: { conversationId: string; encrypted: boolean; roomId?: s
   const openRow = (row: SearchRow) => {
     const node = isHome(row.node) ? null : row.node;
     const channel = row.roomId ? roomPath(node, row.roomId, row.conversationId) : conversationPath(node, row.conversationId);
+    if (row.file) {
+      // An entry of a files channel: its folder, with the entry selected.
+      const params = new URLSearchParams();
+      if (row.file.parent) params.set("folder", row.file.parent);
+      params.set("entry", row.messageId);
+      navigate(`${channel}?${params}`);
+      if (!wide()) close();
+      return;
+    }
     // A thread message opens in its thread (PROTOCOL.md §7e).
     const path = row.threadId && row.roomId ? `${channel}/threads/${row.threadId}` : channel;
     navigate(`${path}?m=${row.messageId}`);
     if (!wide()) close();
   };
 
-  const rows = ui.rows ?? [];
+  // Messages first, then the "Files" group; one keyboard order over both.
+  const groups = splitRows(ui.rows ?? []);
+  const rows = [...groups.messages, ...groups.files];
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
       e.preventDefault();
@@ -237,7 +251,7 @@ function SearchPanel(p: { conversationId: string; encrypted: boolean; roomId?: s
     { id: "everywhere", label: t("search.scope.everywhere") },
   ];
   const setFilter = (patch: Partial<Filters>) => ui.set({ filters: { ...ui.filters, ...patch } });
-  const filterCount = [ui.filters.channel, ui.filters.author, ui.filters.from, ui.filters.to, ui.filters.hasFile].filter(Boolean).length;
+  const filterCount = [ui.filters.channel, ui.filters.author, ui.filters.from, ui.filters.to, ui.filters.hasFile, ui.filters.category].filter(Boolean).length;
 
   return (
     <div
@@ -333,6 +347,17 @@ function SearchPanel(p: { conversationId: string; encrypted: boolean; roomId?: s
             {t("search.filter.to")}
             <input type="date" value={ui.filters.to ?? ""} onChange={(e) => setFilter({ to: e.target.value || undefined })} className="min-h-9 rounded-md bg-bg-1 px-2 text-sm text-fg-0" data-testid="search-filter-to" />
           </label>
+          <label className="col-span-2 flex flex-col gap-1 text-fg-2">
+            {t("search.filter.type")}
+            <select value={ui.filters.category ?? ""} onChange={(e) => setFilter({ category: e.target.value || undefined })} className="min-h-9 rounded-md bg-bg-1 px-2 text-sm text-fg-0" data-testid="search-filter-type">
+              <option value="">{t("search.filter.any_type")}</option>
+              {["images", "audio", "video", "documents", "archives", "other"].map((c) => (
+                <option key={c} value={c}>
+                  {t(`upload.category.${c}`)}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="col-span-2 flex min-h-9 items-center gap-2 text-sm text-fg-1">
             <input type="checkbox" checked={!!ui.filters.hasFile} onChange={(e) => setFilter({ hasFile: e.target.checked || undefined })} data-testid="search-filter-file" />
             {t("search.filter.has_file")}
@@ -348,7 +373,7 @@ function SearchPanel(p: { conversationId: string; encrypted: boolean; roomId?: s
         {ui.busy && <p className="p-3 text-sm text-fg-2">{t("search.searching")}</p>}
         {!ui.busy && ui.rows && rows.length === 0 && <p className="p-3 text-sm text-fg-2" data-testid="search-empty">{t("search.no_results")}</p>}
         <ul id="search-results" role="listbox" aria-label={t("search.results")} className="divide-y divide-line" data-testid="search-results">
-          {rows.map((row, i) => (
+          {groups.messages.map((row, i) => (
             <li
               key={row.key}
               id={`search-row-${i}`}
@@ -379,6 +404,30 @@ function SearchPanel(p: { conversationId: string; encrypted: boolean; roomId?: s
             </li>
           ))}
         </ul>
+        {groups.files.length > 0 && (
+          <>
+            <h3 id="search-files-title" className="border-t border-line px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-fg-2">
+              {t("search.files_group")}
+            </h3>
+            <ul role="listbox" aria-labelledby="search-files-title" className="divide-y divide-line" data-testid="search-file-results">
+              {groups.files.map((row, j) => {
+                const i = groups.messages.length + j;
+                return (
+                  <FileResult
+                    key={row.key}
+                    row={row}
+                    index={i}
+                    active={i === active}
+                    uploader={authorName.get(row.author) || row.author.split("@")[0] || ""}
+                    channel={nameOf.get(row.conversationId) ?? "#…"}
+                    onOpen={() => openRow(row)}
+                    onHover={() => setActive(i)}
+                  />
+                );
+              })}
+            </ul>
+          </>
+        )}
       </div>
       {ui.status && (
         <p className="shrink-0 border-t border-line px-3 py-2 text-xs text-fg-2" role="status" data-testid="search-status">

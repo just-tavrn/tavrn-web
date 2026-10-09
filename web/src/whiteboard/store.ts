@@ -12,7 +12,8 @@ import { useAuth } from "../stores/auth";
 import { useNodeSockets, useRealtimeState } from "../hooks/useRealtime";
 import { getMls } from "../stores/mls";
 import { cryptoStore } from "../crypto/store";
-import { qualify } from "@tavrn/e2ee";
+import { qualify, searchKeysFromStore } from "@tavrn/e2ee";
+import { deleteDraft, readDraft, writeDraft } from "./drafts";
 import { useNode } from "../components/NodeScope";
 import { toastError } from "../stores/toasts";
 import { WhiteboardController, type Role, type Scene, type Transport } from "./controller";
@@ -41,12 +42,13 @@ export interface BoardContext {
   encrypted: boolean;
 }
 
-const draftName = (q: string) => `whiteboard-draft:${q}`;
-
 /** The owner's unsaved board from the local encrypted store (null if none or locked). */
 export async function loadDraft(domain: string, conversationId: string): Promise<Scene | null> {
   if (!cryptoStore.isUnlocked()) return null;
-  const bytes = await cryptoStore.getSecret(draftName(qualify(domain, conversationId))).catch(() => null);
+  const q = qualify(domain, conversationId);
+  const bytes = await searchKeysFromStore(cryptoStore)
+    .then((keys) => readDraft(cryptoStore, keys, q))
+    .catch(() => null);
   if (!bytes) return null;
   try {
     return parseScene(bytes);
@@ -81,14 +83,21 @@ export function ephemeralTransport(ctx: BoardContext): Transport {
 function create(key: string, ctx: BoardContext): Entry {
   const me = useAuth.getState();
   const q = qualify(ctx.domain, ctx.conversationId);
+  // Draft writes in order (each derives the record name first): a later save never loses to an earlier one.
+  let drafts: Promise<void> = Promise.resolve();
+  const draftOp = (op: () => Promise<void>) => {
+    drafts = drafts.then(op).catch(() => undefined);
+  };
   const controller = new WhiteboardController({
     me: { address: me.user?.address ?? "", deviceId: me.deviceId ?? "" },
     transport: ephemeralTransport(ctx),
     renderThumbnail,
     saveDraft: (scene) => {
-      if (cryptoStore.isUnlocked()) void cryptoStore.putSecret(draftName(q), serializeScene(scene)).catch(() => undefined);
+      if (!cryptoStore.isUnlocked()) return;
+      const bytes = serializeScene(scene);
+      draftOp(async () => writeDraft(cryptoStore, await searchKeysFromStore(cryptoStore), q, bytes));
     },
-    clearDraft: () => void cryptoStore.deleteSecret(draftName(q)).catch(() => undefined),
+    clearDraft: () => draftOp(async () => deleteDraft(cryptoStore, await searchKeysFromStore(cryptoStore), q)),
     onError: (e) => toastError(e),
   });
 

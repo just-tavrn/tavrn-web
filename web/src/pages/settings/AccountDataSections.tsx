@@ -35,7 +35,7 @@ export function exportFilename(username: string, now = new Date()): string {
 }
 
 /** Retention entries worth showing (days; 0 = kept until deleted). */
-const RETENTION_KEYS = ["session_refresh_days", "device_stale_days", "attachment_retention_days", "legal_notice_retention_days", "account_delete_grace_days"] as const;
+const RETENTION_KEYS = ["session_refresh_days", "device_stale_days", "message_retention_days", "attachment_retention_days", "legal_notice_retention_days", "account_delete_grace_days"] as const;
 
 function Summary({ data }: { data: DataSummary }) {
   const t = useT();

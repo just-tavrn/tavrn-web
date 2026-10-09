@@ -17,16 +17,20 @@ import { useMarkRead } from "../hooks/useMarkRead";
 import { MESSAGE_QUERY_OPTIONS, PAGE, fetchPage, flatten, isDetached, mapMessages, messagesKey, newerParam, olderParam, prependMessage, trimPages, type MessagePages, type PageParam } from "../lib/messagePages";
 import { useThreadMarkRead } from "../threads/useThreadMarkRead";
 import { indexEntry, indexMessages } from "../search/local";
+import { archiveMessages, pageWithArchive } from "../history/local";
 import { rememberRoom } from "../search/sync";
 import { SearchButton } from "../search/SearchPanel";
 import { useDecrypted, useE2eeConversation, usePlainSignatures } from "../hooks/useE2eeConversation";
-import { encryptAttachment, encryptCommandArgs, grantsHistory, parseHistoryPolicy, qualify, signedAttachments, type ContentAttachment } from "@tavrn/e2ee";
+import { encryptAttachment, encryptCommandArgs, grantsHistory, parseHistoryPolicy, qualify, signedAttachments, type ContentAttachment, type MessageContext } from "@tavrn/e2ee";
+import { withFreshEpoch } from "../lib/epochRetry";
 import { historyPending, historyReceive } from "../crypto/history";
+import { HistoryRestoreBanner } from "./HistoryRestoreBanner";
+import { useMyRestoreState } from "../history/restore";
 import { MessageList, type AuthorLook } from "./MessageList";
 import { memberColor, memberName } from "../lib/memberGroups";
 import { Composer, type ComposerCommands, type SendPayload } from "./Composer";
 import { availableCommands, builtinRegistry } from "../commands/registry";
-import { CommandError, executeBuiltin, resolveAppArgs } from "../commands/execute";
+import { CommandError, executeBuiltin, invokeRequest, resolveAppArgs } from "../commands/execute";
 import { appDefinitions, mergePalette } from "../commands/merge";
 import type { ArgValue, CommandDefinition } from "../commands/types";
 import { useInteractions } from "../stores/interactions";
@@ -48,6 +52,7 @@ import { ReportDialog } from "../moderation/ReportDialog";
 import { evidenceCandidates } from "../moderation/evidence";
 import { isAutomodBlock } from "../moderation/blocked";
 import { wasDeleted } from "../moderation/deletedIds";
+import { LockMark } from "./Badges";
 
 /** An error that was already shown to the user. */
 class AlreadyReported extends Error {}
@@ -121,10 +126,13 @@ export function ConversationView(p: ConversationViewProps) {
   const nodeInfo = useQuery({ queryKey: home ? ["node"] : ["node", domain], queryFn: () => api.node.info(), staleTime: 10 * 60_000 });
   const threadId = p.threadId;
   const messageKey = useMemo(() => messagesKey(conversationId, threadId), [conversationId, threadId]);
-  // Lazy history (design note 4.4): newest page on open, older pages on demand; dropped when closed.
+  // MLS names the conversation by its qualified id: the node hosting it and the ULID (ENCRYPTION.md §0.1).
+  const q = qualify(domain, conversationId);
+  // Lazy history (design note 4.4): newest page on open, older pages on demand; dropped when closed. With "keep the
+  // full history on this device" the pages come from the device's archive while the node cannot be reached (#4).
   const messages = useInfiniteQuery({
     queryKey: messageKey,
-    queryFn: ({ pageParam }) => fetchPage(api, conversationId, pageParam, threadId),
+    queryFn: ({ pageParam }) => pageWithArchive(q, () => fetchPage(api, conversationId, pageParam, threadId), pageParam, threadId),
     initialPageParam: undefined as PageParam,
     getNextPageParam: (last) => olderParam(last),
     // After a jump into the history (`around`): newer pages up to the live end.
@@ -168,8 +176,6 @@ export function ConversationView(p: ConversationViewProps) {
   const location = useLocation();
   const uploadPolicy = useQuery({ queryKey: ["upload-policy", domain, conversationId], queryFn: () => api.attachments.policy(conversationId), enabled: p.canAttach, staleTime: 60_000 });
 
-  // MLS names the conversation by its qualified id: the node hosting it and the ULID (ENCRYPTION.md §0.1).
-  const q = qualify(domain, conversationId);
   // Room channels with an effective "no bots" flag: bot leaves are ghosts (APPLICATIONS.md §3.5). The client also
   // applies the room's `bots_in_encrypted_channels` itself (design note 4.7).
   const noBots = ghostNoBots(p.room?.channels.find((c) => c.id === conversationId), p.room);
@@ -194,6 +200,21 @@ export function ConversationView(p: ConversationViewProps) {
     }
     if (entries.length) void indexMessages(entries);
   }, [decrypted, loaded, q, p.roomId]);
+  // "Keep the full history on this device" (#4): what is shown goes into the device's archive (decrypted content of
+  // encrypted messages once it is there, plaintext ones as they are); every message version once.
+  const archivedRef = useRef(new Set<string>());
+  useEffect(() => {
+    const items = [];
+    for (const m of fetched) {
+      const key = `${m.id}|${m.edited_at ?? ""}`;
+      if (archivedRef.current.has(key)) continue;
+      const d = m.encrypted ? decrypted[m.id] : null;
+      if (m.encrypted && !d?.ok) continue;
+      archivedRef.current.add(key);
+      items.push({ message: m, decrypted: d ?? null });
+    }
+    if (items.length) void archiveMessages(q, items);
+  }, [decrypted, fetched, q]);
   useEffect(() => {
     if (p.roomId && e2ee.phase === "ready") void rememberRoom(q, p.roomId);
   }, [q, p.roomId, e2ee.phase]);
@@ -256,6 +277,13 @@ export function ConversationView(p: ConversationViewProps) {
     staleTime: 30_000,
   });
   const historyLocked = historyActive && !!historyPendingList.data?.items.some((i) => i.user === user?.address);
+  // After a key reset an approved restore brings keys also where the policy gives new members nothing (§7b).
+  const restoreState = useMyRestoreState(api, home ? null : domain, p.room && p.encrypted && !threadId ? p.room.id : null);
+  const restored = !!restoreState.data?.restored_at && p.encrypted && e2ee.phase === "ready";
+  useEffect(() => {
+    if (!restored || historyActive) return;
+    void historyReceive(q);
+  }, [restored, historyActive, q]);
   useEffect(() => {
     if (!historyActive || !historyPolicy) return;
     // Keys shared while this device was away, then members who still wait for ours.
@@ -331,11 +359,27 @@ export function ConversationView(p: ConversationViewProps) {
     return stored;
   };
 
-  /** Plaintext content or `{ content, epoch }` of the encrypted content object. */
-  const seal = async (content: Record<string, unknown>): Promise<{ content: unknown; epoch?: number }> => {
+  /**
+   * Plaintext content or `{ content, epoch }` of the encrypted content object, with the envelope's thread and reply
+   * signed inside (ENCRYPTION.md §5.2). The roster is checked again if commits arrived just before (§4.6): the members
+   * and the ghosts this view shows go along.
+   */
+  const seal = async (content: Record<string, unknown>, ctx: MessageContext): Promise<{ content: unknown; epoch?: number }> => {
     if (!p.encrypted) return { content };
     if (!e2ee.mls) throw new Error(t("e2ee.composer_locked"));
-    return e2ee.mls.encrypt(q, content);
+    try {
+      return await e2ee.mls.encrypt(q, content, { ctx, ...(p.members ? { members: p.members, noBots } : {}), knownGhosts: e2ee.ghosts.map((g) => g.identity) });
+    } catch (e) {
+      // A device joined that nobody was shown yet: the warning has to be acknowledged again.
+      if ((e as { name?: string; code?: string }).name === "MlsError" && (e as { code?: string }).code === "ghost") {
+        useMlsUi.setState((st) => {
+          const ghostAck = { ...st.ghostAck };
+          delete ghostAck[conversationId];
+          return { ghostAck };
+        });
+      }
+      throw e;
+    }
   };
 
   const send = async ({ body, attachmentIds, gif, preview, spoilerIds }: SendPayload) => {
@@ -362,7 +406,6 @@ export function ConversationView(p: ConversationViewProps) {
           .filter((a): a is ContentAttachment => !!a)
           .map((a) => (spoilerIds.includes(a.id) ? { ...a, spoiler: true } : a));
       }
-      const sealed = await seal(content);
       // Plaintext: device signature over the envelope fields and the content (FEDERATION.md §10.3),
       // best effort (no device key yet: unsigned).
       let signature: string | null = null;
@@ -373,7 +416,10 @@ export function ConversationView(p: ConversationViewProps) {
         }
       }
       const spoilers = !p.encrypted && spoilerIds.length ? { spoilers: spoilerIds.filter((id) => attachmentIds.includes(id)) } : {};
-      const created = await api.conversations.send(conversationId, { ...sealed, attachments: attachmentIds, mentions, mentions_everyone, reply_to_id: reply, ...spoilers, ...(signature ? { signature } : {}), ...(threadId ? { thread_id: threadId } : {}) });
+      const created = await withFreshEpoch(p.encrypted ? e2ee.mls : null, q, async () => {
+        const sealed = await seal(content, { thread_id: threadId ?? null, reply_to: reply });
+        return api.conversations.send(conversationId, { ...sealed, attachments: attachmentIds, mentions, mentions_everyone, reply_to_id: reply, ...spoilers, ...(signature ? { signature } : {}), ...(threadId ? { thread_id: threadId } : {}) });
+      });
       setReplyTo(null);
       for (const id of attachmentIds) {
         uploadKeys.current.delete(id);
@@ -396,12 +442,15 @@ export function ConversationView(p: ConversationViewProps) {
       const previous = m.encrypted ? (decrypted[m.id]?.ok ? (decrypted[m.id] as { content: Record<string, unknown> }).content : null) : (m.content as Record<string, unknown>);
       if (!previous) return;
       const next = { ...previous, type: previous.type === "action" ? "action" : "text", body };
-      const sealed = await seal(next);
       // Edits are signed anew by the editing device (§10.3); the bound attachments stay.
       const signature = !p.encrypted && e2ee.mls
         ? e2ee.mls.signPlaintext(q, { reply_to: m.reply_to_id ?? null, thread_id: m.thread_id ?? null, mentions_everyone: m.mentions_everyone, mentions: m.mentions, attachments: signedAttachments(m.attachments ?? []) }, next)
         : null;
-      updateMessage(await api.conversations.edit(conversationId, m.id, { ...sealed, mentions: m.mentions, mentions_everyone: m.mentions_everyone, ...(signature ? { signature } : {}) }));
+      const edited = await withFreshEpoch(p.encrypted ? e2ee.mls : null, q, async () => {
+        const sealed = await seal(next, { thread_id: m.thread_id ?? null, reply_to: m.reply_to_id ?? null });
+        return api.conversations.edit(conversationId, m.id, { ...sealed, mentions: m.mentions, mentions_everyone: m.mentions_everyone, ...(signature ? { signature } : {}) });
+      });
+      updateMessage(edited);
     } catch (e) {
       toastError(e);
       throw e;
@@ -437,7 +486,7 @@ export function ConversationView(p: ConversationViewProps) {
     } else {
       sealed = { args };
     }
-    const res = await api.commands.invoke(conversationId, { command: def.ref, ...sealed });
+    const res = await api.commands.invoke(conversationId, invokeRequest(def.ref, sealed, threadId));
     const notices = useInteractions.getState();
     if (res.message) {
       const m = res.message;
@@ -529,9 +578,7 @@ export function ConversationView(p: ConversationViewProps) {
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-4">
         {p.header}
         {p.encrypted && (
-          <span role="img" className="shrink-0 text-xs text-fg-2" title={t("e2ee.encrypted_hint")} aria-label={t("e2ee.encrypted_hint")} data-testid="encrypted-marker">
-            🔒
-          </span>
+          <LockMark size={18} title={t("e2ee.encrypted_hint")} testId="encrypted-marker" />
         )}
         {!threadId && (
           <>
@@ -567,6 +614,7 @@ export function ConversationView(p: ConversationViewProps) {
       {p.encrypted && e2ee.rejoined && <E2eeStatusLine kind="rejoined" />}
       {waiting && <E2eeStatusLine kind="waiting" detail={e2ee.waiting.join(", ")} />}
       {historyLocked && <E2eeStatusLine kind="history" />}
+      {p.encrypted && p.room && !threadId && <HistoryRestoreBanner room={p.room} />}
       {p.encrypted && <GhostWarning ghosts={ghosts} acknowledged={ghostAck} onAcknowledge={() => useMlsUi.setState((s) => ({ ghostAck: { ...s.ghostAck, [conversationId]: true } }))} />}
       <VerificationNotice addresses={broken} blocking={verificationBlock} />
       {messages.isError && <p className="p-4 text-sm text-danger">{describeError(messages.error)}</p>}

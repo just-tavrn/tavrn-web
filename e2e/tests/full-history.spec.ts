@@ -103,3 +103,52 @@ test("keep the full history: the background sync finds an old message; when off,
   await expect(panel.getByTestId("search-status")).toContainText("letzte 90 Tage von 1 verschlüsselten Unterhaltung(en)");
   await expect(panel.getByTestId("search-status")).not.toContainText("gesamter Verlauf");
 });
+
+test("keep the full history: decrypted messages stay on this device for reading without the node; off deletes them", async ({ page, request }) => {
+  test.setTimeout(180_000);
+  const alice = await cryptoAccountViaApi(request, "alice");
+  const room = await createRoomViaApi(request, alice.token, "Offlineraum", "invite", { encrypted: true });
+  const channel = room.channels.find((c: { kind: string }) => c.kind === "text").id as string;
+  const welcome = room.channels.find((c: { kind: string }) => c.kind === "system").id as string;
+  await createGroup(request, alice, channel);
+  const code = await inviteCode(request, alice.token, room.id);
+  await registerViaUi(page, { prefix: "bob" });
+  await page.goto(`/invite/${code}`);
+  await page.getByRole("button", { name: "Beitreten" }).click();
+  await expect(page.getByLabel("Nachricht", { exact: true })).toBeEnabled({ timeout: 20_000 });
+  await page.goto(`/rooms/${room.id}/channels/${welcome}`);
+  await expect(page.getByTestId("channel-name")).toBeVisible();
+  await catchUp(request, alice, channel);
+  for (let i = 1; i <= 12; i++) await sendEncrypted(request, alice, channel, `Notiz ${String(i).padStart(2, "0")} für unterwegs`);
+
+  // On: the background sync archives the decrypted history; the menu shows what it takes (cap 50 MB by default).
+  await toggleFullHistory(page, true);
+  await expect(async () => {
+    await openNavIfMobile(page);
+    await openContextMenu(page, page.getByTestId("channel-row").filter({ hasText: "allgemein" }));
+    const item = page.getByTestId("channel-menu").getByRole("menuitemcheckbox", { name: /Gesamten Verlauf auf diesem Gerät behalten/ });
+    try {
+      await expect(item).toHaveAccessibleName(/\(\d+(\.\d)? KB \/ 50\.0 MB\)/, { timeout: 2_000 });
+    } finally {
+      await page.keyboard.press("Escape");
+    }
+  }).toPass({ timeout: 60_000 });
+
+  // The node's message pages cannot be reached any more: after a reload the channel reads from this device.
+  await page.route("**/api/v1/conversations/*/messages**", (route) => route.abort("internetdisconnected"));
+  await page.goto(`/rooms/${room.id}/channels/${channel}`);
+  const list = page.getByTestId("message");
+  await expect(list.filter({ hasText: "Notiz 12 für unterwegs" })).toBeVisible({ timeout: 30_000 });
+  await expect(list.filter({ hasText: "Notiz 01 für unterwegs" })).toBeVisible();
+  await page.unroute("**/api/v1/conversations/*/messages**");
+
+  // The settings show the space it takes; turned off, it is deleted.
+  await page.goto("/settings/privacy");
+  await expect(page.getByTestId("local-history-usage")).toContainText(/KB in 1 Unterhaltungen/, { timeout: 20_000 });
+  await expect(page.getByTestId("local-history-cap")).toHaveValue("50");
+  await page.goto(`/rooms/${room.id}/channels/${welcome}`);
+  await expect(page.getByTestId("channel-name")).toBeVisible();
+  await toggleFullHistory(page, false);
+  await page.goto("/settings/privacy");
+  await expect(page.getByTestId("local-history-usage")).toHaveText("0 B in 0 Unterhaltungen", { timeout: 20_000 });
+});
