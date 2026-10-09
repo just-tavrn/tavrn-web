@@ -570,13 +570,13 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
             </span>
           ) : (
             <>
-              <button type="button" onClick={() => openFolder(null)} className="rounded px-1 font-medium text-fg-1 hover:bg-bg-3 hover:text-fg-0" data-testid="files-crumb" data-folder="" {...rootDrop}>
+              <button type="button" onClick={() => openFolder(null)} className="min-h-6 min-w-6 rounded px-1 font-medium text-fg-1 hover:bg-bg-3 hover:text-fg-0" data-testid="files-crumb" data-folder="" {...rootDrop}>
                 {channelName(channel)}
               </button>
               {path.map((c) => (
                 <span key={c.id} className="flex min-w-0 items-center gap-1">
                   <span className="text-fg-2">/</span>
-                  <button type="button" onClick={() => openFolder(c.id)} className="max-w-[12rem] truncate rounded px-1 text-fg-1 hover:bg-bg-3 hover:text-fg-0" data-testid="files-crumb" data-folder={c.id}>
+                  <button type="button" onClick={() => openFolder(c.id)} className="min-h-6 min-w-6 max-w-[12rem] truncate rounded px-1 text-fg-1 hover:bg-bg-3 hover:text-fg-0" data-testid="files-crumb" data-folder={c.id}>
                     {c.name}
                   </button>
                 </span>
