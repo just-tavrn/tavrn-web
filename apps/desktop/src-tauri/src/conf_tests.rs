@@ -96,6 +96,16 @@ fn the_capability_grants_only_the_app_commands_to_the_main_window() {
             "allow-unregister-hotkey",
             "allow-listen-hotkeys",
             "allow-set-hotkeys-enabled",
+            "allow-voice-info",
+            "allow-voice-devices",
+            "allow-voice-join",
+            "allow-voice-leave",
+            "allow-voice-set-key",
+            "allow-voice-set-muted",
+            "allow-voice-set-deafened",
+            "allow-voice-set-ptt",
+            "allow-voice-configure",
+            "allow-voice-set-volumes",
         ]
     );
     assert!(permissions.iter().all(|p| p.starts_with("allow-")), "no plugin or core permissions: the shell's own commands only");

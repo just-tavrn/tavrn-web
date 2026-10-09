@@ -303,10 +303,20 @@ struct Shared {
     registry: Mutex<Registry>,
     matcher: Mutex<Matcher>,
     emit: Mutex<Option<Emit>>,
+    /// The shell's own listener (push-to-talk of the native voice engine), called before the client's channel.
+    tap: Mutex<Option<Emit>>,
 }
 
 impl Shared {
     fn send(&self, events: impl IntoIterator<Item = HotkeyEvent>) {
+        let events: Vec<HotkeyEvent> = events.into_iter().collect();
+        if let Ok(tap) = self.tap.lock()
+            && let Some(tap) = tap.as_ref()
+        {
+            for e in &events {
+                tap(e.clone());
+            }
+        }
         if let Ok(emit) = self.emit.lock()
             && let Some(emit) = emit.as_ref()
         {
@@ -357,6 +367,13 @@ impl Hotkeys {
     pub fn set_emit(&self, emit: impl Fn(HotkeyEvent) + Send + 'static) {
         if let Ok(mut e) = self.shared.emit.lock() {
             *e = Some(Box::new(emit));
+        }
+    }
+
+    /// The shell's own listener of the action events (the native voice engine's push-to-talk), next to the client's.
+    pub fn set_tap(&self, tap: impl Fn(HotkeyEvent) + Send + 'static) {
+        if let Ok(mut t) = self.shared.tap.lock() {
+            *t = Some(Box::new(tap));
         }
     }
 
@@ -683,6 +700,22 @@ mod tests {
             }
             std::thread::sleep(Duration::from_millis(5));
         }
+    }
+
+    #[test]
+    fn the_tap_hears_every_action_event_too() {
+        let listener = FakeListener::default();
+        let (h, seen) = hotkeys(&listener);
+        let tapped = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&tapped);
+        h.set_tap(move |e| log.lock().map(|mut l| l.push(e)).unwrap_or_default());
+        assert!(h.bind(Action::PushToTalk, "ControlLeft").is_ok());
+        assert_eq!(h.set_enabled(true), Ok(true));
+        listener.press("ControlLeft", true);
+        listener.press("ControlLeft", false);
+        let events = wait_for(&seen, 2);
+        assert_eq!(events, wait_for(&tapped, 2));
+        assert_eq!(events, vec![HotkeyEvent { action: Action::PushToTalk, pressed: true }, HotkeyEvent { action: Action::PushToTalk, pressed: false }]);
     }
 
     #[test]

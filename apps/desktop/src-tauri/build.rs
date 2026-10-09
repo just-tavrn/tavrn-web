@@ -25,6 +25,16 @@ fn main() {
         "unregister_hotkey",
         "listen_hotkeys",
         "set_hotkeys_enabled",
+        "voice_info",
+        "voice_devices",
+        "voice_join",
+        "voice_leave",
+        "voice_set_key",
+        "voice_set_muted",
+        "voice_set_deafened",
+        "voice_set_ptt",
+        "voice_configure",
+        "voice_set_volumes",
     ];
     let attributes = tauri_build::Attributes::new().app_manifest(tauri_build::AppManifest::new().commands(commands));
     if let Err(e) = tauri_build::try_build(attributes) {

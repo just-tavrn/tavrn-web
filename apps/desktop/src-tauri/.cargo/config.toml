@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# The prebuilt libwebrtc of LiveKit's Rust SDK (the native voice engine) links the static C runtime on Windows (/MT):
+# the app must use it too, or the linker refuses the mismatch. The installer then needs no Visual C++ redistributable.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

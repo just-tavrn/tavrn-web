@@ -26,6 +26,16 @@
     "allow-register-hotkey",
     "allow-unregister-hotkey",
     "allow-listen-hotkeys",
-    "allow-set-hotkeys-enabled"
+    "allow-set-hotkeys-enabled",
+    "allow-voice-info",
+    "allow-voice-devices",
+    "allow-voice-join",
+    "allow-voice-leave",
+    "allow-voice-set-key",
+    "allow-voice-set-muted",
+    "allow-voice-set-deafened",
+    "allow-voice-set-ptt",
+    "allow-voice-configure",
+    "allow-voice-set-volumes"
   ]
 }
