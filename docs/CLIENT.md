@@ -192,6 +192,24 @@ space set under Settings → Privacy → Local search index (default 50 MB; the 
 shows what it takes, the settings the total. Turning the setting off, clearing the index or signing out (which wipes the
 device) deletes the archive.
 
+**History after a key reset** (protocol ENCRYPTION.md §7b, capability `history.restore`; `web/src/history/restore.ts`).
+A member who reset their security key keeps their rooms but not the encrypted history from before the reset, and
+other members' devices never send those keys automatically: the sharing code (`HistorySync` in `@tavrn/e2ee`) shares
+only epochs after the reset epoch with a waiting member who has `key_reset_at`, and with older nodes it takes the reset
+time from the member's keys document (`identity_reset_at`, `src/crypto/history.ts`) so that it cannot be tricked into
+sending the old range. In such a room the member sees a banner in every encrypted channel (and in the file browser of
+encrypted files channels) that explains it and asks the room's moderators to restore the history, with an optional
+message, the request's state, "Withdraw request" and, after a denial, the reason and "Ask again". Members with
+**Restore history after a key reset** (`restore_history`, owner and administrators by default) get a notification and
+handle the requests under room settings → History requests: the requester, their join and reset dates, the message,
+every encrypted channel the requester may read (text, announcement, forum and files channels) with the window and
+the epochs this device would send, and a warning when this device lacks some keys. Approving needs the confirmation
+that the person's identity was verified on another channel; the client then approves (telling the node whether the
+restore is partial) and sends the keys from this device for every channel in which a device of the requester is in the
+group, and reports what it shared, what was incomplete and what it skipped. Denying needs a reason, which the
+requester sees. The welcome channel shows both decisions; the room's overview has the switch "Members may ask to
+restore their history".
+
 ## Threads, forum and announcement channels
 
 Threads ([PROTOCOL.md §7e](https://github.com/just-tavrn/tavrn-protocol/blob/main/PROTOCOL.md)) are

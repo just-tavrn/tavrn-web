@@ -23,6 +23,8 @@ import { SearchButton } from "../search/SearchPanel";
 import { useDecrypted, useE2eeConversation, usePlainSignatures } from "../hooks/useE2eeConversation";
 import { encryptAttachment, encryptCommandArgs, grantsHistory, parseHistoryPolicy, qualify, signedAttachments, type ContentAttachment } from "@tavrn/e2ee";
 import { historyPending, historyReceive } from "../crypto/history";
+import { HistoryRestoreBanner } from "./HistoryRestoreBanner";
+import { useMyRestoreState } from "../history/restore";
 import { MessageList, type AuthorLook } from "./MessageList";
 import { memberColor, memberName } from "../lib/memberGroups";
 import { Composer, type ComposerCommands, type SendPayload } from "./Composer";
@@ -274,6 +276,13 @@ export function ConversationView(p: ConversationViewProps) {
     staleTime: 30_000,
   });
   const historyLocked = historyActive && !!historyPendingList.data?.items.some((i) => i.user === user?.address);
+  // After a key reset an approved restore brings keys also where the policy gives new members nothing (§7b).
+  const restoreState = useMyRestoreState(api, home ? null : domain, p.room && p.encrypted && !threadId ? p.room.id : null);
+  const restored = !!restoreState.data?.restored_at && p.encrypted && e2ee.phase === "ready";
+  useEffect(() => {
+    if (!restored || historyActive) return;
+    void historyReceive(q);
+  }, [restored, historyActive, q]);
   useEffect(() => {
     if (!historyActive || !historyPolicy) return;
     // Keys shared while this device was away, then members who still wait for ours.
@@ -583,6 +592,7 @@ export function ConversationView(p: ConversationViewProps) {
       {p.encrypted && e2ee.rejoined && <E2eeStatusLine kind="rejoined" />}
       {waiting && <E2eeStatusLine kind="waiting" detail={e2ee.waiting.join(", ")} />}
       {historyLocked && <E2eeStatusLine kind="history" />}
+      {p.encrypted && p.room && !threadId && <HistoryRestoreBanner room={p.room} />}
       {p.encrypted && <GhostWarning ghosts={ghosts} acknowledged={ghostAck} onAcknowledge={() => useMlsUi.setState((s) => ({ ghostAck: { ...s.ghostAck, [conversationId]: true } }))} />}
       <VerificationNotice addresses={broken} blocking={verificationBlock} />
       {messages.isError && <p className="p-4 text-sm text-danger">{describeError(messages.error)}</p>}

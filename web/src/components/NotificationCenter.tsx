@@ -13,7 +13,7 @@ import { useShell } from "./AppShell";
 import { formatFullTime } from "../lib/format";
 import { BellIcon } from "./icons";
 
-const ICON = { mention: "@", dm: "✉", message: "#", call: "📞", legal: "§", report: "⚑" } as const;
+const ICON = { mention: "@", dm: "✉", message: "#", call: "📞", legal: "§", report: "⚑", history: "🔑" } as const;
 
 function NotificationPanel({ anchor, onClose }: { anchor: AnchorRect; onClose: () => void }) {
   const t = useT();

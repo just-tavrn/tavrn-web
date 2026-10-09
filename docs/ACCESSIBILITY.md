@@ -95,6 +95,12 @@ Before: 3 critical + 325 serious + 241 moderate + 25 minor nodes. After: 0 criti
   the menus. Every drag-and-drop action is a menu entry too (WCAG 2.5.7). Badges and the drop indicator use
   `danger-solid` (3.2:1 on `bg-0`) and `accent` (6.97:1); targets stay 48 × 48 px. `e2e/tests/rail-folders.spec.ts`
   scans the rail with axe with a folder collapsed and expanded.
+- **History restore after a key reset** (`components/HistoryRestoreBanner.tsx`, `pages/settings/HistoryRequestsTab.tsx`):
+  the requester's banner is a labelled region with real buttons and a labelled message field; each request on the
+  settings page is a labelled section with a definition list for the dates, the channels as a list and the identity
+  check as a checkbox that enables "Approve" (no information by colour alone: partial coverage is spelled out). Warnings
+  use the `warn` tokens on `warn/10`, like the other notices. `e2e/tests/history-restore.spec.ts` scans the banner and
+  the page with axe.
 - **Tabs**: the sign-in/registration switch is a tab list with arrow keys and a tab panel (`lib/a11y.ts`
   `tabListKeyDown`); the settings and admin sections are navigation links with `aria-current="page"`.
 - **Pickers**: the emoji picker is a dialog with a menu grid (arrow keys, Escape, focus return) and one tab stop
