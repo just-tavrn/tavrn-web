@@ -25,7 +25,7 @@ test("deny view on @everyone, allow it on one channel: a member sees exactly tha
   };
   const team = await post("categories", { name: "Team" });
   const staff = await post("categories", { name: "Leitung" });
-  await post("channels", { kind: "text", name: "offen", category_id: team.id });
+  const offen = await post("channels", { kind: "text", name: "offen", category_id: team.id });
   await post("channels", { kind: "text", name: "geheim", category_id: team.id });
   await post("channels", { kind: "text", name: "intern", category_id: staff.id });
   const code = (await post("invites", {})).code as string;
@@ -75,5 +75,12 @@ test("deny view on @everyone, allow it on one channel: a member sees exactly tha
   await expect(nav.getByText("Team", { exact: true })).toBeVisible();
   await expect(nav.getByText("Leitung", { exact: true })).toHaveCount(0);
   await expect(nav.getByText("geheim")).toHaveCount(0);
+
+  // The owner hides "offen" again: the open channel disappears for the member, as lost access, not as deleted
+  // (`channel.delete` with `hidden`, PROTOCOL.md §6).
+  const everyone = ((await (await request.get(`${NODE}/api/v1/rooms/${room.id}`, { headers: auth })).json()).roles as Array<{ id: string; is_everyone: boolean }>).find((r) => r.is_everyone)!.id;
+  const hide = await request.put(`${NODE}/api/v1/rooms/${room.id}/overrides`, { headers: auth, data: { target_type: "channel", target_id: offen.id, subject_type: "role", subject_id: everyone, allow: "0", deny: "1" } });
+  expect(hide.ok(), await hide.text()).toBeTruthy();
+  await expect(memberPage.getByText("Du hast keinen Zugriff mehr auf diesen Channel.")).toBeVisible();
   await ctx.close();
 });

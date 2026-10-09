@@ -24,6 +24,7 @@ import { useUnread } from "../stores/unread";
 import { apiFor, homeDomain, refreshNode, useNodes } from "../stores/nodes";
 import { loadFollowedThreads } from "../threads/loadFollowed";
 import { unindexConversation, unindexMessages } from "../search/local";
+import { isRealDeletion, useHiddenChannels } from "../lib/hiddenChannels";
 import { usePresence } from "../stores/presence";
 import { useNotifications } from "../stores/notifications";
 import { isAttentive } from "./useMarkRead";
@@ -296,9 +297,12 @@ export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: 
       }
     }),
     ...["member.join", "member.update"].map((type) => socket.on<{ room_id: string }>(type, (d) => { invalidateRoom(d); void queryClient.invalidateQueries({ queryKey: ["members", d.room_id] }); })),
-    socket.on<{ id?: string }>("channel.delete", (d) => {
-      if (d.id) void unindexConversation(qualified(d.id));
+    // `hidden: true`: the user lost access (PROTOCOL.md §6), the channel itself still exists.
+    socket.on<{ id?: string; hidden?: boolean }>("channel.delete", (d) => {
+      useHiddenChannels.getState().deleted(d);
+      if (d.id && isRealDeletion(d)) void unindexConversation(qualified(d.id));
     }),
+    socket.on<{ id?: string }>("channel.create", (d) => useHiddenChannels.getState().created(d.id)),
     ...["channel.create", "channel.update", "channel.delete", "category.create", "category.update", "category.delete", "role.create", "role.update", "role.delete", "override.update", "room.update"].map((type) =>
       socket.on<{ room_id?: string; id?: string }>(type, (d) => invalidateRoom({ room_id: d.room_id ?? d.id })),
     ),
