@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { AgeGateSection } from "../../components/age/AgeGateSection";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { EVERYONE_RESTRICTED, Permission, hasPermission, parsePermissions, type Channel, type RoomDetail } from "@tavrn/sdk";
@@ -182,6 +183,17 @@ function ChannelEditor({ channel, room, canManage, onChanged }: { channel: Chann
           )}
         </Section>
       </form>
+      <AgeGateSection
+        key={channel.id}
+        scope="channel"
+        value={channel.age_gate ?? "none"}
+        inherited={room.age_gate === "adults_only"}
+        canManage={canManage}
+        onSave={async (gate) => {
+          await api.channels.update(room.id, channel.id, { age_gate: gate });
+          await onChanged();
+        }}
+      />
       {isVoice && <VoiceQualitySection channel={channel} room={room} canManage={canManage} onChanged={onChanged} />}
       {isFiles && <StorageSection room={room} channel={channel} />}
       <NoBotsToggles channel={channel} room={room} onChanged={onChanged} />

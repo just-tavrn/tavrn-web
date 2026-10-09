@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Route, Routes } from "react-router";
@@ -144,6 +144,7 @@ describe("LoginPage: registration wizard", () => {
     await u.type(screen.getByLabelText("Benutzername"), "alice");
     await u.type(screen.getByLabelText("Passwort"), "passwort-alice-123");
     await u.type(screen.getByLabelText("Passwort wiederholen"), "passwort-alice-123");
+    fireEvent.change(screen.getByLabelText("Geburtsdatum"), { target: { value: "1990-05-17" } });
     await u.type(screen.getByLabelText("Anzeigename (optional)"), "Alice");
     await u.click(screen.getByRole("button", { name: "Konto erstellen" }));
 
@@ -167,9 +168,38 @@ describe("LoginPage: registration wizard", () => {
     expect(useAuthFlow.getState().setup).toEqual({ kind: "register" });
 
     const reg = calls.find((c) => c.url.includes("/auth/register"))!;
-    expect(body(reg)).toMatchObject({ username: "alice", display_name: "Alice" });
+    expect(body(reg)).toMatchObject({ username: "alice", display_name: "Alice", date_of_birth: "1990-05-17" });
     expect(auth(calls.find((c) => c.url.includes("/totp/enroll"))!)).toBe("Bearer pre-e");
     expect(body(calls.find((c) => c.url.includes("/totp/confirm"))!)).toEqual({ code: "654321" });
+  });
+
+  it("requires a plausible date of birth and the node's minimum age before asking the node", async () => {
+    const calls = mockFetch({ "/api/v1/node": { body: { registration: "open", age: { self_declared: true, gates: ["adults_only"], minimum_age: 18 } } }, "/api/v1/auth/register": { status: 201, body: enrollStep } });
+    renderLogin();
+    const u = userEvent.setup();
+    await u.click(await screen.findByRole("tab", { name: "Registrieren" }));
+    await u.type(screen.getByLabelText("Benutzername"), "alice");
+    await u.type(screen.getByLabelText("Passwort"), "passwort-alice-123");
+    await u.type(screen.getByLabelText("Passwort wiederholen"), "passwort-alice-123");
+    const dob = screen.getByLabelText("Geburtsdatum");
+    expect(dob).toHaveAttribute("type", "date");
+    expect(dob).toHaveAttribute("aria-required", "true");
+    expect(dob).toHaveAccessibleDescription(/nur auf diesem Knoten/);
+    await u.click(screen.getByRole("button", { name: "Konto erstellen" }));
+    expect(await screen.findByTestId("date-of-birth-error")).toHaveTextContent("gültiges Geburtsdatum");
+    expect(dob).toHaveAttribute("aria-invalid", "true");
+    expect(dob).toHaveAccessibleDescription(/gültiges Geburtsdatum/);
+    const seventeen = new Date();
+    seventeen.setUTCFullYear(seventeen.getUTCFullYear() - 17);
+    fireEvent.change(dob, { target: { value: seventeen.toISOString().slice(0, 10) } });
+    await u.click(screen.getByRole("button", { name: "Konto erstellen" }));
+    expect(await screen.findByTestId("date-of-birth-error")).toHaveTextContent("mindestens 18 Jahre");
+    expect(calls.some((c) => c.url.includes("/auth/register"))).toBe(false);
+    fireEvent.change(dob, { target: { value: "2000-02-29" } });
+    expect(screen.queryByTestId("date-of-birth-error")).toBeNull();
+    await u.click(screen.getByRole("button", { name: "Konto erstellen" }));
+    expect(await screen.findByRole("heading", { name: "Zweiten Faktor einrichten" })).toBeInTheDocument();
+    expect(body(calls.find((c) => c.url.includes("/auth/register"))!)).toMatchObject({ date_of_birth: "2000-02-29" });
   });
 
   it("blocks the closed registration", async () => {
@@ -202,6 +232,7 @@ describe("LoginPage: registration wizard", () => {
     await u.type(screen.getByLabelText("Benutzername"), "alice");
     await u.type(screen.getByLabelText("Passwort", { exact: true }), "passwort-alice-123");
     await u.type(screen.getByLabelText("Passwort wiederholen"), "passwort-alice-123");
+    fireEvent.change(screen.getByLabelText("Geburtsdatum"), { target: { value: "1990-05-17" } });
     await u.click(screen.getByRole("button", { name: "Konto erstellen" }));
     expect(await screen.findByRole("heading", { name: "Zweiten Faktor einrichten" })).toBeInTheDocument();
     expect(body(calls.find((c) => c.url.includes("/auth/register"))!)).toMatchObject({ invite: "ABC123" });
@@ -235,6 +266,7 @@ describe("LoginPage: captcha", () => {
     await u.type(screen.getByLabelText("Benutzername"), "alice");
     await u.type(screen.getByLabelText("Passwort"), "passwort-alice-123");
     await u.type(screen.getByLabelText("Passwort wiederholen"), "passwort-alice-123");
+    fireEvent.change(screen.getByLabelText("Geburtsdatum"), { target: { value: "1990-05-17" } });
     await u.click(screen.getByRole("button", { name: "Konto erstellen" }));
     expect(await screen.findByRole("heading", { name: "Zweiten Faktor einrichten" })).toBeInTheDocument();
     expect(body(calls.find((c) => c.url.includes("/auth/register"))!)).toMatchObject({ captcha_token: "cap-tok" });

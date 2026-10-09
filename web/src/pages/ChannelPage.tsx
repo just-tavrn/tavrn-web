@@ -21,6 +21,8 @@ import { ResizablePanel } from "../threads/ResizablePanel";
 import { startThread } from "../threads/actions";
 import { defaultTitle } from "../threads/titles";
 import { useFollowedThreads } from "../threads/useFollowedThreads";
+import { useChannelLock } from "../lib/age";
+import { LockedChannel } from "../components/age/LockedChannel";
 
 // Files channels (design note 4.13 item 9): the file browser, loaded on demand.
 const FilesView = lazy(() => import("../files/FilesView"));
@@ -99,6 +101,8 @@ export function ChannelPage() {
   const channelPath = roomPath(roomId, channelId);
   const openThread = useCallback((id: string) => navigate(`${channelPath}/threads/${id}`), [navigate, channelPath]);
   const closeThread = useCallback(() => navigate(channelPath), [navigate, channelPath]);
+  // Age gates (PROTOCOL.md §5e): below the gate the channel is a notice, nothing of its content is loaded.
+  const lock = useChannelLock(room.data?.channels.find((c) => c.id === channelId));
   const mentionBase = useMemo(
     () => ({ users: (members.data ?? []).map((m) => ({ address: m.user.address })), roles: roles ?? [], memberRoles: Object.fromEntries((members.data ?? []).map((m) => [m.user.address, m.roles])) }),
     [members.data, roles],
@@ -127,6 +131,14 @@ export function ChannelPage() {
       {channel.topic && <span className="hidden truncate text-sm text-fg-2 md:inline">· {channel.topic}</span>}
     </>
   );
+  if (lock.pending) return <p className="p-4 text-sm text-fg-2">{t("room.loading")}</p>;
+  if (lock.locked)
+    return (
+      <div className="flex min-h-0 flex-1 flex-col" data-testid="channel-page">
+        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-4">{header}</header>
+        <LockedChannel name={channelName(channel)} />
+      </div>
+    );
   if (channel.kind === "voice") return <VoiceStage room={room.data} channel={channel} />;
   if (channel.kind === "files")
     return (

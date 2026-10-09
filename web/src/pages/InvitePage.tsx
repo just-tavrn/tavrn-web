@@ -13,6 +13,8 @@ import { describeError } from "../stores/toasts";
 import { Button, ErrorText } from "../components/ui";
 import { RoomIcon } from "../components/Avatar";
 import { LegalLink } from "../components/legal/LegalLink";
+import { isAdult } from "@tavrn/sdk";
+import { useAgeStatus } from "../lib/age";
 
 export function InvitePage() {
   const t = useT();
@@ -26,6 +28,8 @@ export function InvitePage() {
   const client = node ? apiFor(node) : api;
   const preview = useQuery({ queryKey: ["invite", code, node], queryFn: () => client.invites.preview(code), enabled: !remoteHome || !!origin });
   const [accepted, setAccepted] = useState(false);
+  // Age gates (PROTOCOL.md §5e): the preview names the gate, the own status decides; the node refuses anyway.
+  const ageStatus = useAgeStatus();
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -68,8 +72,13 @@ export function InvitePage() {
                 </label>
               </div>
             )}
+            {preview.data.room.age_gate === "adults_only" && !isAdult(ageStatus) && ageStatus !== undefined && (
+              <p role="status" className="mt-4 rounded-md border border-line bg-bg-0 px-3 py-2 text-sm text-fg-1" data-testid="invite-age-restricted">
+                {t("age.invite.restricted")}
+              </p>
+            )}
             <ErrorText>{error}</ErrorText>
-            <Button className="mt-4 w-full" onClick={() => void join()} disabled={!!preview.data.rules && !accepted}>
+            <Button className="mt-4 w-full" onClick={() => void join()} disabled={(!!preview.data.rules && !accepted) || (preview.data.room.age_gate === "adults_only" && !isAdult(ageStatus))}>
               {t("invite.join")}
             </Button>
           </>
