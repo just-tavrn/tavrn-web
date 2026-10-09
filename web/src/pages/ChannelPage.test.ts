@@ -4,7 +4,7 @@ import { Permission, hasPermission, type RoomDetail } from "@tavrn/sdk";
 import { channelPermissions } from "./ChannelPage";
 
 const room: RoomDetail = {
-  id: "r1", name: "R", description: "", rules: "", join_mode: "invite", owner_id: "owner", icon_blob_id: null, icon_animated: false, banner_blob_id: null, created_at: "", discoverable: false, no_bots: false, bots_in_encrypted_channels: "allowed",
+  id: "r1", name: "R", description: "", rules: "", join_mode: "invite", owner_id: "owner", icon_blob_id: null, icon_animated: false, banner_blob_id: null, created_at: "", discoverable: false, no_bots: false, bots_in_encrypted_channels: "allowed", history_restore: "request",
   member_count: 2, categories: [{ id: "cat", room_id: "r1", name: "Allgemein", position: 0, no_bots: false }],
   channels: [
     { id: "c-sync", room_id: "r1", category_id: "cat", kind: "text", name: "a", topic: "", position: 0, encrypted: false, sync_with_category: true, slowmode_secs: 0, bitrate_kbps: 64, user_limit: 0 },

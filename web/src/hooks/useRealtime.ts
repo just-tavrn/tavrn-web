@@ -29,6 +29,7 @@ import { useNotifications } from "../stores/notifications";
 import { isAttentive } from "./useMarkRead";
 import { loadRoomDetails, notifyMessage } from "../lib/notify";
 import { historyPending, historyReceive } from "../crypto/history";
+import { historyDecidedEvent, historyRequestEvent } from "../history/restore";
 import { parseHistoryPolicy } from "@tavrn/e2ee";
 import { alertText, reportCreated, type ModerationAlert, type ReportCreated } from "../moderation/realtime";
 import { rememberDeleted } from "../moderation/deletedIds";
@@ -265,6 +266,9 @@ export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: 
     // The moderation inbox (MODERATION.md §1.5): badges and lists follow, a new report notifies.
     socket.on<ReportCreated>("report.create", (d) => reportCreated(d, node, queryClient)),
     socket.on("report.update", () => void queryClient.invalidateQueries({ queryKey: ["reports"] })),
+    // History restore after a key reset (ENCRYPTION.md §7b): approvers are notified, the requester learns the decision.
+    socket.on<Parameters<typeof historyRequestEvent>[0]>("history.request", (d) => historyRequestEvent(d, node, queryClient)),
+    socket.on<Parameters<typeof historyDecidedEvent>[0]>("history.request_decided", (d) => historyDecidedEvent(d, node, queryClient, me()?.address)),
     socket.on<{ room_id: string; user_id: string; kicked?: boolean; banned?: boolean }>("member.leave", (d) => {
       invalidateRoom(d);
       void queryClient.invalidateQueries({ queryKey: ["members", d.room_id] });

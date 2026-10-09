@@ -15,6 +15,7 @@ import { RoomPresenceSection } from "./RoomPresenceSection";
 import { RetentionSection } from "./RetentionSection";
 import { MessageRetentionSection } from "./MessageRetentionSection";
 import { BotsInEncryptedSection } from "./BotsEncryptionSection";
+import { HistoryRestoreSection } from "./HistoryRestoreSection";
 import { UPLOAD_CATEGORIES } from "../../lib/uploads";
 
 export function OverviewTab({ room }: { room: RoomDetail }) {
@@ -91,6 +92,7 @@ export function OverviewTab({ room }: { room: RoomDetail }) {
       <NoBotsSection room={room} canManage={canManage} />
       <BotsInEncryptedSection room={room} canManage={canManage} />
       <UploadCategoriesSection room={room} />
+      <HistoryRestoreSection room={room} />
       <MessageRetentionSection room={room} />
       <RetentionSection room={room} />
 

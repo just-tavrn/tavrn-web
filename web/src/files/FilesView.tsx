@@ -25,6 +25,7 @@ import { isSvg, shouldAutoPreview } from "../lib/preview";
 import { usePrivacy } from "../stores/privacy";
 import { describeError, toastError, useToasts } from "../stores/toasts";
 import { MoveDialog, NameDialog } from "./dialogs";
+import { HistoryRestoreBanner } from "../components/HistoryRestoreBanner";
 import {
   DEFAULT_SORT,
   DRAG_TYPE,
@@ -379,6 +380,9 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
         <span>{t("files.banner")}</span>
         {external && <span data-testid="files-banner-external">{t(i.encrypt_files ? "files.banner_external_encrypted" : "files.banner_external", { kind: t(`files.backend.${i.backend}`) })}</span>}
       </div>
+      {/* History restore after a key reset (ENCRYPTION.md §7b): the requester's banner in encrypted files channels.
+          TODO(files-e2ee): show it with FilesView's "cannot decrypt" state once records are end-to-end encrypted. */}
+      {channel.encrypted && <HistoryRestoreBanner room={room} />}
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-3 py-2">
         <nav aria-label={t("files.breadcrumbs")} className="flex min-w-0 flex-1 flex-wrap items-center gap-1 text-sm" data-testid="files-breadcrumbs">
           {search ? (
