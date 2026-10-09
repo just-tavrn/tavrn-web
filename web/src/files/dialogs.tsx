@@ -3,9 +3,10 @@
  * Dialogs of the file browser: a name prompt (new folder, rename) and the move dialog, a small folder
  * browser that refuses targets inside the moved folders (the node refuses them too, FILES.md §3).
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { FileEntry } from "@tavrn/sdk";
+import type { RecordEntry } from "@tavrn/e2ee";
 import { useT } from "../i18n";
 import { useNode } from "../components/NodeScope";
 import { Button, Dialog, ErrorText, Field, Input } from "../components/ui";
@@ -67,7 +68,16 @@ export function NameDialog({ open, title, initial, action, onClose, onSubmit }: 
 }
 
 /** Picks a target folder; `moving` are the entries to move (their folders cannot be targets). */
-export function MoveDialog({ open, roomId, channelId, moving, onClose, onMove }: { open: boolean; roomId: string; channelId: string; moving: FileEntry[]; onClose: () => void; onMove: (target: string | null) => Promise<void> }) {
+export function MoveDialog({ open, roomId, channelId, moving, onClose, onMove, decryptNames }: {
+  open: boolean;
+  roomId: string;
+  channelId: string;
+  moving: FileEntry[];
+  onClose: () => void;
+  onMove: (target: string | null) => Promise<void>;
+  /** Encrypted channels: folder names from the records (FILES.md §8); unreadable folders keep a placeholder. */
+  decryptNames?: (entries: RecordEntry[]) => Promise<Map<string, string>>;
+}) {
   const t = useT();
   const { api, domain } = useNode();
   const [folder, setFolder] = useState<string | null>(null);
@@ -84,6 +94,17 @@ export function MoveDialog({ open, roomId, channelId, moving, onClose, onMove }:
   const blocked = path.some((c) => movingIds.has(c.id));
   // Already there: nothing to do.
   const same = moving.every((m) => (m.parent_id ?? null) === folder);
+  const [names, setNames] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    if (!decryptNames || !list.data) return;
+    let stale = false;
+    const crumbs = list.data.path.map((c) => ({ ...c, kind: "folder", size: 0 }));
+    void decryptNames([...list.data.entries.filter((e) => e.kind === "folder"), ...crumbs]).then((m) => !stale && setNames(m));
+    return () => {
+      stale = true;
+    };
+  }, [decryptNames, list.data]);
+  const nameOf = (e: { id: string; name: string }) => (decryptNames ? (names.get(e.id) ?? t("files.locked_folder")) : e.name);
   const folders = (list.data?.entries ?? []).filter((e) => e.kind === "folder");
   return (
     <Dialog title={t("files.move_title", { count: moving.length })} open={open} onClose={onClose}>
@@ -96,7 +117,7 @@ export function MoveDialog({ open, roomId, channelId, moving, onClose, onMove }:
             <span key={c.id} className="flex items-center gap-1">
               <span className="text-fg-2">/</span>
               <button type="button" className="rounded px-1 text-accent hover:underline" onClick={() => setFolder(c.id)}>
-                {c.name}
+                {nameOf(c)}
               </button>
             </span>
           ))}
@@ -114,10 +135,10 @@ export function MoveDialog({ open, roomId, channelId, moving, onClose, onMove }:
                 onClick={() => setFolder(f.id)}
                 className="flex min-h-10 w-full items-center gap-2 px-3 text-left text-sm hover:bg-bg-3 disabled:cursor-not-allowed disabled:opacity-40"
                 data-testid="move-folder"
-                data-name={f.name}
+                data-name={nameOf(f)}
               >
                 <span aria-hidden="true">📁</span>
-                <span className="truncate">{f.name}</span>
+                <span className="truncate">{nameOf(f)}</span>
               </button>
             </li>
           ))}

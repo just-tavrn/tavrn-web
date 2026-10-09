@@ -10,6 +10,7 @@ const entry = (name: string, kind: "file" | "folder" = "file", extra: Partial<Fi
   kind,
   name,
   mime: kind === "folder" ? "" : "application/octet-stream",
+  thumbnail_size: 0,
   size: 0,
   sha256: "",
   created_by: "u1",

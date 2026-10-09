@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { EVERYONE_RESTRICTED, Permission, hasPermission, parsePermissions, type Channel, type RoomDetail } from "@tavrn/sdk";
 import { useSearchParams } from "react-router";
 import { useNode } from "../../components/NodeScope";
@@ -15,6 +15,7 @@ import { ChannelBotsAllowed } from "./BotsEncryptionSection";
 import { HistoryPolicySection } from "./HistoryPolicy";
 import { ThreadSettingsSection } from "../../threads/ThreadSettings";
 import { StorageSection } from "../../files/StorageSection";
+import { FilesDeletionFacts, deletionCase } from "../../files/DeleteChannel";
 import { VoiceQualitySection } from "./VoiceQualitySection";
 
 export function ChannelsTab({ room }: { room: RoomDetail }) {
@@ -98,7 +99,7 @@ function ChannelButtons({ room, channels, selectedId, onSelect }: { room: RoomDe
 }
 
 function ChannelEditor({ channel, room, canManage, onChanged }: { channel: Channel; room: RoomDetail; canManage: boolean; onChanged: () => Promise<void> }) {
-  const { api } = useNode();
+  const { api, domain } = useNode();
   const t = useT();
   const [name, setName] = useState(channel.name);
   const [topic, setTopic] = useState(channel.topic);
@@ -109,8 +110,10 @@ function ChannelEditor({ channel, room, canManage, onChanged }: { channel: Chann
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmEncryption, setConfirmEncryption] = useState(false);
   const isVoice = channel.kind === "voice";
-  // Files channels have no messages and are never end-to-end encrypted (design note 4.13 item 9).
+  // Files channels have no messages; their encryption is chosen at creation and fixed (FILES.md §1).
   const isFiles = channel.kind === "files";
+  const filesUsage = useQuery({ queryKey: ["files-usage", domain, channel.id], queryFn: () => api.files.usage(room.id, channel.id), enabled: isFiles && confirmDelete });
+  const [keepExternal, setKeepExternal] = useState(false);
   const canManageRoles = hasPermission(parsePermissions(room.my_permissions), Permission.MANAGE_ROLES);
 
   const save = async () => {
@@ -171,6 +174,15 @@ function ChannelEditor({ channel, room, canManage, onChanged }: { channel: Chann
               </span>
             </label>
           )}
+          {isFiles && (
+            <p className="flex items-start gap-2 text-sm text-fg-1" data-testid="files-encryption-fixed">
+              <LockMark open={!channel.encrypted} />
+              <span>
+                {t(channel.encrypted ? "files.fixed_encrypted" : "files.fixed_unencrypted")}
+                <span className="block text-xs text-fg-2">{t("files.fixed_hint")}</span>
+              </span>
+            </p>
+          )}
           {canManage && (
             <div className="flex flex-wrap justify-end gap-2">
               <Button variant="danger" onClick={() => setConfirmDelete(true)}>
@@ -188,7 +200,26 @@ function ChannelEditor({ channel, room, canManage, onChanged }: { channel: Chann
       {channel.encrypted && !isVoice && channel.kind !== "system" && <HistoryPolicySection channel={channel} room={room} canManage={canManage} onChanged={onChanged} />}
       {["text", "announcement", "forum"].includes(channel.kind) && <ThreadSettingsSection channel={channel} room={room} canManage={canManage} onChanged={onChanged} />}
       {canManageRoles && <OverridesEditor channel={channel} room={room} onChanged={onChanged} />}
-      <ConfirmDialog open={confirmDelete} title={t("channels.delete")} text={t("channels.delete_text", { name: channel.name })} confirmWord={channel.name} actionLabel={t("room.delete_action")} onClose={() => setConfirmDelete(false)} onConfirm={async () => { await api.channels.delete(room.id, channel.id); setConfirmDelete(false); await onChanged(); }} />
+      <ConfirmDialog
+        open={confirmDelete}
+        title={t("channels.delete")}
+        text={
+          <div className="space-y-2">
+            <p>{t("channels.delete_text", { name: channel.name })}</p>
+            {isFiles && filesUsage.data && <FilesDeletionFacts info={filesUsage.data} keep={keepExternal} onKeep={setKeepExternal} />}
+            {isFiles && filesUsage.isPending && <p className="text-xs text-fg-2">{t("common.loading")}</p>}
+          </div>
+        }
+        confirmWord={channel.name}
+        actionLabel={t("room.delete_action")}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={async () => {
+          const keep = isFiles && keepExternal && !!filesUsage.data && deletionCase(filesUsage.data) === "external_plain";
+          await api.channels.delete(room.id, channel.id, { keepExternal: keep });
+          setConfirmDelete(false);
+          await onChanged();
+        }}
+      />
       <ConfirmDialog open={confirmEncryption} title={t("channels.encryption_off_title")} text={t("channels.encryption_off_text")} actionLabel={t("channels.encryption_off_action")} onClose={() => setConfirmEncryption(false)} onConfirm={async () => { setConfirmEncryption(false); await save(); }} />
     </div>
   );

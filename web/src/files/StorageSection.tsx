@@ -129,13 +129,20 @@ export function StorageSection({ room, channel }: { room: RoomDetail; channel: C
             <Field label={t("files.prefix")} hint={t("files.prefix_hint")}>
               <Input value={form.prefix} onChange={(e) => set({ prefix: e.target.value })} placeholder={`tavrn/${channel.id}/`} data-testid="files-storage-prefix" />
             </Field>
-            <label className="flex items-start gap-2 text-sm">
-              <input type="checkbox" className="mt-0.5 h-4 w-4" checked={form.encrypt_files} onChange={(e) => set({ encrypt_files: e.target.checked })} data-testid="files-storage-encrypt" />
-              <span>
-                {t("files.encrypt_external")}
-                <span className="block text-xs text-fg-2">{t("files.encrypt_external_hint")}</span>
-              </span>
-            </label>
+            {channel.encrypted ? (
+              // End-to-end encrypted channels store the clients' ciphertext as it is (FILES.md §5).
+              <p className="text-xs text-fg-2" data-testid="files-storage-e2ee">
+                {t("files.storage_e2ee_hint")}
+              </p>
+            ) : (
+              <label className="flex items-start gap-2 text-sm">
+                <input type="checkbox" className="mt-0.5 h-4 w-4" checked={form.encrypt_files} onChange={(e) => set({ encrypt_files: e.target.checked })} data-testid="files-storage-encrypt" />
+                <span>
+                  {t("files.encrypt_external")}
+                  <span className="block text-xs text-fg-2">{t("files.encrypt_external_hint")}</span>
+                </span>
+              </label>
+            )}
           </>
         )}
         <ErrorText>{error}</ErrorText>

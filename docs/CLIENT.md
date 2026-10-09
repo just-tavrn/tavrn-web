@@ -170,6 +170,49 @@ space set under Settings → Privacy → Local search index (default 50 MB; the 
 shows what it takes, the settings the total. Turning the setting off, clearing the index or signing out (which wipes the
 device) deletes the archive.
 
+## Files channels
+
+A files channel (kind `files`, [FILES.md](https://github.com/just-tavrn/tavrn-protocol/blob/main/FILES.md)) is a file
+browser (`web/src/files/`): breadcrumbs, list and grid views, sorting, uploads by button or drag and drop with
+progress, folders, rename, move (dialog or dragging, with a non-drag equivalent), delete, download, media in the
+viewer, the context menu and keyboard navigation.
+
+**End-to-end encrypted files channels** (FILES.md §8, the default: the "Create channel" dialog has "End-to-end
+encrypted" ticked for files channels, with the consequence on one line) use the channel's MLS group like a text
+channel (`files/e2ee.ts`). Uploads are encrypted in 1 MiB chunks in the browser (one chunk in memory at a time) with a
+fresh file key; raster images get a client-made thumbnail (at most 320 px, WebP or JPEG) encrypted with the same key;
+name, type and key travel in the entry record, encrypted under the channel's current epoch by the tab that owns the MLS
+state. Browsing decrypts the records of the listed folder (names, types, folder names; the header shows the SVG lock),
+downloads and previews decrypt chunk by chunk, and media keep their safe blob types (SVG is never rendered). The node
+cannot search: the search box filters the open folder, and the global search finds the files through the local index
+(below). The node cannot check name uniqueness either, so the client numbers duplicates (`name (2).ext`) before it
+uploads and refuses a rename to a name the folder has. Entries this device cannot decrypt are listed as "Encrypted
+file"/"Encrypted folder" with size and date; the channel shows the same states as the message list: "locked" (key store
+locked), joining, no group yet, an error, or "some entries cannot be decrypted yet" (keys of older epochs missing, which
+history shares may fill). **Your files** (toolbar; in place of the browser while the device is locked) lists the
+member's own uploads and folders by ownership alone (`GET …/files/mine`: counts, sizes, dates, no names) with single and
+bulk deletion, so lost keys never keep files on the node. History for new members follows the channel's setting, which
+for files channels is "all" (default) or "since join"; keys are checked against entry records instead of messages.
+
+The channel settings show the encryption as fixed ("cannot be changed: create a new files channel and upload the files
+again"); external stores of encrypted channels need no `encrypt_files` (they only receive ciphertext). Unencrypted files
+channels keep the permanent "not end-to-end encrypted" banner.
+
+**Deleting** a files channel asks for the channel's name and says what happens to its files: counts and size, where they
+are ("stored on this node" / "stored on WebDAV at host"), and the consequence: "All files are deleted permanently", or
+for an external store "The objects under <prefix> are deleted from the external store" with **Keep the objects on the
+external store** (only for unencrypted external channels, sent as `keep_external`); for encrypted external channels the
+dialog explains that the objects are unreadable without the channel's keys and are deleted too. The room deletion
+dialog lists its files channels the same way (`files/DeleteChannel.tsx`).
+
+**Search** (SEARCH.md §3.6): every decrypted entry goes into the local encrypted search index (name and folder path as
+text, type category, size, upload date, uploader, channel and room; thumbnails only by reference). The background sync
+pages through the records of encrypted files channels this device has opened (`search/filesSync.ts`). Results appear in
+the search panel under **Files** with name, folder, size, date, uploader and the thumbnail (fetched and decrypted on
+demand); choosing one opens the folder with the entry selected. The filters gain "Type (files)"; uploader and dates use
+the existing author and date filters. Deleted entries leave the index, results whose entry is gone are removed when
+opened, and "Clear index" clears them with the messages; the 90-day window counts from the upload date.
+
 ## Threads, forum and announcement channels
 
 Threads ([PROTOCOL.md §7e](https://github.com/just-tavrn/tavrn-protocol/blob/main/PROTOCOL.md)) are

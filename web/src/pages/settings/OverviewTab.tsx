@@ -16,6 +16,8 @@ import { RetentionSection } from "./RetentionSection";
 import { MessageRetentionSection } from "./MessageRetentionSection";
 import { BotsInEncryptedSection } from "./BotsEncryptionSection";
 import { UPLOAD_CATEGORIES } from "../../lib/uploads";
+import { FilesDeletionFacts, deletionCase, useFilesChannelsUsage } from "../../files/DeleteChannel";
+import { channelName } from "../../lib/names";
 
 export function OverviewTab({ room }: { room: RoomDetail }) {
   const { api, home, domain } = useNode();
@@ -26,6 +28,8 @@ export function OverviewTab({ room }: { room: RoomDetail }) {
   const [joinMode, setJoinMode] = useState(room.join_mode);
   const [discoverable, setDiscoverable] = useState(room.discoverable);
   const [confirm, setConfirm] = useState<"delete" | "leave" | null>(null);
+  const [keepExternal, setKeepExternal] = useState(false);
+  const filesUsage = useFilesChannelsUsage(room, confirm === "delete");
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const perms = parsePermissions(room.my_permissions);
@@ -114,12 +118,28 @@ export function OverviewTab({ room }: { room: RoomDetail }) {
       <ConfirmDialog
         open={confirm === "delete"}
         title={t("room.delete_title")}
-        text={t("room.delete_text", { name: room.name })}
+        text={
+          <div className="space-y-2">
+            <p>{t("room.delete_text", { name: room.name })}</p>
+            {/* Files channels: what happens to their files (FILES.md §9). */}
+            {(filesUsage.data ?? []).length > 0 && <p className="font-medium">{t("files.room_delete_intro")}</p>}
+            {(filesUsage.data ?? []).map(({ channel, info }) => (
+              <FilesDeletionFacts key={channel.id} name={channelName(channel)} info={info} keep={keepExternal && deletionCase(info) === "external_plain"} />
+            ))}
+            {(filesUsage.data ?? []).some(({ info }) => deletionCase(info) === "external_plain") && (
+              <label className="flex min-h-10 items-center gap-2 text-sm">
+                <input type="checkbox" className="h-4 w-4 accent-accent" checked={keepExternal} onChange={(e) => setKeepExternal(e.target.checked)} data-testid="files-keep-external" />
+                {t("files.delete_keep_external_room")}
+              </label>
+            )}
+          </div>
+        }
         confirmWord={room.name}
         actionLabel={t("room.delete_action")}
         onClose={() => setConfirm(null)}
         onConfirm={async () => {
-          await api.rooms.delete(room.id);
+          const keep = keepExternal && (filesUsage.data ?? []).some(({ info }) => deletionCase(info) === "external_plain");
+          await api.rooms.delete(room.id, { keepExternal: keep });
           void indexLeftRoom(home ? null : domain, room.id);
           await queryClient.invalidateQueries({ queryKey: ["rooms"] });
           navigate("/");

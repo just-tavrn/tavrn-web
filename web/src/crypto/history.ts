@@ -5,7 +5,9 @@
  * `history.keys_available`, own Adds) and by opening a channel. Keys go straight from the share into the
  * MLS client state (the encrypted key store and the history backup); nothing here keeps or logs them.
  */
-import { HistorySync, type HistoryPolicy, type MlsManager } from "@tavrn/e2ee";
+import { HistorySync, recordSamples, type HistoryPolicy, type MlsManager } from "@tavrn/e2ee";
+import type { Message } from "@tavrn/sdk";
+import { filesChannelRoom } from "../files/registry";
 import { getMls } from "../stores/mls";
 import { useAuth } from "../stores/auth";
 import { apiFor } from "../stores/nodes";
@@ -30,7 +32,14 @@ async function historySync(): Promise<HistorySync | null> {
         shares: (c) => a.history.shares(c),
         ack: (c, id) => a.history.ack(c, id),
         pending: (c) => a.history.pending(c),
-        messages: (c, q) => a.conversations.messages(c, q),
+        // Files channels have no messages: entry records of the epoch prove a shared key (FILES.md §8.7).
+        messages: async (c, q) => {
+          const room = filesChannelRoom(`${domain}/${c}`);
+          if (!room) return a.conversations.messages(c, q);
+          if (q.epoch === undefined) return [];
+          const { entries } = await a.files.records(room, c, { epoch: q.epoch, limit: q.limit });
+          return recordSamples(entries) as unknown as Message[];
+        },
       };
     },
     isOnline: (address) => address === user.address || !!usePresence.getState().users[address],

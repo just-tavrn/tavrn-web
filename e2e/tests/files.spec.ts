@@ -27,6 +27,9 @@ test.describe("File channels", () => {
     const create = page.getByRole("dialog");
     await create.getByLabel("Art").selectOption("files");
     await create.getByLabel("Name").fill("Ablage");
+    // End-to-end encryption is the default for files channels; this test covers the unencrypted kind.
+    await expect(create.getByTestId("files-encrypted-toggle")).toBeChecked();
+    await create.getByTestId("files-encrypted-toggle").uncheck();
     await create.getByRole("button", { name: "Erstellen" }).click();
     await openNavIfMobile(page);
     const link = page.locator('[data-testid="channel-row"][data-kind="files"]').getByRole("link");
@@ -127,7 +130,7 @@ test.describe("File channels", () => {
     const owner = await registerViaApi(request, "filesdnd");
     const room = await createRoomViaApi(request, owner.token, "Drop-Raum");
     const auth = { Authorization: `Bearer ${owner.token}` };
-    const ch = await (await request.post(`${NODE}/api/v1/rooms/${room.id}/channels`, { headers: auth, data: { kind: "files", name: "drop" } })).json();
+    const ch = await (await request.post(`${NODE}/api/v1/rooms/${room.id}/channels`, { headers: auth, data: { kind: "files", name: "drop", encrypted: false } })).json();
     await loginAs(page, owner);
     await page.goto(`/rooms/${room.id}/channels/${ch.id}`);
     await expect(page.getByTestId("files-view")).toBeVisible();
@@ -165,5 +168,6 @@ test.describe("File channels", () => {
     await expect(storage.getByTestId("files-storage-kind")).toHaveValue("internal");
     await expect(storage.locator('option[value="webdav"]')).toBeDisabled();
     await expect(page.getByTestId("encrypted-toggle")).toHaveCount(0);
+    await expect(page.getByTestId("files-encryption-fixed")).toContainText("Nicht Ende-zu-Ende-verschlüsselt.");
   });
 });
