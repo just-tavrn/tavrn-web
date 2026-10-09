@@ -85,7 +85,11 @@ mod system {
     /// 48 kHz in f32 or i16 when the device offers it, else its default format.
     fn choose(ranges: Vec<cpal::SupportedStreamConfigRange>, fallback: Result<SupportedStreamConfig, cpal::Error>) -> Result<SupportedStreamConfig, String> {
         let usable = |f: SampleFormat| matches!(f, SampleFormat::F32 | SampleFormat::I16);
-        let preferred = ranges.into_iter().filter(|r| usable(r.sample_format()) && r.channels() <= 2).filter_map(|r| r.try_with_sample_rate(RATE)).min_by_key(|c| c.channels());
+        let preferred = ranges
+            .into_iter()
+            .filter(|r| usable(r.sample_format()) && r.channels() <= 2)
+            .filter_map(|r| r.try_with_sample_rate(RATE))
+            .min_by_key(|c| c.channels());
         match preferred {
             Some(c) => Ok(c),
             None => fallback.map_err(|e| e.to_string()).and_then(|c| if usable(c.sample_format()) { Ok(c) } else { Err("voice.device_format".into()) }),
@@ -225,7 +229,10 @@ fn realtime(name: &str, mut tick: impl FnMut() + Send + 'static) -> Result<Strea
 
 impl AudioIo for FakeIo {
     fn devices(&self) -> Devices {
-        Devices { inputs: vec![Device { id: "fake:tone".into(), label: "Test tone".into() }], outputs: vec![Device { id: "fake:meter".into(), label: "Level meter".into() }] }
+        Devices {
+            inputs: vec![Device { id: "fake:tone".into(), label: "Test tone".into() }],
+            outputs: vec![Device { id: "fake:meter".into(), label: "Level meter".into() }],
+        }
     }
 
     fn start_input(&self, _: Option<&str>, mut on_data: InputFn) -> Result<StreamHandle, String> {
@@ -275,12 +282,15 @@ mod tests {
         let io = FakeIo::default();
         let got = Arc::new(Mutex::new(Vec::<f32>::new()));
         let sink = Arc::clone(&got);
-        let input = io.start_input(None, Box::new(move |d, ch, rate| {
-            assert_eq!((ch, rate), (1, RATE));
-            if let Ok(mut g) = sink.lock() {
-                g.extend_from_slice(d);
-            }
-        }))?;
+        let input = io.start_input(
+            None,
+            Box::new(move |d, ch, rate| {
+                assert_eq!((ch, rate), (1, RATE));
+                if let Ok(mut g) = sink.lock() {
+                    g.extend_from_slice(d);
+                }
+            }),
+        )?;
         let output = io.start_output(None, Box::new(|out, _, _| out.fill(0.1)))?;
         thread::sleep(Duration::from_millis(250));
         drop(input);

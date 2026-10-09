@@ -159,7 +159,14 @@ async fn native_engines_hear_each_other_end_to_end_encrypted() {
     until("bob to hear alice", Duration::from_secs(20), || recent_peak(&bob.io, 5) > -25.0).await;
     // Bob's engine reports Alice speaking and lists her microphone.
     until("alice's speaking level at bob", Duration::from_secs(5), || {
-        bob.events.lock().map(|l| l.iter().any(|e| matches!(e, VoiceEvent::Speakers { levels } if levels.iter().any(|(id, db)| id == "alice@a.test/1" && db.is_some_and(|d| d > -30.0))))).unwrap_or(false)
+        bob.events
+            .lock()
+            .map(|l| {
+                l.iter().any(
+                    |e| matches!(e, VoiceEvent::Speakers { levels } if levels.iter().any(|(id, db)| id == "alice@a.test/1" && db.is_some_and(|d| d > -30.0))),
+                )
+            })
+            .unwrap_or(false)
     })
     .await;
     assert!(bob.events.lock().map(|l| l.iter().any(|e| matches!(e, VoiceEvent::Participants { participants } if participants.iter().any(|p| p.identity == "alice@a.test/1" && p.mic && !p.mic_muted)))).unwrap_or(false));

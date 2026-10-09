@@ -485,6 +485,16 @@ window is not in front (a click opens the conversation; Settings → Notificatio
 and a tray icon shows the voice state (in a channel, speaking, muted, deafened) with mute, deafen, leave voice,
 show/hide and quit in its menu; closing the window keeps the app in the tray (Settings → App).
 
+**Voice engine:** the desktop app on Linux sends and plays voice through its own native engine (LiveKit's Rust SDK in
+the shell; the system's web view has no WebRTC), end-to-end encrypted exactly as in the browser and with the same
+settings: devices of its own (Settings → Voice & video lists the engine's microphones and speakers), input volume,
+echo cancellation, noise suppression (RNNoise becomes WebRTC's noise suppression there), automatic gain, the noise
+gate, voice activation or push-to-talk (also through the system-wide hotkey while the window is in the background),
+per-user volumes, mute and deafen, the speaking rings and the notification sounds. On Windows the setting **Native
+voice engine (experimental)** under Settings → Voice & video → Voice engine switches the next call to it (default off;
+only shown in the desktop app). Audio only for now: camera, screen sharing, soundboard clips and the priority speaker
+are not available with the native engine, and their buttons say so (DESKTOP.md "Voice").
+
 **Hotkeys:** push-to-talk (Settings → Voice & video → Input mode), the priority speaker and, under **More hotkeys**,
 mute and deafen have one binding each: a single key, a modifier alone (left Ctrl, right Shift, …) or a combination,
 taken by a recorder (Escape cancels, Backspace removes the binding) that shows the key names of the platform (Super,

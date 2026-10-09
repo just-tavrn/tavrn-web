@@ -188,4 +188,6 @@ fn the_deb_brings_the_gstreamer_plugins_of_webrtc() {
     for plugin in ["gstreamer1.0-plugins-bad", "gstreamer1.0-plugins-good", "gstreamer1.0-gl", "gstreamer1.0-pipewire | gstreamer1.0-pulseaudio"] {
         assert!(depends.contains(&plugin.to_string()), "the .deb lacks {plugin} (voice on Linux, docs/DESKTOP.md)");
     }
+    // The native voice engine's audio devices (cpal links ALSA; PulseAudio is spoken in pure Rust).
+    assert!(depends.contains(&"libasound2t64 | libasound2".to_string()), "the .deb lacks ALSA (the native voice engine, docs/DESKTOP.md)");
 }

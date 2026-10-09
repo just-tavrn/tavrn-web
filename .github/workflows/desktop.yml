@@ -97,8 +97,9 @@ jobs:
           # The WebKit WebDriver is webkit2gtk-driver up to Ubuntu 24.04 and webkitgtk-webdriver from 26.04 on.
           driver=webkit2gtk-driver
           apt-cache policy webkitgtk-webdriver | grep -q 'Candidate: [0-9]' && driver=webkitgtk-webdriver
+          # libasound2-dev: the native voice engine's audio devices (cpal links ALSA).
           sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
-            librsvg2-dev patchelf xdg-utils "$driver" xvfb xdotool gnome-keyring
+            librsvg2-dev libasound2-dev patchelf xdg-utils "$driver" xvfb xdotool gnome-keyring
       - uses: pnpm/action-setup@v6
         if: ${{ runner.environment == 'github-hosted' }}
       - uses: actions/setup-node@v7

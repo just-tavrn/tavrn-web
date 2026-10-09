@@ -10,8 +10,8 @@
 //! when the gate opens or closes, push-to-talk opening and closing after its release delay) go back as
 //! [`UplinkReport`]s.
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use super::dsp::{FRAME, RATE, Resampler, downmix, from_i16, to_i16};
 use super::gate::{Gate, LevelMeter, gate_mode_for};
@@ -154,7 +154,15 @@ impl Uplink {
 
     /// Feeds captured samples (interleaved, any channel count and rate). Every complete 10 ms frame is processed and
     /// handed to `send`; reports go to `report`. Muted, nothing is processed or sent.
-    pub fn push(&mut self, input: &[f32], channels: usize, rate: u32, mut processor: Option<&mut dyn Processor>, send: &mut dyn FnMut(&[i16]), report: &mut dyn FnMut(UplinkReport)) {
+    pub fn push(
+        &mut self,
+        input: &[f32],
+        channels: usize,
+        rate: u32,
+        mut processor: Option<&mut dyn Processor>,
+        send: &mut dyn FnMut(&[i16]),
+        report: &mut dyn FnMut(UplinkReport),
+    ) {
         self.refresh();
         let muted = self.control.muted.load(Ordering::Acquire);
         if muted {

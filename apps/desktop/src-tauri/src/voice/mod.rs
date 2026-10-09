@@ -38,23 +38,44 @@ use self::uplink::{Control, Processing, UplinkConfig};
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum VoiceEvent {
     /// The own gate: dBFS of the loudest frame of the last ~100 ms (`null` for silence) and whether it transmits.
-    Level { level: Option<f64>, open: bool },
+    Level {
+        level: Option<f64>,
+        open: bool,
+    },
     /// Push-to-talk opened or closed (after its release delay): the push-to-talk tones.
-    Ptt { open: bool },
+    Ptt {
+        open: bool,
+    },
     /// The loudest 10 ms RMS (dBFS, `null` for silence) of every remote participant's voice of the last 50 ms.
-    Speakers { levels: Vec<(String, Option<f64>)> },
+    Speakers {
+        levels: Vec<(String, Option<f64>)>,
+    },
     /// Everybody in the call (the own device included) with their microphone state.
-    Participants { participants: Vec<ParticipantInfo> },
+    Participants {
+        participants: Vec<ParticipantInfo>,
+    },
     /// The node granted or revoked the microphone (a server mute, VOICE.md §7).
-    Permissions { can_speak: bool },
-    Quality { identity: String, quality: &'static str },
+    Permissions {
+        can_speak: bool,
+    },
+    Quality {
+        identity: String,
+        quality: &'static str,
+    },
     /// The frame cryptor's state of a participant (`ok`, `missing_key`, `decryption_failed`, ...).
-    Encryption { identity: String, state: &'static str },
+    Encryption {
+        identity: String,
+        state: &'static str,
+    },
     Reconnecting,
     Reconnected,
     /// The room is gone (`reason` in LiveKit's snake_case names: `participant_removed`, `room_deleted`, ...).
-    Disconnected { reason: String },
-    Error { code: String },
+    Disconnected {
+        reason: String,
+    },
+    Error {
+        code: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -180,7 +201,8 @@ pub struct VoiceInfo {
 const MAX_VOLUMES: usize = 512;
 
 pub fn validate_volumes(volumes: &HashMap<String, f32>) -> Result<(), String> {
-    let ok = volumes.len() <= MAX_VOLUMES && volumes.iter().all(|(k, v)| !k.is_empty() && k.len() <= MAX_ID && v.is_finite() && (0.0..=mix::MAX_GAIN).contains(v));
+    let ok =
+        volumes.len() <= MAX_VOLUMES && volumes.iter().all(|(k, v)| !k.is_empty() && k.len() <= MAX_ID && v.is_finite() && (0.0..=mix::MAX_GAIN).contains(v));
     if ok { Ok(()) } else { Err("voice.invalid_volume".into()) }
 }
 
@@ -352,7 +374,16 @@ mod tests {
     }
 
     fn args() -> JoinArgs {
-        JoinArgs { url: "wss://voice.example".into(), token: "t".into(), key: vec![7; 32], epoch: 3, bitrate_kbps: 32, config: config(), muted: false, deafened: false }
+        JoinArgs {
+            url: "wss://voice.example".into(),
+            token: "t".into(),
+            key: vec![7; 32],
+            epoch: 3,
+            bitrate_kbps: 32,
+            config: config(),
+            muted: false,
+            deafened: false,
+        }
     }
 
     #[test]
@@ -365,7 +396,10 @@ mod tests {
         assert_eq!(JoinArgs { bitrate_kbps: 0, ..args() }.validate(), Err("voice.invalid_bitrate".into()));
         assert_eq!(JoinArgs { config: VoiceConfig { input_volume: 900, ..config() }, ..args() }.validate(), Err("voice.invalid_config".into()));
         assert_eq!(JoinArgs { config: VoiceConfig { threshold: Some(f64::NAN), ..config() }, ..args() }.validate(), Err("voice.invalid_config".into()));
-        assert_eq!(JoinArgs { config: VoiceConfig { input_device: Some("x".repeat(600)), ..config() }, ..args() }.validate(), Err("voice.invalid_config".into()));
+        assert_eq!(
+            JoinArgs { config: VoiceConfig { input_device: Some("x".repeat(600)), ..config() }, ..args() }.validate(),
+            Err("voice.invalid_config".into())
+        );
     }
 
     #[test]
