@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it, vi } from "vitest";
 import { TavrnApiError, type TavrnApi } from "@tavrn/sdk";
-import { createPost } from "./actions";
+import { createPost, startThread } from "./actions";
 
-// Titles of encrypted channels are sealed with the device's session manager (covered in the title tests).
-vi.mock("./titles", () => ({ sealTitle: async (_q: string, encrypted: boolean, title: string) => (encrypted ? { title: "SEALED-TITLE", title_epoch: 4 } : { title }) }));
+// Titles of encrypted channels are sealed with the device's session manager (covered in the title tests); a title bound
+// to its thread (signed context, ENCRYPTION.md §5.2) is told apart by the id.
+vi.mock("./titles", () => ({
+  sealTitle: async (_q: string, encrypted: boolean, title: string, _mls: unknown, threadId?: string) => (encrypted ? { title: threadId ? `SEALED-TITLE:${threadId}` : "SEALED-TITLE", title_epoch: 4 } : { title }),
+}));
 
 const ID = "01J9ZK3G5M8Q2W4E6R8T0Y2TH1";
 
@@ -50,7 +53,8 @@ describe("createPost (PROTOCOL.md §7e, FEDERATION.md §10.3)", () => {
     await createPost({ ...post, encrypted: true, api, mls, clientIds: true, newId: () => ID });
     expect(mls.signPlaintext).not.toHaveBeenCalled();
     expect(mls.encrypt).toHaveBeenCalledWith("n.test/C", { type: "text", body: "Die App stürzt ab." }, { ctx: { thread_id: ID, reply_to: null } });
-    expect(create.mock.calls[0]![2]).toEqual({ id: ID, title: "SEALED-TITLE", title_epoch: 4, tags: ["T1"], message: { content: "CIPHERTEXT", epoch: 4 } });
+    // The title is bound to the thread id too.
+    expect(create.mock.calls[0]![2]).toEqual({ id: ID, title: `SEALED-TITLE:${ID}`, title_epoch: 4, tags: ["T1"], message: { content: "CIPHERTEXT", epoch: 4 } });
   });
 
   it("encrypts without a context where the thread id is not the client's", async () => {
@@ -61,5 +65,29 @@ describe("createPost (PROTOCOL.md §7e, FEDERATION.md §10.3)", () => {
     f = fakes((b) => (b.id ? new TavrnApiError({ type: "x", title: "Bad Request", status: 400, code: "thread.id_invalid", detail: "" }) : null));
     expect(await createPost({ ...post, encrypted: true, api: f.api, mls: f.mls, clientIds: true, newId: () => ID })).toBe("NODEPICKED");
     expect(f.mls.encrypt).toHaveBeenLastCalledWith("n.test/C", { type: "text", body: "Die App stürzt ab." });
+  });
+});
+
+describe("startThread: encrypted titles bound to their thread (ENCRYPTION.md §5.2)", () => {
+  const base = { domain: "n.test", roomId: "R", channelId: "C", title: "Plan", rootMessageId: "M1" };
+  const refused = (b: Record<string, unknown>) => (b.id ? new TavrnApiError({ type: "x", title: "Bad Request", status: 400, code: "thread.id_invalid", detail: "" }) : null);
+
+  it("picks the thread id in encrypted channels where the node keeps client ids, and seals the title with it", async () => {
+    const { api, create } = fakes();
+    expect(await startThread({ ...base, api, encrypted: true, clientIds: true, newId: () => ID })).toBe(ID);
+    expect(create).toHaveBeenCalledWith("R", "C", { id: ID, title: `SEALED-TITLE:${ID}`, title_epoch: 4, root_message_id: "M1" });
+  });
+
+  it("falls back to an unbound title when the node refuses the id or does not keep client ids", async () => {
+    let f = fakes(refused);
+    expect(await startThread({ ...base, api: f.api, encrypted: true, clientIds: true, newId: () => ID })).toBe("NODEPICKED");
+    expect(f.create.mock.calls[1]![2]).toEqual({ title: "SEALED-TITLE", title_epoch: 4, root_message_id: "M1" });
+    f = fakes();
+    await startThread({ ...base, api: f.api, encrypted: true, clientIds: false, newId: () => ID });
+    expect(f.create.mock.calls[0]![2]).toEqual({ title: "SEALED-TITLE", title_epoch: 4, root_message_id: "M1" });
+    // Plaintext channels keep the node's ids (nothing to bind).
+    f = fakes();
+    await startThread({ ...base, api: f.api, encrypted: false, clientIds: true, newId: () => ID });
+    expect(f.create.mock.calls[0]![2]).toEqual({ title: "Plan", root_message_id: "M1" });
   });
 });

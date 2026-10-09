@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { NODE, openNavIfMobile, registerViaUi, tokenOf, openRoomInvite } from "./helpers";
+import { NODE, loginViaUi, openNavIfMobile, registerViaUi, tokenOf, openRoomInvite, type UiAccount } from "./helpers";
 
 // History for new members of encrypted channels (design note 4.13 item 11, ENCRYPTION.md §7b): the channel policy
 // decides what the node serves from before a member's join, members' devices share the keys of older epochs
@@ -70,6 +70,16 @@ async function setPolicy(page: Page, roomId: string, channelId: string, value: s
   expect(resp.ok(), await resp.text()).toBeTruthy();
 }
 
+/** A second browser of `account`, unlocked with the recovery key. */
+async function secondDevice(browser: Browser, account: UiAccount): Promise<Page> {
+  const page = await newPage(browser);
+  await loginViaUi(page, account);
+  await page.getByTestId("recovery-key-input").fill(account.recoveryWords);
+  await page.getByRole("button", { name: "Entsperren", exact: true }).click();
+  await expect(page.getByTestId("app-shell")).toBeVisible();
+  return page;
+}
+
 async function getJson(page: Page, path: string) {
   const resp = await page.request.get(`${NODE}/api/v1${path}`, { headers: { Authorization: `Bearer ${await tokenOf(page)}` } });
   expect(resp.ok(), await resp.text()).toBeTruthy();
@@ -108,9 +118,11 @@ test.describe("History for new members", () => {
     await expect(bobPage.getByTestId("undecryptable")).toHaveCount(0);
     await expect(bobPage.getByTestId("e2ee-history")).toHaveCount(0);
 
-    // The share was ciphertext addressed to Bob, never a message.
+    // The share was ciphertext addressed to Bob, never a message; sealed to Bob's device (format 2, ENCRYPTION.md §7b).
     const body = (await shareRequest).postDataJSON() as Record<string, unknown>;
-    expect(Object.keys(body).sort()).toEqual(["ciphertext", "epoch_from", "epoch_to", "to_user"]);
+    expect(Object.keys(body).sort()).toEqual(["boxes", "ciphertext", "epoch_from", "epoch_to", "to_user", "v"]);
+    expect(body.v).toBe(2);
+    expect(Object.keys(body.boxes as Record<string, string>)).toHaveLength(1);
     expect(body.to_user).toBe(bob.address);
     expect(String(body.ciphertext)).not.toContain("history_keys");
     expect(() => JSON.parse(String(body.ciphertext))).toThrow();
@@ -157,6 +169,40 @@ test.describe("History for new members", () => {
     await expect(message(bobPage, "Alte Nachricht eins")).toBeVisible(CRYPTO);
     await expect(bobPage.getByTestId("e2ee-history")).toHaveCount(0, CRYPTO);
     await bobPage.context().close();
+  });
+
+  test("sealed per device: Bob's second device opens its own box and reads the older messages", async ({ browser, page }) => {
+    test.setTimeout(240_000);
+    await registerViaUi(page, { prefix: "alice" });
+    const { url, roomId, channelId } = await roomWithHistory(page, "Zwei Geräte");
+    await setPolicy(page, roomId, channelId, "all");
+    await page.reload();
+    const link = await inviteLink(page);
+    await page.context().setOffline(true);
+
+    // Bob joins on his laptop, then opens the channel on his phone too (both in the channel's group).
+    const laptop = await newPage(browser);
+    const bob = await registerViaUi(laptop, { prefix: "bob" });
+    await joinByLink(laptop, link);
+    await expect(laptop.getByTestId("e2ee-history")).toBeVisible(CRYPTO);
+    const phone = await secondDevice(browser, bob);
+    // The phone gets the keys from the share only, never from the laptop's history backup.
+    await phone.route("**/api/v1/users/me/backups**", (route) => route.abort());
+    await phone.goto(url);
+    await expect(phone.getByTestId("e2ee-history")).toBeVisible(CRYPTO);
+    await laptop.context().close();
+
+    // Alice is back: her device seals the share to both of Bob's devices.
+    const shareRequest = page.waitForRequest((r) => r.url().includes(`/conversations/${channelId}/history-keys`) && r.method() === "POST", CRYPTO);
+    await page.context().setOffline(false);
+    await page.goto(url);
+    const body = (await shareRequest).postDataJSON() as { v: number; boxes: Record<string, string> };
+    expect(body.v).toBe(2);
+    expect(Object.keys(body.boxes)).toHaveLength(2);
+    await expect(message(phone, "Alte Nachricht eins")).toBeVisible(CRYPTO);
+    await expect(phone.getByTestId("undecryptable")).toHaveCount(0);
+    await expect(phone.getByTestId("e2ee-history")).toHaveCount(0, CRYPTO);
+    await phone.context().close();
   });
 
   test("since joining shows nothing older, one day shows the recent messages", async ({ browser, page }) => {

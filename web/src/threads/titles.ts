@@ -8,7 +8,7 @@ import type { Thread } from "@tavrn/sdk";
 import { THREAD_TITLE_MAX, type MlsManager } from "@tavrn/e2ee";
 import { getMls } from "../stores/mls";
 
-/** A decrypted title, or null when it cannot be read (missing key, bad signature, …). */
+/** A decrypted title, or null when it cannot be read (missing key, bad signature, a title of another thread, …). */
 export type TitleResult = string | null;
 
 /** A title from free text: one line, at most 100 characters, never empty. */
@@ -18,12 +18,15 @@ export function defaultTitle(text: string, fallback: string): string {
   return title || fallback;
 }
 
-/** The title to send for `channel`: plaintext, or ciphertext with its epoch in encrypted channels. */
-export async function sealTitle(q: string, encrypted: boolean, title: string, mls: MlsManager | null): Promise<{ title: string; title_epoch?: number }> {
+/**
+ * The title to send for `channel`: plaintext, or ciphertext with its epoch in encrypted channels, bound to `threadId`
+ * when it is known (a rename, or a thread whose id the client picked; ENCRYPTION.md §5.2).
+ */
+export async function sealTitle(q: string, encrypted: boolean, title: string, mls: MlsManager | null, threadId?: string): Promise<{ title: string; title_epoch?: number }> {
   if (!encrypted) return { title: title.trim() };
   const manager = mls ?? (await getMls());
   if (!manager) throw new Error("locked");
-  return manager.encryptThreadTitle(q, title);
+  return manager.encryptThreadTitle(q, title, threadId);
 }
 
 /** Titles of `threads` (thread id → title, null if unreadable); plaintext ones at once, encrypted ones decrypted. */

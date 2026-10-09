@@ -36,6 +36,21 @@ export function identityResetAt(address: string, now = Date.now()): Promise<numb
   return value;
 }
 
+/** Whether node `domain` announces `history.shares2` (cached for ten minutes; unknown or failing: no). */
+const shares2Cache = new Map<string, { at: number; value: Promise<boolean> }>();
+const CAPS_TTL_MS = 10 * 60_000;
+
+export function nodeHasShares2(domain: string, now = Date.now()): Promise<boolean> {
+  const hit = shares2Cache.get(domain);
+  if (hit && now - hit.at < CAPS_TTL_MS) return hit.value;
+  const value = apiFor(domain)
+    .node.info()
+    .then((info) => !!info.capabilities?.includes("history.shares2"))
+    .catch(() => false);
+  shares2Cache.set(domain, { at: now, value });
+  return value;
+}
+
 /**
  * The entry records of a files channel as message-shaped key samples, oldest first (FILES.md §8.7): by `epoch`, or
  * from a time on (`after` as a ULID floor or `since` in milliseconds). `before` cannot be answered from records (the
@@ -82,6 +97,8 @@ async function historySync(): Promise<HistorySync | null> {
     },
     isOnline: (address) => address === user.address || !!usePresence.getState().users[address],
     resetAt: identityResetAt,
+    // Shares sealed per recipient device where the hosting node supports them (ENCRYPTION.md §7b "Format v2").
+    shares2: nodeHasShares2,
     // Files channels with a window start: the oldest record epoch since then (`GET records?since=`, FILES.md §8.7).
     firstEpoch: async (q, kind, sinceMs) => {
       const slash = q.indexOf("/");
@@ -143,4 +160,5 @@ export function resetHistory(): void {
   current?.sync.dispose();
   current = null;
   resets.clear();
+  shares2Cache.clear();
 }
