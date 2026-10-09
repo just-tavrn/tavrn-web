@@ -41,8 +41,8 @@ export function useCallNames(): { channel: string; room: string } {
   return { channel: channel ? channelName(channel) : "…", room: room.data?.name ?? "" };
 }
 
-/** A round toggle button of the voice controls; `menu` adds a quick menu (right-click, long press). */
-export function ControlButton({ label, active = false, danger = false, solid = false, onClick, children, testid, className = "", menu }: { label: string; active?: boolean; danger?: boolean; solid?: boolean; onClick: () => void; children: React.ReactNode; testid?: string; className?: string; menu?: ContextMenuTrigger["triggerProps"] }) {
+/** A round toggle button of the voice controls; `menu` adds a quick menu (right-click, long press); `compact` = 36 px (the voice bar). */
+export function ControlButton({ label, active = false, danger = false, solid = false, onClick, children, testid, className = "", menu, compact = false }: { label: string; active?: boolean; danger?: boolean; solid?: boolean; onClick: () => void; children: React.ReactNode; testid?: string; className?: string; menu?: ContextMenuTrigger["triggerProps"]; compact?: boolean }) {
   const look = solid ? "bg-danger-solid text-white hover:bg-danger-solid-hover" : danger ? "text-danger hover:bg-danger/15" : active ? "bg-danger/15 text-danger hover:bg-danger/25" : "text-fg-1 hover:bg-bg-3 hover:text-fg-0";
   return (
     <button
@@ -53,7 +53,7 @@ export function ControlButton({ label, active = false, danger = false, solid = f
       data-testid={testid}
       onClick={onClick}
       {...menu}
-      className={`inline-flex min-h-10 min-w-10 items-center justify-center rounded-md ${look} ${className}`}
+      className={`inline-flex ${compact ? "min-h-9 min-w-9" : "min-h-10 min-w-10"} items-center justify-center rounded-md ${look} ${className}`}
     >
       {children}
     </button>
@@ -89,57 +89,63 @@ export function VoiceBar() {
   // Voice is never sent unencrypted (VOICE.md), so the padlock is always there; the text names the quality.
   const signal = t(status === "connected" ? `voice.signal.${quality}` : "voice.signal.connecting");
   return (
-    <div className="border-t border-line bg-bg-0 px-2 py-1.5" data-testid="voice-bar" data-status={status} data-call={target.call || undefined}>
+    <div className="relative border-t border-line bg-bg-0 px-1 py-1" data-testid="voice-bar" data-status={status} data-call={target.call || undefined}>
       {overlay}
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          className="min-w-0 flex-1 rounded-md px-1 py-0.5 text-left hover:bg-bg-3/60"
-          onClick={() => {
-            closeNav();
-            if (target.call) openCallView(navigate);
-            else navigate(roomPath(target.domain, target.roomId, target.channelId));
-          }}
-          title={t("voice.bar.open")}
-        >
-          <span className={`flex items-center gap-1.5 text-xs font-semibold ${color}`}>
-            {/* Encryption and connection quality in one glyph: the padlock sits in the signal bars. */}
-            <span role="img" aria-label={signal} title={signal} className="inline-flex shrink-0" data-testid="voice-bar-signal" data-level={level}>
-              <SignalBars level={level} locked />
-            </span>
-            <span className="min-w-0" data-testid="voice-bar-status">{t(`voice.status.${status}`)}</span>
+      {/*
+        One button over the whole bar opens the channel: the first line (signal with the padlock, a short status, the
+        quality) leaves room for the controls laid over its right end, the channel and room get the full width below.
+      */}
+      <button
+        type="button"
+        className="block w-full min-w-0 rounded-md px-1 text-left hover:bg-bg-3/60"
+        onClick={() => {
+          closeNav();
+          if (target.call) openCallView(navigate);
+          else navigate(roomPath(target.domain, target.roomId, target.channelId));
+        }}
+        title={t("voice.bar.open")}
+      >
+        <span className={`flex h-9 min-w-0 items-center gap-[3px] whitespace-nowrap pr-[100px] text-xs font-semibold ${color}`} data-row="status">
+          <span role="img" aria-label={signal} title={signal} className="inline-flex shrink-0" data-testid="voice-bar-signal" data-level={level}>
+            <SignalBars level={level} locked />
           </span>
-          {/* The quality badge leads the channel line: next to the status it ran into the controls of a narrow sidebar. */}
-          <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-fg-2">
-            {status === "connected" && <QualityBadge />}
-            <span className="min-w-0 truncate" data-testid="voice-bar-channel">
-              {names.channel}
-              {names.room && ` / ${names.room}`}
-            </span>
+          {/* The section is the voice bar: "Connected" is enough on screen, screen readers hear the long form. */}
+          <span className="shrink-0" aria-hidden="true" data-testid="voice-bar-status">
+            {t(`voice.bar.status.${status}`)}
           </span>
-          {deafened && (
-            <span className="block truncate text-[11px] text-warn" data-testid="voice-bar-deafened">
-              {streamPlays && keepsStreams ? t("voice.bar.deafened_stream") : t("voice.bar.deafened")}
-            </span>
-          )}
-        </button>
-        {status === "reconnecting" && (
-          <button type="button" className="min-h-10 rounded-md px-2 text-xs font-medium text-warn hover:bg-bg-3" onClick={() => void leaveVoice()} data-testid="voice-bar-cancel" title={t("voice.bar.cancel_hint")}>
-            {t("common.cancel")}
-          </button>
+          {status === "connected" && <QualityBadge compact />}
+        </span>
+        <span className="sr-only">{t(`voice.status.${status}`)}</span>
+        <span className={`flex min-w-0 items-center text-[11px] text-fg-2 ${status === "reconnecting" ? "min-h-6 pr-20" : "min-h-5"}`} data-row="channel">
+          <span className="min-w-0 truncate" data-testid="voice-bar-channel">
+            {names.channel}
+            {names.room && ` / ${names.room}`}
+          </span>
+        </span>
+        {deafened && (
+          <span className="block truncate pb-0.5 text-[11px] text-warn" data-testid="voice-bar-deafened">
+            {streamPlays && keepsStreams ? t("voice.bar.deafened_stream") : t("voice.bar.deafened")}
+          </span>
         )}
-        <ControlButton label={muted ? t("voice.unmute") : t("voice.mute")} active={muted} onClick={() => void toggleMute()} testid="voice-bar-mute" menu={micMenu.triggerProps}>
+      </button>
+      <div className="absolute right-1 top-1 flex items-center">
+        <ControlButton label={muted ? t("voice.unmute") : t("voice.mute")} active={muted} onClick={() => void toggleMute()} testid="voice-bar-mute" menu={micMenu.triggerProps} compact>
           {muted ? <MicOffIcon /> : <MicIcon />}
         </ControlButton>
-        <ControlButton label={deafened ? t("voice.undeafen") : t("voice.deafen")} active={deafened} onClick={() => void toggleDeafen()} testid="voice-bar-deafen" menu={outputMenu.triggerProps}>
+        <ControlButton label={deafened ? t("voice.undeafen") : t("voice.deafen")} active={deafened} onClick={() => void toggleDeafen()} testid="voice-bar-deafen" menu={outputMenu.triggerProps} compact>
           {deafened ? <HeadphonesOffIcon /> : <HeadphonesIcon />}
         </ControlButton>
-        <ControlButton label={t("voice.leave")} danger onClick={() => void leaveVoice()} testid="voice-bar-leave">
+        <ControlButton label={t("voice.leave")} danger onClick={() => void leaveVoice()} testid="voice-bar-leave" compact>
           <LeaveIcon />
         </ControlButton>
-        {micMenu.overlay}
-        {outputMenu.overlay}
       </div>
+      {status === "reconnecting" && (
+        <button type="button" className="absolute right-1 top-10 min-h-6 rounded-md px-2 text-xs font-medium text-warn hover:bg-bg-3" onClick={() => void leaveVoice()} data-testid="voice-bar-cancel" title={t("voice.bar.cancel_hint")}>
+          {t("common.cancel")}
+        </button>
+      )}
+      {micMenu.overlay}
+      {outputMenu.overlay}
     </div>
   );
 }

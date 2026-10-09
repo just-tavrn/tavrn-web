@@ -12,7 +12,7 @@ const media = vi.hoisted(() => ({ devices: [] as MediaDeviceInfo[], needsPermiss
 vi.mock("../devices", async (original) => ({ ...(await original<typeof import("../devices")>()), useMediaDevices: () => media }));
 vi.mock("../index", () => ({ toggleMute: vi.fn(async () => undefined), toggleDeafen: vi.fn(async () => undefined), leaveVoice: vi.fn(async () => undefined) }));
 vi.mock("../calls/CallUi", () => ({ CallOverlay: () => null, openCallView: vi.fn() }));
-vi.mock("./QualityBadge", () => ({ QualityBadge: () => null }));
+vi.mock("./QualityBadge", () => ({ QualityBadge: () => <span data-testid="voice-quality">Hoch</span> }));
 vi.mock("../../stores/nodes", () => ({ apiFor: () => ({ rooms: { get: async () => ({ name: "Stammtisch", channels: [] }) }, conversations: { get: async () => ({}) } }) }));
 
 const { VoiceBar } = await import("./VoiceBar");
@@ -212,8 +212,6 @@ describe("VoiceBar encryption indicator", () => {
     expect(signal.querySelector("svg [data-testid='signal-lock']")).not.toBeNull();
     // Three bars, all filled.
     expect([...signal.querySelectorAll("rect[data-bar]")].map((r) => r.getAttribute("opacity"))).toEqual(["1", "1", "1"]);
-    // The status text stays.
-    expect(screen.getByTestId("voice-bar-status")).toHaveTextContent("Sprache verbunden");
   });
 
   it("names the connection quality and the connecting state", () => {
@@ -230,5 +228,41 @@ describe("VoiceBar encryption indicator", () => {
     const signal = screen.getByRole("img", { name: "Verschlüsselt · Verbindung wird aufgebaut" });
     expect([...signal.querySelectorAll("rect[data-bar]")].map((r) => r.getAttribute("opacity"))).toEqual(["0.25", "0.25", "0.25"]);
     expect(signal.querySelector("[data-testid='signal-lock']")).not.toBeNull();
+  });
+});
+
+describe("VoiceBar layout", () => {
+  const row = (el: HTMLElement) => el.closest("[data-row]")!;
+
+  it("first line: signal, a short status and the quality badge; second line: channel and room", async () => {
+    useVoice.setState({ quality: "excellent" });
+    renderBar();
+    const status = screen.getByTestId("voice-bar-status");
+    expect(status).toHaveTextContent(/^Verbunden$/);
+    expect(row(status)).toHaveAttribute("data-row", "status");
+    expect(row(status)).toHaveClass("whitespace-nowrap");
+    expect(row(status)).toContainElement(screen.getByTestId("voice-bar-signal"));
+    expect(row(status)).toContainElement(screen.getByTestId("voice-quality"));
+    const channel = screen.getByTestId("voice-bar-channel");
+    expect(row(channel)).toHaveAttribute("data-row", "channel");
+    // Compact 36 px controls leave the first line room for status and badge in a 240 px sidebar.
+    for (const id of ["voice-bar-mute", "voice-bar-deafen", "voice-bar-leave"]) expect(screen.getByTestId(id)).toHaveClass("min-w-9", "min-h-9");
+    expect(channel).toHaveClass("truncate");
+    expect(await screen.findByText("Stammtisch", { exact: false })).toBe(channel);
+    // Screen readers get the long form; the button opens the channel.
+    expect(screen.getByRole("button", { name: /Sprache verbunden/ })).toHaveAttribute("title", "Sprachkanal öffnen");
+  });
+
+  it("short forms while connecting and reconnecting; cancel stays reachable", () => {
+    useVoice.setState({ status: "joining" });
+    const first = renderBar();
+    expect(screen.getByTestId("voice-bar-status")).toHaveTextContent(/^Verbinde…$/);
+    expect(screen.queryByTestId("voice-quality")).toBeNull();
+    first.unmount();
+    useVoice.setState({ status: "reconnecting" });
+    renderBar();
+    expect(screen.getByTestId("voice-bar-status")).toHaveTextContent(/^Verbinde neu…$/);
+    expect(screen.getByTestId("voice-bar-cancel")).toBeInTheDocument();
+    expect(screen.getAllByRole("button").map((b) => b.getAttribute("data-testid"))).toEqual([null, "voice-bar-mute", "voice-bar-deafen", "voice-bar-leave", "voice-bar-cancel"]);
   });
 });
