@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { NODE, createRoomViaApi, inviteCode, loginAs, loginViaUi, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, type UiAccount, openRoomInvite } from "./helpers";
-import { createGroup, cryptoAccountViaApi, externalJoin, freshIdentityKey, sendEncrypted } from "./crypto-helpers";
+import { createGroup, cryptoAccountViaApi, externalJoin, freshIdentityKey, resetAndReattest, sendEncrypted } from "./crypto-helpers";
 
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
 
@@ -276,6 +276,45 @@ test.describe("Trust and devices", () => {
     await page.goto(roomUrl);
     await expect(page.getByTestId("key-changed-badge")).toHaveCount(0);
     await bobPage.context().close();
+  });
+
+  test("A changed security key holds the contact's device back until it is acknowledged", async ({ page, request }) => {
+    test.setTimeout(150_000);
+    // Bob runs his encryption in the test process; Alice uses the browser.
+    const bob = await cryptoAccountViaApi(request, "bob");
+    const room = await createRoomViaApi(request, bob.token, "Schluesselwechsel", "invite", { encrypted: true });
+    const channel = room.channels.find((c: { kind: string }) => c.kind === "text").id as string;
+    await createGroup(request, bob, channel);
+    await sendEncrypted(request, bob, channel, "Hallo von Bob");
+    const code = await inviteCode(request, bob.token, room.id);
+    await registerViaUi(page, { prefix: "alice" });
+    await page.goto(`/invite/${code}`);
+    await page.getByRole("button", { name: "Beitreten" }).click();
+    await expect(page.getByTestId("channel-name")).toHaveText("allgemein");
+    // Alice's device is in the group (her own message goes out) and Bob's device counts.
+    await send(page, "Hallo Bob");
+    await expect(message(page, "Hallo Bob")).toBeVisible();
+    await expect(page.getByTestId("ghost-warning")).toHaveCount(0);
+    const roomUrl = page.url();
+
+    // While Alice is away, Bob resets his key and his device comes back attested under the new one.
+    await page.goto("/");
+    await resetAndReattest(request, bob);
+    await page.goto(roomUrl);
+    const warning = page.getByTestId("ghost-warning");
+    await expect(warning).toContainText(`${bob.address}/${bob.deviceId}`, { timeout: 30_000 });
+    await expect(warning).toContainText("Änderung noch nicht bestätigt");
+    await expect(page.getByLabel("Nachricht", { exact: true })).toBeDisabled();
+
+    // Acknowledging the changed key lets the device count: the warning goes, sending works.
+    await openMembers(page);
+    const badge = page.getByTestId("member-list").getByTestId("key-changed-badge");
+    page.once("dialog", (d) => d.accept());
+    await badge.click();
+    await closeDrawers(page);
+    await expect(warning).toHaveCount(0, { timeout: 30_000 });
+    await send(page, "Willkommen zurück");
+    await expect(message(page, "Willkommen zurück")).toBeVisible();
   });
 
   test("Ghost check: a device of a non-member in the group blocks sending until confirmed", async ({ page, request }) => {

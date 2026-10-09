@@ -170,6 +170,24 @@ member or not confirmed by its user's key shows a warning and blocks sending unt
 keys are backed up encrypted on the home node so that a new device unlocked with the recovery key reads
 the history. Friends (requests, accept, block) live under "Friends" on the home view.
 
+**Changed security keys** (ENCRYPTION.md §3.3). Until the user acknowledges the "security key changed" badge (in the
+member list or next to the author; acknowledging asks for confirmation) or verifies the new key, the contact's
+devices under the new key do not count: DMs and group DMs do not add them, and in channels their leaves show in the
+unknown-device warning with "security key changed and not confirmed yet", which blocks sending like every ghost.
+Acknowledging adds the missing devices and checks the roster again at once. Rotations signed by the previous key
+(§9a) are not held back.
+
+**Sending** (ENCRYPTION.md §5.2, §5.3). Before encrypting, the client processes the commits it has not seen yet; if
+that fails, nothing is sent and the composer keeps the text with an error to try again. If the commits brought a
+device nobody was shown yet, sending stops as well and the unknown-device warning has to be acknowledged again. A
+message's thread and reply are signed inside its encrypted content, so a message the node moved to another thread or
+another reply target shows as "Moved message (signature does not match)" instead of its content. When the node
+answers that the epoch is stale (`mls.epoch_stale`), the client catches up and encrypts once more.
+
+**Whiteboard drafts.** The owner's unsaved board of a conversation is kept in the local encrypted store under a name
+derived with the device's search key (`whiteboard-draft:<HMAC>`), so the store's record names do not reveal which
+conversations have a board; drafts under the old name (with the conversation id) are moved on first read.
+
 **Several tabs.** All tabs of one browser profile share the account's MLS state (one IndexedDB store). One tab owns
 it: the first tab that opens the account's session manager holds the Web Lock `tavrn-mls|<home node>|<address>/<device>`
 (`src/stores/mls.ts`, `@tavrn/e2ee` `src/tabs.ts`), runs every join, catch-up, commit and encryption and alone
