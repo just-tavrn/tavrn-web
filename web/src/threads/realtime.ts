@@ -64,7 +64,11 @@ export function threadMessage(m: Message, queryClient: QueryClient, me: { id: st
   return followed || (m.mentions ?? []).includes(me.address);
 }
 
-export function threadHandlers(socket: TavrnSocket, queryClient: QueryClient): Array<() => void> {
+/**
+ * `me`: the user as this node knows it. A thread the user started is followed from the start (the node sends no
+ * `thread.read` for it), also when it was started on another connection.
+ */
+export function threadHandlers(socket: TavrnSocket, queryClient: QueryClient, me: () => { id: string } | null = () => null): Array<() => void> {
   const refreshLists = () => {
     void queryClient.invalidateQueries({ queryKey: ["threads"] });
     void queryClient.invalidateQueries({ queryKey: ["followed-threads"] });
@@ -78,7 +82,13 @@ export function threadHandlers(socket: TavrnSocket, queryClient: QueryClient): A
     refreshLists();
   };
   return [
-    socket.on<{ room_id: string; thread: Thread }>("thread.create", changed),
+    socket.on<{ room_id: string; thread: Thread }>("thread.create", (d) => {
+      const t = d.thread;
+      if (t.created_by_id === me()?.id && !useThreads.getState().followed[t.id]) {
+        applyThreadState({ thread_id: t.id, channel_id: t.channel_id, room_id: t.room_id, following: true, last_read_message_id: t.last_message_id ?? null, unread_count: 0, mention_count: 0 });
+      }
+      changed(d);
+    }),
     socket.on<{ room_id: string; thread: Thread }>("thread.update", changed),
     socket.on<{ room_id: string; channel_id: string; id: string }>("thread.delete", (d) => {
       patchRoot(queryClient, d.channel_id, null, d.id, null);

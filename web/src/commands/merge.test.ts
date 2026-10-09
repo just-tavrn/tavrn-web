@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { ALL_PERMISSIONS, Permission, type Member, type PaletteCommand, type RoomDetail } from "@tavrn/sdk";
 import { BUILTIN_COMMANDS } from "./builtin";
-import { CommandError, resolveAppArgs } from "./execute";
+import { CommandError, invokeRequest, resolveAppArgs } from "./execute";
 import { appDefinitions, choiceSuggestions, commandKey, mergePalette, resolveCommand } from "./merge";
 import { availableCommands, builtinRegistry } from "./registry";
 
@@ -99,5 +99,12 @@ describe("application command arguments", () => {
     expect(() => resolveAppArgs(def, { who: "nobody" }, { members, room })).toThrow(CommandError);
     expect(() => resolveAppArgs(def, { who: "bob", where: "#nowhere" }, { members, room })).toThrow(CommandError);
     expect(() => resolveAppArgs(def, { who: "bob", role: "admins" }, { members, room })).toThrow(CommandError);
+  });
+});
+
+describe("invokeRequest (APPLICATIONS.md §5.5)", () => {
+  it("names the thread the command is invoked in, so the bot answers there", () => {
+    expect(invokeRequest("node.test/A/C", { args: { city: "Köln" } }, null)).toEqual({ command: "node.test/A/C", args: { city: "Köln" } });
+    expect(invokeRequest("node.test/A/C", { args_ciphertext: "CT", epoch: 3 }, "01J9ZK3G5M8Q2W4E6R8T0Y2TH1")).toEqual({ command: "node.test/A/C", args_ciphertext: "CT", epoch: 3, thread_id: "01J9ZK3G5M8Q2W4E6R8T0Y2TH1" });
   });
 });

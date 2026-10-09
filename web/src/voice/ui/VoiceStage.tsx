@@ -29,6 +29,7 @@ import { sortByRank, stableOrder } from "../order";
 import { VoiceControls } from "./VoiceControls";
 import { WhiteboardButton } from "../../whiteboard/WhiteboardBadge";
 import { WhiteboardStageTile, WhiteboardTileOverlay, useStageBoard } from "../../whiteboard/WhiteboardStage";
+import { LockMark } from "../../components/Badges";
 
 export interface Tile {
   identity: string;
@@ -375,9 +376,7 @@ export function VoiceStage({ room, channel }: { room: RoomDetail; channel: Chann
       <h1 className="truncate text-sm font-semibold" data-testid="channel-name">
         {channelName(channel)}
       </h1>
-      <span role="img" className="text-[11px]" aria-label={t("voice.encrypted")} title={t("voice.encrypted")} data-testid="voice-lock">
-        🔒
-      </span>
+      <LockMark size={18} title={t("voice.encrypted")} testId="voice-lock" />
       <span className="ml-auto" />
       <WhiteboardButton conversationId={channel.id} encrypted />
       {connected && (

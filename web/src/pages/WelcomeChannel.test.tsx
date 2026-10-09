@@ -9,9 +9,9 @@ import { useUnread } from "../stores/unread";
 import { useMlsUi } from "../stores/mls";
 
 // The welcome channel (design note 4.11): kind `system`, pinned at the top, join/leave entries, read-only.
-const channel = (id: string, kind: string, name: string, position: number, category_id: string | null = "cat") => ({ id, room_id: "r1", category_id, kind, name, topic: "", position, encrypted: false, sync_with_category: false, slowmode_secs: 0, bitrate_kbps: 64, user_limit: 0, system_name: kind === "system" ? "welcome" : null });
+const channel = (id: string, kind: string, name: string, position: number, category_id: string | null = "cat") => ({ id, room_id: "r1", category_id, kind, name, topic: "", position, encrypted: false, slowmode_secs: 0, bitrate_kbps: 64, user_limit: 0, system_name: kind === "system" ? "welcome" : null });
 const room: RoomDetail = {
-  id: "r1", name: "Gilde", description: "", rules: "", join_mode: "invite", owner_id: "owner", icon_blob_id: null, icon_animated: false, banner_blob_id: null, created_at: "", discoverable: false, no_bots: false, bots_in_encrypted_channels: "allowed",
+  id: "r1", name: "Gilde", description: "", rules: "", join_mode: "invite", owner_id: "owner", icon_blob_id: null, icon_animated: false, banner_blob_id: null, created_at: "", discoverable: false, no_bots: false, bots_in_encrypted_channels: "allowed", age_gate: "none", history_restore: "request",
   member_count: 2, categories: [{ id: "cat", room_id: "r1", name: "Allgemein", position: 0, no_bots: false }],
   channels: [channel("c1", "text", "allgemein", 0), channel("w1", "system", "welcome", 5, null)],
   roles: [{ id: "everyone", room_id: "r1", name: "@everyone", color: null, position: 0, permissions: "3", hoist: false, mentionable: false, is_everyone: true }],
@@ -80,6 +80,20 @@ describe("welcome channel", () => {
     act(() => useMlsUi.setState({ changedKeys: {}, rotatedKeys: {} }));
     expect(within(screen.getAllByTestId("key-event")[1]!).queryByTestId("key-changed-badge")).toBeNull();
     expect(within(screen.getAllByTestId("key-event")[0]!).queryByTestId("key-rotated-badge")).toBeNull();
+  });
+
+  it("renders history restore decisions (ENCRYPTION.md §7b) without the reason", () => {
+    const base = { conversation_id: "w1", author_id: "u2", device_id: null, encrypted: false, format: 1, epoch: null, reply_to_id: null, thread_id: null, mentions: [], mentions_everyone: false, created_at: new Date().toISOString(), edited_at: null, attachments: [], reactions: [], pinned: false };
+    const messages = [
+      { ...base, id: "m9", author: "bob@x", content: { type: "system.history_restore_denied", user: "bob@x", display_name: "Bob", by: "alice@x" } },
+      { ...base, id: "m8", author: "bob@x", content: { type: "system.history_restored", user: "bob@x", display_name: "Bob", by: "alice@x" } },
+    ] as Message[];
+    render(<MessageList messages={messages} currentUserId="u1" canManage canReact hasMore={false} />);
+    const events = screen.getAllByTestId("restore-event");
+    expect(events.map((e) => e.getAttribute("data-event"))).toEqual(["restored", "denied"]);
+    expect(events[0]).toHaveTextContent("alice@x hat den verschlüsselten Verlauf von Bob nach einem Schlüssel-Reset wiederhergestellt");
+    expect(events[1]).toHaveTextContent("alice@x hat die Anfrage von Bob abgelehnt");
+    expect(within(events[0]!).getByTestId("message-avatar")).toHaveAttribute("data-address", "bob@x");
   });
 
   it("renders bot entries of encrypted channels (design note 4.7): added by itself or a member, removed with the reason", () => {

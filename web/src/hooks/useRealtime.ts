@@ -21,13 +21,17 @@ import { mayManageRoom } from "../lib/rooms";
 import { mapMessages, prependMessage, type MessagePages } from "../lib/messagePages";
 import { threadHandlers, threadMessage } from "../threads/realtime";
 import { useUnread } from "../stores/unread";
-import { homeDomain, refreshNode, useNodes } from "../stores/nodes";
+import { apiFor, homeDomain, refreshNode, useNodes } from "../stores/nodes";
+import { loadFollowedThreads } from "../threads/loadFollowed";
 import { unindexConversation, unindexMessages } from "../search/local";
+import { isRealDeletion, useHiddenChannels } from "../lib/hiddenChannels";
 import { usePresence } from "../stores/presence";
 import { useNotifications } from "../stores/notifications";
 import { isAttentive } from "./useMarkRead";
 import { loadRoomDetails, notifyMessage } from "../lib/notify";
 import { historyPending, historyReceive } from "../crypto/history";
+import { historyDecidedEvent, historyRequestEvent } from "../history/restore";
+import { registerFilesChannel, useHistoryKeys } from "../files/registry";
 import { parseHistoryPolicy } from "@tavrn/e2ee";
 import { alertText, reportCreated, type ModerationAlert, type ReportCreated } from "../moderation/realtime";
 import { rememberDeleted } from "../moderation/deletedIds";
@@ -52,6 +56,15 @@ function channelHistoryPolicy(queryClient: QueryClient, conversationId: string) 
     if (channel) return channel.encrypted ? parseHistoryPolicy(channel.history_for_new_members) : null;
   }
   return null;
+}
+
+/** Registers an encrypted files channel found in the cached rooms for the history key checks; returns the cleanup. */
+function registerKnownFilesChannel(queryClient: QueryClient, qualified: string, conversationId: string): () => void {
+  for (const [, room] of queryClient.getQueriesData<RoomDetail>({ queryKey: ["room"] })) {
+    const channel = room?.channels?.find((c) => c.id === conversationId);
+    if (channel?.kind === "files" && channel.encrypted) return registerFilesChannel(qualified, room!.id);
+  }
+  return () => undefined;
 }
 
 /** `identity.changed` of another user (of any node): re-check the key on the user's home node (notice, §3.3). */
@@ -88,7 +101,16 @@ export function mlsHandlers(socket: TavrnSocket, queryClient: QueryClient, domai
     }),
     socket.on<{ conversation_id: string }>("history.keys_available", (d) => {
       const c = q(d.conversation_id);
-      if (c) void historyReceive(c).then(() => queryClient.invalidateQueries({ queryKey: ["history-pending"] }));
+      if (!c) return;
+      // Encrypted files channels check shared keys against entry records (FILES.md §8.7): they need the room id.
+      const done = registerKnownFilesChannel(queryClient, c, d.conversation_id);
+      void historyReceive(c)
+        .then(() => {
+          void queryClient.invalidateQueries({ queryKey: ["history-pending"] });
+          // Entry records of files channels may open now (FILES.md §8.7).
+          useHistoryKeys.getState().bump();
+        })
+        .finally(done);
     }),
     // A user's devices changed (FEDERATION.md §5.2): forget the cached list, the next lookup asks the home node.
     socket.on<{ user: string }>("devices.changed", (d) => void getMls().then((m) => m?.forgetDevices(d.user)).catch(() => undefined)),
@@ -253,7 +275,7 @@ export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: 
         );
       }
     }),
-    ...threadHandlers(socket, queryClient),
+    ...threadHandlers(socket, queryClient, me),
     socket.on<{ conversation_id: string; last_read_message_id: string }>("read.update", (d) => useUnread.getState().read(d.conversation_id, d.last_read_message_id)),
     // Room channels carry `channel_id`, DMs and group DMs `conversation_id`.
     socket.on<{ channel_id?: string; conversation_id?: string; user_id: string }>("typing", (d) => {
@@ -264,6 +286,9 @@ export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: 
     // The moderation inbox (MODERATION.md §1.5): badges and lists follow, a new report notifies.
     socket.on<ReportCreated>("report.create", (d) => reportCreated(d, node, queryClient)),
     socket.on("report.update", () => void queryClient.invalidateQueries({ queryKey: ["reports"] })),
+    // History restore after a key reset (ENCRYPTION.md §7b): approvers are notified, the requester learns the decision.
+    socket.on<Parameters<typeof historyRequestEvent>[0]>("history.request", (d) => historyRequestEvent(d, node, queryClient)),
+    socket.on<Parameters<typeof historyDecidedEvent>[0]>("history.request_decided", (d) => historyDecidedEvent(d, node, queryClient, me()?.address)),
     socket.on<{ room_id: string; user_id: string; kicked?: boolean; banned?: boolean }>("member.leave", (d) => {
       invalidateRoom(d);
       void queryClient.invalidateQueries({ queryKey: ["members", d.room_id] });
@@ -272,9 +297,12 @@ export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: 
       }
     }),
     ...["member.join", "member.update"].map((type) => socket.on<{ room_id: string }>(type, (d) => { invalidateRoom(d); void queryClient.invalidateQueries({ queryKey: ["members", d.room_id] }); })),
-    socket.on<{ id?: string }>("channel.delete", (d) => {
-      if (d.id) void unindexConversation(qualified(d.id));
+    // `hidden: true`: the user lost access (PROTOCOL.md §6), the channel itself still exists.
+    socket.on<{ id?: string; hidden?: boolean }>("channel.delete", (d) => {
+      useHiddenChannels.getState().deleted(d);
+      if (d.id && isRealDeletion(d)) void unindexConversation(qualified(d.id));
     }),
+    socket.on<{ id?: string }>("channel.create", (d) => useHiddenChannels.getState().created(d.id)),
     ...["channel.create", "channel.update", "channel.delete", "category.create", "category.update", "category.delete", "role.create", "role.update", "role.delete", "override.update", "room.update"].map((type) =>
       socket.on<{ room_id?: string; id?: string }>(type, (d) => invalidateRoom({ room_id: d.room_id ?? d.id })),
     ),
@@ -343,6 +371,8 @@ export function useRealtime() {
         // (Re)connected: Welcomes that arrived while the socket was down, and own leaves waiting for removal.
         const home = useAuth.getState().user?.domain;
         if (status === "ready" && home) {
+          // Followed threads of every room, so their messages count and notify before a room is opened (§7e).
+          void loadFollowedThreads({ key: home, client: api, queryClient });
           void getMls()
             .then(async (m) => {
               await m?.processWelcomes(home);
@@ -459,6 +489,7 @@ export function useNodeRealtime() {
         onStatus: (status) => {
           // Connected (again): DMs started on that node wait there as Welcomes (§6.1); own leaves to remove.
           if (status === "ready") {
+            void loadFollowedThreads({ key: domain, client: apiFor(domain), queryClient });
             void getMls()
               .then(async (m) => {
                 await m?.processWelcomes(domain);

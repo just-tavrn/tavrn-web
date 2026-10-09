@@ -10,6 +10,7 @@
   --color-bg-2: #1d2129;      /* content area */
   --color-bg-3: #262b35;      /* hover, input fields */
   --color-line: #2f3542;      /* dividers */
+  --color-line-strong: #737b8c; /* borders of form controls: >= 3:1 on bg-0..bg-3 (WCAG 1.4.11) */
   --color-fg-0: #f3f4f6;      /* primary text */
   --color-fg-1: #b4bac6;      /* secondary text */
   --color-fg-2: #8a92a2;      /* muted (was #7c8494: 4.29:1 on bg-2, now >= 4.5:1 on bg-0..bg-3, design note 4.14) */

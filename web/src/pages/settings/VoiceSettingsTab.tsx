@@ -17,7 +17,7 @@ import { ConnectionTestPanel } from "../../voice/ui/ConnectionTestPanel";
 import { platform } from "../../platform";
 import { MoreHotkeysSection } from "./MoreHotkeysSection";
 import { HotkeyRecorder } from "./HotkeyRecorder";
-import { useMediaDevices } from "../../voice/devices";
+import { outputSelectable, useMediaDevices } from "../../voice/devices";
 
 function DeviceSelect({ label, kind, devices, value, onChange, onFocus, testid }: { label: string; kind: MediaDeviceKind; devices: MediaDeviceInfo[]; value: string; onChange: (id: string) => void; onFocus?: () => void; testid: string }) {
   const t = useT();
@@ -108,10 +108,14 @@ function MicCheck({ settings, onPermission }: { settings: VoiceSettings; onPermi
   const start = async (): Promise<MicPipeline | null> => {
     try {
       const { MicPipeline } = await import("../../voice/audio");
-      const p = await MicPipeline.create(settings, (r) => {
-        setLevel(r.level);
-        setOpen(r.open);
-      });
+      const p = await MicPipeline.create(
+        settings,
+        (r) => {
+          setLevel(r.level);
+          setOpen(r.open);
+        },
+        { test: true },
+      );
       live.current = p;
       setPipeline(p);
       onPermission();
@@ -195,6 +199,11 @@ function MicCheck({ settings, onPermission }: { settings: VoiceSettings; onPermi
         {threshold !== null && <div className="absolute inset-y-0 w-0.5 bg-warn" style={{ left: `${levelToUnit(threshold) * 100}%` }} title={t("voice.settings.threshold")} />}
       </div>
       <p className="text-xs text-fg-2">{t("voice.settings.loopback_hint")}</p>
+      {settings.inputMode === "ptt" && (
+        <p className="text-xs text-fg-2" data-testid="mic-check-ptt-hint">
+          {t("voice.settings.mic_check_ptt")}
+        </p>
+      )}
       {inVoice && (
         <p className="text-xs text-fg-2" data-testid="loopback-busy">
           {t("voice.settings.loopback_busy")}
@@ -337,7 +346,7 @@ export function VoiceSettingsTab() {
   const [bgNote, setBgNote] = useState<string | null>(null);
   const node = useQuery({ queryKey: ["node", "origin"], queryFn: () => publicApi.node.info(), staleTime: 10 * 60_000 });
   const camera = node.data?.voice?.camera ?? { enabled: true, max_resolution: "720p", max_fps: 30 };
-  const sinkSupported = typeof HTMLMediaElement !== "undefined" && "setSinkId" in HTMLMediaElement.prototype;
+  const sinkSupported = outputSelectable();
   const cameraResolutions = (["360p", "720p", "1080p"] as Resolution[]).filter((r) => limitResolution(r, camera.max_resolution) === r);
   const fpsChoices = [15, 24, 30, 60].filter((f) => f <= camera.max_fps);
 
@@ -379,6 +388,8 @@ export function VoiceSettingsTab() {
         <Button variant="ghost" onClick={() => void testTone(settings.outputDeviceId, settings.outputVolume / 100).catch(toastError)} data-testid="speaker-test">
           {t("voice.settings.test_tone")}
         </Button>
+        {/* The desktop app keeps the screen on through its shell later (`voice/wakeLock.ts`). */}
+        {!platform().isDesktop && <Check label={t("voice.settings.keep_screen_on")} hint={t("voice.settings.keep_screen_on_hint")} checked={settings.keepScreenOn} onChange={(v) => update({ keepScreenOn: v })} testid="keep-screen-on" />}
       </Section>
 
       <Section title={t("voice.test.title")} description={t("voice.test.description")}>

@@ -5,7 +5,7 @@
  * "everywhere") and the local encrypted index for encrypted channels and DMs. Results are merged newest
  * first; the status says honestly what was searched.
  */
-import { qualify, DEFAULT_WINDOW_DAYS, type Coverage, type LocalHit, type SearchIndex } from "@tavrn/e2ee";
+import { qualify, DEFAULT_WINDOW_DAYS, type Coverage, type IndexedFile, type LocalHit, type SearchIndex } from "@tavrn/e2ee";
 import { TavrnApiError, type SearchQuery, type SearchResponse, type TavrnApi } from "@tavrn/sdk";
 
 /** Rooms searched on the nodes for "everywhere" (one request each). */
@@ -26,6 +26,8 @@ export interface Filters {
   /** `YYYY-MM-DD` (UTC), inclusive. */
   to?: string;
   hasFile?: boolean;
+  /** Entries of encrypted files channels of this upload category only (SEARCH.md §3.6). */
+  category?: string;
 }
 
 export interface SearchRow {
@@ -43,6 +45,8 @@ export interface SearchRow {
   ts: number;
   snippet: string;
   files: string[];
+  /** An entry of an encrypted files channel (the "Files" group) instead of a message. */
+  file?: IndexedFile;
 }
 
 export interface SearchStatus {
@@ -104,7 +108,7 @@ function dayAfter(day: string): string {
 
 /** Is there anything to search for (words or a filter)? */
 export function searchable(query: string, f: Filters): boolean {
-  return /[\p{L}\p{N}]/u.test(query) || !!f.author?.trim() || !!f.from || !!f.to || !!f.hasFile;
+  return /[\p{L}\p{N}]/u.test(query) || !!f.author?.trim() || !!f.from || !!f.to || !!f.hasFile || !!f.category;
 }
 
 export function nodeRows(node: string, roomId: string, resp: SearchResponse): SearchRow[] {
@@ -138,8 +142,14 @@ export function localRows(hits: LocalHit[]): SearchRow[] {
       ts: h.ts,
       snippet: h.snippet,
       files: h.files,
+      ...(h.file ? { file: h.file } : {}),
     };
   });
+}
+
+/** Messages first, then the "Files" group (entries of encrypted files channels), each newest first. */
+export function splitRows(rows: readonly SearchRow[]): { messages: SearchRow[]; files: SearchRow[] } {
+  return { messages: rows.filter((r) => !r.file), files: rows.filter((r) => !!r.file) };
 }
 
 /** Newest first, one row per message (a message found by both paths, e.g. after an encryption switch, once). */
@@ -181,7 +191,8 @@ async function inBatches<T, R>(items: T[], n: number, fn: (item: T) => Promise<R
 export async function runSearch(req: SearchRequest, index: SearchIndex | null, coverage: Record<string, Coverage>): Promise<{ rows: SearchRow[]; status: SearchStatus }> {
   const { query, filters } = req;
   const nq = nodeQuery(query, filters);
-  const settled = await inBatches(req.rooms, PARALLEL, async (r) => ({ room: r, resp: await r.api.search.room(r.roomId, nq) }));
+  // A type filter asks for files only: the node searches messages, not encrypted files.
+  const settled = filters.category ? [] : await inBatches(req.rooms, PARALLEL, async (r) => ({ room: r, resp: await r.api.search.room(r.roomId, nq) }));
   const lists: SearchRow[][] = [];
   let nodeChannels = 0;
   let nodeFailed = 0;
@@ -205,6 +216,7 @@ export async function runSearch(req: SearchRequest, index: SearchIndex | null, c
         ...(after !== undefined && Number.isFinite(after) ? { after } : {}),
         ...(before !== undefined && Number.isFinite(before) ? { before } : {}),
         ...(filters.hasFile ? { hasFile: true } : {}),
+        ...(filters.category ? { kind: "files" as const, category: filters.category } : {}),
         limit: 50,
       });
       // Local hits of conversations of the request carry the room (channels opened before the room was noted).

@@ -4,7 +4,7 @@
 // announcement gating, and the thread panel's navigation on phones.
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
-import { NODE, createRoomViaApi, loginAs, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, type Account } from "./helpers";
+import { NODE, createRoomViaApi, loginAs, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, type Account, openRoomInvite } from "./helpers";
 import { joinRoom, openContextMenu, postMessage } from "./menu-helpers";
 
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
@@ -47,8 +47,7 @@ async function createRoomInUi(page: Page, name: string): Promise<string> {
 }
 
 async function inviteLink(page: Page): Promise<string> {
-  await openNavIfMobile(page);
-  await page.getByRole("button", { name: "Einladen" }).click();
+  await openRoomInvite(page);
   await page.getByRole("button", { name: "Link erzeugen" }).click();
   const link = await page.getByTestId("invite-link").inputValue();
   await page.getByRole("button", { name: "Fertig" }).click();
@@ -131,6 +130,34 @@ test.describe("Threads", () => {
     expect(JSON.stringify(messages)).not.toMatch(/Freitag|Passt/);
   });
 
+  test("followed threads of rooms not opened since the start notify from the start", async ({ page, request }) => {
+    test.setTimeout(90_000);
+    const bob = await registerViaApi(request, "tfb");
+    const alice = await registerViaApi(request, "tfa");
+    const room = await createRoomViaApi(request, bob.token, "Folgeraum");
+    const channelId = room.channels.find((c: { kind: string }) => c.kind === "text").id as string;
+    await joinRoom(request, bob, room.id, alice);
+    const root = await postMessage(request, bob.token, channelId, "Planung fürs Treffen");
+    const created = await request.post(`${NODE}/api/v1/rooms/${room.id}/channels/${channelId}/threads`, { headers: auth(bob.token), data: { title: "Planung", root_message_id: root.id } });
+    expect(created.ok(), await created.text()).toBeTruthy();
+    const thread = (await created.json()) as { id: string };
+    // Alice writes in the thread elsewhere: she follows it.
+    await postMessage(request, alice.token, channelId, "Ich bin dabei", { thread_id: thread.id });
+
+    // Alice starts the client on the home view; the room is not opened. Its followed threads load in the background.
+    const followed = page.waitForResponse((r) => r.url().endsWith(`/rooms/${room.id}/followed-threads`) && r.ok());
+    await loginAs(page, alice);
+    await page.goto("/");
+    await expect(page.getByTestId("ws-status").first()).toHaveAttribute("data-status", "ready");
+    await followed;
+    // @everyone inside a thread reaches its followers only (PROTOCOL.md §7e): Alice is one.
+    await postMessage(request, bob.token, channelId, "@everyone Treffen um drei", { thread_id: thread.id, mentions_everyone: true });
+    const toast = page.getByTestId("notify-toast-mention");
+    await expect(toast).toBeVisible({ timeout: 20_000 });
+    await expect(toast).toContainText("Treffen um drei");
+    await expect(toast).toContainText("Folgeraum");
+  });
+
   test("forum: a post with title, message and tags; the tag filter and the post card", async ({ page, request }) => {
     test.setTimeout(120_000);
     const alice = await registerViaApi(request, "alice");
@@ -172,6 +199,36 @@ test.describe("Threads", () => {
     // Forum channels take posts only.
     const loose = await request.post(`${NODE}/api/v1/conversations/${forum.id}/messages`, { headers: auth(alice.token), data: { content: { type: "text", body: "lose" } } });
     expect((await loose.json()).code).toBe("message.thread_required");
+  });
+
+  test("forum: the first message of a post is signed by the device (the client picks the post's id)", async ({ page, request }) => {
+    test.setTimeout(120_000);
+    await registerViaUi(page, { prefix: "signer" });
+    const token = await tokenOf(page);
+    const owner = { token } as Account;
+    const room = await createRoomViaApi(request, token, "Signierraum");
+    const forum = await channel(request, owner, room.id, { kind: "forum", name: "fragen" });
+    await page.goto(`/rooms/${room.id}/channels/${forum.id}`);
+    await expect(page.getByTestId("forum-view")).toBeVisible();
+    await page.getByTestId("forum-new-post").click();
+    const dialog = page.getByTestId("forum-post-dialog");
+    await dialog.getByTestId("forum-post-title-input").fill("Signiert?");
+    await dialog.getByTestId("forum-post-body").fill("Erste Nachricht des Beitrags");
+    await dialog.getByTestId("forum-post-submit").click();
+    const first = panel(page).getByTestId("message").filter({ hasText: "Erste Nachricht des Beitrags" });
+    await expect(first).toBeVisible();
+    // The node keeps the client's id: the device signature covers it as thread_id (PROTOCOL.md §7e).
+    const posts = await (await request.get(`${NODE}/api/v1/rooms/${room.id}/channels/${forum.id}/threads`, { headers: auth(token) })).json();
+    const post = posts.items[0];
+    expect(post.first_message.thread_id).toBe(post.id);
+    expect(post.first_message.signature).toMatch(/^[A-Za-z0-9_-]{107}$/);
+    // Readers verify it like every other message: no "unverified" marker, also after a reload.
+    await page.reload();
+    // The open post comes back with the page (its link).
+    const reloaded = panel(page).getByTestId("message").filter({ hasText: "Erste Nachricht des Beitrags" });
+    await expect(reloaded).toBeVisible();
+    await expect(reloaded.getByTestId("message-author")).toBeVisible();
+    await expect(reloaded.getByTestId("unverified-marker")).toHaveCount(0);
   });
 
   test("announcement channel: members cannot post, but react and reply in threads", async ({ page, request }) => {

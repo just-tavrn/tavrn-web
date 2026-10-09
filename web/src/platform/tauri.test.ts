@@ -4,7 +4,8 @@ import { clearMocks, mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import type { Channel } from "@tauri-apps/api/core";
 import { createTauriPlatform, installLinkHandler } from "./tauri";
 import type { HotkeyEvent } from "./types";
-import { detectTauri } from "./tauriDetect";
+import { detectTauri, inSignInWindow } from "./tauriDetect";
+import { APP_CLOSE_GRACE_MS } from "./appSession";
 
 const detached = () => document.implementation.createHTMLDocument("app");
 
@@ -76,6 +77,16 @@ describe("detectTauri", () => {
     mockWindows("connect");
     expect(detectTauri()).toBe(false);
   });
+
+  it("knows the sign-in window, where the node's page signs itself out after a handoff", () => {
+    mockWindows("connect");
+    expect(inSignInWindow()).toBe(true);
+    mockWindows("main");
+    expect(inSignInWindow()).toBe(false);
+    mockWindows("connect");
+    delete (window as unknown as { isTauri?: boolean }).isTauri;
+    expect(inSignInWindow(), "a browser tab (the Linux fallback) keeps its session").toBe(false);
+  });
 });
 
 describe("the desktop app's node and sign-in handoff", () => {
@@ -117,6 +128,9 @@ describe("the desktop app's node and sign-in handoff", () => {
       next: "/",
       mode: "register",
     });
+    // The window closes a moment later (the page in it signs itself out first).
+    expect(calls.map((c) => c.cmd)).not.toContain("close_connect");
+    await vi.advanceTimersByTimeAsync(APP_CLOSE_GRACE_MS);
     vi.useRealTimers();
     expect(session).toMatchObject({ session: { access_token: "a" }, unlock: null });
     const open = calls.find((c) => c.cmd === "open_connect")?.args as { url: string };
@@ -156,6 +170,7 @@ describe("passkey unlock on the node's page", () => {
       api: new TavrnApi({ baseUrl: "https://home.example", fetchImpl, getToken: () => "app-session" }),
       endpoints: { domain: "home.example", base: "https://home.example", ws: "wss://home.example/api/v1/ws", web: "https://home.example" },
     });
+    await vi.advanceTimersByTimeAsync(APP_CLOSE_GRACE_MS);
     vi.useRealTimers();
     expect(material).toEqual({ credentialId: "Y3JlZA", prf: new Uint8Array(32).fill(4) });
     expect(requests[0]).toMatchObject({ auth: "Bearer app-session", body: { purpose: "unlock" } });

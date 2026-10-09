@@ -2,7 +2,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
-import { type Account, createRoomViaApi, enrollTotp, loginViaApi, registerViaApi, uniqueName } from "./helpers";
+import { ADULT_DOB, type Account, createRoomViaApi, enrollTotp, ensureDateOfBirth, loginViaApi, registerViaApi, uniqueName } from "./helpers";
 import { A, B, FEDERATION_BROWSER, NODE_A, NODE_B, WEB_A, chromiumOnly, federatedSession, loginOn } from "./federation-helpers";
 
 test.use(FEDERATION_BROWSER);
@@ -46,10 +46,13 @@ async function adminOfA(request: APIRequestContext): Promise<Account> {
     const cached: Account | null = existsSync(cache) ? JSON.parse(readFileSync(cache, "utf8")) : null;
     if (cached) {
       const me = await request.get(`${NODE_A}/api/v1/users/me`, { headers: { Authorization: `Bearer ${cached.token}` } });
-      if (me.ok()) return cached;
+      if (me.ok()) {
+        await ensureDateOfBirth(request, cached.token, NODE_A);
+        return cached;
+      }
     }
     let account: Account;
-    const reg = await request.post(`${NODE_A}/api/v1/auth/register`, { data: { username, password, device_name: "e2e" } });
+    const reg = await request.post(`${NODE_A}/api/v1/auth/register`, { data: { username, password, device_name: "e2e", date_of_birth: ADULT_DOB } });
     if (reg.ok()) {
       const totp = await enrollTotp(request, (await reg.json()).preauth_token, NODE_A);
       const s = totp.session!;

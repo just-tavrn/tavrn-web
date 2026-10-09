@@ -173,7 +173,7 @@ describe("ConversationView: slash commands use the composer's send path", () => 
       "/.well-known/tavrn": { body: { policies: { upload_max_bytes: 1000, uploads_enabled: true } } },
       "/node": { body: { gif_provider: null, dm_policy: "friends" } },
     });
-    const encrypt = vi.fn(async (_q: string, _content: Record<string, unknown>) => ({ content: { ciphertext: "CIPHERTEXT" }, epoch: 7 }));
+    const encrypt = vi.fn(async (_q: string, _content: Record<string, unknown>, _opts?: unknown) => ({ content: { ciphertext: "CIPHERTEXT" }, epoch: 7 }));
     const signPlaintext = vi.fn(() => "SIG");
     renderWithProviders(
       <ConversationView conversationId="c1" encrypted header={<h1>x</h1>} placeholder="Nachricht" canSend canManage={false} canAttach canReact canPin members={["bob@t.local"]} mayManage={false} domain="t.local" permissions={Permission.SEND_MESSAGES} />,
@@ -187,7 +187,8 @@ describe("ConversationView: slash commands use the composer's send path", () => 
     await u.type(screen.getByLabelText("Nachricht"), "/me waves");
     await u.keyboard("{Enter}");
     await waitFor(() => expect(posted).toHaveLength(1));
-    expect(encrypt).toHaveBeenCalledWith("t.local/c1", { type: "action", body: "waves" });
+    // The thread and reply are signed inside; the members and shown ghosts go along for the re-check (ENCRYPTION.md §5.2, §4.6).
+    expect(encrypt).toHaveBeenCalledWith("t.local/c1", { type: "action", body: "waves" }, { ctx: { thread_id: null, reply_to: null }, members: ["bob@t.local"], noBots: false, knownGhosts: [] });
     expect(signPlaintext).not.toHaveBeenCalled();
     expect(posted[0]).toMatchObject({ content: { ciphertext: "CIPHERTEXT" }, epoch: 7, mentions: [], mentions_everyone: false, reply_to_id: null });
     expect(JSON.stringify(posted[0])).not.toContain("waves");

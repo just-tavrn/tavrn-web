@@ -150,4 +150,77 @@ describe("ContextMenu", () => {
       vi.useRealTimers();
     }
   });
+
+  it("by default a second right-click on the trigger opens the menu again at the new point", async () => {
+    render(<Harness entries={[menuItem("a", "Alpha", vi.fn())]} />);
+    const target = screen.getByTestId("target");
+    fireEvent.contextMenu(target, { clientX: 10, clientY: 10 });
+    await act(() => new Promise((r) => setTimeout(r, 5)));
+    fireEvent.pointerDown(target, { button: 2 });
+    fireEvent.contextMenu(target, { clientX: 30, clientY: 30 });
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+  });
+
+  it("with `toggle` a second right-click on the trigger closes the menu; elsewhere it still closes it", async () => {
+    function Toggle() {
+      const menu = useContextMenu({ toggle: true });
+      return (
+        <div>
+          <button type="button" data-testid="trigger" {...menu.triggerProps}>
+            trigger
+          </button>
+          <button type="button">outside</button>
+          {menu.open && menu.anchor && <ContextMenu entries={[menuItem("a", "Alpha", vi.fn(), { keepOpen: true })]} anchor={menu.anchor} onClose={menu.close} trigger={menu.trigger} label="Menu" />}
+        </div>
+      );
+    }
+    const user = userEvent.setup();
+    render(<Toggle />);
+    const trigger = screen.getByTestId("trigger");
+    fireEvent.contextMenu(trigger, { clientX: 10, clientY: 10 });
+    await act(() => new Promise((r) => setTimeout(r, 5)));
+    // A choice that keeps the menu open, then the same button again (the right button's pointerdown comes first).
+    await user.click(screen.getByRole("menuitem", { name: "Alpha" }));
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    fireEvent.pointerDown(trigger, { button: 2 });
+    fireEvent.contextMenu(trigger, { clientX: 12, clientY: 12 });
+    expect(screen.queryByRole("menu")).toBeNull();
+    // A third right-click opens it again; a click outside closes it.
+    fireEvent.pointerDown(trigger, { button: 2 });
+    fireEvent.contextMenu(trigger, { clientX: 12, clientY: 12 });
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    await act(() => new Promise((r) => setTimeout(r, 5)));
+    await user.click(screen.getByRole("button", { name: "outside" }));
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("reaches the control of a custom entry with the arrow keys and leaves its left/right keys alone", async () => {
+    const user = userEvent.setup();
+    const entries: MenuEntry[] = [
+      menuItem("a", "Alpha", vi.fn()),
+      { kind: "custom", id: "slider", render: () => <input type="range" aria-label="Level" min={0} max={10} defaultValue={5} /> },
+      menuItem("b", "Beta", vi.fn()),
+    ];
+    render(<Harness entries={entries} />);
+    await user.click(screen.getByRole("button", { name: "More" }));
+    expect(screen.getByRole("menuitem", { name: "Alpha" })).toHaveFocus();
+    await user.keyboard("{ArrowDown}");
+    const slider = screen.getByRole("slider", { name: "Level" });
+    expect(slider).toHaveFocus();
+    for (const key of ["ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown", "b"]) {
+      const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+      act(() => {
+        slider.dispatchEvent(event);
+      });
+      expect(event.defaultPrevented, key).toBe(false);
+      expect(slider).toHaveFocus();
+    }
+    await user.keyboard("{ArrowDown}");
+    expect(screen.getByRole("menuitem", { name: "Beta" })).toHaveFocus();
+    await user.keyboard("{ArrowUp}{ArrowUp}");
+    expect(screen.getByRole("menuitem", { name: "Alpha" })).toHaveFocus();
+    // Escape still closes from the control.
+    await user.keyboard("{ArrowDown}{Escape}");
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
 });

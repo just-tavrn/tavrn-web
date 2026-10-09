@@ -61,6 +61,7 @@ export function useChannelMenu(room: RoomDetail, channel: Channel): { menu: Cont
           voiceMove: canMove ? { elsewhere, here, targets: others.map((c) => ({ id: c.id, name: channelName(c) })) } : undefined,
           notify: notify.state,
           fullHistory: fullHistory.value,
+          fullHistoryUsage: fullHistory.usage,
         },
         {
           ...notify.actions,

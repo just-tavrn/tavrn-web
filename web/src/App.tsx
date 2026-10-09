@@ -21,6 +21,7 @@ import { ProfilePage } from "./pages/ProfilePage";
 import { MessageRequestPage, MessageRequestsPage } from "./pages/MessageRequestsPage";
 import { ReauthDialog } from "./components/ReauthDialog";
 import { TermsGate } from "./components/legal/TermsGate";
+import { DateOfBirthGate } from "./components/age/DateOfBirthGate";
 import { LegalDocumentPage, LegalIndexPage, NoticeFormPage, NoticeStatusPage } from "./pages/legal/LegalPages";
 import { NodePickerPage } from "./pages/NodePickerPage";
 import { platform } from "./platform";
@@ -101,6 +102,7 @@ export function App() {
       </Routes>
       <ReauthDialog />
       <TermsGate />
+      <DateOfBirthGate />
     </BrowserRouter>
   );
 }

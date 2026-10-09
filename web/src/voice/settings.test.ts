@@ -134,3 +134,12 @@ describe("voice & video settings (design note 4.9)", () => {
     expect(normalizeSettings({ streamWhileDeafened: "no" }).streamWhileDeafened).toBe(true);
   });
 });
+
+describe("keep the screen on during voice calls", () => {
+  it("is on by default; stored values are kept, invalid ones fall back to on", () => {
+    expect(DEFAULT_SETTINGS.keepScreenOn).toBe(true);
+    expect(normalizeSettings({}).keepScreenOn).toBe(true);
+    expect(normalizeSettings({ keepScreenOn: false }).keepScreenOn).toBe(false);
+    expect(normalizeSettings({ keepScreenOn: "no" }).keepScreenOn).toBe(true);
+  });
+});

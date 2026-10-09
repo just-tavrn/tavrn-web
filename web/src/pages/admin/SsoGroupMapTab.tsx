@@ -5,7 +5,7 @@
  * A map set by `TAVRN_OIDC_GROUP_MAP` is read-only here (`409 sso.group_map_fixed`).
  */
 import { useMemo, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AdminRoom, GroupMapDocument, GroupRights, RoomGrant } from "@tavrn/sdk";
 import { api } from "../../lib/api";
 import { useT } from "../../i18n";
@@ -41,6 +41,16 @@ function useAdminRooms(q: string) {
   return useQuery({ queryKey: ["admin", "rooms", q], queryFn: () => api.admin.rooms({ q: q || undefined, limit: 100 }), staleTime: 60_000 });
 }
 
+/**
+ * The admin entries of the rooms `ids` (MODERATION.md `GET /admin/rooms` lists rooms by id, at most 100 at a time):
+ * one request per room from just below its id. `after` is the id without its last character, so at most 31 room ids
+ * lie between it and the room (ULIDs have a fixed length and 32 symbols); rooms that are gone are left out.
+ */
+export async function adminRoomsByIds(list: (query: { after: string; limit: number }) => Promise<AdminRoom[]>, ids: string[]): Promise<AdminRoom[]> {
+  const pages = await Promise.all(ids.map((id) => list({ after: id.slice(0, -1), limit: 32 }).then((rooms) => rooms.filter((r) => r.id === id))));
+  return pages.flat();
+}
+
 export function SsoGroupMapTab() {
   const t = useT();
   const queryClient = useQueryClient();
@@ -49,7 +59,22 @@ export function SsoGroupMapTab() {
   const [form, setForm] = useState<Form>(EMPTY);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const rooms = useMemo(() => new Map((all.data ?? []).map((r) => [r.id, r])), [all.data]);
+  // Mapped rooms beyond the first page of the node's rooms are looked up one by one (names and roles in the list).
+  const missing = useMemo(() => {
+    if (!all.data || !doc.data) return [];
+    const known = new Set(all.data.map((r) => r.id));
+    const mapped = Object.values(doc.data.map).flatMap((r) => (r.rooms ?? []).map((g) => g.room));
+    return [...new Set(mapped)].filter((id) => !known.has(id)).sort();
+  }, [all.data, doc.data]);
+  const further = useQuery({
+    queryKey: ["admin", "rooms", "ids", missing.join(",")],
+    queryFn: () => adminRoomsByIds((query) => api.admin.rooms(query), missing),
+    enabled: missing.length > 0,
+    staleTime: 60_000,
+    // Names already found stay while another mapped room is looked up.
+    placeholderData: keepPreviousData,
+  });
+  const rooms = useMemo(() => new Map([...(all.data ?? []), ...(further.data ?? [])].map((r) => [r.id, r])), [all.data, further.data]);
 
   const save = async (map: GroupMapDocument["map"]): Promise<boolean> => {
     setBusy(true);

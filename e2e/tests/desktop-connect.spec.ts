@@ -12,7 +12,7 @@ import sodium from "libsodium-wrappers";
 import { passkeyWrappingKey, unwrapMasterSecret } from "@tavrn/crypto";
 import { ensureCrypto } from "@tavrn/e2ee";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
-import { NODE, addVirtualAuthenticator, confirmRecoveryCodes, confirmRecoveryKey, nextTotpCode, registerViaApi, tokenOf, uniqueName } from "./helpers";
+import { ADULT_DOB, completeDateOfBirth, NODE, addVirtualAuthenticator, confirmRecoveryCodes, confirmRecoveryKey, nextTotpCode, registerViaApi, tokenOf, uniqueName } from "./helpers";
 
 interface AppSession {
   id: string;
@@ -91,6 +91,7 @@ test.describe("Sign-in page of the desktop app (app sessions, FEDERATION.md §8 
     await page.getByLabel("Benutzername", { exact: true }).fill(username);
     await page.getByLabel("Passwort", { exact: true }).fill(password);
     await page.getByLabel("Passwort wiederholen", { exact: true }).fill(password);
+    await page.getByLabel("Geburtsdatum", { exact: true }).fill(ADULT_DOB);
     await page.getByRole("button", { name: "Konto erstellen" }).click();
     await page.getByTestId("choose-passkey").click();
     await page.getByLabel("Name des Passkeys", { exact: true }).fill("Virtueller Schlüssel");
@@ -118,6 +119,8 @@ test.describe("Sign-in page of the desktop app (app sessions, FEDERATION.md §8 
     await page.getByLabel("Username").fill(username);
     await page.getByLabel("Display name").fill(`${username} (IdP)`);
     await page.getByRole("button", { name: "Sign in at the IdP" }).click();
+    // The provisioned account adds its date of birth first (PROTOCOL.md §5e).
+    await completeDateOfBirth(page);
     await confirmOnPage(page, `${username}@localhost`, "Desktop app");
     await appCompletes(request, s, `${username}@localhost`, "Desktop app");
   });
@@ -187,6 +190,16 @@ test.describe("Sign-in page of the desktop app: passkeys unlock the app (sealed 
     test.skip(browserName !== "chromium", "CDP virtual authenticator is Chromium only");
     test.setTimeout(150_000);
     await addVirtualAuthenticator(page);
+    // The relying party ids of the page's own assertions (PROTOCOL.md §5a.4: the client passes the node's published id).
+    await page.addInitScript(() => {
+      const get = navigator.credentials.get.bind(navigator.credentials);
+      const seen: Array<string | null> = [];
+      (window as unknown as { __rpIds: Array<string | null> }).__rpIds = seen;
+      navigator.credentials.get = (options?: CredentialRequestOptions) => {
+        seen.push(options?.publicKey?.rpId ?? null);
+        return get(options);
+      };
+    });
     // An account with a PRF passkey and encryption set up in the browser (its secret storage holds the passkey entry).
     const username = uniqueName("dcun");
     const password = `passwort-${username}-xyz`;
@@ -196,6 +209,7 @@ test.describe("Sign-in page of the desktop app: passkeys unlock the app (sealed 
     await page.getByLabel("Benutzername", { exact: true }).fill(username);
     await page.getByLabel("Passwort", { exact: true }).fill(password);
     await page.getByLabel("Passwort wiederholen", { exact: true }).fill(password);
+    await page.getByLabel("Geburtsdatum", { exact: true }).fill(ADULT_DOB);
     await page.getByRole("button", { name: "Konto erstellen" }).click();
     await page.getByTestId("choose-passkey").click();
     await page.getByLabel("Name des Passkeys", { exact: true }).fill("Virtueller Schlüssel");
@@ -240,6 +254,10 @@ test.describe("Sign-in page of the desktop app: passkeys unlock the app (sealed 
     await expect(page.getByTestId("connect-done")).toHaveText("Die App ist entsperrt. Kehre zur Tavrn-App zurück.");
     const unlock = await appReceives(request, unlockId, unlockKeys.pair);
     expect(unlock.code, "an unlock session never yields a sign-in code").toBeNull();
+    // The unlock assertion was built by the page (not from node options) and named the node's relying party id.
+    const rpId = (await (await request.get(`${NODE}/api/v1/node`)).json()).webauthn.rp_id;
+    expect(rpId).toBe("localhost");
+    expect(await page.evaluate(() => (window as unknown as { __rpIds: Array<string | null> }).__rpIds)).toEqual([rpId]);
     await unlocksWith(request, appSession.access_token, address, unlock.payload);
     expect((await request.get(`${NODE}/api/v1/auth/connect/session/${unlockId}`)).status()).toBe(410);
   });

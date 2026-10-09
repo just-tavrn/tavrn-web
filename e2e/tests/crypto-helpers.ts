@@ -68,3 +68,16 @@ export async function freshIdentityKey(): Promise<string> {
     master.free();
   }
 }
+
+/**
+ * Identity reset over the API (ENCRYPTION.md §9) after which the device re-attests its existing key under the new
+ * identity key (step 4): its leaf stays in every group and counts again, now under a changed key.
+ */
+export async function resetAndReattest(request: APIRequestContext, account: CryptoAccount): Promise<void> {
+  const fresh = MasterSecret.generate();
+  await call(request, "post", "/users/me/identity/reset", account.token, { identity_public_key: b64url(fresh.identityPublicKey()), password: account.password });
+  const signature = fresh.attestDevice(account.address, account.deviceId, account.client.devicePublicKey);
+  await call(request, "put", `/users/me/devices/${account.deviceId}/key`, account.token, { device_public_key: b64url(account.client.devicePublicKey), identity_signature: b64url(signature) });
+  account.master.free();
+  account.master = fresh;
+}

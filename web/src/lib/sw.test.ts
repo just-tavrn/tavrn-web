@@ -95,6 +95,19 @@ describe("service worker", () => {
     expect(translated.options.body).toBe("Neue Nachricht von Alice");
   });
 
+  it("names only the kind and the room of a report and opens the inbox that handles it", () => {
+    const { helpers } = load();
+    const home = "chat.example.org";
+    const base = { v: 1, type: "report", node: home, local: true, encrypted: false };
+    const room = helpers.notificationFor({ ...base, room_id: "R1", room: "Tavern", report_kind: "message" }, null, home);
+    expect([room.title, room.options.body, room.options.data.url, room.options.tag]).toEqual(["New report", "New report in Tavern", "/rooms/R1/settings/reports", `${home}|report:R1`]);
+    expect(room.options.renotify).toBe(false);
+    const node = helpers.notificationFor({ ...base, report_kind: "user" }, null, home);
+    expect([node.title, node.options.body, node.options.data.url, node.options.tag]).toEqual(["New report", "A report for the node admins", "/admin/reports", `${home}|report:node`]);
+    const translated = helpers.notificationFor({ ...base, room_id: "R1", room: "Tavern" }, { report_title: "Neue Meldung", report: "Neue Meldung in {room}" }, home);
+    expect([translated.title, translated.options.body]).toEqual(["Neue Meldung", "Neue Meldung in Tavern"]);
+  });
+
   it("shows a push with the texts the page sent, and a generic one for unreadable data", async () => {
     const { dispatch, shown } = load();
     await dispatch("message", { data: { type: "tavrn.push.config", strings: { test: "Push klappt." }, homeNode: "chat.example.org" } });

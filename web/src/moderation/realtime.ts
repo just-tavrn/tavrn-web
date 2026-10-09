@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
  * Moderation events (protocol MODERATION.md §1.5, §2.4): `report.create` refreshes the inbox and notifies through
- * the normal notification path (notification center and toast, never pushed), `moderation.alert` describes what
- * auto-moderation did.
+ * the normal notification path (notification center and toast; while no tab is open the node sends a web push of type
+ * `report` instead, `public/sw.js`), `moderation.alert` describes what auto-moderation did.
  */
 import type { QueryClient } from "@tanstack/react-query";
 import { t as translate } from "../i18n";

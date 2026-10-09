@@ -9,6 +9,7 @@ import { formatCount } from "../stores/unread";
 import { relativeTime } from "./format";
 import { useThreadTitles } from "./titles";
 import { useThreads } from "./store";
+import { LockMark } from "../components/Badges";
 
 /** The query key of a channel's thread list. */
 export function threadListKey(domain: string, channelId: string, archived: boolean) {
@@ -126,7 +127,7 @@ function ThreadRows({ channel, threads, onOpen }: { channel: Channel; threads: T
             <button type="button" onClick={() => onOpen(th.id)} className="flex min-h-11 w-full items-center gap-2 rounded-md px-2 text-left hover:bg-bg-3" data-testid="thread-row" data-thread-id={th.id}>
               <span className="min-w-0 flex-1">
                 <span className={`block truncate text-sm ${unread > 0 ? "font-semibold text-fg-0" : "text-fg-1"}`}>
-                  {th.encrypted && <span role="img" className="mr-1 text-xs" aria-label={t("e2ee.encrypted_hint")}>🔒</span>}
+                  {th.encrypted && <LockMark title={t("e2ee.encrypted_hint")} className="mr-1 align-[-3px]" />}
                   {title ?? (title === null ? t("threads.title_unreadable") : t("common.loading"))}
                 </span>
                 <span className="block truncate text-xs text-fg-2">

@@ -79,8 +79,19 @@ async function register(ctx: PushContext, publicKey: string): Promise<Record_> {
     await sub.unsubscribe().catch(() => false);
     sub = null;
   }
-  sub ??= await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64UrlToBytes(publicKey) });
-  const saved = await ctx.api.push.subscribe(subscriptionRequest(sub.toJSON(), ctx.deviceId));
+  const subscribe = () => registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64UrlToBytes(publicKey) });
+  sub ??= await subscribe();
+  let saved;
+  try {
+    saved = await ctx.api.push.subscribe(subscriptionRequest(sub.toJSON(), ctx.deviceId));
+  } catch (e) {
+    // The endpoint belongs to another account's live subscription (PROTOCOL.md §6d): a new browser subscription
+    // gets a new endpoint for this account.
+    if (!(e instanceof TavrnApiError && e.code === "push.endpoint_taken")) throw e;
+    await sub.unsubscribe().catch(() => false);
+    sub = await subscribe();
+    saved = await ctx.api.push.subscribe(subscriptionRequest(sub.toJSON(), ctx.deviceId));
+  }
   const record = { id: saved.id, key: publicKey };
   writeRecord(ctx.account, record);
   return record;

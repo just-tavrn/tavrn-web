@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useMemo, useState } from "react";
-import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Permission, hasPermission, type Channel, type ForumTag, type Member, type Message, type RoomDetail, type Thread } from "@tavrn/sdk";
 import { THREAD_TITLE_MAX, qualify } from "@tavrn/e2ee";
 import { useLocale, useT } from "../i18n";
@@ -16,9 +16,10 @@ import { channelName } from "../lib/names";
 import { describeError } from "../stores/toasts";
 import { relativeTime } from "./format";
 import { useThreadTitles } from "./titles";
-import { startThread } from "./actions";
+import { createPost } from "./actions";
 import { useThreads } from "./store";
 import { formatCount } from "../stores/unread";
+import { LockMark } from "../components/Badges";
 
 type Sort = "activity" | "created";
 
@@ -83,9 +84,7 @@ export function ForumView({ room, channel, perms, roomMembers, members, refreshM
           {channelName(channel)}
         </h1>
         {channel.encrypted && (
-          <span role="img" className="shrink-0 text-xs text-fg-2" title={t("e2ee.encrypted_hint")} aria-label={t("e2ee.encrypted_hint")} data-testid="encrypted-marker">
-            🔒
-          </span>
+          <LockMark size={18} title={t("e2ee.encrypted_hint")} testId="encrypted-marker" />
         )}
         <span className="flex-1" />
         {canPost && (
@@ -158,7 +157,7 @@ function PostCard({ thread, title, tags, author, preview, onOpen }: { thread: Th
     <button type="button" onClick={onOpen} className="block w-full rounded-md border border-line bg-bg-1 p-3 text-left hover:border-accent" data-testid="forum-post" data-thread-id={thread.id}>
       <span className="flex items-start gap-2">
         <span className={`min-w-0 flex-1 truncate text-sm ${unread > 0 ? "font-semibold text-fg-0" : "font-medium text-fg-0"}`} data-testid="forum-post-title">
-          {thread.encrypted && <span role="img" className="mr-1 text-xs" aria-label={t("e2ee.encrypted_hint")}>🔒</span>}
+          {thread.encrypted && <LockMark title={t("e2ee.encrypted_hint")} className="mr-1 align-[-3px]" />}
           {title ?? (title === null ? t("threads.title_unreadable") : t("common.loading"))}
         </span>
         {unread > 0 && (
@@ -188,14 +187,16 @@ function PostCard({ thread, title, tags, author, preview, onOpen }: { thread: Th
 
 function NewPostDialog({ open, onClose, room, channel, mls, onCreated }: { open: boolean; onClose: () => void; room: RoomDetail; channel: Channel; mls: import("@tavrn/e2ee").MlsManager | null; onCreated: (id: string) => void }) {
   const t = useT();
-  const { api, domain } = useNode();
+  const { api, domain, home } = useNode();
   const queryClient = useQueryClient();
+  // Nodes announcing `threads.client_ids` keep the client's thread id: the first message is signed with it.
+  const nodeInfo = useQuery({ queryKey: home ? ["node"] : ["node", domain], queryFn: () => api.node.info(), staleTime: 10 * 60_000 });
+  const clientIds = !!nodeInfo.data?.capabilities?.includes("threads.client_ids");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const q = qualify(domain, channel.id);
   const valid = !!title.trim() && Array.from(title.trim()).length <= THREAD_TITLE_MAX && !!body.trim();
   const reset = () => {
     setTitle("");
@@ -214,12 +215,8 @@ function NewPostDialog({ open, onClose, room, channel, mls, onCreated }: { open:
           setBusy(true);
           setError(null);
           try {
-            const content = { type: "text", body: body.trim() };
-            const message = channel.encrypted ? await (async () => {
-              if (!mls) throw new Error(t("e2ee.composer_locked"));
-              return mls.encrypt(q, content);
-            })() : { content };
-            const id = await startThread({ api, domain, roomId: room.id, channelId: channel.id, encrypted: channel.encrypted, title: title.trim(), tags, message });
+            if (channel.encrypted && !mls) throw new Error(t("e2ee.composer_locked"));
+            const id = await createPost({ api, domain, roomId: room.id, channelId: channel.id, encrypted: channel.encrypted, title: title.trim(), tags, body: body.trim(), mls, clientIds });
             await queryClient.invalidateQueries({ queryKey: ["threads", domain, channel.id] });
             reset();
             onCreated(id);

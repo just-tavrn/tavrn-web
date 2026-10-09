@@ -2,7 +2,8 @@
 import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Navigate, useNavigate, useParams } from "react-router";
-import { Permission, computePermissions, hasPermission, isBotKind, type Member, type Message, type RoomDetail, type TavrnApi } from "@tavrn/sdk";
+import { Permission, hasPermission, isBotKind, type Member, type Message, type TavrnApi } from "@tavrn/sdk";
+import { channelPermissions } from "../lib/channelPermissions";
 import { useT } from "../i18n";
 import { useNode } from "../components/NodeScope";
 import { describeError } from "../stores/toasts";
@@ -21,6 +22,9 @@ import { ResizablePanel } from "../threads/ResizablePanel";
 import { startThread } from "../threads/actions";
 import { defaultTitle } from "../threads/titles";
 import { useFollowedThreads } from "../threads/useFollowedThreads";
+import { useChannelLock } from "../lib/age";
+import { LockedChannel } from "../components/age/LockedChannel";
+import { useHiddenChannels } from "../lib/hiddenChannels";
 
 // Files channels (design note 4.13 item 9): the file browser, loaded on demand.
 const FilesView = lazy(() => import("../files/FilesView"));
@@ -42,28 +46,8 @@ export async function fetchRoomMembers(api: TavrnApi, roomId: string): Promise<M
   return all;
 }
 
-/** Permissions of the signed-in user in a channel, computed client-side with the same logic as the node. */
-export function channelPermissions(room: RoomDetail, channelId: string, userId: string): bigint {
-  const channel = room.channels.find((c) => c.id === channelId);
-  if (!channel) return 0n;
-  const everyone = room.roles.find((r) => r.is_everyone);
-  const memberRoles = room.roles.filter((r) => room.my_roles.includes(r.id) && !r.is_everyone).map((r) => [r.id, r.permissions] as [string, string]);
-  const toEval = (o: { subject_type: string; subject_id: string; allow: string; deny: string }) => ({ subject_type: o.subject_type as "role" | "member", subject_id: o.subject_id, allow: o.allow, deny: o.deny });
-  const perms = computePermissions({
-    user_id: userId,
-    is_owner: room.is_owner,
-    everyone_role_id: everyone?.id ?? "",
-    everyone_permissions: everyone?.permissions ?? "0",
-    member_roles: memberRoles,
-    category_overrides: room.overrides.filter((o) => o.target_type === "category" && o.target_id === channel.category_id).map(toEval),
-    channel_overrides: room.overrides.filter((o) => o.target_type === "channel" && o.target_id === channel.id).map(toEval),
-    sync_with_category: channel.sync_with_category && !!channel.category_id,
-    timed_out: false,
-    // The welcome channel is visible and read-only for everyone, owners included (SYSTEM_CHANNEL_FORCED/DENIED).
-    system_channel: channel.kind === "system",
-  });
-  return perms;
-}
+/** Permissions of the signed-in user in a channel (lib/channelPermissions.ts; re-exported for the existing imports). */
+export { channelPermissions } from "../lib/channelPermissions";
 
 export function RoomIndexRedirect() {
   const t = useT();
@@ -99,6 +83,10 @@ export function ChannelPage() {
   const channelPath = roomPath(roomId, channelId);
   const openThread = useCallback((id: string) => navigate(`${channelPath}/threads/${id}`), [navigate, channelPath]);
   const closeThread = useCallback(() => navigate(channelPath), [navigate, channelPath]);
+  // Age gates (PROTOCOL.md §5e): below the gate the channel is a notice, nothing of its content is loaded.
+  const lock = useChannelLock(room.data?.channels.find((c) => c.id === channelId));
+  // Lost access (`channel.delete` with `hidden`): said as such, not as "not found".
+  const hidden = useHiddenChannels((s) => s.ids[channelId] === true);
   const mentionBase = useMemo(
     () => ({ users: (members.data ?? []).map((m) => ({ address: m.user.address })), roles: roles ?? [], memberRoles: Object.fromEntries((members.data ?? []).map((m) => [m.user.address, m.roles])) }),
     [members.data, roles],
@@ -107,7 +95,7 @@ export function ChannelPage() {
   if (room.isPending) return <p className="p-4 text-sm text-fg-2">{t("room.loading")}</p>;
   if (room.isError) return <p className="p-4 text-sm text-danger">{describeError(room.error)}</p>;
   const channel = room.data.channels.find((c) => c.id === channelId);
-  if (!channel) return <p className="p-4 text-sm text-fg-2">{t("room.channel_not_found")}</p>;
+  if (!channel) return <p className="p-4 text-sm text-fg-2">{t(hidden ? "room.channel_hidden" : "room.channel_not_found")}</p>;
   const perms = channelPermissions(room.data, channelId, user?.id ?? "");
   // Announcement channels: only members with manage_messages post; the others react and reply in threads.
   const announcementBlocked = channel.kind === "announcement" && !hasPermission(perms, Permission.MANAGE_MESSAGES);
@@ -127,6 +115,14 @@ export function ChannelPage() {
       {channel.topic && <span className="hidden truncate text-sm text-fg-2 md:inline">· {channel.topic}</span>}
     </>
   );
+  if (lock.pending) return <p className="p-4 text-sm text-fg-2">{t("room.loading")}</p>;
+  if (lock.locked)
+    return (
+      <div className="flex min-h-0 flex-1 flex-col" data-testid="channel-page">
+        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-4">{header}</header>
+        <LockedChannel name={channelName(channel)} />
+      </div>
+    );
   if (channel.kind === "voice") return <VoiceStage room={room.data} channel={channel} />;
   if (channel.kind === "files")
     return (

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from "vitest";
-import { ChannelGuard, Gate, LevelMeter, dbfs, routeChannels } from "./gate";
+import { ChannelGuard, Gate, LevelMeter, dbfs, gateModeFor, routeChannels } from "./gate";
 
 const RATE = 48000;
 const BLOCK = 128;
@@ -176,5 +176,20 @@ describe("ChannelGuard (a mono microphone is never heard on one side only)", () 
     const [a, b] = routeChannels("mix", l, r, scratch);
     expect(a).toBe(b);
     expect([...a]).toEqual([0.5, 0]);
+  });
+});
+
+describe("gateModeFor", () => {
+  it("voice activation lets the gate decide, push-to-talk follows the key", () => {
+    expect(gateModeFor("vad", false, false)).toBe("auto");
+    expect(gateModeFor("vad", true, false)).toBe("auto");
+    expect(gateModeFor("ptt", false, false)).toBe("closed");
+    expect(gateModeFor("ptt", true, false)).toBe("open");
+  });
+
+  it("the microphone test of the settings ignores push-to-talk: the gate stays open without the key", () => {
+    expect(gateModeFor("ptt", false, true)).toBe("open");
+    expect(gateModeFor("ptt", true, true)).toBe("open");
+    expect(gateModeFor("vad", false, true)).toBe("auto");
   });
 });

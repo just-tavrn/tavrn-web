@@ -6,7 +6,7 @@
  * the admin's decision to the uploader's statement of reasons and counter-notice. Phone and desktop.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { confirmRecoveryCodes, confirmRecoveryKey, enrollTotpInUi, openNavIfMobile, uniqueName } from "./helpers";
+import { ADULT_DOB, confirmRecoveryCodes, confirmRecoveryKey, enrollTotpInUi, openNavIfMobile, uniqueName } from "./helpers";
 import { LEGAL_NODE, LEGAL_WEB, acceptTerms, acceptTermsDialogIfShown, legalAdmin, loginOnLegal, publish, registerOnLegal, termsVersion } from "./legal-helpers";
 
 /** Admin tabs scroll sideways on phones: open one by its test id. */
@@ -62,6 +62,7 @@ test.describe("Legal", () => {
     await page.getByLabel("Benutzername", { exact: true }).fill(username);
     await page.getByLabel("Passwort", { exact: true }).fill(password);
     await page.getByLabel("Passwort wiederholen", { exact: true }).fill(password);
+    await page.getByLabel("Geburtsdatum", { exact: true }).fill(ADULT_DOB);
     await page.getByRole("button", { name: "Konto erstellen" }).click();
     await expect(page.getByRole("alert")).toContainText("Nutzungsbedingungen");
     await page.getByTestId("accept-terms").check();

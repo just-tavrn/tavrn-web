@@ -225,6 +225,9 @@ describe("notification and list menus", () => {
     const dmActions = { ...notifyActions, markRead: vi.fn(), profile: vi.fn(), close: vi.fn(), block: vi.fn(), copyAddress: vi.fn(), toggleFullHistory };
     expect(ids(dmMenu({ unread: false, kind: "dm", peer: null, notify, fullHistory: true }, dmActions, t))).toContain("full-history");
     expect(ids(dmMenu({ unread: false, kind: "dm", peer: null, notify }, dmActions, t))).not.toContain("full-history");
+    // While on, the label shows how much the conversation takes on this device (#4).
+    expect(findEntry(channelMenu({ kind: "text", unread: false, canManage: false, system: false, notify, fullHistory: true, fullHistoryUsage: "3.2 MB / 50.0 MB" }, actions, t), "full-history")).toMatchObject({ checked: true, label: 'menu.full_history_usage:{"usage":"3.2 MB / 50.0 MB"}' });
+    expect(findEntry(dmMenu({ unread: false, kind: "dm", peer: null, notify, fullHistory: true, fullHistoryUsage: "1.0 KB / 50.0 MB" }, dmActions, t), "full-history")).toMatchObject({ label: 'menu.full_history_usage:{"usage":"1.0 KB / 50.0 MB"}' });
   });
 
   it("gates channel management and voice moving", () => {
@@ -260,6 +263,21 @@ describe("notification and list menus", () => {
     expect(findEntry(nobodyHere, "move-from")).toMatchObject({ disabled: true, reason: "menu.reason.nobody_here" });
     // The voice entries never show up on text channels.
     expect(ids(channelMenu({ kind: "text", unread: false, canManage: false, system: false, voiceMove, notify }, actions, t))).not.toContain("move-here");
+  });
+
+  it("puts invite and settings first; open reports show on the settings entry", () => {
+    const actions = { ...notifyActions, setSuppressEveryone: vi.fn(), markRead: vi.fn(), invite: vi.fn(), settings: vi.fn(), leave: vi.fn(), copyId: vi.fn() };
+    const plain = roomMenu({ unread: false, canInvite: true, isOwner: false, notify }, actions, t);
+    expect(ids(plain).slice(0, 3)).toEqual(["invite", "settings", "mark-read"]);
+    const settings = findEntry(plain, "settings");
+    expect(settings).toMatchObject({ testId: "room-settings-button" });
+    expect(settings?.hint).toBeUndefined();
+    expect(settings?.kind === "item" && settings.ariaLabel).toBeFalsy();
+    expect(ids(roomMenu({ unread: false, canInvite: false, isOwner: false, notify }, actions, t))[0]).toBe("settings");
+    const many = roomMenu({ unread: false, canInvite: true, isOwner: false, notify, openReports: "3" }, actions, t);
+    expect(findEntry(many, "settings")).toMatchObject({ hint: "3", hintBadge: true, ariaLabel: 'menu.room.settings · reports.open_reports_many:{"count":"3"}' });
+    const one = roomMenu({ unread: false, canInvite: true, isOwner: false, notify, openReports: "1" }, actions, t);
+    expect(findEntry(one, "settings")).toMatchObject({ ariaLabel: 'menu.room.settings · reports.open_reports_one:{"count":"1"}' });
   });
 
   it("does not let owners leave their room; DMs can be closed and blocked", () => {
