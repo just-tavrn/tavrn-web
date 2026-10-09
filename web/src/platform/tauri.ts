@@ -8,6 +8,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { externalUrl } from "./links";
 import { runAppSession, runAppUnlock } from "./appSession";
 import { shellMembers } from "./tauriShell";
+import { createTauriSaveFile } from "./tauriFiles";
 import type { AppUpdater, HotkeyEvent, Platform, PlatformHotkeys, ResolvedNode } from "./types";
 
 interface ShellConfig {
@@ -120,6 +121,8 @@ export async function createTauriPlatform(doc: Document = document): Promise<Pla
     hotkeys: createHotkeys(),
     // OS keychain, native notifications, tray (tauriShell.ts).
     ...shellMembers(),
+    // Downloads through the shell's save dialog (tauriFiles.ts).
+    saveFile: createTauriSaveFile(),
   };
   installLinkHandler(doc, openExternal, platform.webOrigin);
   return platform;

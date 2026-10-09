@@ -9,6 +9,7 @@
  */
 import type { AuthResponse, DeviceProof, NodeEndpoints, TavrnApi } from "@tavrn/sdk";
 import type { UnlockMaterial } from "../crypto/sealedUnlock";
+import type { SaveFile } from "./files";
 
 export type PlatformKind = "browser" | "desktop";
 
@@ -40,6 +41,8 @@ export interface Platform {
   readonly tray?: PlatformTray;
   /** Sign-in on the node's own web client (passkeys, single sign-on, the captcha): connect flow, FEDERATION.md §8. */
   readonly auth?: PlatformAuth;
+  /** Saves a file the user downloads: the browser's download, the desktop app's save dialog (call sites use `saveFile.ts`). */
+  readonly saveFile?: SaveFile;
 }
 
 export interface NodeChoice {

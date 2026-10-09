@@ -50,7 +50,7 @@ export function UserDataActions({ user }: { user: AdminUser }) {
         data-testid="admin-export-user"
         onClick={async () => {
           try {
-            downloadJson(await api.legal.exportUser(user.id), exportFilename(user.username));
+            await downloadJson(await api.legal.exportUser(user.id), exportFilename(user.username));
           } catch (e) {
             if (!(e instanceof TavrnApiError && e.code === "auth.reauth_required")) toastError(e);
           }

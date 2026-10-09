@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { version } from "../../package.json";
+import { browserSaveFile } from "./files";
 import { externalUrl } from "./links";
 import type { Platform } from "./types";
 
@@ -13,6 +14,7 @@ export const browserPlatform: Platform = {
     window.open(externalUrl(url), "_blank", "noopener,noreferrer");
   },
   appVersion: async () => version,
+  saveFile: browserSaveFile,
   auth: {
     // Today's connect flow of FEDERATION.md §8: the home node's page sends the browser back to /connect/callback.
     signInOnNodePage: async (req) => {
