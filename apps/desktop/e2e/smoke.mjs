@@ -219,7 +219,7 @@ async function main() {
   // An account with TOTP, registered over the API (another device of the same user).
   const username = `desk${randomBytes(4).toString("hex")}`;
   const password = `passwort-${username}-xyz`;
-  const pre = await api("POST", "/auth/register", { username, password, device_name: "smoke" });
+  const pre = await api("POST", "/auth/register", { username, password, device_name: "smoke", date_of_birth: "1990-01-01" });
   const { secret } = await api("POST", "/auth/totp/enroll", {}, pre.preauth_token);
   const account = { secret, lastStep: 0 };
   const confirmed = await api("POST", "/auth/totp/confirm", { code: await nextCode(account) }, pre.preauth_token);
