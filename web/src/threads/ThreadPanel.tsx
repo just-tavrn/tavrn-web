@@ -143,7 +143,7 @@ export function ThreadPanel({ threadId, channel, perms, onClose, view }: { threa
         initial={typeof title === "string" ? title : ""}
         onClose={() => setRenaming(false)}
         onSave={async (next) => {
-          await api.threads.update(threadId, await sealTitle(q, d.encrypted, next, null));
+          await api.threads.update(threadId, await sealTitle(q, d.encrypted, next, null, threadId));
           setRenaming(false);
           await refresh();
         }}

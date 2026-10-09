@@ -30,6 +30,19 @@ unused-allowed-license = "allow"
 crate = "webpki-root-certs"
 allow = ["CDLA-Permissive-2.0"]
 
+[advisories]
+yanked = "deny"
+# Accepted until upstream moves. Review on every dependency update.
+ignore = [
+    # proc-macro-error 1.0 is unmaintained: a build-time macro crate of glib-macros 0.18, part of the GTK 3
+    # bindings (gtk-rs 0.18) that Tauri 2's Linux runtime (wry, tao, muda, webkit2gtk) is built on; not part
+    # of the app's runtime code, and no Tauri 2 release leaves those bindings yet.
+    { id = "RUSTSEC-2024-0370", reason = "unmaintained build-time macro crate of the GTK 3 bindings under Tauri 2 on Linux" },
+]
+# Not an ignore, for the record: `cargo audit` also lists RUSTSEC-2024-0429 (glib 0.18 `VariantStrIter`
+# unsound) as a warning. Neither this crate nor any dependency in the tree calls `Variant::array_iter_str` or
+# uses `VariantStrIter` (checked against the sources), and cargo deny does not report it.
+
 [bans]
 multiple-versions = "allow"
 

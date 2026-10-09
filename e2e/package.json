@@ -13,14 +13,14 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.56.0",
-    "@tavrn/bot": "github:just-tavrn/tavrn-js#1571b20b78ee8e451155ac917d31abe3d52c17f5&path:bot",
-    "@tavrn/crypto": "github:just-tavrn/tavrn-crypto#a240c3aeebff4e0e413f8f49e6e06e9d02a96cc5&path:pkg",
-    "@tavrn/e2ee": "github:just-tavrn/tavrn-js#1571b20b78ee8e451155ac917d31abe3d52c17f5&path:e2ee",
-    "@tavrn/sdk": "github:just-tavrn/tavrn-js#1571b20b78ee8e451155ac917d31abe3d52c17f5&path:sdk",
+    "@tavrn/bot": "github:just-tavrn/tavrn-js#fc6bd84afaccf68e6c4f384fb8fe8e207701d5ef&path:bot",
+    "@tavrn/crypto": "github:just-tavrn/tavrn-crypto#864fd4a2707f9fba00574ab283299864bc3b79c0&path:pkg",
+    "@tavrn/e2ee": "github:just-tavrn/tavrn-js#fc6bd84afaccf68e6c4f384fb8fe8e207701d5ef&path:e2ee",
+    "@tavrn/sdk": "github:just-tavrn/tavrn-js#fc6bd84afaccf68e6c4f384fb8fe8e207701d5ef&path:sdk",
     "@types/libsodium-wrappers": "^0.8.2",
     "@types/node": "^26.6.4",
     "libsodium-wrappers": "^0.8.4",
-    "typescript": "^5.9.0",
+    "typescript": "^5.9.3",
     "vite-node": "^6.0.0"
   }
 }
