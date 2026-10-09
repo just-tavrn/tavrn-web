@@ -228,6 +228,17 @@ group, and reports what it shared, what was incomplete and what it skipped. Deny
 requester sees. The welcome channel shows both decisions; the room's overview has the switch "Members may ask to
 restore their history".
 
+**Share keys and sealed history shares** (protocol ENCRYPTION.md §3.1 and §7b "Format v2", capability
+`history.shares2`). Automatic; there is nothing for users to do. Every device has a share key next to its device key and
+publishes it with its attestation (devices attested earlier publish it once on their next start). Where the node
+hosting a channel announces the capability and every device of the recipient that is in the channel's group has a share
+key that verifies with its attested device key, the history keys for a new member (and the keys of an approved restore)
+go out sealed to exactly those devices, so no other member could read them; otherwise the client falls back to the
+older format. Received shares are accepted only with this device's own box. Encrypted thread titles name their thread
+in the signed content (the client picks the thread id where the node announces `threads.client_ids`, renames always),
+and the answers of bots name the interaction they answer: a title or answer the node moved elsewhere is shown like
+anything else that cannot be read.
+
 ## Files channels
 
 A files channel (kind `files`, [FILES.md](https://github.com/just-tavrn/tavrn-protocol/blob/main/FILES.md)) is a file

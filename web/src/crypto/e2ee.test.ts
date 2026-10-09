@@ -67,6 +67,10 @@ function fakeNode(username: string) {
         if (state.devices.has(deviceId)) throw problem(409, "e2ee.device_key_exists");
         state.devices.set(deviceId, { key: req.device_public_key, sig: req.identity_signature });
       },
+      // The share key of a device attested earlier (ENCRYPTION.md §3.1).
+      putShareKey: async (deviceId: string) => {
+        state.calls.push(`putShareKey ${deviceId}`);
+      },
       countKeyPackages: async (deviceId: string) => ({ count: state.keyPackages.get(deviceId) ?? 0 }),
       uploadKeyPackages: async (deviceId: string, req: { key_packages: string[] }) => {
         state.keyPackages.set(deviceId, (state.keyPackages.get(deviceId) ?? 0) + req.key_packages.length);
