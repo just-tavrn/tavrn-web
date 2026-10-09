@@ -102,6 +102,7 @@
   "room.loading": "Loading room…",
   "room.no_channels": "This room has no channels yet.",
   "room.channel_not_found": "Channel not found.",
+  "room.channel_hidden": "You no longer have access to this channel.",
   "room.leave": "Leave room",
   "room.leave_text": "You can only come back with a new invite or if the room is public.",
   "room.leave_action": "Leave",

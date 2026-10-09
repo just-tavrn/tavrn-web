@@ -388,7 +388,11 @@ text, voice, files and management; under every permission the value it inherits 
 allowed by the category" / "by the roles"), which is also the accessible description of its allow/neutral/deny
 choice. **Reset to category** removes a channel's own overrides after a confirmation. The sidebar lists only the
 channels the user may view, and a category only when one of its channels is visible (channel managers also see
-empty ones); `channelPermissions` (`web/src/lib/channelPermissions.ts`) computes exactly like the node.
+empty ones); `channelPermissions` (`web/src/lib/channelPermissions.ts`) computes exactly like the node. The node
+sends a private channel's events only to the members it is listed to: a member who gains a channel gets
+`channel.create`, one who loses it `channel.delete` with `hidden: true` (PROTOCOL.md §6). The client then drops the
+channel from the sidebar like a deleted one, but an open channel says **You no longer have access to this channel**
+instead of "Channel not found", and the channel's local search entries stay (`web/src/lib/hiddenChannels.ts`).
 
 ## Reports, auto-moderation and ownership
 

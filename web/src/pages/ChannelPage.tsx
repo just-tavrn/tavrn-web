@@ -24,6 +24,7 @@ import { defaultTitle } from "../threads/titles";
 import { useFollowedThreads } from "../threads/useFollowedThreads";
 import { useChannelLock } from "../lib/age";
 import { LockedChannel } from "../components/age/LockedChannel";
+import { useHiddenChannels } from "../lib/hiddenChannels";
 
 // Files channels (design note 4.13 item 9): the file browser, loaded on demand.
 const FilesView = lazy(() => import("../files/FilesView"));
@@ -84,6 +85,8 @@ export function ChannelPage() {
   const closeThread = useCallback(() => navigate(channelPath), [navigate, channelPath]);
   // Age gates (PROTOCOL.md §5e): below the gate the channel is a notice, nothing of its content is loaded.
   const lock = useChannelLock(room.data?.channels.find((c) => c.id === channelId));
+  // Lost access (`channel.delete` with `hidden`): said as such, not as "not found".
+  const hidden = useHiddenChannels((s) => s.ids[channelId] === true);
   const mentionBase = useMemo(
     () => ({ users: (members.data ?? []).map((m) => ({ address: m.user.address })), roles: roles ?? [], memberRoles: Object.fromEntries((members.data ?? []).map((m) => [m.user.address, m.roles])) }),
     [members.data, roles],
@@ -92,7 +95,7 @@ export function ChannelPage() {
   if (room.isPending) return <p className="p-4 text-sm text-fg-2">{t("room.loading")}</p>;
   if (room.isError) return <p className="p-4 text-sm text-danger">{describeError(room.error)}</p>;
   const channel = room.data.channels.find((c) => c.id === channelId);
-  if (!channel) return <p className="p-4 text-sm text-fg-2">{t("room.channel_not_found")}</p>;
+  if (!channel) return <p className="p-4 text-sm text-fg-2">{t(hidden ? "room.channel_hidden" : "room.channel_not_found")}</p>;
   const perms = channelPermissions(room.data, channelId, user?.id ?? "");
   // Announcement channels: only members with manage_messages post; the others react and reply in threads.
   const announcementBlocked = channel.kind === "announcement" && !hasPermission(perms, Permission.MANAGE_MESSAGES);
