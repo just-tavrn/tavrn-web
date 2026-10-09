@@ -457,21 +457,32 @@ async function downloadAttachment(composer) {
      input.dispatchEvent(new Event("change", { bubbles: true }));`,
     [name, original.toString("base64")],
   );
-  await until("the pending upload", async () => (await text(await find("[data-testid=pending-uploads]"))).includes(name), 30_000);
+  // The chip of the upload, read from the DOM (an error on it fails the test); Enter sends once the upload is done.
+  const pending = () => script("const ul = document.querySelector('[data-testid=pending-uploads]'); return ul ? ul.textContent : null;");
+  await until("the uploaded attachment", async () => {
+    const chip = await pending();
+    if (chip && /error|Fehler|reachable|erreichbar/i.test(chip)) throw new Error(`the upload failed: ${chip}`);
+    return chip?.includes(name) && (await script("return !!document.querySelector('[data-testid=pending-uploads] li:not(.text-danger) button');")) ? chip : null;
+  }, 60_000);
   await sleep(300);
   await script(`arguments[0].dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true }));`, [{ [ELEMENT]: composer }]);
-  const button = await until("the attachment's download button", async () => {
-    const rows = await wd("POST", `/session/${session}/elements`, { using: "css selector", value: "[data-testid=attachment-file]" });
-    for (const r of rows) if ((await text(r[ELEMENT])).includes(name)) return (await wd("POST", `/session/${session}/element/${r[ELEMENT]}/element`, { using: "css selector", value: "[data-testid=attachment-download]" }))[ELEMENT];
-    return null;
-  }, 60_000);
-  await script("arguments[0].click();", [{ [ELEMENT]: button }]);
+  // Found and clicked from the page itself (WebKitWebDriver's element queries miss freshly rendered rows under xvfb).
+  await until("the attachment's download button", () =>
+    script(
+      `const row = [...document.querySelectorAll("[data-testid=attachment-file]")].find((r) => r.textContent.includes(arguments[0]));
+       const button = row?.querySelector("[data-testid=attachment-download]");
+       if (!button) return false;
+       button.click();
+       return true;`,
+      [name],
+    ),
+  60_000);
   const target = join(saveDir, name);
   const saved = await until(`the saved file ${target}`, async () => (existsSync(target) ? readFileSync(target) : null), 30_000);
   if (!saved.equals(original)) throw new Error(`the saved file differs from the original (${saved.length} of ${original.length} bytes)`);
-  const toast = await text(await waitFor("[data-testid=download-saved]", 15_000));
+  const toast = await until("the saved toast", () => script("return document.querySelector('[data-testid=download-saved]')?.textContent ?? null;"), 15_000);
   if (!toast.includes(name)) throw new Error(`the toast does not name the file: ${toast}`);
-  step(`download: the encrypted attachment was decrypted and saved by the shell, byte for byte (${saved.length} bytes); toast "${toast.split("\n")[0]}"`);
+  step(`download: the encrypted attachment was decrypted and saved by the shell, byte for byte (${saved.length} bytes); toast "${toast.replace(/\s+/g, " ").trim()}"`);
 }
 
 /** The encryption core in this process (the web client's @tavrn/crypto, its WebAssembly loaded synchronously). */
