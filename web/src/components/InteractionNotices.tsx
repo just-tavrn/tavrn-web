@@ -47,7 +47,8 @@ function Notice({ notice: n, qualified, encrypted, mls, label, close }: { notice
     if (!mls) return;
     let alive = true;
     void mls
-      .decrypt(qualified, { id: `ephemeral:${n.key}`, author: n.application.bot, device_id: n.deviceId ?? null, epoch: n.epoch ?? null, content: n.content })
+      // The signed context of the answer must name this interaction (APPLICATIONS.md §5.7, ENCRYPTION.md §5.2).
+      .decrypt(qualified, { id: `ephemeral:${n.key}`, author: n.application.bot, device_id: n.deviceId ?? null, epoch: n.epoch ?? null, content: n.content, interaction: { id: n.interactionId } })
       .then((r) => alive && setBody(r.ok ? plainBody(r.content) : null));
     return () => {
       alive = false;

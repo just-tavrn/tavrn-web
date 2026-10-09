@@ -18,6 +18,31 @@ export interface StartThread {
   message?: CreateMessageRequest;
   /** The thread id chosen by the client (node capability `threads.client_ids`); the first message is signed with it. */
   id?: string;
+  /**
+   * The node announces `threads.client_ids`: in encrypted channels the client then picks the id itself (unless `id` is
+   * given), so the sealed title names its thread (ENCRYPTION.md §5.2).
+   */
+  clientIds?: boolean;
+  /** Thread ids (tests). */
+  newId?: () => string;
+}
+
+async function createThread(s: StartThread, id: string | undefined): Promise<string> {
+  // An encrypted title carries the thread id in its signed context whenever the id is known here.
+  const title = await sealTitle(qualify(s.domain, s.channelId), s.encrypted, s.title, null, s.encrypted ? id : undefined);
+  const thread: Thread = await s.api.threads.create(s.roomId, s.channelId, {
+    ...(id ? { id } : {}),
+    ...title,
+    ...(s.rootMessageId ? { root_message_id: s.rootMessageId } : {}),
+    ...(s.tags?.length ? { tags: s.tags } : {}),
+    ...(s.message ? { message: s.message } : {}),
+  });
+  useThreads.getState().state({ thread_id: thread.id, channel_id: thread.channel_id, room_id: thread.room_id, following: true, last_read_message_id: thread.last_message_id ?? null, unread_count: 0, mention_count: 0 });
+  return thread.id;
+}
+
+function apiCode(e: unknown): string | undefined {
+  return e instanceof TavrnApiError ? e.code : undefined;
 }
 
 /**
@@ -25,19 +50,18 @@ export interface StartThread {
  * id comes back instead. The creator follows the thread.
  */
 export async function startThread(s: StartThread): Promise<string> {
-  const title = await sealTitle(qualify(s.domain, s.channelId), s.encrypted, s.title, null);
+  // In encrypted channels the client picks the id where the node keeps it; a refused id (a clock far off) falls back to
+  // the node's id and an unbound title. A given `id` (forum posts) is the caller's to retry.
+  const picked = !s.id && s.encrypted && s.clientIds ? (s.newId ?? newUlid)() : undefined;
   try {
-    const thread: Thread = await s.api.threads.create(s.roomId, s.channelId, {
-      ...(s.id ? { id: s.id } : {}),
-      ...title,
-      ...(s.rootMessageId ? { root_message_id: s.rootMessageId } : {}),
-      ...(s.tags?.length ? { tags: s.tags } : {}),
-      ...(s.message ? { message: s.message } : {}),
-    });
-    useThreads.getState().state({ thread_id: thread.id, channel_id: thread.channel_id, room_id: thread.room_id, following: true, last_read_message_id: thread.last_message_id ?? null, unread_count: 0, mention_count: 0 });
-    return thread.id;
+    try {
+      return await createThread(s, s.id ?? picked);
+    } catch (e) {
+      if (picked && (apiCode(e) === "thread.id_invalid" || apiCode(e) === "thread.id_taken")) return await createThread(s, undefined);
+      throw e;
+    }
   } catch (e) {
-    const existing = e instanceof TavrnApiError && e.code === "thread.exists" ? (e.problem as { meta?: { thread_id?: unknown } }).meta?.thread_id : undefined;
+    const existing = apiCode(e) === "thread.exists" ? ((e as TavrnApiError).problem as { meta?: { thread_id?: unknown } }).meta?.thread_id : undefined;
     if (typeof existing === "string") return existing;
     throw e;
   }

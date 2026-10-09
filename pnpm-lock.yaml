@@ -165,7 +165,7 @@ settings:
 overrides:
   '@tavrn/sdk': file:/home/baton/tavrn-split/tavrn-js/sdk
   '@tavrn/e2ee': file:/home/baton/tavrn-split/tavrn-js/e2ee
-  '@tavrn/crypto': github:just-tavrn/tavrn-crypto#a240c3aeebff4e0e413f8f49e6e06e9d02a96cc5&path:pkg
+  '@tavrn/crypto': file:/home/baton/tavrn-split/tavrn-crypto/pkg
   nanoid@>=3.0.0 <3.3.18: ^3.3.20
   '@excalidraw/excalidraw>@excalidraw/mermaid-to-excalidraw': '-'
   '@excalidraw/excalidraw>sass': '-'
@@ -192,8 +192,8 @@ importers:
         specifier: file:/home/baton/tavrn-split/tavrn-js/bot
         version: file:../tavrn-js/bot
       '@tavrn/crypto':
-        specifier: github:just-tavrn/tavrn-crypto#a240c3aeebff4e0e413f8f49e6e06e9d02a96cc5&path:pkg
-        version: git+https://github.com/just-tavrn/tavrn-crypto.git#a240c3aeebff4e0e413f8f49e6e06e9d02a96cc5&path:pkg
+        specifier: file:/home/baton/tavrn-split/tavrn-crypto/pkg
+        version: file:../tavrn-crypto/pkg
       '@tavrn/e2ee':
         specifier: file:/home/baton/tavrn-split/tavrn-js/e2ee
         version: file:../tavrn-js/e2ee
@@ -237,8 +237,8 @@ importers:
         specifier: ^2.12.1
         version: 2.12.1
       '@tavrn/crypto':
-        specifier: github:just-tavrn/tavrn-crypto#a240c3aeebff4e0e413f8f49e6e06e9d02a96cc5&path:pkg
-        version: git+https://github.com/just-tavrn/tavrn-crypto.git#a240c3aeebff4e0e413f8f49e6e06e9d02a96cc5&path:pkg
+        specifier: file:/home/baton/tavrn-split/tavrn-crypto/pkg
+        version: file:../tavrn-crypto/pkg
       '@tavrn/e2ee':
         specifier: file:/home/baton/tavrn-split/tavrn-js/e2ee
         version: file:../tavrn-js/e2ee
@@ -1052,9 +1052,8 @@ packages:
     resolution: {directory: ../tavrn-js/bot, type: directory}
     engines: {node: '>=20'}
 
-  '@tavrn/crypto@git+https://github.com/just-tavrn/tavrn-crypto.git#a240c3aeebff4e0e413f8f49e6e06e9d02a96cc5&path:pkg':
-    resolution: {commit: a240c3aeebff4e0e413f8f49e6e06e9d02a96cc5, path: pkg, repo: https://github.com/just-tavrn/tavrn-crypto.git, type: git}
-    version: 0.1.0
+  '@tavrn/crypto@file:../tavrn-crypto/pkg':
+    resolution: {directory: ../tavrn-crypto/pkg, type: directory}
 
   '@tavrn/e2ee@file:../tavrn-js/e2ee':
     resolution: {directory: ../tavrn-js/e2ee, type: directory}
@@ -2676,15 +2675,15 @@ snapshots:
 
   '@tavrn/bot@file:../tavrn-js/bot':
     dependencies:
-      '@tavrn/crypto': git+https://github.com/just-tavrn/tavrn-crypto.git#a240c3aeebff4e0e413f8f49e6e06e9d02a96cc5&path:pkg
+      '@tavrn/crypto': file:../tavrn-crypto/pkg
       '@tavrn/e2ee': file:../tavrn-js/e2ee
       '@tavrn/sdk': file:../tavrn-js/sdk
 
-  '@tavrn/crypto@git+https://github.com/just-tavrn/tavrn-crypto.git#a240c3aeebff4e0e413f8f49e6e06e9d02a96cc5&path:pkg': {}
+  '@tavrn/crypto@file:../tavrn-crypto/pkg': {}
 
   '@tavrn/e2ee@file:../tavrn-js/e2ee':
     dependencies:
-      '@tavrn/crypto': git+https://github.com/just-tavrn/tavrn-crypto.git#a240c3aeebff4e0e413f8f49e6e06e9d02a96cc5&path:pkg
+      '@tavrn/crypto': file:../tavrn-crypto/pkg
       '@tavrn/sdk': file:../tavrn-js/sdk
 
   '@tavrn/sdk@file:../tavrn-js/sdk': {}

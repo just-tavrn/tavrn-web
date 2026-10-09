@@ -66,7 +66,10 @@ export function ChannelPage() {
   const { roomId = "", channelId = "", threadId } = useParams();
   const navigate = useNavigate();
   // The user as the room's node knows it (user ids are node-local).
-  const { api, me: user, domain, roomPath } = useNode();
+  const { api, me: user, domain, roomPath, home } = useNode();
+  // Nodes announcing `threads.client_ids` keep the client's thread id: encrypted titles are then bound to it.
+  const nodeInfo = useQuery({ queryKey: home ? ["node"] : ["node", domain], queryFn: () => api.node.info(), staleTime: 10 * 60_000 });
+  const clientIds = !!nodeInfo.data?.capabilities?.includes("threads.client_ids");
   const originDomain = useOriginDomain();
   // The node domain is the identity domain from its discovery document, never the page host (design note 4.2c).
   const nodeDomain = domain || originDomain || "";
@@ -155,7 +158,7 @@ export function ChannelPage() {
     const title = defaultTitle(text, t("threads.default_title"));
     if (mode === "create") return setCreating({ root: m, title });
     try {
-      openThread(await startThread({ api, domain, roomId, channelId, encrypted: channel.encrypted, title, rootMessageId: m.id }));
+      openThread(await startThread({ api, domain, roomId, channelId, encrypted: channel.encrypted, clientIds, title, rootMessageId: m.id }));
     } catch (e) {
       toastError(e);
     }
@@ -197,7 +200,7 @@ export function ChannelPage() {
         encrypted={channel.encrypted}
         onClose={() => setCreating(null)}
         onCreate={async (title) => {
-          const id = await startThread({ api, domain, roomId, channelId, encrypted: channel.encrypted, title, rootMessageId: creating?.root?.id });
+          const id = await startThread({ api, domain, roomId, channelId, encrypted: channel.encrypted, clientIds, title, rootMessageId: creating?.root?.id });
           setCreating(null);
           openThread(id);
         }}
