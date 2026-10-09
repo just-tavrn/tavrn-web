@@ -201,3 +201,34 @@ describe("VoiceBar quick menus", () => {
     expect(toggleDeafen).not.toHaveBeenCalled();
   });
 });
+
+describe("VoiceBar encryption indicator", () => {
+  it("shows the padlock inside the signal bars with a text alternative, no lock emoji", () => {
+    useVoice.setState({ quality: "excellent" });
+    const { container } = renderBar();
+    expect(container.textContent ?? "").not.toMatch(/[\u{1F512}\u{1F513}]/u);
+    const signal = screen.getByRole("img", { name: "Verschlüsselt · Verbindung gut" });
+    expect(signal).toHaveAttribute("title", "Verschlüsselt · Verbindung gut");
+    expect(signal.querySelector("svg [data-testid='signal-lock']")).not.toBeNull();
+    // Three bars, all filled.
+    expect([...signal.querySelectorAll("rect[data-bar]")].map((r) => r.getAttribute("opacity"))).toEqual(["1", "1", "1"]);
+    // The status text stays.
+    expect(screen.getByTestId("voice-bar-status")).toHaveTextContent("Sprache verbunden");
+  });
+
+  it("names the connection quality and the connecting state", () => {
+    useVoice.setState({ quality: "good" });
+    const { unmount } = renderBar();
+    expect(screen.getByRole("img", { name: "Verschlüsselt · Verbindung okay" })).toBeInTheDocument();
+    unmount();
+    useVoice.setState({ quality: "poor" });
+    const second = renderBar();
+    expect(screen.getByRole("img", { name: "Verschlüsselt · Verbindung schwach" })).toBeInTheDocument();
+    second.unmount();
+    useVoice.setState({ status: "reconnecting", quality: "excellent" });
+    renderBar();
+    const signal = screen.getByRole("img", { name: "Verschlüsselt · Verbindung wird aufgebaut" });
+    expect([...signal.querySelectorAll("rect[data-bar]")].map((r) => r.getAttribute("opacity"))).toEqual(["0.25", "0.25", "0.25"]);
+    expect(signal.querySelector("[data-testid='signal-lock']")).not.toBeNull();
+  });
+});

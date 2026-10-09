@@ -835,7 +835,7 @@ const MessageRow = memo(function MessageRow({ m, grouped, own, bot, author, repl
                     e.currentTarget.form?.requestSubmit();
                   }
                 }}
-                className="w-full rounded-md border border-line bg-bg-0 px-2 py-1 text-sm text-fg-0 outline-none focus:border-accent"
+                className="w-full rounded-md border border-line-strong bg-bg-0 px-2 py-1 text-sm text-fg-0 outline-none focus:border-accent"
               />
               <div className="flex gap-2 text-xs">
                 <button type="submit" className="min-h-8 rounded-md bg-accent px-2 text-accent-text hover:bg-accent-hover">

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test } from "@playwright/test";
-import { createRoomViaApi, loginAs, openNavIfMobile, registerViaApi } from "./helpers";
+import { createRoomViaApi, loginAs, registerViaApi } from "./helpers";
 import { joinRoom, postMessage } from "./menu-helpers";
 
 test.describe("Notifications (design note 4.11)", () => {
@@ -25,9 +25,10 @@ test.describe("Notifications (design note 4.11)", () => {
     await expect(toast).toContainText("Ping-Raum");
     await expect(page.getByTestId("notify-toast")).toHaveCount(0);
 
-    // The bell counts the unseen entry; its panel jumps to the conversation.
-    await openNavIfMobile(page);
-    const bell = page.getByTestId("notification-bell").locator("visible=true").first();
+    // The bell counts the unseen entry; its panel jumps to the conversation. Exactly one bell is visible: the
+    // header's on phones, the account bar's from the tablet width on.
+    const bell = page.getByTestId("notification-bell").locator("visible=true");
+    await expect(bell).toHaveCount(1);
     await expect(bell.getByTestId("notification-count")).toHaveText("1");
     await bell.click();
     const entry = page.getByTestId("notification-panel").getByTestId("notification-entry");

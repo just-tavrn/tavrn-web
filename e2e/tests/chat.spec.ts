@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test } from "@playwright/test";
-import { createRoomViaApi, loginAs, openNavIfMobile, registerViaApi, registerViaUi, uniqueName, logoutViaUi } from "./helpers";
+import { createRoomViaApi, loginAs, openNavIfMobile, registerViaApi, registerViaUi, uniqueName, logoutViaUi, openRoomInvite } from "./helpers";
 
 test.describe("Text chat", () => {
   test("Register, create a room, create a channel, send, edit and delete a message (encrypted)", async ({ page }) => {
@@ -51,8 +51,7 @@ test.describe("Text chat", () => {
     const room = await createRoomViaApi(request, alice.token, "Live-Raum");
     await loginAs(page, alice);
     await page.goto(`/rooms/${room.id}`);
-    await openNavIfMobile(page);
-    await page.getByRole("button", { name: "Einladen" }).click();
+    await openRoomInvite(page);
     await page.getByRole("button", { name: "Link erzeugen" }).click();
     const link = await page.getByTestId("invite-link").inputValue();
     expect(link).toMatch(/\/invite\//);

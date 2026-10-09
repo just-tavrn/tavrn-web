@@ -281,12 +281,12 @@ function UrlDialog({ created, onClose }: { created: CreatedWebhook | null; onClo
     <Dialog title={t("webhooks.url_title", { name: created?.webhook.name ?? "" })} open={!!created} onClose={onClose}>
       <div className="space-y-3 text-sm">
         <p className="text-fg-1">{t("webhooks.url_once")}</p>
-        <textarea readOnly value={created?.url ?? ""} rows={3} className="w-full break-all rounded-md border border-line bg-bg-0 p-2 font-mono text-xs" onFocus={(e) => e.target.select()} data-testid="webhook-url" aria-label={t("webhooks.url_label")} />
+        <textarea readOnly value={created?.url ?? ""} rows={3} className="w-full break-all rounded-md border border-line-strong bg-bg-0 p-2 font-mono text-xs" onFocus={(e) => e.target.select()} data-testid="webhook-url" aria-label={t("webhooks.url_label")} />
         <p className="text-xs text-warn">{t("webhooks.url_warning")}</p>
         {created?.webhook.sealing === "sender" && (
           <div className="space-y-1">
             <p className="text-xs text-fg-1">{t("webhooks.inbox_url_label")}</p>
-            <textarea readOnly value={`${created.url}/inbox-key`} rows={3} className="w-full break-all rounded-md border border-line bg-bg-0 p-2 font-mono text-xs" onFocus={(e) => e.target.select()} data-testid="webhook-inbox-url" aria-label={t("webhooks.inbox_url_label")} />
+            <textarea readOnly value={`${created.url}/inbox-key`} rows={3} className="w-full break-all rounded-md border border-line-strong bg-bg-0 p-2 font-mono text-xs" onFocus={(e) => e.target.select()} data-testid="webhook-inbox-url" aria-label={t("webhooks.inbox_url_label")} />
             <Button variant="ghost" onClick={() => void navigator.clipboard?.writeText(`${created.url}/inbox-key`).then(() => useToasts.getState().push({ kind: "info", title: t("menu.copied") }), () => undefined)} data-testid="webhook-inbox-url-copy">
               {t("common.copy")}
             </Button>

@@ -219,7 +219,7 @@ function RailRoom({ entry, title, label, dimmed = false, folderId = null, shift,
     },
     t,
   );
-  const { menu, overlay } = useRoomMenu(room, node, extra);
+  const { menu, overlay } = useRoomMenu(room, node, { extra });
   const counts = useCounts([entry]);
   const drag = useDragTarget(key, { between, into: true });
   const target = drop?.target === key ? drop.mode : null;

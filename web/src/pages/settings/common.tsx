@@ -16,11 +16,11 @@ export function Section({ title, children, description }: { title: string; descr
 }
 
 export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...props} className={`min-h-10 w-full rounded-md border border-line bg-bg-0 px-3 text-sm ${props.className ?? ""}`} />;
+  return <select {...props} className={`min-h-10 w-full rounded-md border border-line-strong bg-bg-0 px-3 text-sm ${props.className ?? ""}`} />;
 }
 
 export function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea {...props} className={`w-full rounded-md border border-line bg-bg-0 px-3 py-2 text-sm text-fg-0 outline-none placeholder:text-fg-2 focus:border-accent ${props.className ?? ""}`} />;
+  return <textarea {...props} className={`w-full rounded-md border border-line-strong bg-bg-0 px-3 py-2 text-sm text-fg-0 outline-none placeholder:text-fg-2 focus:border-accent ${props.className ?? ""}`} />;
 }
 
 const GROUPS = [...new Set(PERMISSION_LABELS.map((p) => p.group))];

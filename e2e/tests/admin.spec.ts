@@ -9,8 +9,14 @@ test.describe("Node administration", () => {
     const victim = await registerViaApi(request, "victim");
     await loginAs(page, admin);
     await page.goto("/");
+    // The node administration lives in the account menu (and at the top of the settings navigation).
     await openNavIfMobile(page);
-    await page.getByRole("button", { name: "Knotenverwaltung" }).click();
+    await page.getByTestId("presence-menu-button").click();
+    await page.getByTestId("presence-menu").getByRole("menuitem", { name: "Knotenverwaltung" }).click();
+    await expect(page.getByRole("heading", { name: "Knotenverwaltung" })).toBeVisible();
+    await page.goto("/settings/profile");
+    await expect(page.getByTestId("settings-admin-link")).toHaveAttribute("href", "/admin");
+    await page.goto("/admin");
     await expect(page.getByRole("heading", { name: "Knotenverwaltung" })).toBeVisible();
     await expect(page.getByTestId("admin-stats")).toContainText("Nutzer");
 
@@ -93,7 +99,11 @@ test.describe("Node administration", () => {
     await page.goto("/admin");
     await expect(page).not.toHaveURL(/\/admin/);
     await openNavIfMobile(page);
-    await expect(page.getByRole("button", { name: "Knotenverwaltung" })).toHaveCount(0);
+    await page.getByTestId("presence-menu-button").click();
+    await expect(page.getByTestId("presence-menu")).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "Knotenverwaltung" })).toHaveCount(0);
+    await page.goto("/settings/profile");
+    await expect(page.getByTestId("settings-admin-link")).toHaveCount(0);
   });
 
   test("Forgot-password page and invalid reset link", async ({ page }) => {

@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import { DEFAULT_WINDOW_DAYS, DEFAULT_MAX_BYTES } from "@tavrn/e2ee";
 import { useT } from "../i18n";
-import { Button } from "../components/ui";
-import { Section } from "../pages/settings/common";
+import { Button, Field } from "../components/ui";
+import { Section, Select } from "../pages/settings/common";
+import { HISTORY_CAP_CHOICES_MB, enforceHistoryCap, historyCapBytes, setHistoryCapMb } from "../history/local";
 import { useE2ee } from "../stores/e2ee";
 import { toastError, useToasts } from "../stores/toasts";
 import { clearLocalIndex, localIndex, rebuildLocalIndex, refreshLocalState, useLocalSearch } from "./local";
@@ -22,6 +23,9 @@ export function LocalIndexSection() {
   const unlocked = useE2ee((s) => s.status === "unlocked");
   const stats = useLocalSearch((s) => s.stats);
   const syncing = useLocalSearch((s) => Object.keys(s.syncing).length);
+  const history = useLocalSearch((s) => s.history);
+  const historyBytes = Object.values(history).reduce((a, b) => a + b, 0);
+  const [capMb, setCapMb] = useState(() => historyCapBytes() / 1024 / 1024);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (unlocked) void localIndex().then((i) => refreshLocalState(i));
@@ -57,6 +61,32 @@ export function LocalIndexSection() {
             <dd data-testid="local-index-complete">{stats?.complete ?? "…"}</dd>
           </dl>
           {syncing > 0 && <p className="text-xs text-fg-2">{t("search.settings.syncing")}</p>}
+          {/* The archived full history (#4): what it takes and the space per conversation. */}
+          <div className="space-y-2 border-t border-line pt-3" data-testid="local-history">
+            <h3 className="text-sm font-medium">{t("search.settings.history_title")}</h3>
+            <p className="text-xs text-fg-2">{t("search.settings.history_hint")}</p>
+            <p className="text-sm" data-testid="local-history-usage">
+              {t("search.settings.history_usage", { size: formatBytes(historyBytes), count: Object.keys(history).length })}
+            </p>
+            <Field label={t("search.settings.history_cap")}>
+              <Select
+                value={String(capMb)}
+                onChange={(e) => {
+                  const mb = Number(e.target.value);
+                  setHistoryCapMb(mb);
+                  setCapMb(mb);
+                  void enforceHistoryCap().catch(toastError);
+                }}
+                data-testid="local-history-cap"
+              >
+                {HISTORY_CAP_CHOICES_MB.map((mb) => (
+                  <option key={mb} value={mb}>
+                    {mb} MB
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="ghost" disabled={busy} onClick={() => void act(rebuildLocalIndex, t("search.settings.rebuilt"))} data-testid="local-index-rebuild">
               {t("search.settings.rebuild")}

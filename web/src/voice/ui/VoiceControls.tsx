@@ -35,7 +35,7 @@ export function ScreenShareDialog({ open, onClose, maxResolution, maxFps }: { op
         <p className="text-xs text-fg-2">{t("voice.screen.hint")}</p>
         <label className="block space-y-1">
           <span className="text-fg-1">{t("voice.screen.resolution")}</span>
-          <select value={resolution} onChange={(e) => setResolution(e.target.value)} className="min-h-10 w-full rounded-md border border-line bg-bg-0 px-3" aria-label={t("voice.screen.resolution")}>
+          <select value={resolution} onChange={(e) => setResolution(e.target.value)} className="min-h-10 w-full rounded-md border border-line-strong bg-bg-0 px-3" aria-label={t("voice.screen.resolution")}>
             {allowed.map((r) => (
               <option key={r} value={r}>
                 {r}
@@ -45,7 +45,7 @@ export function ScreenShareDialog({ open, onClose, maxResolution, maxFps }: { op
         </label>
         <label className="block space-y-1">
           <span className="text-fg-1">{t("voice.screen.fps")}</span>
-          <select value={fps} onChange={(e) => setFps(Number(e.target.value))} className="min-h-10 w-full rounded-md border border-line bg-bg-0 px-3" aria-label={t("voice.screen.fps")}>
+          <select value={fps} onChange={(e) => setFps(Number(e.target.value))} className="min-h-10 w-full rounded-md border border-line-strong bg-bg-0 px-3" aria-label={t("voice.screen.fps")}>
             {(rates.length ? rates : [maxFps]).map((f) => (
               <option key={f} value={f}>
                 {f} fps

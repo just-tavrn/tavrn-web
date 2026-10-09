@@ -14,3 +14,16 @@ export function detectTauri(): boolean {
   const label = internals?.metadata?.currentWindow?.label;
   return label === undefined || label === MAIN_WINDOW;
 }
+
+/** Label of the sign-in window (`CONNECT_WINDOW` in `apps/desktop/src-tauri/src/lib.rs`). */
+const SIGN_IN_WINDOW = "connect";
+
+/**
+ * True for the node's page in the desktop app's sign-in window (not in a browser tab): it signs itself out after a
+ * handoff (docs/DESKTOP.md "Signing in").
+ */
+export function inSignInWindow(): boolean {
+  if (!isTauri()) return false;
+  const internals = (window as unknown as { __TAURI_INTERNALS__?: { metadata?: { currentWindow?: { label?: string } } } }).__TAURI_INTERNALS__;
+  return internals?.metadata?.currentWindow?.label === SIGN_IN_WINDOW;
+}

@@ -3,7 +3,7 @@ import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
-import { openNavIfMobile, registerViaUi } from "./helpers";
+import { openNavIfMobile, registerViaUi, openRoomInvite } from "./helpers";
 
 // The whiteboard on the voice stage (design note 4.10 "presented like a stream, joined on demand"): two people
 // in a voice call with Chromium's fake media devices, the board shown on the presenter's tile, joined from
@@ -114,8 +114,7 @@ test.describe("Whiteboard on the voice stage", () => {
     await alice.page.getByRole("dialog").getByRole("button", { name: "Erstellen" }).click();
     await expect(alice.page.getByTestId("channel-name")).toHaveText("allgemein");
     const roomUrl = alice.page.url().replace(/\/channels\/.*$/, "");
-    await openNavIfMobile(alice.page);
-    await alice.page.getByRole("button", { name: "Einladen" }).click();
+    await openRoomInvite(alice.page);
     await alice.page.getByRole("button", { name: "Link erzeugen" }).click();
     const link = await alice.page.getByTestId("invite-link").inputValue();
     await alice.page.getByRole("button", { name: "Fertig" }).click();

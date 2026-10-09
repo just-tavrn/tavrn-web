@@ -11,7 +11,9 @@ Every password account has a second factor: registration is a short wizard (acco
 via QR code or a passkey → ten recovery codes shown once → recovery key), and sign-in asks for the TOTP
 code, a recovery code or a passkey; "Sign in with a passkey" skips the password. The **recovery key**
 (24 words or a compact string, generated in the browser and never sent anywhere) unlocks the encrypted
-messages on a new device or browser; passkeys with the PRF extension can do the same. Local keys live in
+messages on a new device or browser; passkeys with the PRF extension can do the same (the client's own PRF
+assertions name the relying party id the node publishes, `webauthn.rp_id`, so they also work when passkeys belong
+to a parent domain of the web client's host). Local keys live in
 IndexedDB, encrypted under a device key derived from the master secret; the security settings manage
 factors, recovery codes, the recovery key and the optional "require the recovery key every time" lock.
 Without the recovery key the client offers a degraded mode (plaintext channels only, encrypted
@@ -55,7 +57,8 @@ with mute, deafen, camera and screen icons and the user limit as `3/5`). While c
 shows the stage: one tile per participant with avatar or camera, a glowing border and level meter while
 someone speaks, screen shares as large tiles (enlarge, picture-in-picture); phones get a swipeable grid of
 four and a bottom control bar. The voice bar at the bottom of the sidebar keeps mute, deafen, leave and the
-connection quality at hand while you read text channels. Moderators open a participant's menu (right click
+connection quality at hand while you read text channels; its signal bars carry a small padlock (voice is always
+end-to-end encrypted), and their tooltip names both, for example "Encrypted · connection good". Moderators open a participant's menu (right click
 or ⋯) to server-mute, disconnect or move them, drag people onto another voice channel, or move everybody at
 once from a voice channel's menu (with a confirmation; the target's user limit holds); everybody can set a
 per-person volume there. A dropped connection rejoins by itself; others see an amber plug on your avatar
@@ -153,6 +156,17 @@ Locks or BroadcastChannel every tab works alone (a second tab may then have to r
 before). The desktop app has one window, which always owns the state. New KeyPackages (topped up at every start)
 are created in the owner's state too.
 
+History is lazy: a conversation's pages are dropped when it closes, and the local search index keeps text and file
+names of the last 90 days. **Keep the full history on this device** (the menu of an encrypted channel, DM or group DM;
+default off) keeps the conversation's whole history here instead: the background sync pages it back to the start, the
+search index keeps all of it, and the messages with their decrypted content stay in an encrypted local archive
+(IndexedDB `tavrn-history`, sealed with keys derived from this device's local storage key, so it locks with the device
+and reveals no ids or text; `web/src/history/`). The message list then uses the archived content instead of
+decrypting again and reads from the archive while the node cannot be reached. Each conversation may take up to the
+space set under Settings → Privacy → Local search index (default 50 MB; the oldest messages go first); the menu entry
+shows what it takes, the settings the total. Turning the setting off, clearing the index or signing out (which wipes the
+device) deletes the archive.
+
 ## Threads, forum and announcement channels
 
 Threads ([PROTOCOL.md §7e](https://github.com/just-tavrn/tavrn-protocol/blob/main/PROTOCOL.md)) are
@@ -167,7 +181,10 @@ panel is the channel's conversation in thread mode: encryption, reactions, uploa
 slash commands work there as in the channel, and in encrypted channels the title is encrypted with the channel's
 messages. Its header follows or unfollows the thread and, for its creator or members with *Manage threads*,
 renames, archives, locks or deletes it. Starting or writing in a thread follows it; only followed threads count
-towards the channel's unread badge and raise notifications (direct mentions always do).
+towards the channel's unread badge and raise notifications (direct mentions always do). The client loads the
+followed threads of every room once it is connected (one room after the other in the background, at most 100 rooms per
+node, again after a reconnect at most once a minute) and keeps them current over the WebSocket, so this works for rooms
+not opened since the start as well; a thread started on another device is followed here at once.
 
 Forum channels show posts instead of messages: cards with title, tags, author, replies, last activity and the
 start of the first message, tag filter chips, "Latest activity" or "Newest posts", archived posts on demand and
@@ -232,8 +249,18 @@ nothing), mute for 1 h, 8 h, 24 h or until turned back on, edit/duplicate/delete
 everyone here" on voice channels. DMs: close (until a new message arrives), mute, block. Logging out is the last
 item of the status menu on your avatar (with a confirmation).
 
+The sidebar has three bars. At the top, the **room header** is one button (room icon, name, chevron ⌄; rooms of
+other nodes show their domain below the name) that opens the room menu: "Invite people" and "Room settings" first,
+then mark as read, notifications, copy ID, report and leave; moderators see the number of open reports as a badge on
+the chevron and next to "Room settings", which then opens the report inbox. Above the account bar sits the **voice
+bar** while connected. At the bottom, the **account bar** holds the avatar with the account menu (presence, custom
+status, activity, legal pages, sign out and, for node admins of the home node, "Node administration"), the own name
+with the connection state below it, the notification bell and the user settings. On phones the bell is in the top
+bar instead, so there is always exactly one. Node admins also find "Node administration" at the top of the settings
+navigation.
+
 Notifications: mentions (`@name`, `@name@domain`, `@Role` of mentionable roles, `@everyone`) and DMs show a
-toast with a jump link, a soft sound and an entry behind the bell 🔔 next to the settings gear; with
+toast with a jump link, a soft sound and an entry behind the bell next to the settings gear; with
 **Settings → Notifications → Desktop notifications** the browser shows them while tavrn is in the background
 (the permission is asked only after that click; encrypted messages never appear in the notification text).
 The settings are stored on the home node and fall back to this browser on nodes that do not offer them yet.
@@ -245,6 +272,11 @@ the notification settings (rooms on other nodes push through the home node for D
 encrypted conversations only name the conversation and the sender; "Show message text in push notifications" adds
 a preview of unencrypted messages. A click opens or focuses the conversation; a test button sends a push. Signing
 out removes the subscription; on iPhone and iPad push works only after adding tavrn to the home screen.
+"Push notifications for new reports" (on by default, stored on the home node as `global.reports`) lets room
+moderators and node admins turn off the pushes of new reports; such a push names only the room ("New report in
+<room>", or "A report for the node admins") and opens the room's Reports tab or Admin → Reports. A hint under the
+switches says what rooms on other nodes push: under "All messages" they do not push ordinary messages, only mentions,
+direct messages and calls (the home node receives no hints for the rest, PROTOCOL.md §6d).
 Images open a viewer (zoom, drag, swipe or arrow keys between the images of a message, download icon, open
 original); audio attachments get an inline player and videos play inline and enlarge into the viewer.
 Downloads only start from the download icon. SVG files are never shown inline or opened, only downloaded (they
@@ -261,7 +293,7 @@ Specified in [MODERATION.md](https://github.com/just-tavrn/tavrn-protocol/blob/m
 these features only for nodes that announce `reports.v1` and `automod.v1`.
 
 - **Reporting.** "Report message" in the message menu (others' messages), "Report" in the member menu and "Report
-  room" in the room menu (rail and the ⋯ in the room header). The dialog asks for a category and optional details
+  room" in the room menu (rail and the room header). The dialog asks for a category and optional details
   and says who will read the report (the room's moderators and the node admins, or the node admins only). Reports
   of a room go to the room's node; reports of direct messages to your home node. For an **end-to-end encrypted**
   message nobody else can read it, so the dialog offers to release its text and up to ten messages before it: only
@@ -276,8 +308,9 @@ these features only for nodes that announce `reports.v1` and `automod.v1`.
   resolution note, resolve or dismiss them, and act from the report: delete the message, time out (with the usual
   durations), remove, ban (node ban for node reports) or delete the person's messages (with the count and a typed
   confirmation). The actions run with the moderator's own permissions and are noted in the audit log with the
-  report. The ⚙ in the room header and the tabs show the number of open reports; new reports arrive in the bell
-  🔔 and as a toast (not while notifications are set to nothing or the room is muted).
+  report. The room header's chevron, "Room settings" in its menu and the tabs show the number of open reports; new
+  reports arrive in the bell and as a toast (not while notifications are set to nothing or the room is muted), and
+  as a web push while no tab is open (see "Push notifications" above).
 - **Auto-moderation.** Room settings → **Auto-moderation** shows the node's flood protection and edits the room's
   content rules: words and phrases (one per line, `*` within a word, optionally whole words only), link filters
   (block all, allow only some domains, block some domains), exempt roles and channels, and the action (block,
@@ -288,6 +321,10 @@ these features only for nodes that announce `reports.v1` and `automod.v1`.
 - **Ownership.** Room settings → Overview → **Transfer ownership** hands the room to another member of the room's
   node (not a bot); the owner confirms with the password, a passkey or single sign-on. Deleting an account that still
   owns rooms lists them in the deletion dialog with "Transfer ownership" and "Delete room" for each.
+- **Retention.** Room settings → Overview → **Message retention** (owner or "Manage room") deletes the room's
+  messages after a number of days, with their attachments (PROTOCOL.md §7f); the section shows the node's period
+  (`GET /node` `message_retention_days`), and a room can only choose a shorter one. Pinned messages and the welcome
+  channel are kept. **Attachment retention** below it deletes only the files, earlier if set so.
 - **Single sign-on groups.** Admin → SSO picks the rooms and their roles of a group by name.
 
 ## The desktop app
@@ -324,3 +361,8 @@ also observes them system-wide, while a game has the focus, without taking the k
 The web client ships English (default) and German. To add a language, copy `web/src/i18n/en.json` to
 `web/src/i18n/<code>.json`, translate the values, and register the file in `web/src/i18n/index.ts`.
 A unit test verifies that every language has exactly the same keys as English.
+
+The language also decides the language of the home node's e-mails (address confirmation, password reset, account,
+legal and app token mails): the client sends it as `locale` (`PATCH /users/me`) when the app starts and the node has
+another one, and whenever the user switches the language under Settings → Language (`lib/mailLocale.ts`). The node
+writes English where it has no texts for the language.

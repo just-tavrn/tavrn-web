@@ -73,7 +73,7 @@ function CreateForm({ onClose, onCreated }: { onClose: () => void; onCreated: (i
         <Input name="room_name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={100} />
       </Field>
       <Field label={t("room.join_mode")}>
-        <select name="join_mode" value={joinMode} onChange={(e) => setJoinMode(e.target.value as "invite" | "public")} className="min-h-10 w-full rounded-md border border-line bg-bg-0 px-3 text-sm">
+        <select name="join_mode" value={joinMode} onChange={(e) => setJoinMode(e.target.value as "invite" | "public")} className="min-h-10 w-full rounded-md border border-line-strong bg-bg-0 px-3 text-sm">
           <option value="invite">{t("room.join_mode.invite")}</option>
           <option value="public">{t("room.join_mode.public")}</option>
         </select>

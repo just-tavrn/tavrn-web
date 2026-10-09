@@ -20,7 +20,7 @@ export function SoundEmojiField({ value, onChange, node, label }: { value: strin
         maxLength={300}
         placeholder="🎺"
         aria-label={label}
-        className="min-h-8 w-24 min-w-0 rounded-md border border-line bg-bg-0 px-2 text-sm text-fg-0 outline-none focus:border-accent"
+        className="min-h-8 w-24 min-w-0 rounded-md border border-line-strong bg-bg-0 px-2 text-sm text-fg-0 outline-none focus:border-accent"
         data-testid="sound-emoji-input"
       />
       <EmojiPicker label={t("soundboard.pick_emoji")} onPick={(e) => onChange(e.startsWith(":") ? "" : e)} />

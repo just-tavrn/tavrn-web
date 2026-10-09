@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate, Outlet, useLocation, useNavigate, useParams } from "react-router";
 import { api, publicApi } from "../lib/api";
 import { useAuth } from "../stores/auth";
-import { useNodeRealtime, useRealtime, useRealtimeState } from "../hooks/useRealtime";
-import { useT } from "../i18n";
-import { AppShell, useShell } from "../components/AppShell";
+import { useNodeRealtime, useRealtime } from "../hooks/useRealtime";
+import { useLocale, useT } from "../i18n";
+import { syncMailLocale } from "../lib/mailLocale";
+import { AppShell } from "../components/AppShell";
 import { Toaster } from "../components/Toaster";
-import { PresenceMenu } from "../components/PresenceMenu";
 import { NotificationBell } from "../components/NotificationCenter";
 import { useNotifications } from "../stores/notifications";
 import { usePush } from "../stores/push";
@@ -20,6 +20,7 @@ import { NodeBanner, NodeScope, NodeSessionBanner, useNode, useNodeUnreachable }
 import { skipUnlockChosen } from "./EncryptionPage";
 import { ChannelSidebar } from "./ChannelSidebar";
 import { RoomRail } from "../components/RoomRail";
+import { AccountBar } from "./AccountBar";
 import { MemberList } from "./MemberList";
 import { ConversationMembers, HomeSidebar } from "./DirectMessages";
 import { apiFor, connectNode, isHome, renewExpiring, useNodes } from "../stores/nodes";
@@ -35,53 +36,6 @@ import { useToasts } from "../stores/toasts";
 
 /** Renewal check for federated sessions (before the 7-day cap). */
 const RENEW_CHECK_MS = 10 * 60_000;
-
-function StatusDot() {
-  const t = useT();
-  const status = useRealtimeState((s) => s.status);
-  const color = status === "ready" ? "bg-brand-mint" : status === "closed" ? "bg-danger" : "bg-warn";
-  const label = t(`shell.status.${status}`);
-  return (
-    <span className="flex items-center gap-1.5 text-xs text-fg-2" title={label} data-testid="ws-status" data-status={status}>
-      <span className={`inline-block h-2 w-2 rounded-full ${color}`} aria-hidden="true" />
-      {label}
-    </span>
-  );
-}
-
-function Footer() {
-  const t = useT();
-  const user = useAuth((s) => s.user);
-  const remoteHome = useAuth((s) => !!s.home);
-  const navigate = useNavigate();
-  const { closeNav } = useShell();
-  return (
-    <div className="flex items-center gap-1 border-t border-line bg-bg-0 p-2">
-      <PresenceMenu />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium" data-testid="me-name">
-          {user?.display_name}
-        </p>
-        {/* Signed in with an account of another node: its full address, domain included (design note 9d). */}
-        {remoteHome && (
-          <p className="truncate text-[11px] text-fg-2" data-testid="me-address" title={t("auth.remote_home_hint", { domain: user?.domain ?? "" })}>
-            {user?.address}
-          </p>
-        )}
-        <StatusDot />
-      </div>
-      {user?.is_node_admin && !remoteHome && (
-        <button type="button" aria-label={t("admin.link")} title={t("admin.link")} className="min-h-10 min-w-10 rounded-md text-fg-2 hover:bg-bg-3 hover:text-fg-0" onClick={() => { closeNav(); navigate("/admin"); }}>
-          🛠
-        </button>
-      )}
-      <NotificationBell />
-      <button type="button" aria-label={t("user.settings")} title={t("user.settings")} className="min-h-10 min-w-10 rounded-md text-fg-2 hover:bg-bg-3 hover:text-fg-0" onClick={() => { closeNav(); navigate("/settings"); }}>
-        ⚙
-      </button>
-    </div>
-  );
-}
 
 /** Shown while this device cannot read encrypted data (not set up here, or locked and skipped). */
 function E2eeBanner() {
@@ -183,12 +137,30 @@ function useNotificationSetup(token: string | null, address: string | undefined)
  * node's size cap and the friends list (shared with the friends views through the query cache).
  */
 function usePrivacySetup(token: string | null, address: string | undefined) {
+  // The language of the node's mails follows the client's (lib/mailLocale.ts): checked at start, sent on a switch.
+  const locale = useLocale((s) => s.locale);
+  const mailLocale = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (!token || !address || mailLocale.current === undefined || mailLocale.current === locale) return;
+    void syncMailLocale(api, mailLocale.current, locale)
+      .then(() => {
+        mailLocale.current = locale;
+      })
+      .catch(() => undefined);
+  }, [token, address, locale]);
   const friends = useQuery({ queryKey: ["friends"], queryFn: () => api.friends.list(), enabled: !!token && !!address, staleTime: 30_000 });
   useEffect(() => {
     if (!token || !address) return;
+    mailLocale.current = undefined;
     void api.users
       .me()
-      .then((me) => usePrivacy.getState().hydrate(me.auto_preview))
+      .then((me) => {
+        usePrivacy.getState().hydrate(me.auto_preview);
+        mailLocale.current = me.locale ?? null;
+        return syncMailLocale(api, me.locale, useLocale.getState().locale).then((sent) => {
+          if (sent) mailLocale.current = useLocale.getState().locale;
+        });
+      })
       .catch(() => undefined);
     void api.node
       .info()
@@ -282,7 +254,7 @@ export function AppLayout() {
               )}
             </div>
             <VoiceBar />
-            <Footer />
+            <AccountBar />
           </div>
         }
         aside={

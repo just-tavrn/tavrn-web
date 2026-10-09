@@ -85,6 +85,9 @@ export function VoiceBar() {
   const overlay = <CallOverlay />;
   if (status === "idle" || !target) return overlay;
   const color = status === "connected" ? "text-ok" : "text-warn";
+  const level = status === "connected" ? BARS[quality] : 0;
+  // Voice is never sent unencrypted (VOICE.md), so the padlock is always there; the text names the quality.
+  const signal = t(status === "connected" ? `voice.signal.${quality}` : "voice.signal.connecting");
   return (
     <div className="border-t border-line bg-bg-0 px-2 py-1.5" data-testid="voice-bar" data-status={status} data-call={target.call || undefined}>
       {overlay}
@@ -100,16 +103,19 @@ export function VoiceBar() {
           title={t("voice.bar.open")}
         >
           <span className={`flex items-center gap-1.5 text-xs font-semibold ${color}`}>
-            <SignalBars level={status === "connected" ? BARS[quality] : 0} />
-            <span data-testid="voice-bar-status">{t(`voice.status.${status}`)}</span>
-            <span role="img" className="text-[10px]" aria-label={t("voice.encrypted")} title={t("voice.encrypted")}>
-              🔒
+            {/* Encryption and connection quality in one glyph: the padlock sits in the signal bars. */}
+            <span role="img" aria-label={signal} title={signal} className="inline-flex shrink-0" data-testid="voice-bar-signal" data-level={level}>
+              <SignalBars level={level} locked />
             </span>
-            {status === "connected" && <QualityBadge />}
+            <span className="min-w-0" data-testid="voice-bar-status">{t(`voice.status.${status}`)}</span>
           </span>
-          <span className="block truncate text-[11px] text-fg-2" data-testid="voice-bar-channel">
-            {names.channel}
-            {names.room && ` / ${names.room}`}
+          {/* The quality badge leads the channel line: next to the status it ran into the controls of a narrow sidebar. */}
+          <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-fg-2">
+            {status === "connected" && <QualityBadge />}
+            <span className="min-w-0 truncate" data-testid="voice-bar-channel">
+              {names.channel}
+              {names.room && ` / ${names.room}`}
+            </span>
           </span>
           {deafened && (
             <span className="block truncate text-[11px] text-warn" data-testid="voice-bar-deafened">

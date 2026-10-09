@@ -31,6 +31,12 @@ export interface MenuItem {
   keepOpen?: boolean;
   /** Short text on the right (shortcut, current value). */
   hint?: string;
+  /** Show the hint as a count badge (open reports). */
+  hintBadge?: boolean;
+  /** Accessible name when the label alone is not enough (a count in the hint). */
+  ariaLabel?: string;
+  /** Test id of the item's button. */
+  testId?: string;
 }
 
 export interface MenuSubmenu {
@@ -282,7 +288,9 @@ function MenuPanel({ entries, anchor, prefer, onClose, onCloseSub, label, depth,
               aria-expanded={e.kind === "submenu" ? open?.id === e.id : undefined}
               aria-description={e.disabled && e.reason ? e.reason : undefined}
               title={e.disabled ? e.reason : undefined}
+              aria-label={e.kind === "item" ? e.ariaLabel : undefined}
               data-menu-item={e.id}
+              data-testid={e.kind === "item" ? e.testId : undefined}
               className={`${ITEM} ${tone}`}
               onMouseEnter={() => {
                 if (!settled.current) return;
@@ -306,7 +314,7 @@ function MenuPanel({ entries, anchor, prefer, onClose, onCloseSub, label, depth,
                 </span>
               )}
               <span className="min-w-0 flex-1 truncate">{e.label}</span>
-              {e.hint && <span className="shrink-0 text-xs text-fg-2">{e.hint}</span>}
+              {e.hint && (e.kind === "item" && e.hintBadge ? <span className="min-w-4 shrink-0 rounded-full bg-danger-solid px-1 text-center text-[10px] font-semibold leading-4 text-white">{e.hint}</span> : <span className="shrink-0 text-xs text-fg-2">{e.hint}</span>)}
               {e.kind === "submenu" && <span aria-hidden="true" className="shrink-0 text-fg-2">›</span>}
             </button>
           );

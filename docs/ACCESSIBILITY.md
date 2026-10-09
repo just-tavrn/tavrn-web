@@ -13,7 +13,7 @@ tokens and the few styles that failed a contrast or size criterion were nudged (
 |---|---|---|
 | Playwright + axe-core | `@axe-core/playwright` scans the main screens with the tags `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa`, `wcag22a`, `wcag22aa` and `best-practice`. **Serious and critical WCAG violations fail the test**; moderate and minor findings and `best-practice`-only rules are logged and attached as `axe-findings` JSON. Runs on `chromium`, `mobile-android` and `tablet-chromium` as part of the normal Playwright run. | `e2e/tests/a11y.spec.ts` |
 | Playwright keyboard test | First Tab shows the skip link, Enter moves to the message list; the create-channel dialog keeps Tab inside, closes with Escape and gives the focus back; the emoji picker opens from the keyboard, takes the focus and returns it; the media viewer keeps Tab inside; Tab leaves the whiteboard canvas (no trap); new messages of others are announced and the setting mutes them; `<html lang>` follows the locale. | `e2e/tests/a11y.spec.ts` |
-| Vitest (static) | Every icon-only `<button>` has `aria-label`, `aria-labelledby` or `title`; every `<img>` has `alt`; every range input has a label and `aria-valuetext`; every `role="dialog"` is labelled; no `aria-label` on a plain `span`/`div`/`p` (ARIA prohibits names on generic elements). | `web/src/test/a11yStatic.test.ts` |
+| Vitest (static) | Every icon-only `<button>` has `aria-label`, `aria-labelledby` or `title`; every `<img>` has `alt`; every range input has a label and `aria-valuetext`; every `role="dialog"` is labelled; no `aria-label` on a plain `span`/`div`/`p` (ARIA prohibits names on generic elements); text fields, selects and text areas draw their border with `line-strong`, whose contrast against `bg-0`…`bg-3` (read from `styles.css`) is at least 3:1 (WCAG 1.4.11). | `web/src/test/a11yStatic.test.ts` |
 | Vitest (behaviour) | Dialog focus trap, Escape and focus return; field hint and error association; tab arrow keys; the feed and its announcements. | `web/src/components/a11y.test.tsx`, `web/src/stores/accessibility.test.ts` |
 
 Screens scanned (each on phone, tablet and desktop): sign-in, sign-in with an error, registration, forgot
@@ -21,7 +21,9 @@ password, invite; a text channel with messages (formatting, a reply, a code bloc
 the navigation drawer (phone), the composer with the emoji picker, a message context menu, the media viewer, the
 member list, a modal dialog (create channel), the search panel with results, a files channel with entries, all
 room settings tabs, all user settings tabs, Discover, Home; friends with an incoming request, a direct message,
-the whiteboard, a joined voice channel (fake microphone and camera) muted and unmuted; every admin tab.
+the whiteboard, a joined voice channel (fake microphone and camera) muted and unmuted, the voice bar and account
+bar; the room header menu, the account menu (also a node admin's) and the settings navigation with the admin link;
+every admin tab.
 
 Run it alone (with `E2E_NODE_BIN` or `E2E_NODE_IMAGE` set, README.md "End-to-end tests"): `cd e2e && npx playwright test tests/a11y.spec.ts --project chromium --project mobile-android
 --project tablet-chromium --workers=2`. `A11Y_REPORT_DIR=<dir>` writes every finding as JSON,
@@ -80,7 +82,12 @@ Before: 3 critical + 325 serious + 241 moderate + 25 minor nodes. After: 0 criti
   `aria-modal="true"`, labelled by their title, focus trap (`lib/focusTrap.ts`), Escape, focus return.
 - **Menus**: context menus and the "⋯" menus (`ContextMenu`) with `role="menu"`, roving tabindex, arrow keys,
   Home/End, submenus, Shift+F10 and the context menu key; the presence menu got the same keyboard model and
-  returns the focus to its button on Escape.
+  returns the focus to its button on Escape. The room header of the sidebar is one menu button inside the
+  sidebar's `h2` (`aria-haspopup="menu"`, `aria-expanded`; Enter or Space opens the room menu with its first item
+  focused); its accessible name is the room name, the node of a remote room and the number of open reports.
+- **Icons** in the sidebar bars are SVG (2 px stroke, `currentColor`, `components/icons.tsx`) on 40 px targets;
+  the voice bar's padlock sits in the signal bars and their text alternative names encryption and quality
+  ("Encrypted · connection good"), so neither depends on colour.
 - **Room rail folders** (`components/RoomRail.tsx`): rooms stay links in a list; a folder is a disclosure button
   (`aria-expanded`, `aria-controls` to the nested list of its rooms) named by its name, room count, mention or
   unread count and "contains the open room" (the folder colour is decoration only). ↑/↓, Home/End move through the
@@ -111,7 +118,8 @@ Before: 3 critical + 325 serious + 241 moderate + 25 minor nodes. After: 0 criti
 
 ### Design tokens
 
-Measured in `web/src/styles.css` (WCAG relative luminance):
+Measured in `web/src/styles.css` (WCAG relative luminance). The client has one theme (dark); there is no light
+theme to measure.
 
 | Token | On | Ratio | Status |
 |---|---|---|---|
@@ -122,7 +130,8 @@ Measured in `web/src/styles.css` (WCAG relative luminance):
 | `accent-text` on `accent` | | 6.28 | ok |
 | white on `danger-solid` | | 5.97 | ok |
 | `ok`, `warn`, `danger` | `bg-0`…`bg-3` | ≥ 5.05 | ok |
-| `line` `#2f3542` (dividers, input borders) | `bg-1` | 1.43 | see known gaps |
+| `line` `#2f3542` (dividers, decorative) | `bg-1` | 1.43 | ok (not needed to identify anything) |
+| **`line-strong`** `#737b8c` (borders of text fields, selects, text areas, the composer) | `bg-0`…`bg-3` | 4.45 … 3.34 | added (WCAG 1.4.11) |
 | initials on `hsl(hue 45% 40%)` | | 3.2 … 7.6 → ≥ 4.5 | bright hues darker |
 
 ## Manual screen reader walkthrough
@@ -152,10 +161,6 @@ be run by a person before claiming conformance.
 
 ## Known gaps
 
-- **Input borders** (`line`, 1.43:1 against the card background) are below the 3:1 non-text contrast of WCAG
-  1.4.11 when the border alone identifies a field. Fields are also identified by their label and the darker fill,
-  which many audits accept; raising the token would visibly change every divider, so this needs an owner decision
-  (a separate `line-strong` token for form controls is the minimal fix).
 - The composer's `textarea` has `role="combobox"` for the slash command palette; ARIA in HTML does not list it as
   allowed on `textarea` (axe `aria-allowed-role`, minor). Screen readers handle it well; kept on purpose.
 - The whiteboard canvas (Excalidraw) is a drawing surface: its shapes are not accessible to screen readers beyond
@@ -184,8 +189,6 @@ the European standard EN 301 549 for web content.
 content listed below is not yet accessible.
 
 **Non-accessible content.**
-- Form field borders have a contrast below 3:1 against their background (WCAG 1.4.11). Fields are identified by
-  their visible labels.
 - The whiteboard is a drawing surface; drawings are not available as text beyond the written labels shown next
   to the board (WCAG 1.1.1).
 - Live voice and video conversations are not captioned (WCAG 1.2.4, live content).

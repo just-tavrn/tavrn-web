@@ -11,6 +11,7 @@ import { useNotifications } from "../stores/notifications";
 import { rectOf, useFloating, type AnchorRect } from "../lib/position";
 import { useShell } from "./AppShell";
 import { formatFullTime } from "../lib/format";
+import { BellIcon } from "./icons";
 
 const ICON = { mention: "@", dm: "✉", message: "#", call: "📞", legal: "§", report: "⚑" } as const;
 
@@ -81,7 +82,8 @@ function NotificationPanel({ anchor, onClose }: { anchor: AnchorRect; onClose: (
   );
 }
 
-export function NotificationBell({ className = "" }: { className?: string }) {
+/** The bell with the unseen count; `className` sets its display (the account bar hides it on phones). */
+export function NotificationBell({ className = "inline-flex" }: { className?: string }) {
   const t = useT();
   const unseen = useNotifications((s) => s.entries.filter((e) => !e.read).length);
   const [anchor, setAnchor] = useState<AnchorRect | null>(null);
@@ -95,14 +97,14 @@ export function NotificationBell({ className = "" }: { className?: string }) {
         title={t("notify.bell")}
         aria-haspopup="dialog"
         aria-expanded={!!anchor}
-        className={`relative min-h-10 min-w-10 rounded-md text-fg-2 hover:bg-bg-3 hover:text-fg-0 ${className}`}
+        className={`relative min-h-10 min-w-10 items-center justify-center rounded-md text-fg-2 hover:bg-bg-3 hover:text-fg-0 ${className}`}
         onClick={(e) => {
           if (anchor) return setAnchor(null);
           setAnchor(rectOf(e.currentTarget));
           useNotifications.getState().markAllRead();
         }}
       >
-        <span aria-hidden="true">🔔</span>
+        <BellIcon size={22} />
         {unseen > 0 && (
           <span className="absolute right-0.5 top-0.5 min-w-4 rounded-full bg-danger-solid px-1 text-center text-[10px] font-semibold leading-4 text-white" data-testid="notification-count">
             {unseen > 99 ? "99+" : unseen}

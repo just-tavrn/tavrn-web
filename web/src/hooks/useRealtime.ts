@@ -21,7 +21,8 @@ import { mayManageRoom } from "../lib/rooms";
 import { mapMessages, prependMessage, type MessagePages } from "../lib/messagePages";
 import { threadHandlers, threadMessage } from "../threads/realtime";
 import { useUnread } from "../stores/unread";
-import { homeDomain, refreshNode, useNodes } from "../stores/nodes";
+import { apiFor, homeDomain, refreshNode, useNodes } from "../stores/nodes";
+import { loadFollowedThreads } from "../threads/loadFollowed";
 import { unindexConversation, unindexMessages } from "../search/local";
 import { usePresence } from "../stores/presence";
 import { useNotifications } from "../stores/notifications";
@@ -253,7 +254,7 @@ export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: 
         );
       }
     }),
-    ...threadHandlers(socket, queryClient),
+    ...threadHandlers(socket, queryClient, me),
     socket.on<{ conversation_id: string; last_read_message_id: string }>("read.update", (d) => useUnread.getState().read(d.conversation_id, d.last_read_message_id)),
     // Room channels carry `channel_id`, DMs and group DMs `conversation_id`.
     socket.on<{ channel_id?: string; conversation_id?: string; user_id: string }>("typing", (d) => {
@@ -343,6 +344,8 @@ export function useRealtime() {
         // (Re)connected: Welcomes that arrived while the socket was down, and own leaves waiting for removal.
         const home = useAuth.getState().user?.domain;
         if (status === "ready" && home) {
+          // Followed threads of every room, so their messages count and notify before a room is opened (§7e).
+          void loadFollowedThreads({ key: home, client: api, queryClient });
           void getMls()
             .then(async (m) => {
               await m?.processWelcomes(home);
@@ -459,6 +462,7 @@ export function useNodeRealtime() {
         onStatus: (status) => {
           // Connected (again): DMs started on that node wait there as Welcomes (§6.1); own leaves to remove.
           if (status === "ready") {
+            void loadFollowedThreads({ key: domain, client: apiFor(domain), queryClient });
             void getMls()
               .then(async (m) => {
                 await m?.processWelcomes(domain);

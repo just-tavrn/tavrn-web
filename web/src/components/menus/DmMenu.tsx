@@ -83,7 +83,7 @@ export function useDmMenu(c: Conversation & { node: string }, meAddress: string 
 
   const entries = menu.open
     ? dmMenu(
-        { unread, kind: c.kind === "group" ? "group" : "dm", peer, notify: notify.state, fullHistory: fullHistory.value },
+        { unread, kind: c.kind === "group" ? "group" : "dm", peer, notify: notify.state, fullHistory: fullHistory.value, fullHistoryUsage: fullHistory.usage },
         {
           ...notify.actions,
           toggleFullHistory: fullHistory.toggle,
