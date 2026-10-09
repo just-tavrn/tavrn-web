@@ -6,7 +6,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { expect, type APIRequestContext, type Page } from "@playwright/test";
-import { enrollTotp, uniqueName, type Account } from "./helpers";
+import { ADULT_DOB, enrollTotp, ensureDateOfBirth, uniqueName, type Account } from "./helpers";
 
 const plus = (port: string, n: number) => String(Number(port) + n);
 export const LEGAL_NODE = `http://127.0.0.1:${process.env.E2E_NODE_PORT_LEGAL ?? plus(process.env.E2E_NODE_PORT ?? "8080", 6)}`;
@@ -26,7 +26,7 @@ export async function registerOnLegal(request: APIRequestContext, prefix: string
   const password = `passwort-${username}-xyz`;
   let resp = null;
   for (let i = 0; i < 3; i++) {
-    resp = await request.post(`${LEGAL_NODE}/api/v1/auth/register`, { data: { username, password, device_name: "e2e", accept_terms: await termsVersion(request) } });
+    resp = await request.post(`${LEGAL_NODE}/api/v1/auth/register`, { data: { username, password, device_name: "e2e", date_of_birth: ADULT_DOB, accept_terms: await termsVersion(request) } });
     if (resp.status() !== 400) break;
   }
   if (!resp!.ok()) throw new Error(`register: ${resp!.status()} ${await resp!.text()}`);
@@ -59,7 +59,10 @@ export async function legalAdmin(request: APIRequestContext): Promise<Account> {
     const cached: Account | null = existsSync(CACHE) ? JSON.parse(readFileSync(CACHE, "utf8")) : null;
     if (cached) {
       const me = await request.get(`${LEGAL_NODE}/api/v1/users/me/terms`, { headers: auth(cached.token) });
-      if (me.ok()) return cached;
+      if (me.ok()) {
+        await ensureDateOfBirth(request, cached.token, LEGAL_NODE);
+        return cached;
+      }
       // An expired access token: refresh it.
       const r = await request.post(`${LEGAL_NODE}/api/v1/auth/refresh`, { data: { refresh_token: cached.refresh } });
       if (r.ok()) {

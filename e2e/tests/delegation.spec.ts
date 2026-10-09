@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { confirmRecoveryCodes, confirmRecoveryKey, logoutViaUi, openNavIfMobile, registerViaUi, tokenOf, uniqueName } from "./helpers";
+import { ADULT_DOB, confirmRecoveryCodes, confirmRecoveryKey, logoutViaUi, openNavIfMobile, registerViaUi, tokenOf, uniqueName } from "./helpers";
 import { A, B, BROWSER_API_A, FEDERATION_BROWSER, NODE_A, NODE_B, NODE_PORT_A, WEB_A, WEB_B, chromiumOnly } from "./federation-helpers";
 
 test.use(FEDERATION_BROWSER);
@@ -95,6 +95,7 @@ test.describe("Identity domain and node host (delegation)", () => {
     await page.getByLabel("Benutzername", { exact: true }).fill(username);
     await page.getByLabel("Passwort", { exact: true }).fill(password);
     await page.getByLabel("Passwort wiederholen", { exact: true }).fill(password);
+    await page.getByLabel("Geburtsdatum", { exact: true }).fill(ADULT_DOB);
     await page.getByRole("button", { name: "Konto erstellen" }).click();
     await page.getByTestId("choose-passkey").click();
     await page.getByLabel("Name des Passkeys", { exact: true }).fill("Schlüssel A");

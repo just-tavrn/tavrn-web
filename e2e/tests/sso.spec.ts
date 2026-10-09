@@ -2,7 +2,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
-import { NODE, adminAccount, confirmRecoveryKey, createRoomViaApi, enrollTotp, loginAs, nextTotpCode, registerViaApi, tokenOf, uniqueName } from "./helpers";
+import { ADULT_DOB, NODE, adminAccount, completeDateOfBirth, confirmRecoveryKey, createRoomViaApi, enrollTotp, loginAs, nextTotpCode, registerViaApi, tokenOf, uniqueName } from "./helpers";
 import { createRole, openMembers } from "./menu-helpers";
 import { logoutViaUi, openNavIfMobile } from "./helpers";
 
@@ -34,6 +34,8 @@ async function firstSsoLogin(page: Page, username: string, groups: string[] = []
   // No second factor: straight to the encryption setup (APPLICATIONS.md §8.4).
   await expect(page.getByTestId("encryption-title")).toHaveText("Dein Wiederherstellungsschlüssel", { timeout: 20_000 });
   await expect(page.getByTestId("encryption-account")).toHaveText(`${username}@localhost`);
+  // A provisioned account adds its date of birth first (PROTOCOL.md §5e).
+  await completeDateOfBirth(page);
 }
 
 /** Serializes work on node-wide state (the group map, the break-glass account) across parallel workers. */
@@ -191,7 +193,7 @@ test.describe("TAVRN_OIDC_ONLY", () => {
     if (existsSync(CACHE)) return JSON.parse(readFileSync(CACHE, "utf8")) as BreakGlass;
     const username = "ssoadmin";
     const password = "passwort-ssoadmin-xyz";
-    const reg = await request.post(`${SSO_NODE}/api/v1/auth/register`, { data: { username, password, device_name: "e2e" } });
+    const reg = await request.post(`${SSO_NODE}/api/v1/auth/register`, { data: { username, password, device_name: "e2e", date_of_birth: ADULT_DOB } });
     if (reg.status() === 409) throw new Error("ssoadmin exists without data-dev/e2e-sso/ssoadmin.json: delete data-dev/e2e-sso.db and data-dev/e2e-sso");
     expect(reg.status(), await reg.text()).toBe(201);
     const totp = await enrollTotp(request, (await reg.json()).preauth_token, SSO_NODE);
