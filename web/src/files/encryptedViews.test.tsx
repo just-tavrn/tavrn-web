@@ -78,6 +78,16 @@ describe("your files of a locked channel", () => {
     await waitFor(() => expect(deleted).toHaveLength(2));
   });
 
+  it("says entry in the singular for one entry", async () => {
+    mockFetch({ "/files/mine": { body: { entries: [entry("01J9ZK3G5M8Q2W4E6R8T0Y2VF1", "file", 2048)], next_after: null, files: 1, folders: 0, bytes: 2048 } } });
+    const user = userEvent.setup();
+    renderWithProviders(<YourFilesPanel roomId="R1" channelId="C1" onChanged={() => undefined} />);
+    expect(await screen.findByTestId("your-files-summary")).toHaveTextContent("Your files: 1 entry, 2.0 KB");
+    await user.click(screen.getByTestId("your-files-all"));
+    await user.click(screen.getByTestId("your-files-delete"));
+    expect(screen.getByTestId("your-files-confirm-text")).toHaveTextContent("Delete 1 of your entries");
+  });
+
   it("skips entries that are gone already (inside a deleted folder)", async () => {
     const gone = Object.assign(new Error("gone"), { status: 404 });
     let n = 0;

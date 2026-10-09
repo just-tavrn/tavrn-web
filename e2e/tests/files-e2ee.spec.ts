@@ -133,7 +133,7 @@ test.describe("Encrypted files channels", () => {
     await locked.goto(filesUrl);
     const panel = locked.getByTestId("your-files");
     await expect(panel).toBeVisible(CRYPTO);
-    await expect(locked.getByTestId("your-files-summary")).toContainText("Deine Dateien: 1 Einträge");
+    await expect(locked.getByTestId("your-files-summary")).toContainText("Deine Dateien: 1 Eintrag,");
     await expect(locked.getByTestId("file-row")).toHaveCount(0);
     await axe(locked, '[data-testid="your-files"]');
     await locked.getByTestId("your-files-all").check();

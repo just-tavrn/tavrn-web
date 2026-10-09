@@ -63,7 +63,7 @@ export function YourFilesPanel({ roomId, channelId, onChanged }: { roomId: strin
         <p className="text-xs text-fg-2">{t("files.your_files_hint")}</p>
         {totals && (
           <p className="text-sm text-fg-1" data-testid="your-files-summary">
-            {t("files.your_files_summary", { count: totals.files + totals.folders, size: formatBytes(totals.bytes) })}
+            {t(totals.files + totals.folders === 1 ? "files.your_files_summary_one" : "files.your_files_summary", { count: totals.files + totals.folders, size: formatBytes(totals.bytes) })}
           </p>
         )}
       </div>
@@ -116,7 +116,7 @@ export function YourFilesPanel({ roomId, channelId, onChanged }: { roomId: strin
         onConfirm={async () => {
           try {
             const n = await deleteOwn((id) => api.files.delete(roomId, channelId, id), confirm ?? []);
-            useToasts.getState().push({ kind: "info", title: t("files.your_files_deleted", { count: n }) });
+            useToasts.getState().push({ kind: "info", title: t(n === 1 ? "files.your_files_deleted_one" : "files.your_files_deleted", { count: n }) });
           } catch (err) {
             toastError(err);
           }
