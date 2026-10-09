@@ -72,6 +72,16 @@ export async function createPost(p: NewPost): Promise<string> {
   const q = qualify(p.domain, p.channelId);
   if (p.encrypted) {
     if (!p.mls) throw new Error("e2ee locked");
+    // The client's thread id goes into the signed context of the first message (ENCRYPTION.md §5.2); a node without
+    // client ids (or one that refuses this id) gets the first message without a context, as older clients send it.
+    if (p.clientIds) {
+      const id = (p.newId ?? newUlid)();
+      try {
+        return await startThread({ ...base, id, message: await p.mls.encrypt(q, content, { ctx: { thread_id: id, reply_to: null } }) });
+      } catch (e) {
+        if (!(e instanceof TavrnApiError && e.code === "thread.id_invalid")) throw e;
+      }
+    }
     return startThread({ ...base, message: await p.mls.encrypt(q, content) });
   }
   const id = p.clientIds && p.mls ? (p.newId ?? newUlid)() : undefined;

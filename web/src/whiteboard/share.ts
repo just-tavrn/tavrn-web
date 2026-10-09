@@ -34,7 +34,7 @@ export async function shareImage(target: ShareTarget, png: Blob, body: string, f
     const { blob, meta } = await encryptAttachment(file);
     const stored = await api.attachments.uploadToConversation(target.conversationId, blob, "");
     if (stored.sha256 !== meta.sha256) throw new ShareError("upload_mismatch");
-    const sealed = await mls.encrypt(q, { type: "text", body, attachments: [{ id: stored.id, ...meta }] });
+    const sealed = await mls.encrypt(q, { type: "text", body, attachments: [{ id: stored.id, ...meta }] }, { ctx: { thread_id: null, reply_to: null } });
     await api.conversations.send(target.conversationId, { ...sealed, attachments: [stored.id] });
     return;
   }

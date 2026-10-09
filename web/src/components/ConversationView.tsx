@@ -21,7 +21,8 @@ import { archiveMessages, pageWithArchive } from "../history/local";
 import { rememberRoom } from "../search/sync";
 import { SearchButton } from "../search/SearchPanel";
 import { useDecrypted, useE2eeConversation, usePlainSignatures } from "../hooks/useE2eeConversation";
-import { encryptAttachment, encryptCommandArgs, grantsHistory, parseHistoryPolicy, qualify, signedAttachments, type ContentAttachment } from "@tavrn/e2ee";
+import { encryptAttachment, encryptCommandArgs, grantsHistory, parseHistoryPolicy, qualify, signedAttachments, type ContentAttachment, type MessageContext } from "@tavrn/e2ee";
+import { withFreshEpoch } from "../lib/epochRetry";
 import { historyPending, historyReceive } from "../crypto/history";
 import { HistoryRestoreBanner } from "./HistoryRestoreBanner";
 import { useMyRestoreState } from "../history/restore";
@@ -358,11 +359,27 @@ export function ConversationView(p: ConversationViewProps) {
     return stored;
   };
 
-  /** Plaintext content or `{ content, epoch }` of the encrypted content object. */
-  const seal = async (content: Record<string, unknown>): Promise<{ content: unknown; epoch?: number }> => {
+  /**
+   * Plaintext content or `{ content, epoch }` of the encrypted content object, with the envelope's thread and reply
+   * signed inside (ENCRYPTION.md §5.2). The roster is checked again if commits arrived just before (§4.6): the members
+   * and the ghosts this view shows go along.
+   */
+  const seal = async (content: Record<string, unknown>, ctx: MessageContext): Promise<{ content: unknown; epoch?: number }> => {
     if (!p.encrypted) return { content };
     if (!e2ee.mls) throw new Error(t("e2ee.composer_locked"));
-    return e2ee.mls.encrypt(q, content);
+    try {
+      return await e2ee.mls.encrypt(q, content, { ctx, ...(p.members ? { members: p.members, noBots } : {}), knownGhosts: e2ee.ghosts.map((g) => g.identity) });
+    } catch (e) {
+      // A device joined that nobody was shown yet: the warning has to be acknowledged again.
+      if ((e as { name?: string; code?: string }).name === "MlsError" && (e as { code?: string }).code === "ghost") {
+        useMlsUi.setState((st) => {
+          const ghostAck = { ...st.ghostAck };
+          delete ghostAck[conversationId];
+          return { ghostAck };
+        });
+      }
+      throw e;
+    }
   };
 
   const send = async ({ body, attachmentIds, gif, preview, spoilerIds }: SendPayload) => {
@@ -389,7 +406,6 @@ export function ConversationView(p: ConversationViewProps) {
           .filter((a): a is ContentAttachment => !!a)
           .map((a) => (spoilerIds.includes(a.id) ? { ...a, spoiler: true } : a));
       }
-      const sealed = await seal(content);
       // Plaintext: device signature over the envelope fields and the content (FEDERATION.md §10.3),
       // best effort (no device key yet: unsigned).
       let signature: string | null = null;
@@ -400,7 +416,10 @@ export function ConversationView(p: ConversationViewProps) {
         }
       }
       const spoilers = !p.encrypted && spoilerIds.length ? { spoilers: spoilerIds.filter((id) => attachmentIds.includes(id)) } : {};
-      const created = await api.conversations.send(conversationId, { ...sealed, attachments: attachmentIds, mentions, mentions_everyone, reply_to_id: reply, ...spoilers, ...(signature ? { signature } : {}), ...(threadId ? { thread_id: threadId } : {}) });
+      const created = await withFreshEpoch(p.encrypted ? e2ee.mls : null, q, async () => {
+        const sealed = await seal(content, { thread_id: threadId ?? null, reply_to: reply });
+        return api.conversations.send(conversationId, { ...sealed, attachments: attachmentIds, mentions, mentions_everyone, reply_to_id: reply, ...spoilers, ...(signature ? { signature } : {}), ...(threadId ? { thread_id: threadId } : {}) });
+      });
       setReplyTo(null);
       for (const id of attachmentIds) {
         uploadKeys.current.delete(id);
@@ -423,12 +442,15 @@ export function ConversationView(p: ConversationViewProps) {
       const previous = m.encrypted ? (decrypted[m.id]?.ok ? (decrypted[m.id] as { content: Record<string, unknown> }).content : null) : (m.content as Record<string, unknown>);
       if (!previous) return;
       const next = { ...previous, type: previous.type === "action" ? "action" : "text", body };
-      const sealed = await seal(next);
       // Edits are signed anew by the editing device (§10.3); the bound attachments stay.
       const signature = !p.encrypted && e2ee.mls
         ? e2ee.mls.signPlaintext(q, { reply_to: m.reply_to_id ?? null, thread_id: m.thread_id ?? null, mentions_everyone: m.mentions_everyone, mentions: m.mentions, attachments: signedAttachments(m.attachments ?? []) }, next)
         : null;
-      updateMessage(await api.conversations.edit(conversationId, m.id, { ...sealed, mentions: m.mentions, mentions_everyone: m.mentions_everyone, ...(signature ? { signature } : {}) }));
+      const edited = await withFreshEpoch(p.encrypted ? e2ee.mls : null, q, async () => {
+        const sealed = await seal(next, { thread_id: m.thread_id ?? null, reply_to: m.reply_to_id ?? null });
+        return api.conversations.edit(conversationId, m.id, { ...sealed, mentions: m.mentions, mentions_everyone: m.mentions_everyone, ...(signature ? { signature } : {}) });
+      });
+      updateMessage(edited);
     } catch (e) {
       toastError(e);
       throw e;
