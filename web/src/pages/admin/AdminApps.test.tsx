@@ -237,6 +237,25 @@ describe("AdminPage: SSO group map tab", () => {
     expect(Object.keys(doc.map)).toEqual(["devs"]);
   });
 
+  it("names mapped rooms beyond the first page of the node's rooms", async () => {
+    // The node lists its rooms by id, 100 at a time: a mapped room further on is looked up from just below its id.
+    const first = Array.from({ length: 100 }, (_, i) => ({ id: `01J9A${String(i).padStart(21, "0")}`, name: `Raum ${i}`, owner: null, members: 1, roles: [] }));
+    mockFetch({
+      "/api/v1/node": nodeInfo(["sso.oidc"]),
+      "/admin/sso/group-map": { body: { map: { devs: { rooms: [{ room: ROOM, roles: [ROLE] }] } }, fixed: false, sync: "add" } },
+      "/admin/rooms": (_init, url) => {
+        const after = new URL(url, "http://x").searchParams.get("after");
+        if (after === null) return { body: first };
+        return { body: after === ROOM.slice(0, -1) ? [{ id: ROOM, name: "Guild", owner: "alice@t.local", members: 3, roles: [{ id: ROLE, name: "Staff", position: 1 }] }] : [] };
+      },
+    });
+    renderAdmin("/admin/sso");
+    const row = await screen.findByTestId("admin-sso-mapping");
+    await waitFor(() => expect(within(row).getByTestId("admin-sso-mapping-room")).toHaveTextContent("Guild"));
+    expect(row).toHaveTextContent("Staff");
+    expect(row).not.toHaveTextContent(ROOM);
+  });
+
   it("shows the offending entry of an invalid map", async () => {
     mockFetch({
       "/api/v1/node": nodeInfo(["sso.oidc"]),
