@@ -18,6 +18,7 @@ import { BotsAllowedIcon, LockMark, NoBotsIcon, UnreadBadges, useHasUnread } fro
 import { botMarker } from "../lib/botAccess";
 import { VoiceChannelRow } from "../voice/ui/VoiceChannelRow";
 import { MenuButton } from "../components/ContextMenu";
+import { AdultsOnlyBadge } from "../components/age/LockedChannel";
 import { useChannelMenu } from "../components/menus/ChannelMenu";
 import { mutedNow, useNotifications } from "../stores/notifications";
 import { DEFAULT_EXPIRY_HOURS, expiryChoices } from "../lib/inviteExpiry";
@@ -74,6 +75,7 @@ function ChannelLink({ room, channel, onClick }: { room: RoomDetail; channel: Ch
         <MutedMark conversationId={channel.id} roomId={room.id} />
         {botMarker(channel, room) === "no_bots" && <NoBotsIcon />}
         {botMarker(channel, room) === "bots_allowed" && <BotsAllowedIcon />}
+        {channel.age_gate_effective === "adults_only" && <AdultsOnlyBadge />}
       </NavLink>
       <MenuButton menu={menu} label={t("menu.channel.open", { name: channelName(channel) })} className="pointer-events-none absolute right-1 bg-bg-1 opacity-0 focus:pointer-events-auto focus:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100 pointer-coarse:hidden" testId="channel-menu-button" />
       {overlay}

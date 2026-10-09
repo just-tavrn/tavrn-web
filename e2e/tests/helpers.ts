@@ -110,14 +110,41 @@ function toAccount(username: string, password: string, session: Session, totp: {
   };
 }
 
+/** The date of birth the helpers register with: an adult (protocol PROTOCOL.md §5e). */
+export const ADULT_DOB = "1990-01-01";
+
+/** A date of birth `years` years ago today (UTC), e.g. a 16-year-old for the age gate specs. */
+export function bornYearsAgo(years: number): string {
+  const d = new Date();
+  d.setUTCFullYear(d.getUTCFullYear() - years);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Accounts of databases from before `age.v1` (cached admins of earlier runs) have no date of birth yet: add the adult
+ * default once (a second call answers 409 and changes nothing).
+ */
+export async function ensureDateOfBirth(request: APIRequestContext, token: string, base = NODE): Promise<void> {
+  await request.put(`${base}/api/v1/users/me/date-of-birth`, { headers: { Authorization: `Bearer ${token}` }, data: { date_of_birth: ADULT_DOB } });
+}
+
+/** The blocking "add your date of birth" dialog (accounts provisioned by single sign-on): fills it in. */
+export async function completeDateOfBirth(page: Page, dateOfBirth = ADULT_DOB): Promise<void> {
+  const dialog = page.getByTestId("dob-dialog");
+  await expect(dialog).toBeVisible({ timeout: 20_000 });
+  await dialog.getByLabel("Geburtsdatum", { exact: true }).fill(dateOfBirth);
+  await page.getByTestId("dob-save").click();
+  await expect(dialog).toHaveCount(0);
+}
+
 /**
  * Creates an account over the API, including the mandatory TOTP enrollment (faster than the UI). `base`
  * selects the node (the federation specs use a.test and b.test).
  */
-export async function registerViaApi(request: APIRequestContext, prefix = "user", base = NODE): Promise<Account> {
+export async function registerViaApi(request: APIRequestContext, prefix = "user", base = NODE, dateOfBirth = ADULT_DOB): Promise<Account> {
   const username = uniqueName(prefix);
   const password = `passwort-${username}-xyz`;
-  const resp = await post(request, "/auth/register", { username, password, device_name: "e2e" }, undefined, base);
+  const resp = await post(request, "/auth/register", { username, password, device_name: "e2e", date_of_birth: dateOfBirth }, undefined, base);
   if (!resp.ok()) throw new Error(`register: ${resp.status()} ${await resp.text()}`);
   const pre = await resp.json();
   const totp = await enrollTotp(request, pre.preauth_token, base);
@@ -255,10 +282,13 @@ export async function adminAccount(request: APIRequestContext): Promise<Account>
     const cached: Account | null = existsSync(ADMIN_CACHE) ? JSON.parse(readFileSync(ADMIN_CACHE, "utf8")) : null;
     if (cached) {
       const me = await request.get(`${NODE}/api/v1/users/me`, { headers: { Authorization: `Bearer ${cached.token}` } });
-      if (me.ok()) return cached;
+      if (me.ok()) {
+        await ensureDateOfBirth(request, cached.token);
+        return cached;
+      }
     }
     let account: Account;
-    const reg = await post(request, "/auth/register", { username, password, device_name: "e2e" });
+    const reg = await post(request, "/auth/register", { username, password, device_name: "e2e", date_of_birth: ADULT_DOB });
     if (reg.ok()) {
       const totp = await enrollTotp(request, (await reg.json()).preauth_token);
       account = toAccount(username, password, totp.session!, totp);
@@ -275,6 +305,7 @@ export async function adminAccount(request: APIRequestContext): Promise<Account>
     } else {
       throw new Error(`admin account: ${reg.status()} ${await reg.text()}`);
     }
+    await ensureDateOfBirth(request, account.token);
     writeFileSync(ADMIN_CACHE, JSON.stringify(account));
     return account;
   });
@@ -326,7 +357,7 @@ export async function enrollTotpInUi(page: Page): Promise<{ totpSecret: string; 
 }
 
 /** Full registration through the wizard with TOTP; ends in the app. */
-export async function registerViaUi(page: Page, opts: { prefix?: string; displayName?: string; web?: string; domain?: string } = {}): Promise<UiAccount> {
+export async function registerViaUi(page: Page, opts: { prefix?: string; displayName?: string; web?: string; domain?: string; dateOfBirth?: string } = {}): Promise<UiAccount> {
   const username = uniqueName(opts.prefix ?? "ui");
   const password = `passwort-${username}-xyz`;
   await page.goto(`${opts.web ?? ""}/login`);
@@ -334,6 +365,7 @@ export async function registerViaUi(page: Page, opts: { prefix?: string; display
   await page.getByLabel("Benutzername", { exact: true }).fill(username);
   await page.getByLabel("Passwort", { exact: true }).fill(password);
   await page.getByLabel("Passwort wiederholen", { exact: true }).fill(password);
+  await page.getByLabel("Geburtsdatum", { exact: true }).fill(opts.dateOfBirth ?? ADULT_DOB);
   if (opts.displayName) await page.getByLabel("Anzeigename (optional)", { exact: true }).fill(opts.displayName);
   await page.getByRole("button", { name: "Konto erstellen" }).click();
   await expect(page.getByRole("heading", { name: "Zweiten Faktor einrichten" })).toBeVisible();

@@ -115,6 +115,11 @@ Before: 3 critical + 325 serious + 241 moderate + 25 minor nodes. After: 0 criti
   pulses, the speaking glow, the composer growth, cue indicators); the speaking ring stays static.
 - **Language**: `<html lang>` follows the chosen locale (set at start and on every change).
 - **Headings**: one `h1` per page (the channel or page title, the logo on sign-in), sections `h2`.
+- **Date of birth and age gates** (`age.v1`): the date of birth is a native date input with a visible label, a hint
+  and an error text in its accessible description (`aria-invalid` while wrong); the blocking dialog is a labelled modal
+  with the focus inside; the "18+" badge has the name "Adults only"; the locked channel is a labelled section with a
+  heading. `e2e/tests/age.spec.ts` runs axe (WCAG A/AA, serious and critical fail) on the registration form, the room
+  settings, the invite page, the locked channel and the dialog, on the desktop and the phone project.
 
 ### Design tokens
 

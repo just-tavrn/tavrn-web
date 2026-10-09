@@ -20,6 +20,28 @@ Without the recovery key the client offers a degraded mode (plaintext channels o
 conversations stay locked) or an identity reset (old encrypted history is lost). Details:
 [PROTOCOL.md](https://github.com/just-tavrn/tavrn-protocol/blob/main/PROTOCOL.md) §5a, [ENCRYPTION.md](https://github.com/just-tavrn/tavrn-protocol/blob/main/ENCRYPTION.md) §2.4.
 
+## Date of birth and age gates
+
+Nodes with `age.v1` (protocol PROTOCOL.md §5e) ask every account for its date of birth.
+
+- **Registration** (password, passkey and the connect page of the apps all use the same form) has a required
+  "Date of birth" field: a native date input with a visible label, a hint that says what the node does with it and an
+  error text linked to the field. The client checks the date like the node does (a real date between 1900-01-01 and
+  today, at least the node's `age.minimum_age` from `GET /node`) before it sends anything.
+- **Accounts without a date of birth** (created before `age.v1`, or provisioned by single sign-on) see a blocking
+  dialog "Please add your date of birth" (`components/age/DateOfBirthGate.tsx`) as soon as `GET /users/me` reports the
+  tier `unknown`; the node answers `age.status_required` everywhere else until then. The only other way out is
+  signing out. The date is set once; corrections go through the node operator.
+- **Room settings → Overview** and **Room settings → Channels** have an "Age restriction" selector (Everyone or Adults
+  only (18+)) with an explanation of what it enforces; it is applied at once. The node lets only adults switch it on.
+- **Discover** lists gated rooms only to adults (the directory request carries the session of an account of this node)
+  and marks them "18+". **Invite links** to a gated room tell users under 18 that they cannot join and disable the
+  button.
+- **Gated channels** stay in the channel list with an "18+" badge. For users under 18 (and of unknown age) the channel
+  view is a notice "This channel is for adults only" instead of the messages, the composer, the previews or the voice
+  stage (`lib/age.ts` `useChannelLock`).
+- The client never shows another user's age or status; only the own status from `GET /users/me` decides what is locked.
+
 ## Several nodes in one client
 
 The web client is a client of several nodes at once. Rooms of other nodes appear in the room rail under

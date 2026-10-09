@@ -12,7 +12,7 @@ import { useUnread } from "../stores/unread";
 const channel = (id: string, kind: string, name: string, position: number) => ({ id, room_id: "r1", category_id: null, kind, name, topic: "", position, encrypted: false, sync_with_category: false, slowmode_secs: 0, bitrate_kbps: 64, user_limit: 0, system_name: null });
 const perms = (...bits: bigint[]) => bits.reduce((a, b) => a | b, 0n).toString();
 const room = (my_permissions: string): RoomDetail => ({
-  id: "r1", name: "Gilde der sehr langen Raumnamen", description: "", rules: "", join_mode: "invite", owner_id: "owner", icon_blob_id: null, icon_animated: false, banner_blob_id: null, created_at: "", discoverable: false, no_bots: false, bots_in_encrypted_channels: "allowed",
+  id: "r1", name: "Gilde der sehr langen Raumnamen", description: "", rules: "", join_mode: "invite", owner_id: "owner", icon_blob_id: null, icon_animated: false, banner_blob_id: null, created_at: "", discoverable: false, age_gate: "none", no_bots: false, bots_in_encrypted_channels: "allowed",
   member_count: 2, categories: [], channels: [channel("c1", "text", "allgemein", 0)],
   roles: [{ id: "everyone", room_id: "r1", name: "@everyone", color: null, position: 0, permissions: "3", hoist: false, mentionable: false, is_everyone: true }],
   overrides: [], my_roles: [], my_permissions, is_owner: false, read_states: [],

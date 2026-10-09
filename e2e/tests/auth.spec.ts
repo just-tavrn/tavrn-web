@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test } from "@playwright/test";
-import { NODE, addVirtualAuthenticator, confirmRecoveryCodes, confirmRecoveryKey, confirmWithPassword, loginViaUi, nextTotpCode, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, uniqueName, logoutViaUi } from "./helpers";
+import { ADULT_DOB, NODE, addVirtualAuthenticator, confirmRecoveryCodes, confirmRecoveryKey, confirmWithPassword, loginViaUi, nextTotpCode, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, uniqueName, logoutViaUi } from "./helpers";
 
 test.describe("Sign-in with a second factor", () => {
   test("Registration with TOTP: codes, recovery key, keys on the node", async ({ page, request }) => {
@@ -161,6 +161,7 @@ test.describe("Passkeys (Chromium, virtual authenticator)", () => {
     await page.getByLabel("Benutzername", { exact: true }).fill(username);
     await page.getByLabel("Passwort", { exact: true }).fill(password);
     await page.getByLabel("Passwort wiederholen", { exact: true }).fill(password);
+    await page.getByLabel("Geburtsdatum", { exact: true }).fill(ADULT_DOB);
     await page.getByRole("button", { name: "Konto erstellen" }).click();
     await page.getByTestId("choose-passkey").click();
     await page.getByLabel("Name des Passkeys", { exact: true }).fill("Virtueller Schlüssel");

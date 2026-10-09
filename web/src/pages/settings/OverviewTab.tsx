@@ -16,6 +16,7 @@ import { RetentionSection } from "./RetentionSection";
 import { MessageRetentionSection } from "./MessageRetentionSection";
 import { BotsInEncryptedSection } from "./BotsEncryptionSection";
 import { UPLOAD_CATEGORIES } from "../../lib/uploads";
+import { AgeGateSection } from "../../components/age/AgeGateSection";
 
 export function OverviewTab({ room }: { room: RoomDetail }) {
   const { api, home, domain } = useNode();
@@ -86,6 +87,15 @@ export function OverviewTab({ room }: { room: RoomDetail }) {
         </Section>
       </form>
 
+      <AgeGateSection
+        scope="room"
+        value={room.age_gate}
+        canManage={canManage}
+        onSave={async (gate) => {
+          await api.rooms.update(room.id, { age_gate: gate });
+          await queryClient.invalidateQueries({ queryKey: ["room", room.id] });
+        }}
+      />
       <RoomIconSection room={room} />
       <RoomPresenceSection room={room} />
       <NoBotsSection room={room} canManage={canManage} />

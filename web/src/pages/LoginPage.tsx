@@ -26,6 +26,7 @@ import { startSso } from "../lib/sso";
 import { deviceName, platform } from "../platform";
 import { NodePageRequired, useNodePageHandoff } from "../components/auth/NodePageHandoff";
 import { parseAppAddress, resolveErrorMessage, switchToNodeOf } from "../lib/nodeAddress";
+import { DateOfBirthField, dateOfBirthError } from "../components/age/DateOfBirthField";
 
 type Mode = "login" | "register";
 
@@ -129,6 +130,9 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [acceptTerms, setAcceptTerms] = useState(false);
+  // The date of birth (PROTOCOL.md §5e): required on every registration path, checked against the node's minimum age.
+  const [dateOfBirth, setDateOfBirth] = useState("");
+  const [dobError, setDobError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [remote, setRemote] = useState(false);
@@ -152,6 +156,11 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
     if (mode === "register" && password !== passwordRepeat) {
       setError(t("auth.password_mismatch"));
       return;
+    }
+    if (mode === "register") {
+      const problem = dateOfBirthError(dateOfBirth, node.data?.age?.minimum_age ?? 16, t);
+      setDobError(problem);
+      if (problem) return;
     }
     if (mode === "register" && terms && !acceptTerms) {
       setError(t("legal.terms.required_register"));
@@ -191,7 +200,7 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
       const resp =
         mode === "login"
           ? await publicApi.auth.login({ username: name, password, device_name: deviceName(), captcha_token: captchaToken, device })
-          : await publicApi.auth.register({ username: name, password, display_name: displayName || null, email: email || null, device_name: deviceName(), captcha_token: captchaToken, invite: invite.trim() || null, accept_terms: terms ? terms.version : null });
+          : await publicApi.auth.register({ username: name, password, display_name: displayName || null, email: email || null, device_name: deviceName(), captcha_token: captchaToken, invite: invite.trim() || null, accept_terms: terms ? terms.version : null, date_of_birth: dateOfBirth });
       setPassword("");
       setPasswordRepeat("");
       onPreauth(resp, mode, name);
@@ -362,6 +371,7 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
             <Field label={t("auth.password_repeat")}>
               <Input name="password_repeat" type="password" autoComplete="new-password" value={passwordRepeat} onChange={(e) => setPasswordRepeat(e.target.value)} required />
             </Field>
+            <DateOfBirthField value={dateOfBirth} onChange={(v) => { setDateOfBirth(v); setDobError(null); }} error={dobError} />
             <Field label={t("auth.display_name")}>
               <Input name="display_name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
             </Field>

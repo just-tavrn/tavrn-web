@@ -38,7 +38,7 @@ function user(domain: string): UserPrivate {
 }
 
 function room(node: string, roomId: string, listing: string): DirectoryRoom {
-  return { node, room_id: roomId, name: "Relayed name", description: "relayed", icon_url: null, member_count: 999, listing };
+  return { node, room_id: roomId, name: "Relayed name", description: "relayed", icon_url: null, member_count: 999, listing, age_gate: "none" };
 }
 
 const realDirectory = discoverDeps.directory;

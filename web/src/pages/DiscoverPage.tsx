@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { AdultsOnlyBadge } from "../components/age/LockedChannel";
 import { useEffect, useMemo, useState } from "react";
 import { useInfiniteQuery, useQueries, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
@@ -149,6 +150,7 @@ function RoomCard({ room, icon }: { room: VerifiedRoom; icon?: RoomIconUrls }) {
           <div className="flex min-w-0 flex-wrap items-center gap-x-2">
             <NodeLabel domain={room.node} />
             <span className="text-xs text-fg-2">· {t("invite.members", { count: room.member_count })}</span>
+            {room.age_gate === "adults_only" && <AdultsOnlyBadge />}
           </div>
         </div>
       </div>
