@@ -6,6 +6,7 @@ import { useT } from "../../i18n";
 import { Button, Dialog } from "../../components/ui";
 import { useVoiceSettings } from "../settings";
 import { useVoice } from "../store";
+import { useVoiceEngine } from "../engine";
 import { leaveVoice, playSound, pushToTalk, startScreenShare, stopScreenShare, toggleCamera, toggleDeafen, toggleMute } from "../index";
 import { useSoundboard } from "../useVoiceRealtime";
 import { useNode } from "../../components/NodeScope";
@@ -157,6 +158,8 @@ export function VoiceControls({ room, channel, perms }: { room: RoomDetail; chan
   const [screenOpen, setScreenOpen] = useState(false);
   const [soundsOpen, setSoundsOpen] = useState(false);
   const soundboard = hasPermission(perms, Permission.USE_SOUNDBOARD) && hasPermission(perms, Permission.SPEAK);
+  // The native voice engine (desktop app on Linux, or the Windows setting) is audio only in this version.
+  const nativeOnly = useVoiceEngine((s) => s.kind === "native") ? t("voice.native.unavailable") : undefined;
   return (
     <div className="flex shrink-0 flex-wrap items-center justify-center gap-1 border-t border-line bg-bg-1 px-2 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] md:gap-2" data-testid="voice-controls">
       <ControlButton label={muted ? t("voice.unmute") : t("voice.mute")} active={muted} onClick={() => void toggleMute()} testid="voice-mute" className="min-h-11 min-w-11" menu={micMenu.triggerProps}>
@@ -166,22 +169,22 @@ export function VoiceControls({ room, channel, perms }: { room: RoomDetail; chan
         {deafened ? <HeadphonesOffIcon size={20} /> : <HeadphonesIcon size={20} />}
       </ControlButton>
       {limits?.camera.enabled && (
-        <ControlButton label={camera ? t("voice.camera_off") : t("voice.camera_on")} active={camera} onClick={() => void toggleCamera()} testid="voice-camera" className="min-h-11 min-w-11">
+        <ControlButton label={camera ? t("voice.camera_off") : t("voice.camera_on")} active={camera} onClick={() => void toggleCamera()} testid="voice-camera" className="min-h-11 min-w-11" unavailable={nativeOnly}>
           <VideoIcon size={20} />
         </ControlButton>
       )}
       {limits?.screenshare.enabled && (
-        <ControlButton label={screen ? t("voice.screen_off") : t("voice.screen_on")} active={screen} onClick={() => (screen ? void stopScreenShare() : void beforeScreenShare().then((ok) => ok && setScreenOpen(true)))} testid="voice-screen" className="min-h-11 min-w-11">
+        <ControlButton label={screen ? t("voice.screen_off") : t("voice.screen_on")} active={screen} onClick={() => (screen ? void stopScreenShare() : void beforeScreenShare().then((ok) => ok && setScreenOpen(true)))} testid="voice-screen" className="min-h-11 min-w-11" unavailable={nativeOnly}>
           <ScreenIcon size={20} />
         </ControlButton>
       )}
       <WhiteboardControl channelId={channel.id} canOpen={hasPermission(perms, Permission.CONNECT)} className="min-h-11 min-w-11" />
       {soundboard && (
-        <ControlButton label={t("voice.soundboard.title")} onClick={() => setSoundsOpen(true)} testid="voice-soundboard" className="min-h-11 min-w-11">
+        <ControlButton label={t("voice.soundboard.title")} onClick={() => setSoundsOpen(true)} testid="voice-soundboard" className="min-h-11 min-w-11" unavailable={nativeOnly}>
           <SoundboardIcon size={20} />
         </ControlButton>
       )}
-      <PriorityButton perms={perms} />
+      {!nativeOnly && <PriorityButton perms={perms} />}
       {ptt && canSpeak && (
         <button
           type="button"

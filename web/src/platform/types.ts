@@ -43,6 +43,8 @@ export interface Platform {
   readonly auth?: PlatformAuth;
   /** Saves a file the user downloads: the browser's download, the desktop app's save dialog (call sites use `saveFile.ts`). */
   readonly saveFile?: SaveFile;
+  /** Desktop: the native voice engine of the shell (LiveKit's Rust SDK; `voice/nativeSession.ts`, docs/DESKTOP.md "Voice"). */
+  readonly voice?: PlatformVoice;
 }
 
 export interface NodeChoice {
@@ -253,4 +255,80 @@ export interface PlatformTray {
   setCloseToTray(on: boolean): Promise<void>;
   /** Ends the app (with close to tray, closing the window does not). */
   quit(): Promise<void>;
+}
+
+/** A microphone or speaker of the native voice engine (its own ids, not the browser's). */
+export interface NativeDevice {
+  id: string;
+  label: string;
+}
+
+/** The voice settings the native engine applies (resolved from `VoiceSettings` by the client). */
+export interface NativeVoiceConfig {
+  inputDevice: string | null;
+  outputDevice: string | null;
+  /** Percent, 0–200. */
+  inputVolume: number;
+  echoCancellation: boolean;
+  noiseSuppression: boolean;
+  autoGain: boolean;
+  ptt: boolean;
+  /** Gate threshold in dBFS (`gateThreshold`), null: no gate. */
+  threshold: number | null;
+  holdMs: number;
+  pttReleaseMs: number;
+}
+
+export interface NativeVoiceJoin {
+  url: string;
+  token: string;
+  /** The frame key of `epoch` (32 bytes, ENCRYPTION.md §5a). */
+  key: Uint8Array;
+  epoch: number;
+  bitrateKbps: number;
+  config: NativeVoiceConfig;
+  muted: boolean;
+  deafened: boolean;
+}
+
+export interface NativeParticipant {
+  identity: string;
+  mic: boolean;
+  mic_muted: boolean;
+  local: boolean;
+}
+
+/** What the native engine reports (the shell's `VoiceEvent`). */
+export type NativeVoiceEvent =
+  | { kind: "level"; level: number | null; open: boolean }
+  | { kind: "ptt"; open: boolean }
+  | { kind: "speakers"; levels: Array<[string, number | null]> }
+  | { kind: "participants"; participants: NativeParticipant[] }
+  | { kind: "permissions"; can_speak: boolean }
+  | { kind: "quality"; identity: string; quality: "excellent" | "good" | "poor" | "lost" }
+  | { kind: "encryption"; identity: string; state: string }
+  | { kind: "reconnecting" }
+  | { kind: "reconnected" }
+  | { kind: "disconnected"; reason: string }
+  | { kind: "error"; code: string };
+
+/**
+ * The native voice engine of the desktop app (`src-tauri/src/voice`): the shell joins the LiveKit room, captures and
+ * plays the audio; the client keeps the node, the MLS keys, the settings and the UI. Every call may reject with a
+ * `voice.*` code.
+ */
+export interface PlatformVoice {
+  /** Whether this build has the engine, and the operating system (`linux`, `windows`, `macos`). */
+  info(): Promise<{ available: boolean; os: string }>;
+  devices(): Promise<{ inputs: NativeDevice[]; outputs: NativeDevice[] }>;
+  join(args: NativeVoiceJoin, onEvent: (event: NativeVoiceEvent) => void): Promise<{ identity: string; can_speak: boolean }>;
+  leave(): Promise<void>;
+  /** The frame key of a newer epoch; false when the shell already has a newer one. */
+  setKey(key: Uint8Array, epoch: number): Promise<boolean>;
+  setMuted(muted: boolean): Promise<void>;
+  setDeafened(deafened: boolean): Promise<void>;
+  setPtt(pressed: boolean): Promise<void>;
+  configure(config: NativeVoiceConfig): Promise<void>;
+  /** Playback gains per identity (1 = unchanged). */
+  setVolumes(volumes: Record<string, number>): Promise<void>;
 }

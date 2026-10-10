@@ -31,6 +31,16 @@
     "allow-save-file-chunk",
     "allow-save-file-end",
     "allow-save-file-abort",
-    "allow-save-file-reveal"
+    "allow-save-file-reveal",
+    "allow-voice-info",
+    "allow-voice-devices",
+    "allow-voice-join",
+    "allow-voice-leave",
+    "allow-voice-set-key",
+    "allow-voice-set-muted",
+    "allow-voice-set-deafened",
+    "allow-voice-set-ptt",
+    "allow-voice-configure",
+    "allow-voice-set-volumes"
   ]
 }

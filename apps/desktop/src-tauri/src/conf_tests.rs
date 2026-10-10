@@ -101,6 +101,16 @@ fn the_capability_grants_only_the_app_commands_to_the_main_window() {
             "allow-save-file-end",
             "allow-save-file-abort",
             "allow-save-file-reveal",
+            "allow-voice-info",
+            "allow-voice-devices",
+            "allow-voice-join",
+            "allow-voice-leave",
+            "allow-voice-set-key",
+            "allow-voice-set-muted",
+            "allow-voice-set-deafened",
+            "allow-voice-set-ptt",
+            "allow-voice-configure",
+            "allow-voice-set-volumes",
         ]
     );
     // Downloads: the shell opens the save dialog and writes the file itself; the dialog, opener and fs plugins stay
@@ -185,4 +195,6 @@ fn the_deb_brings_the_gstreamer_plugins_of_webrtc() {
     for plugin in ["gstreamer1.0-plugins-bad", "gstreamer1.0-plugins-good", "gstreamer1.0-gl", "gstreamer1.0-pipewire | gstreamer1.0-pulseaudio"] {
         assert!(depends.contains(&plugin.to_string()), "the .deb lacks {plugin} (voice on Linux, docs/DESKTOP.md)");
     }
+    // The native voice engine's audio devices (cpal links ALSA; PulseAudio is spoken in pure Rust).
+    assert!(depends.contains(&"libasound2t64 | libasound2".to_string()), "the .deb lacks ALSA (the native voice engine, docs/DESKTOP.md)");
 }

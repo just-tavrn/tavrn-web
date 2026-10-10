@@ -7,16 +7,34 @@
 import { useToasts } from "../stores/toasts";
 import { voiceErrorMessage } from "./errors";
 import { useVoice, type VoiceTarget } from "./store";
+import { currentEngineKind, useVoiceEngine, type EngineKind, type VoiceEngine } from "./engine";
 import type { ScreenShareOptions } from "./session";
 
-type SessionModule = typeof import("./session");
+/** Both engines export the same functions (`engine.ts`). */
+type SessionModule = VoiceEngine;
 
+let loaded: { kind: EngineKind; module: SessionModule } | null = null;
 let module: SessionModule | null = null;
-let loading: Promise<SessionModule> | null = null;
 
-export function loadSession(): Promise<SessionModule> {
-  loading ??= import("./session").then((m) => (module = m));
-  return loading;
+const engines: Record<EngineKind, () => Promise<SessionModule>> = {
+  browser: () => import("./session"),
+  native: () => import("./nativeSession"),
+};
+
+/**
+ * The engine of the call (`engine.ts`): a running call keeps its engine; otherwise the platform and the settings
+ * decide (the browser engine everywhere but the desktop app on Linux, or on Windows with the setting).
+ */
+export async function loadSession(): Promise<SessionModule> {
+  if (loaded && useVoice.getState().status !== "idle") return loaded.module;
+  const kind = await currentEngineKind();
+  if (loaded?.kind !== kind) {
+    const m = await engines[kind]();
+    loaded = { kind, module: m };
+  }
+  module = loaded.module;
+  if (useVoiceEngine.getState().kind !== kind) useVoiceEngine.setState({ kind });
+  return loaded.module;
 }
 
 /** The session module if it is loaded already (video tiles attach through it). */

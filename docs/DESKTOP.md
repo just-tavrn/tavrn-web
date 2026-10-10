@@ -341,7 +341,79 @@ that reaches the client. Nothing is stored, logged or sent anywhere: no key code
 keyboard hooks are what voice chat programs commonly use for push-to-talk and are not known to be flagged by the
 common anti-cheat systems; if one ever objects, removing the bindings stops the hook (no binding, no listener).
 
-## Voice on Linux
+## Voice
+
+The client has two voice engines behind one interface (`web/src/voice/engine.ts`); both run the same session logic
+around the media (the channel's MLS group and the frame key of every epoch, the node's join, leave and state routes,
+mute and deafen, per-user volumes, notification sounds, push-to-talk tones, speaking rings, rejoin, moves):
+
+| Engine | Where | Media |
+|---|---|---|
+| Browser engine (`session.ts`) | browsers; the app on Windows (WebView2) by default; macOS | livekit-client in the webview, insertable streams |
+| Native engine (`nativeSession.ts` + `src-tauri/src/voice`) | the app on Linux, always; on Windows with Settings → Voice & video → **Native voice engine (experimental)** (default off, applies from the next call) | the shell joins the room with LiveKit's Rust SDK (`livekit` crate on a prebuilt libwebrtc) |
+
+A running call keeps its engine. A build without the Cargo feature `native-voice` answers `voice.native_unavailable`
+and the client keeps the browser engine.
+
+### The native engine
+
+The webview keeps everything but the media: it joins the MLS group, gets the LiveKit URL and token from the node
+(VOICE.md §3), derives the frame key of the current epoch (ENCRYPTION.md §5a) and hands it to the shell with
+`voice_join`; every newer epoch's key follows with `voice_set_key` (never an older one; the webview wipes its copy, the
+shell keeps keys in memory only and never logs them). The shell (`src-tauri/src/voice`):
+
+- **End-to-end encryption** with exactly the web client's key provider configuration (`e2ee.rs`): one shared key per
+  epoch at key index `epoch mod 256` in a ring of 256, HKDF with LiveKit's salt, AES-GCM, no ratcheting, no failure
+  tolerance limit. The microphone is published only once the frame cryptor of the own track is active (otherwise
+  `e2ee_failed`, nothing is sent); the sending key index follows every new epoch. `tests/voice_livekit.rs` proves
+  that a participant with another key hears nothing, and `desktop-voice.spec.ts` that the browser engine and the
+  native one decrypt each other.
+- **Microphone** (`uplink.rs`, in the order of the browser pipeline): the device through cpal (PulseAudio, also
+  PipeWire's PulseAudio server, else ALSA on Linux; WASAPI on Windows), mono at 48 kHz in 10 ms frames, WebRTC's audio
+  processing for echo cancellation, noise suppression and automatic gain (the browser's capture constraints; RNNoise
+  is the browser engine's, the native one uses WebRTC's noise suppression; music mode captures without processing),
+  the input volume, then the gate (`gate.rs`, the same DSP as `web/src/voice/gate.ts`: threshold, 6 dB hysteresis,
+  hold, 5 ms attack, 40 ms release) for voice activation, the noise gate and push-to-talk with its release delay.
+  Opus with DTX and without RED, the channel's bitrate, as in the browser.
+- **Playback** (`mix.rs`): every subscribed remote audio track is decoded (and decrypted) by libwebrtc and mixed with
+  the per-participant gain the client computes (`volume.ts`: per-user volume × output volume, 0 while deafened); the
+  mix is also the echo canceller's reference. The loudest 10 ms RMS of each participant goes to the webview every
+  50 ms, where the browser engine's `SpeakingDetector` turns it into speaking rings.
+- **Push-to-talk** follows the system-wide hotkey directly (a tap of `hotkeys.rs`, so it also works while the window
+  is in the background) and the webview's key and hold button.
+- **Devices** of its own (`voice_devices`; Settings → Voice & video and the quick menus list them, kept apart from the
+  browser's device ids as `nativeInputDeviceId` / `nativeOutputDeviceId`).
+- **Connection**: the SDK resumes and reconnects by itself (`reconnecting`/`reconnected`); a room that is gone ends
+  as `disconnected` with LiveKit's reason, and the webview rejoins or stops as the browser engine does. Server mutes
+  arrive as permission changes.
+
+**Not in this version:** camera, screen sharing, soundboard clips and the priority speaker (the buttons are shown as
+not available with the native engine, focusable and with the reason in their name), the microphone test of the
+settings (it runs in the webview, `getUserMedia` exists there), macOS. **Video, the path:** native capture is the easy
+part (the SDK has camera and desktop capturers and publishes video tracks with the same frame cryptor); showing remote
+and own frames inside the webview is the hard part. Options: (1) decode in the shell and push frames to the webview
+(I420 → RGBA over a custom protocol or shared memory into a `<canvas>`/WebGL; simple, costs a copy per frame and IPC
+bandwidth, fine for 720p30 thumbnails, heavy for 1080p60 streams), (2) a native child window or surface layered over
+the webview at the tile's rectangle (no copy, but window management per platform and no CSS for tiles), (3) WebCodecs in
+the webview fed with encoded frames from the shell after decryption (needs WebCodecs, which WebKitGTK only partly
+has). (1) is the likely first step for camera tiles.
+
+**Linux packages:** the app links ALSA (`libasound2`; the `.deb` depends on it; building needs `libasound2-dev`).
+PulseAudio is spoken in pure Rust. libwebrtc is linked statically (the `webrtc-sys` build downloads LiveKit's
+prebuilt `webrtc-<tag>` once per target into the Cargo target directory).
+
+**Windows:** the native engine cross-compiles with cargo-xwin (the NSIS installer builds). LiveKit's prebuilt
+libwebrtc uses the static C runtime, so the shell links with `+crt-static` (`src-tauri/.cargo/config.toml`) and Tauri's
+own hybrid runtime is switched off in `build.rs`; the installer needs no Visual C++ redistributable. With libwebrtc the
+app binary is about 40 MB and the NSIS installer about 22 MB. Not yet started on a Windows machine.
+
+**Measured** (release build, Linux under WSL2, fake audio backend, a two-person call with Chromium, 10 s each,
+`desktop-voice.spec.ts`; budgets of `tavrn-node/perf/budgets.json`): talking, the shell (with the engine) 7.4 % and
+the WebKit processes 2.1 % of one core, together 9.5 % (budget 15 %); muted, 2.8 % + 1.4 % = 4.2 % (budget 5 %).
+On Windows the same comparison (the shell plus the `msedgewebview2` renderer, browser engine against native engine,
+talking and muted, with real devices) decides whether the setting becomes the default there.
+
+### The webview's own WebRTC on Linux
 
 WebKitGTK runs WebRTC through GStreamer and keeps it off unless the app switches it on: the shell turns on
 `enable-webrtc` and `enable-media-stream` of the webview's settings (`src-tauri/src/media.rs`). At runtime these
@@ -354,11 +426,8 @@ sudo apt install gstreamer1.0-plugins-bad gstreamer1.0-plugins-good gstreamer1.0
 **The distributions' WebKitGTK is built without WebRTC.** WebKitGTK compiles WebRTC only with its experimental
 features (`ENABLE_WEB_RTC` follows `ENABLE_EXPERIMENTAL_FEATURES`, off in release builds); Ubuntu 24.04 and 26.04 ship
 `libwebkit2gtk-4.1` 2.52 that way (it does not link `libgstwebrtc-1.0`). There the switch has no effect:
-`getUserMedia` works, `RTCPeerConnection` does not exist, and the client refuses to join voice as in browsers without
-WebRTC. Check a system with `ldd /usr/lib/x86_64-linux-gnu/libwebkit2gtk-4.1.so.0 | grep gstwebrtc`; on a system whose
-WebKitGTK is built with WebRTC the switch makes it available (the smoke test asserts that there; not yet verified on
-such a build). End-to-end encrypted voice also needs encoded
-transforms (`RTCRtpScriptTransform`) in that build.
+`getUserMedia` works, `RTCPeerConnection` does not exist; that is why voice on Linux always runs in the native engine.
+Check a system with `ldd /usr/lib/x86_64-linux-gnu/libwebkit2gtk-4.1.so.0 | grep gstwebrtc`.
 
 ## Limitations
 
@@ -374,7 +443,7 @@ What the browser gets from "the client is served by the node" and what the app d
 | Captcha on login or registration | on the node's page in the sign-in window | the widget is a third-party script (CSP `script-src 'self'`) bound to the node's host name; the node's page loads it. Without `connect.app`: a notice, use the browser for that step. |
 | Web push | not offered | there is no service worker in the app (its pages are not served by the node). The app shows native notifications instead while it runs (also from the tray); nothing reaches a device where the app is not running. |
 | Desktop notifications of the browser | replaced | native notifications ("Notifications" above). |
-| Voice and video | Windows (WebView2, Chromium): expected to work as in Chromium (to be confirmed by hand); Linux: not available with the distributions' WebKitGTK | end-to-end encrypted media needs WebRTC with encoded transforms. The app switches WebRTC on, but the WebKitGTK of Ubuntu 24.04 and 26.04 is built without it (no `RTCPeerConnection`, checked in the built app; "Voice on Linux"), so the client refuses to join, as in browsers that lack it. Hotkeys work regardless. Screen and window sharing through the platform APIs is a later step. |
+| Voice and video | Linux: voice through the native engine, audio only; Windows (WebView2, Chromium): voice and video as in Chromium (to be confirmed by hand), or audio only with the native engine setting | the WebKitGTK of Ubuntu 24.04 and 26.04 has no WebRTC ("Voice"), so voice on Linux runs in the shell; camera and screen sharing through the native engine are a later step. |
 | Popping out the whiteboard, "open original" in the media viewer | not offered | the app opens no window for content (only the sign-in window); maximize and the download icon cover it. |
 | The terms and other pages that open in a new tab | open on the node's web client in the system browser | the app opens no window for content. |
 | Updates while the repository is private | do not download | the updater fetches `latest.json` and the installers from the public release URLs. |
@@ -383,8 +452,8 @@ What the browser gets from "the client is served by the node" and what the app d
 
 System packages on Linux (Debian/Ubuntu names): `libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev
 librsvg2-dev patchelf xdg-utils`, for the WebDriver test also the WebKit WebDriver (`webkit2gtk-driver`, on Ubuntu
-26.04 `webkitgtk-webdriver`: it provides `/usr/bin/WebKitWebDriver`), `xvfb` and `xdotool`; for voice the GStreamer
-plugins of "Voice on Linux". A Rust toolchain (stable, at least
+26.04 `webkitgtk-webdriver`: it provides `/usr/bin/WebKitWebDriver`), `xvfb` and `xdotool`; for the native voice
+engine `libasound2-dev`, for the webview's own media the GStreamer plugins of "Voice". A Rust toolchain (stable, at least
 1.90) and the requirements of the web client (README "Development"). On Windows: the Microsoft C++ build tools and
 WebView2 (preinstalled on Windows 10 and 11).
 
@@ -412,6 +481,15 @@ picker accepts `http://127.0.0.1:8080`).
   validation, the tray's states, icons and labels, the installer licence and the icons of the bundle; downloads: the
   chunk writer (temporary file, rename, size limit, abort and cleanup), the registry of running saves (no second begin
   with the same id, at most 8), file names from the webview that cannot leave the chosen directory).
+  validation, the tray's states, icons and labels, the installer licence and the icons of the bundle).
+  The native voice engine: the gate and level meter (thresholds, hysteresis, hold, ramps, push-to-talk), the
+  microphone path (any device rate and channel count to 10 ms frames at 48 kHz, processing before the volume, the
+  push-to-talk release delay, nothing sent while muted), the mix (gains, deafen, start buffer, bounded delay,
+  speaking levels), the resampler, the key index and key ring, the validation of every command argument (keys and
+  tokens never in the debug output) and the events as the client reads them.
+  `just desktop-voice-test` (`cargo test --test voice_livekit -- --ignored`, needs `livekit-server`): two native
+  engines with the fake audio backend join one room end-to-end encrypted with a fixed key and hear each other, a third
+  engine with another key hears nothing, the voice keeps flowing after a key change, mute and deafen stop it.
   `cargo test -- --ignored os_keychain` writes, reads and deletes an entry in the real keychain of the machine;
   desktop.yml runs it with gnome-keyring in a D-Bus session. `xvfb-run -a cargo test -- --ignored x11_` drives the X11
   key listener with `xdotool` (a lone modifier, an unwatched key, key repeat).
@@ -465,6 +543,18 @@ picker accepts `http://127.0.0.1:8080`).
   placeholder instead). The app is a single instance: the test waits for a quit app to exit before starting it again
   and refuses to start while the same binary runs; an installed Tavrn that is running takes over the test's start too,
   so quit it first.
+
+- Voice between a browser and the app (`e2e/tests/desktop-voice.spec.ts`, `just desktop-voice-e2e`, under xvfb-run):
+  a Chromium participant with the fake microphone and the built Linux app with its native engine
+  (`TAVRN_DESKTOP_FAKE_AUDIO=1`: a tone in, a level meter out, for machines without sound hardware) join one channel
+  of the test node; Chromium sees the app's microphone track encrypted and decodes its tone, the app shows the
+  browser user speaking (decrypted and measured by the engine), axe (WCAG A/AA) scans the app's Settings → Voice and
+  the joined channel, and the app's CPU is measured talking and muted (`test-results/desktop-voice-cpu.json`).
+
+  ```sh
+  pnpm --filter @tavrn/web build && pnpm --filter @tavrn/desktop tauri build --no-bundle
+  E2E_NODE_BIN=/path/to/release/tavrn-node E2E_NODE_PORT=8600 E2E_WEB_PORT=5600 just desktop-voice-e2e
+  ```
 
 ## Builds and releases
 

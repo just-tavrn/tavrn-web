@@ -488,6 +488,15 @@ show/hide and quit in its menu; closing the window keeps the app in the tray (Se
 **Downloads** in the app open the system's save dialog; the app writes the file and says where it went ("Saved to
 Downloads", with **Show in folder**). Every download of the client goes through one function, `saveFile` in
 `src/platform/saveFile.ts` (in the browser: the browser's download as before); DESKTOP.md "Downloads".
+**Voice engine:** the desktop app on Linux sends and plays voice through its own native engine (LiveKit's Rust SDK in
+the shell; the system's web view has no WebRTC), end-to-end encrypted exactly as in the browser and with the same
+settings: devices of its own (Settings → Voice & video lists the engine's microphones and speakers), input volume,
+echo cancellation, noise suppression (RNNoise becomes WebRTC's noise suppression there), automatic gain, the noise
+gate, voice activation or push-to-talk (also through the system-wide hotkey while the window is in the background),
+per-user volumes, mute and deafen, the speaking rings and the notification sounds. On Windows the setting **Native
+voice engine (experimental)** under Settings → Voice & video → Voice engine switches the next call to it (default off;
+only shown in the desktop app). Audio only for now: camera, screen sharing, soundboard clips and the priority speaker
+are not available with the native engine, and their buttons say so (DESKTOP.md "Voice").
 
 **Hotkeys:** push-to-talk (Settings → Voice & video → Input mode), the priority speaker and, under **More hotkeys**,
 mute and deafen have one binding each: a single key, a modifier alone (left Ctrl, right Shift, …) or a combination,
