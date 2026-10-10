@@ -205,6 +205,54 @@ test.describe("History for new members", () => {
     await phone.context().close();
   });
 
+  test("since joining: what was posted after Bob's join in channels he never opened reaches him (text and forum title)", async ({ browser, page }) => {
+    test.setTimeout(240_000);
+    await registerViaUi(page, { prefix: "alice" });
+    const { url, roomId } = await roomWithHistory(page, "Später geöffnet");
+    const link = await inviteLink(page);
+    const bobPage = await newPage(browser);
+    await registerViaUi(bobPage, { prefix: "bob" });
+    await joinByLink(bobPage, link);
+    // Bob is a member, then away: his device is in no group of the channels that come now.
+    await bobPage.goto("about:blank");
+
+    // Alice adds a text and a forum channel (default `since_join`) and posts in both.
+    const create = async (data: Record<string, unknown>) => {
+      const resp = await page.request.post(`${NODE}/api/v1/rooms/${roomId}/channels`, { headers: { Authorization: `Bearer ${await tokenOf(page)}` }, data: { encrypted: true, ...data } });
+      expect(resp.ok(), await resp.text()).toBeTruthy();
+      return (await resp.json()) as { id: string; history_for_new_members: string };
+    };
+    const news = await create({ kind: "text", name: "neuigkeiten" });
+    const forum = await create({ kind: "forum", name: "ideen" });
+    expect(news.history_for_new_members).toBe("since_join");
+    await page.goto(`/rooms/${roomId}/channels/${news.id}`);
+    await send(page, "Für Bob, bevor er reinschaut");
+    await page.goto(`/rooms/${roomId}/channels/${forum.id}`);
+    await page.getByTestId("forum-new-post").click();
+    const dialog = page.getByTestId("forum-post-dialog");
+    await dialog.getByTestId("forum-post-title-input").fill("Plan für Freitag");
+    await dialog.getByTestId("forum-post-body").fill("Details folgen");
+    await dialog.getByTestId("forum-post-submit").click();
+    await expect(page.getByTestId("thread-panel").getByTestId("thread-title")).toHaveText("Plan für Freitag");
+
+    // Bob comes back to the room: his device joins the new channels' groups right away (without opening them), the
+    // node marks him pending for what was posted since his join and Alice's device shares those keys.
+    const shared = page.waitForRequest((r) => r.url().includes(`/conversations/${news.id}/history-keys`) && r.method() === "POST", CRYPTO);
+    await bobPage.goto(url);
+    await shared;
+    await bobPage.goto(`/rooms/${roomId}/channels/${news.id}`);
+    await expect(message(bobPage, "Für Bob, bevor er reinschaut")).toBeVisible(CRYPTO);
+    await expect(bobPage.getByTestId("undecryptable")).toHaveCount(0);
+    await expect(bobPage.getByTestId("e2ee-history")).toHaveCount(0, CRYPTO);
+    await bobPage.goto(`/rooms/${roomId}/channels/${forum.id}`);
+    await expect(bobPage.getByTestId("forum-post").filter({ hasText: "Plan für Freitag" })).toBeVisible(CRYPTO);
+    await expect(bobPage.getByTestId("forum-post").filter({ hasText: "Details folgen" })).toBeVisible();
+    await expect(bobPage.getByText("Verschlüsselter Titel (auf diesem Gerät nicht lesbar)")).toHaveCount(0);
+    // Nothing from before his join: the old messages of "allgemein" stay out of reach.
+    expect((await getJson(bobPage, `/conversations/${url.split("/channels/")[1]}/messages`)).some((m: { device_id?: string | null; encrypted?: boolean }) => !!m.device_id && m.encrypted)).toBe(false);
+    await bobPage.context().close();
+  });
+
   test("since joining shows nothing older, one day shows the recent messages", async ({ browser, page }) => {
     test.setTimeout(240_000);
     await registerViaUi(page, { prefix: "alice" });
