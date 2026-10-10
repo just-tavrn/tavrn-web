@@ -2,6 +2,7 @@
 // The initial voice state of every room (GET /users/me/voice, VOICE.md §5) feeds the presence store at start.
 import { waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
+import type { VoiceParticipant } from "@tavrn/sdk";
 import { useAuth } from "../stores/auth";
 import { resetNodeCaches, useNodes } from "../stores/nodes";
 import { mockFetch, renderWithProviders } from "../test/render";
@@ -9,7 +10,7 @@ import { channelKey, participantsOf, useVoicePresence } from "./presence";
 import { useVoiceRealtime } from "./useVoiceRealtime";
 
 const me = { id: "A-ID", username: "alice", domain: "a.test", address: "alice@a.test", display_name: "Alice", kind: "user", is_node_admin: false, avatar_blob_id: null, created_at: "", email: null, email_verified: false, has_identity_key: true };
-const bob = { user: "bob@a.test", user_id: "B", device_id: "D", identity: "bob@a.test/D", muted: false, deafened: false, streaming: true, camera: false, server_muted: false, joined_at: "", connection: "connected" };
+const bob: VoiceParticipant = { user: "bob@a.test", user_id: "B", device_id: "D", identity: "bob@a.test/D", muted: false, deafened: false, streaming: true, camera: false, server_muted: false, joined_at: "", connection: "connected" };
 
 function Harness() {
   useVoiceRealtime();
