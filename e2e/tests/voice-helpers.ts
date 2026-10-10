@@ -5,7 +5,8 @@ import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
-import { NODE, openNavIfMobile, registerViaUi, tokenOf } from "./helpers";
+// With its extension: the Electron shell's smoke test (apps/desktop-electron, module resolution "nodenext") imports this file.
+import { NODE, openNavIfMobile, registerViaUi, tokenOf } from "./helpers.ts";
 
 /** A short 16-bit mono WAV (a 440 Hz tone). */
 export function toneWav(seconds = 0.5, rate = 16000): Buffer {

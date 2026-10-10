@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { isTauri } from "@tauri-apps/api/core";
+import { inElectronSignInWindow } from "./electronDetect";
 
 /** Label of the app's window (`apps/desktop/src-tauri/src/lib.rs`): the only one that shows the bundled client. */
 const MAIN_WINDOW = "main";
@@ -20,10 +21,11 @@ const SIGN_IN_WINDOW = "connect";
 
 /**
  * True for the node's page in the desktop app's sign-in window (not in a browser tab): it signs itself out after a
- * handoff (docs/DESKTOP.md "Signing in").
+ * handoff (docs/DESKTOP.md "Signing in"). The Tauri shell names the window `connect`; the Electron shell's window has
+ * no preload and marks its user agent instead (`electronDetect.ts`).
  */
 export function inSignInWindow(): boolean {
-  if (!isTauri()) return false;
+  if (!isTauri()) return inElectronSignInWindow();
   const internals = (window as unknown as { __TAURI_INTERNALS__?: { metadata?: { currentWindow?: { label?: string } } } }).__TAURI_INTERNALS__;
   return internals?.metadata?.currentWindow?.label === SIGN_IN_WINDOW;
 }

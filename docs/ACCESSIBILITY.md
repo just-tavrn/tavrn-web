@@ -43,7 +43,8 @@ on the desktop and the phone project unless noted:
 | `age.spec.ts` | the registration form, the room settings, the invite page, a locked channel, the date of birth dialog |
 | `threads.spec.ts` | a forum post open in the thread panel, the forum's post list |
 | `reports.spec.ts` | a report's detail with its action row |
-| `desktop-voice.spec.ts` | the desktop app's Settings → Voice & video and a joined voice channel with the native engine (axe-core inside the app's WebKitGTK webview) |
+| `desktop-voice.spec.ts` | the Tauri app's Settings → Voice & video and a joined voice channel with the native engine (axe-core inside the app's WebKitGTK webview) |
+| `apps/desktop-electron/e2e/smoke.spec.ts`, `electron-smoke.spec.ts` | the Linux app's screen-share picker window (axe-core inside the Electron shell; `smoke.spec.ts` fails on any WCAG violation, `electron-smoke.spec.ts` on serious and critical ones) |
 
 Run it alone (with `E2E_NODE_BIN` or `E2E_NODE_IMAGE` set, README.md "End-to-end tests"): `cd e2e && npx playwright test tests/a11y.spec.ts --project chromium --project mobile-android
 --project tablet-chromium --workers=2`. `A11Y_REPORT_DIR=<dir>` writes every finding as JSON,
@@ -162,6 +163,12 @@ Before: 3 critical + 325 serious + 241 moderate + 25 minor nodes. After: 0 criti
   for its section bar; it has a fixed size bounded by the viewport (at most 384 px high) and opens below or above its
   button, so it never reaches outside the viewport; the composer is a combobox for slash commands (`aria-activedescendant`); search results
   are a list box driven from the search field.
+- **The Linux app's screen-share picker** (`apps/desktop-electron/src/main/picker.ts`, `src/preload/picker.ts`): a
+  window of its own, outside the client, with a heading, the screens and the windows as two lists labelled by their
+  headings, and one button per source named "Share \<name>" (the thumbnail is decorative); the first source has the
+  focus, Escape and Cancel refuse, the focus ring is 3 px in the accent colour, targets are at least 44 px, it follows
+  the light and dark theme and reduced motion, and its texts are English or German after the system's language. The
+  smoke tests of the Electron shell scan it with axe.
 - **Message list**: `role="feed"` with `article` rows (`aria-posinset`, `aria-setsize`, `aria-busy` while a page
   loads); new messages of others in the open conversation are announced in a polite live region ("New message
   from …"), muted with **Settings → Notifications → Screen reader** (device-local, `stores/accessibility.ts`).

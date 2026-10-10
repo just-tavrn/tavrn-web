@@ -2,10 +2,11 @@
 /**
  * The platform layer (docs/DESKTOP.md): which platform runs the client and where its node lives. Every place
  * that used to take "the origin the client was loaded from" asks here instead, so the desktop app can talk to
- * the node the user picked. The Tauri implementation is loaded only when the Tauri runtime is detected: the
- * browser never runs Tauri code.
+ * the node the user picked. The desktop implementations are loaded only when their shell is detected (Tauri on
+ * Windows and macOS, `tauri.ts`; Electron on Linux, `electron.ts`): the browser never runs shell code.
  */
 import { browserPlatform } from "./browser";
+import { detectElectron } from "./electronDetect";
 import { detectTauri } from "./tauriDetect";
 import type { Platform } from "./types";
 
@@ -19,10 +20,24 @@ export function platform(): Platform {
 }
 
 type TauriModule = { createTauriPlatform: () => Promise<Platform> };
+type ElectronModule = { createElectronPlatform: () => Promise<Platform> };
 
-/** Detects the platform once at start-up, before the client renders. */
-export async function initPlatform(detect: () => boolean = detectTauri, load: () => Promise<TauriModule> = () => import("./tauri")): Promise<Platform> {
+/** The Electron shell's detection and loader (tests pass fakes). */
+export interface ElectronShell {
+  detect: () => boolean;
+  load: () => Promise<ElectronModule>;
+}
+
+const electronShell: ElectronShell = { detect: detectElectron, load: () => import("./electron") };
+
+/** Detects the platform once at start-up, before the client renders: the Tauri shell, then the Electron shell. */
+export async function initPlatform(
+  detect: () => boolean = detectTauri,
+  load: () => Promise<TauriModule> = () => import("./tauri"),
+  electron: ElectronShell = electronShell,
+): Promise<Platform> {
   if (detect()) current = await (await load()).createTauriPlatform();
+  else if (electron.detect()) current = await (await electron.load()).createElectronPlatform();
   return current;
 }
 

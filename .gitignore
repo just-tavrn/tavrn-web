@@ -48,3 +48,5 @@ perf/results/
 
 # The desktop shell: files tauri-build generates (capability schemas); signing keys never (*.key above)
 apps/desktop/src-tauri/gen/
+# The Electron shell's packages (electron-builder output)
+apps/desktop-electron/release/

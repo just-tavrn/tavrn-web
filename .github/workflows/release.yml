@@ -75,6 +75,9 @@ jobs:
         run: |
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --generate-notes --verify-tag release/*
 
+  # TODO(electron): the Linux packages move to the Electron shell (apps/desktop-electron, docs/DESKTOP.md "The Linux
+  # shell (Electron)"): build them with `pnpm --filter @tavrn/desktop-electron package` and attach the .AppImage, the
+  # .deb, their .sha256 files and electron-builder's latest-linux.yml (the feed of electron-updater) to this release.
   desktop:
     name: Desktop installers ${{ github.ref_name }}
     needs: release

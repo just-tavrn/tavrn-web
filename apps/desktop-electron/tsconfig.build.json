@@ -1,0 +1,15 @@
+{
+  // The main process, compiled to ES modules in dist/main (Electron runs dist/main/index.js). The preload is bundled
+  // separately into one CommonJS file (vite.preload.config.ts): a sandboxed preload cannot load other files.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": "src",
+    "outDir": "dist",
+    "lib": ["ES2023"],
+    "sourceMap": true,
+    "paths": {}
+  },
+  "include": ["src/main", "src/shared"],
+  "exclude": ["src/**/*.test.ts"]
+}

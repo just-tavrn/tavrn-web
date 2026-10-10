@@ -49,9 +49,10 @@ desktop-dev: install
 desktop-build *args: install
     pnpm --filter @tavrn/desktop tauri build {{ if args == "" { if os() == "windows" { "--bundles msi,nsis" } else { "--bundles deb,appimage" } } else { args } }}
 
-# cargo fmt, clippy, tests and dependency licenses of the desktop shell (needs web/dist: `just build` first)
+# cargo fmt, clippy, tests and dependency licenses of the desktop shell and its key listener crate (needs web/dist: `just build` first)
 desktop-check: install
     @[ -f web/dist/index.html ] || { echo "web/dist is missing: run just build first (the shell embeds it)" >&2; exit 1; }
+    cd apps/desktop/crates/keywatch && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked
     cd apps/desktop/src-tauri && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked && cargo deny check licenses
 
 # The node must serve its web client (a release build or the image); the app always renders under xvfb-run with X11 forced
@@ -74,6 +75,51 @@ desktop-voice-e2e: install
     app="$(realpath "${TAVRN_DESKTOP_APP:-${CARGO_TARGET_DIR:-apps/desktop/src-tauri/target}/release/tavrn}")"
     [ -x "$app" ] || { echo "no built app at $app (pnpm --filter @tavrn/desktop tauri build --no-bundle, or set TAVRN_DESKTOP_APP)" >&2; exit 1; }
     cd e2e && env -u WAYLAND_DISPLAY GDK_BACKEND=x11 E2E_DESKTOP_APP="$app" xvfb-run -a pnpm exec playwright test tests/desktop-voice.spec.ts --project chromium --workers=1
+
+# The client from the Vite dev server (E2E_WEB_PORT, default 5173) and the app on it; opens a window on your desktop
+# The Linux desktop app in development (Electron shell, docs/DESKTOP.md "The Linux shell (Electron)")
+electron-dev: install
+    env -u ELECTRON_RUN_AS_NODE pnpm --filter @tavrn/desktop-electron dev
+
+# tsc of the main process, the preload and the harness, node --test of the main-process modules, SPDX headers and licenses
+# Checks of the Electron shell (they are also part of `just check`: typecheck and test of every package)
+electron-check: install
+    pnpm --filter @tavrn/desktop-electron typecheck
+    pnpm --filter @tavrn/desktop-electron test
+    scripts/check-spdx.sh
+    node scripts/check-js-licenses.mjs
+
+# The Electron shell's system-wide key listener: the Node-API module around apps/desktop/crates/keywatch (needs Rust)
+electron-native: install
+    pnpm --filter @tavrn/keywatch-native build
+
+# The key listener module: cargo fmt, clippy and licenses (and the crate's tests), its node test (key presses under xvfb-run)
+electron-native-check: electron-native
+    cd apps/desktop/crates/keywatch && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked
+    cd apps/desktop-electron/native/keywatch && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo deny check licenses
+    cd apps/desktop-electron/native/keywatch && env -u WAYLAND_DISPLAY xvfb-run -a pnpm test
+
+# The Linux packages of the Electron shell (.AppImage and .deb in apps/desktop-electron/release/) from web/dist
+electron-package: build electron-native
+    pnpm --filter @tavrn/desktop-electron package
+
+# The node must listen on E2E_NODE_PORT (default 8300); the app always renders under xvfb-run with X11 forced
+# Playwright smoke test of the Electron shell (E2E_NODE_BIN like `just e2e`, or E2E_NODE_URL), never on the desktop
+electron-e2e: build electron-native
+    @[ -n "${E2E_NODE_BIN:-}${E2E_NODE_URL:-}" ] || { echo "set E2E_NODE_BIN to a tavrn-node binary (or E2E_NODE_URL to a running development node)" >&2; exit 1; }
+    pnpm --filter @tavrn/desktop-electron build
+    cd apps/desktop-electron && env -u WAYLAND_DISPLAY -u ELECTRON_RUN_AS_NODE xvfb-run -a -s "-screen 0 1280x800x24" pnpm exec playwright test --config e2e/playwright.config.ts
+
+# E2E_NODE_BIN like `just electron-e2e`; the specs that need the main process run on the development build (docs/DESKTOP.md)
+# The Playwright specs with the full smoke test against a package, as CI runs them: E2E_ELECTRON_APP or the AppImage of `just electron-package`
+electron-e2e-packaged: electron-native
+    #!/usr/bin/env bash
+    set -euo pipefail
+    [ -n "${E2E_NODE_BIN:-}${E2E_NODE_URL:-}" ] || { echo "set E2E_NODE_BIN to a tavrn-node binary (or E2E_NODE_URL to a running development node)" >&2; exit 1; }
+    app="${E2E_ELECTRON_APP:-$(ls "$PWD"/apps/desktop-electron/release/*.AppImage 2>/dev/null | head -n1)}"
+    [ -n "$app" ] && [ -e "$app" ] || { echo "no package: run just electron-package (or set E2E_ELECTRON_APP)" >&2; exit 1; }
+    pnpm --filter @tavrn/desktop-electron build
+    cd apps/desktop-electron && E2E_ELECTRON_APP="$(realpath "$app")" env -u WAYLAND_DISPLAY -u ELECTRON_RUN_AS_NODE xvfb-run -a -s "-screen 0 1280x800x24" pnpm exec playwright test --config e2e/playwright.config.ts
 
 # Extra arguments go to `playwright test` (default: chromium and the phone emulation, two workers).
 # Playwright against real nodes: set E2E_NODE_BIN (a tavrn-node binary) or E2E_NODE_IMAGE (its container image)
