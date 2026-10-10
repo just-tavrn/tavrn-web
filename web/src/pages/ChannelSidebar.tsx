@@ -16,9 +16,9 @@ import { useUnread } from "../stores/unread";
 import { syncInboxChannels } from "../stores/mls";
 import { useE2ee } from "../stores/e2ee";
 import { joinRoomGroups } from "../crypto/groupJoins";
-import { BotsAllowedIcon, LockMark, NoBotsIcon, UnreadBadges, useHasUnread } from "../components/Badges";
+import { AccessMark, BotsAllowedIcon, LockMark, NoBotsIcon, UnreadBadges, useHasUnread } from "../components/Badges";
 import { botMarker } from "../lib/botAccess";
-import { channelPermissions } from "../lib/channelPermissions";
+import { channelAccessMarks, channelPermissions } from "../lib/channelPermissions";
 import { VoiceChannelRow } from "../voice/ui/VoiceChannelRow";
 import { ownVoiceChannel, useVoice } from "../voice/store";
 import { MenuButton } from "../components/ContextMenu";
@@ -73,7 +73,10 @@ function ChannelLink({ room, channel, onClick }: { room: RoomDetail; channel: Ch
   const unreadCount = useHasUnread(channel.id);
   const systemNew = useSystemNew(channel.id);
   const unread = system ? systemNew : unreadCount;
-  const { roomPath } = useNode();
+  const { roomPath, me } = useNode();
+  // Access marks: private (structural) first, then restricted for this viewer, whose name is dimmed (fg-2, 4.5:1).
+  const marks = channelAccessMarks(room, channel.id, channelPermissions(room, channel.id, me?.id ?? ""));
+  const restricted = marks.some((m) => m.startsWith("restricted"));
   // Context menu (design note 4.11): right-click, long press, keyboard or the ⋯ button.
   const { menu, overlay } = useChannelMenu(room, channel);
   return (
@@ -86,7 +89,10 @@ function ChannelLink({ room, channel, onClick }: { room: RoomDetail; channel: Ch
         className={({ isActive }) => `flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-sm ${isActive ? "bg-accent-soft text-fg-0" : unread ? "text-fg-0 hover:bg-bg-3/60" : "text-fg-1 hover:bg-bg-3/60 hover:text-fg-0"}`}
       >
         <ChannelIcon kind={channel.kind} encrypted={channel.encrypted} />
-        <span className={`min-w-0 flex-1 truncate ${unread ? "font-semibold" : ""}`}>{channelName(channel)}</span>
+        <span className={`min-w-0 flex-1 truncate ${unread ? "font-semibold" : ""} ${restricted ? "text-fg-2" : ""}`}>{channelName(channel)}</span>
+        {marks.map((m) => (
+          <AccessMark key={m} kind={m} />
+        ))}
         {system ? systemNew && <span role="img" className="h-2 w-2 shrink-0 rounded-full bg-accent" aria-label={t("members.welcome_new")} data-testid="welcome-new" /> : <UnreadBadges conversationId={channel.id} />}
         <MutedMark conversationId={channel.id} roomId={room.id} />
         {botMarker(channel, room) === "no_bots" && <NoBotsIcon />}
