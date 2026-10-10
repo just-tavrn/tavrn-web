@@ -23,6 +23,8 @@ export interface PickerLabels {
   cancel: string;
   /** "Share <name>" for a source's button. */
   share: string;
+  /** Shown when there is nothing to share. */
+  empty: string;
 }
 
 export interface PickerData {
@@ -30,8 +32,8 @@ export interface PickerData {
   sources: PickerSource[];
 }
 
-const EN: PickerLabels = { title: "Share your screen", screens: "Screens", windows: "Windows", cancel: "Cancel", share: "Share {name}" };
-const DE: PickerLabels = { title: "Bildschirm teilen", screens: "Bildschirme", windows: "Fenster", cancel: "Abbrechen", share: "{name} teilen" };
+const EN: PickerLabels = { title: "Share your screen", screens: "Screens", windows: "Windows", cancel: "Cancel", share: "Share {name}", empty: "There is no screen or window to share." };
+const DE: PickerLabels = { title: "Bildschirm teilen", screens: "Bildschirme", windows: "Fenster", cancel: "Abbrechen", share: "{name} teilen", empty: "Es gibt keinen Bildschirm und kein Fenster zum Teilen." };
 
 /** The picker's texts in the app's language (English, or German for a German locale). */
 export function pickerLabels(locale: string): PickerLabels {
@@ -66,6 +68,7 @@ export function pickerHtml(lang: string): string {
 * { box-sizing: border-box; }
 body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; }
 h1 { font-size: 16px; margin: 0 0 12px; }
+p { color: var(--fg2); }
 h2 { font-size: 13px; margin: 16px 0 8px; color: var(--fg2); font-weight: 600; }
 ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
 button { font: inherit; color: inherit; cursor: pointer; }

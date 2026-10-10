@@ -3,7 +3,8 @@
  * Screen sharing (`getDisplayMedia`) of the main window through the shell's own picker (docs/DESKTOP.md "The Linux
  * shell (Electron)"): Chromium asks `setDisplayMediaRequestHandler`, the shell lists the screens and windows
  * (`desktopCapturer`, X11) in a small modal window (`picker.ts`) and hands the chosen source back; Escape, Cancel or
- * closing the window refuses (the page gets `NotAllowedError`). Only the main window's own page may ask. On Wayland
+ * closing the window refuses (Electron rejects the page's request with `AbortError`, which the client takes as "the
+ * user closed the picker"). With nothing to share the picker says so. Only the main window's own page may ask. On Wayland
  * `desktopCapturer` goes through the desktop portal (PipeWire): the portal's own dialog picks, and the shell takes its
  * one source without a second picker.
  */
@@ -27,6 +28,17 @@ export interface CaptureOptions {
 /** The desktop session is Wayland (the portal picks the source). */
 function wayland(): boolean {
   return process.env.XDG_SESSION_TYPE === "wayland" && !!process.env.WAYLAND_DISPLAY;
+}
+
+/**
+ * The screens, then the windows. X11's screen capturer can fail on its first use right after the start (no pixel buffer
+ * yet), so an empty list of screens is asked once more.
+ */
+async function desktopSources(): Promise<Electron.DesktopCapturerSource[]> {
+  const ask = (type: "screen" | "window") => desktopCapturer.getSources({ types: [type], thumbnailSize: { width: 320, height: 180 }, fetchWindowIcons: false }).catch(() => []);
+  let screens = await ask("screen");
+  if (!screens.length) screens = await ask("screen");
+  return [...screens, ...(await ask("window"))];
 }
 
 let open: { win: BrowserWindow; data: PickerData; done: (id: string | null) => void } | null = null;
@@ -85,14 +97,14 @@ export function installDisplayMediaHandler(ses: Session, options: CaptureOptions
       }
       void (async () => {
         try {
-          const found = await desktopCapturer.getSources({ types: ["screen", "window"], thumbnailSize: { width: 320, height: 180 }, fetchWindowIcons: false });
+          const found = await desktopSources();
           // The app's own windows are not offered (sharing the call into itself).
           const own = new Set(BrowserWindow.getAllWindows().map((w) => w.getMediaSourceId()));
           const listed = found.filter((s) => !own.has(s.id));
           const offered: PickerSource[] = pickerSources(listed.map((s) => ({ id: s.id, name: s.name, thumbnail: s.thumbnail.isEmpty() ? "" : s.thumbnail.toDataURL() })));
           let id: string | null;
           if (wayland() && offered.length <= 1) id = offered[0]?.id ?? null;
-          else id = offered.length ? await pick(main, { labels: pickerLabels(options.locale()), sources: offered }, options) : null;
+          else id = await pick(main, { labels: pickerLabels(options.locale()), sources: offered }, options);
           const source = id ? listed.find((s) => s.id === id) : undefined;
           callback(source ? { video: source } : null);
         } catch (e) {

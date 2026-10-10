@@ -20,6 +20,7 @@ test("texts in English or German", () => {
   assert.equal(pickerLabels("en-US").title, "Share your screen");
   assert.equal(pickerLabels("de-AT").cancel, "Abbrechen");
   assert.equal(pickerLabels("fr").screens, "Screens");
+  assert.match(pickerLabels("de").empty, /keinen Bildschirm/);
 });
 
 test("sources: screens and windows with a name and a PNG thumbnail", () => {

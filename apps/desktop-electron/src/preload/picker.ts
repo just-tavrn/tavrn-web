@@ -50,6 +50,11 @@ function render(data: PickerData): void {
     }
     root.append(el("h2", { id, textContent: kind === "screen" ? labels.screens : labels.windows }), list);
   }
+  if (!data.sources.length) {
+    const empty = el("p", { textContent: labels.empty });
+    empty.dataset.testid = "picker-empty";
+    root.append(empty);
+  }
   const cancel = el("button", { type: "button", className: "cancel", textContent: labels.cancel });
   cancel.dataset.action = "cancel";
   cancel.addEventListener("click", () => answer(null));
