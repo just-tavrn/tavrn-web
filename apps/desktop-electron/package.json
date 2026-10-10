@@ -12,13 +12,14 @@
   "type": "module",
   "main": "dist/main/index.js",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && vite build --config vite.preload.config.ts",
+    "build": "tsc -p tsconfig.build.json && vite build --config vite.preload.config.ts && node scripts/copy-native.mjs",
     "dev": "node scripts/dev.mjs",
     "start": "electron .",
-    "package": "pnpm run build && electron-builder --config electron-builder.config.mjs --linux",
+    "package": "pnpm run build && node scripts/copy-native.mjs --require && electron-builder --config electron-builder.config.mjs --linux",
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test \"src/**/*.test.ts\" \"scripts/*.test.mjs\"",
-    "e2e": "playwright test --config e2e/playwright.config.ts"
+    "e2e": "playwright test --config e2e/playwright.config.ts",
+    "native": "pnpm --filter @tavrn/keywatch-native build"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

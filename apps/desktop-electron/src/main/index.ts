@@ -11,7 +11,9 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, ipcMain, Menu, protocol, session, shell } from "electron";
 import { DIR_NAME, Settings, settingsPath } from "./config.ts";
+import { ShellEvents } from "./events.ts";
 import { devServerUrl, isAppPage, permission } from "./guard.ts";
+import { Hotkeys, nativeKeyListener, registerHotkeyHandlers } from "./hotkeys.ts";
 import { IpcRegistry, type IpcEventLike } from "./ipc.ts";
 import { APP_SCHEME, APP_SCHEME_PRIVILEGES, installAppProtocol } from "./protocol.ts";
 import { registerShellHandlers } from "./shell.ts";
@@ -51,6 +53,12 @@ function main(): void {
     !!mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents && event.senderFrame === mainWindow.webContents.mainFrame && isAppPage(event.senderFrame.url, devUrl);
   const registry = new IpcRegistry(trusted);
   registerShellHandlers(registry, { settings, version: appVersion(), openExternal });
+  // The shell's events for the client (notification clicks, tray actions, hotkeys).
+  const events = new ShellEvents(() => mainWindow?.webContents ?? null);
+  // System-wide hotkeys: the native key listener (observes, never grabs), copied next to the main process by the build.
+  const hotkeys = new Hotkeys(nativeKeyListener(join(here, "../native/keywatch.node")), (event) => void events.send({ channel: "hotkeys", event }));
+  registerHotkeyHandlers(registry, { hotkeys });
+  app.on("will-quit", () => hotkeys.shutdown());
   registry.install(ipcMain);
 
   app.on("second-instance", () => showMain(mainWindow));

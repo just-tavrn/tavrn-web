@@ -1,0 +1,23 @@
+{
+  "name": "@tavrn/keywatch-native",
+  "version": "0.0.0",
+  "description": "The Electron shell's system-wide key listener (observes, never grabs): a Node-API module around apps/desktop/crates/keywatch",
+  "private": true,
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/just-tavrn/tavrn-web.git",
+    "directory": "apps/desktop-electron/native/keywatch"
+  },
+  "napi": {
+    "binaryName": "keywatch",
+    "targets": ["x86_64-unknown-linux-gnu"]
+  },
+  "scripts": {
+    "build": "napi build --platform --release --no-js --dts index.d.ts",
+    "test": "node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "3.10.8"
+  }
+}

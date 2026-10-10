@@ -16,11 +16,14 @@ export default {
   extraMetadata: { name: "tavrn", version, main: "dist/main/index.js" },
   directories: { output: "release", buildResources: "build" },
   asar: true,
+  asarUnpack: ["dist/native/*.node"],
   files: [
     "package.json",
     "dist/main/**/*.js",
     "dist/shared/**/*.js",
     "dist/preload/index.cjs",
+    // The key listener (native/keywatch, docs/DESKTOP.md "Hotkeys"): a native module is loaded from outside the archive.
+    "dist/native/keywatch.node",
     { from: "../../web/dist", to: "web", filter: ["**/*", "!**/*.map"] },
     { from: "../desktop/src-tauri/icons", to: "icons", filter: ["icon.png"] },
   ],
