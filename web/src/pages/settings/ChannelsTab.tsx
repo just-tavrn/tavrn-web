@@ -8,7 +8,9 @@ import { useNode } from "../../components/NodeScope";
 import { useT } from "../../i18n";
 import { toastError, useToasts } from "../../stores/toasts";
 import { Button, Field, Input } from "../../components/ui";
-import { ConfirmDialog, OverrideTriState, Section, Select } from "./common";
+import { ConfirmDialog, OverrideTriState, Section, Select, TriStateRow } from "./common";
+import { UPLOAD_CATEGORIES } from "../../lib/uploads";
+import { effectiveUploads, inheritedUpload, overrideUploadState, setOverrideUpload, type UploadOverrideInput, type UploadSubject } from "../../lib/uploadPolicy";
 import { categoryName, channelName } from "../../lib/names";
 import { BotsAllowedIcon, LockMark, NoBotsIcon } from "../../components/Badges";
 import { botMarker } from "../../lib/botAccess";
@@ -319,6 +321,7 @@ function OverridesEditor({ target, room, onChanged }: { target: OverrideTarget; 
   const current = overrides.find((o) => o.subject_type === subjectType && o.subject_id === subjectId);
   const [allow, setAllow] = useState(parsePermissions(current?.allow));
   const [deny, setDeny] = useState(parsePermissions(current?.deny));
+  const [uploads, setUploads] = useState({ upload_allow: current?.upload_allow ?? [], upload_deny: current?.upload_deny ?? [] });
   const [confirmReset, setConfirmReset] = useState(false);
   const categoryId = target.type === "channel" ? target.channel.category_id : null;
   const category = room.categories.find((c) => c.id === categoryId);
@@ -341,10 +344,11 @@ function OverridesEditor({ target, room, onChanged }: { target: OverrideTarget; 
     const o = overrides.find((x) => x.subject_type === ty && x.subject_id === id);
     setAllow(parsePermissions(o?.allow));
     setDeny(parsePermissions(o?.deny));
+    setUploads({ upload_allow: o?.upload_allow ?? [], upload_deny: o?.upload_deny ?? [] });
   };
   const save = async () => {
     try {
-      await api.channels.setOverride(room.id, { target_type: target.type, target_id: targetId, subject_type: subjectType, subject_id: subjectId, allow: allow.toString(), deny: deny.toString() });
+      await api.channels.setOverride(room.id, { target_type: target.type, target_id: targetId, subject_type: subjectType, subject_id: subjectId, allow: allow.toString(), deny: deny.toString(), ...uploads });
       await onChanged();
       useToasts.getState().push({ kind: "info", title: t("channels.overrides_saved") });
     } catch (e) {
@@ -366,6 +370,15 @@ function OverridesEditor({ target, room, onChanged }: { target: OverrideTarget; 
       </Field>
       {isEveryone && <p className="text-xs text-fg-2">{t("members.everyone_restricted")}</p>}
       <OverrideTriState allow={allow} deny={deny} onChange={(a, d) => { setAllow(a); setDeny(d); }} restricted={isEveryone ? EVERYONE_RESTRICTED : 0n} inherited={inherited} />
+      <UploadOverrides
+        room={room}
+        subject={{ type: subjectType, id: subjectId }}
+        layer={overrides}
+        categoryOverrides={categoryOverrides}
+        value={uploads}
+        onChange={setUploads}
+        subjectName={subjects.find((s) => s.type === subjectType && s.id === subjectId)?.name ?? ""}
+      />
       <div className="flex flex-wrap justify-end gap-2">
         {target.type === "channel" && category && overrides.length > 0 && (
           <Button variant="ghost" onClick={() => setConfirmReset(true)} data-testid="reset-to-category">
@@ -385,10 +398,57 @@ function OverridesEditor({ target, room, onChanged }: { target: OverrideTarget; 
           setConfirmReset(false);
           setAllow(0n);
           setDeny(0n);
+          setUploads({ upload_allow: [], upload_deny: [] });
           await onChanged();
           useToasts.getState().push({ kind: "info", title: t("channels.reset_done") });
         }}
       />
     </Section>
+  );
+}
+
+type UploadMasks = { upload_allow: string[]; upload_deny: string[] };
+
+/**
+ * File types of an override (tavrn-protocol permissions.md "Upload categories"): allow / neutral / deny per category
+ * with what a neutral one inherits (the roles' setting and, in a channel, the category's overrides), and the result
+ * for the subject with the edits applied: the category's layer, then the channel's.
+ */
+function UploadOverrides({ room, subject, layer, categoryOverrides, value, onChange, subjectName }: { room: RoomDetail; subject: { type: "role" | "member"; id: string }; layer: UploadOverrideInput[]; categoryOverrides: UploadOverrideInput[] | null; value: UploadMasks; onChange: (next: UploadMasks) => void; subjectName: string }) {
+  const t = useT();
+  const everyone = room.roles.find((r) => r.is_everyone);
+  const role = subject.type === "role" && subject.id !== everyone?.id ? room.roles.find((r) => r.id === subject.id) : undefined;
+  const input: UploadSubject = {
+    everyoneId: everyone?.id ?? "",
+    everyone: everyone?.allowed_upload_categories,
+    roles: role ? [{ id: role.id, position: role.position, categories: role.allowed_upload_categories }] : [],
+    memberId: subject.type === "member" ? subject.id : undefined,
+    privileged: hasPermission(parsePermissions(everyone?.permissions) | parsePermissions(role?.permissions), Permission.ADMINISTRATOR),
+  };
+  const own = (o: UploadOverrideInput) => o.subject_type === subject.type && o.subject_id === subject.id;
+  const edited = [...layer.filter((o) => !own(o)), { subject_type: subject.type, subject_id: subject.id, ...value }];
+  const effective = effectiveUploads(input, categoryOverrides ? [categoryOverrides, edited] : [edited]);
+  const names = effective.map((c) => t(`upload.category.${c}`)).join(", ");
+  return (
+    <fieldset data-testid="upload-overrides">
+      <legend className="text-[11px] font-semibold uppercase tracking-wide text-fg-2">{t("channels.upload_title")}</legend>
+      <ul className="mt-1 divide-y divide-line">
+        {UPLOAD_CATEGORIES.map((c) => (
+          <TriStateRow
+            key={c}
+            label={t(`upload.category.${c}`)}
+            state={overrideUploadState(value, c)}
+            onChange={(state) => onChange(setOverrideUpload(value, c, state))}
+            inherited={inheritedUpload(input, categoryOverrides, c)}
+            inheritedTestId={`inherited-upload-${c}`}
+            rowProps={{ "data-upload": c }}
+          />
+        ))}
+      </ul>
+      <p className="mt-2 text-sm text-fg-1" data-testid="upload-effective" aria-live="polite">
+        {effective.length ? t("channels.upload_effective", { name: subjectName, categories: names }) : t("channels.upload_effective_none", { name: subjectName })}
+      </p>
+      <p className="mt-1 text-xs text-fg-2">{t("upload.executables_hint")}</p>
+    </fieldset>
   );
 }

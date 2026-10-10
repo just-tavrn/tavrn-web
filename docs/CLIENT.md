@@ -433,6 +433,25 @@ sends a private channel's events only to the members it is listed to: a member w
 channel from the sidebar like a deleted one, but an open channel says **You no longer have access to this channel**
 instead of "Channel not found", and the channel's local search entries stay (`web/src/lib/hiddenChannels.ts`).
 
+**File types** (PROTOCOL.md §7a, [permissions.md](https://github.com/just-tavrn/tavrn-protocol/blob/main/permissions.md)
+"Upload categories"): images, audio, videos, documents, archives and other files. **Room settings → Overview →
+Uploads** sets what everyone may attach (`@everyone`, the room default) and links to the roles. In **Room settings →
+Roles** every role has **Allowed file types**: a list, or for roles other than `@everyone` **Not set (inherit the room
+default)**, where the member's highest role with its own list decides, otherwise `@everyone` (shown greyed); it is
+saved with the role, and only when it changed. The category and channel editors have a **File types** block under the
+permissions with the same allow / – / deny choice per type, the inherited value in grey, and the result for the
+selected role with the unsaved changes applied ("Result for Artists: Images, Documents"; `web/src/lib/uploadPolicy.ts`
+evaluates like the node). Programs and scripts additionally need the node's `TAVRN_UPLOAD_ALLOW_EXECUTABLES`. The
+composer filters the file picker and refuses a file outside the policy before anything is uploaded.
+
+**Download warning.** Before an attachment, a file in the media viewer or a files-channel entry is saved, the client
+checks the content about to be written (decrypted, for encrypted files) with the node's rules (`executableKind` in
+`web/src/lib/uploads.ts`: magic bytes of Windows, ELF, Mach-O and DEX programs, `#!` scripts, shortcuts and disk images;
+the node's list of dangerous extensions; executable content types). For a program, script, installer, shortcut, disk
+image or macro document a dialog asks first: **This file can run programs on your computer**, with the file name and
+the detected kind, **Cancel** (focused, so Enter never downloads) and **Download anyway**; Escape cancels. Archives
+(zip, 7z, rar, tar.*) are not warned. The warning is always on (`web/src/lib/download.ts`).
+
 ## Reports, auto-moderation and ownership
 
 Specified in [MODERATION.md](https://github.com/just-tavrn/tavrn-protocol/blob/main/MODERATION.md); the client shows

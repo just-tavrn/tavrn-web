@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { TransferSection } from "../../moderation/TransferOwnership";
 import { useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { Permission, hasPermission, isBotKind, parsePermissions, type RoomDetail } from "@tavrn/sdk";
 import { useNode } from "../../components/NodeScope";
 import { indexLeftRoom } from "../../stores/conversationIndex";
@@ -231,7 +231,7 @@ function NoBotsSection({ room, canManage }: { room: RoomDetail; canManage: boole
  * overrides can widen or narrow it; executables additionally need the node setting.
  */
 function UploadCategoriesSection({ room }: { room: RoomDetail }) {
-  const { api } = useNode();
+  const { api, roomPath } = useNode();
   const t = useT();
   const queryClient = useQueryClient();
   const everyone = room.roles.find((r) => r.is_everyone);
@@ -265,6 +265,12 @@ function UploadCategoriesSection({ room }: { room: RoomDetail }) {
         ))}
       </div>
       <p className="text-xs text-fg-2">{t("upload.executables_hint")}</p>
+      {/* Roles and channel overrides narrow or widen this default (RolesTab, ChannelsTab). */}
+      <p className="text-xs">
+        <Link to={roomPath(room.id, undefined, "settings/roles")} className="text-accent underline underline-offset-2 hover:text-accent-hover" data-testid="upload-per-role">
+          {t("upload.per_role_link")}
+        </Link>
+      </p>
     </Section>
   );
 }

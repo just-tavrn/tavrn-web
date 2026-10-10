@@ -44,7 +44,7 @@ import { useNodeSockets, useRealtimeState } from "../hooks/useRealtime";
 import { ContextMenu, menuItem, normalizeMenu, separator, type MenuEntry } from "../components/ContextMenu";
 import { pointAnchor, rectOf, type AnchorRect } from "../lib/position";
 import { AudioPlayer, mediaKind, useAttachmentUrl, type ViewAttachment } from "../components/AttachmentView";
-import { saveFile } from "../platform/saveFile";
+import { saveDownload } from "../lib/download";
 import { Button, Dialog } from "../components/ui";
 import { ConfirmDialog } from "../pages/settings/common";
 import { useRoomMembers } from "../pages/ChannelPage";
@@ -306,8 +306,8 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
 
   const download = async (e: FileEntry) => {
     try {
-      // Saved as opaque bytes: the browser never renders a file of the channel.
-      await saveFile({ name: e.name, data: await loadEntry(e), mime: "application/octet-stream" });
+      // Saved as opaque bytes: the browser never renders a file of the channel. Executables ask first.
+      await saveDownload({ name: e.name, data: await loadEntry(e), mime: "application/octet-stream" }, e.mime);
     } catch (err) {
       toastError(err);
     }

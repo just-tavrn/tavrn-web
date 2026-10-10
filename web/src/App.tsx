@@ -20,6 +20,7 @@ import { DiscoverPage } from "./pages/DiscoverPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { MessageRequestPage, MessageRequestsPage } from "./pages/MessageRequestsPage";
 import { ReauthDialog } from "./components/ReauthDialog";
+import { DownloadWarningDialog } from "./components/DownloadWarningDialog";
 import { TermsGate } from "./components/legal/TermsGate";
 import { DateOfBirthGate } from "./components/age/DateOfBirthGate";
 import { LegalDocumentPage, LegalIndexPage, NoticeFormPage, NoticeStatusPage } from "./pages/legal/LegalPages";
@@ -101,6 +102,7 @@ export function App() {
         </Route>
       </Routes>
       <ReauthDialog />
+      <DownloadWarningDialog />
       <TermsGate />
       <DateOfBirthGate />
     </BrowserRouter>

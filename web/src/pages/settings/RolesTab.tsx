@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useSearchParams } from "react-router";
 import { EVERYONE_RESTRICTED, Permission, hasPermission, parsePermissions, type Role, type RoomDetail } from "@tavrn/sdk";
 import { canManageRole, planRoleReorder, sortRoles, topPosition } from "../../lib/hierarchy";
 import { useNode } from "../../components/NodeScope";
@@ -8,6 +9,7 @@ import { useT } from "../../i18n";
 import { toastError, useToasts } from "../../stores/toasts";
 import { Button, Field, Input } from "../../components/ui";
 import { ConfirmDialog, PermissionCheckboxes, Section } from "./common";
+import { UPLOAD_CATEGORIES } from "../../lib/uploads";
 
 /**
  * "Managed by <application>" (APPLICATIONS.md §4.2): the name of the application whose installation created the
@@ -31,7 +33,9 @@ export function RolesTab({ room }: { room: RoomDetail }) {
   const t = useT();
   const roles = sortRoles(room.roles.filter((r) => !r.is_everyone));
   const everyone = room.roles.find((r) => r.is_everyone);
-  const [selectedId, setSelectedId] = useState<string>(roles[0]?.id ?? everyone?.id ?? "");
+  // `?role=<id>`: opened from elsewhere (the room overview's file types link to @everyone).
+  const [params] = useSearchParams();
+  const [selectedId, setSelectedId] = useState<string>(params.get("role") ?? roles[0]?.id ?? everyone?.id ?? "");
   const selected = room.roles.find((r) => r.id === selectedId) ?? roles[0] ?? everyone;
   const queryClient = useQueryClient();
   const myPerms = parsePermissions(room.my_permissions);
@@ -169,11 +173,17 @@ function RoleEditor({ role, room, canManage, myPerms, onChanged, managedBy }: { 
   const [perms, setPerms] = useState(parsePermissions(role.permissions));
   const [confirmDelete, setConfirmDelete] = useState(false);
   useEffect(() => setPerms(parsePermissions(role.permissions)), [role.permissions]);
+  const savedUploads = role.allowed_upload_categories ?? (role.is_everyone ? [...UPLOAD_CATEGORIES] : null);
+  const [uploads, setUploads] = useState<string[] | null>(savedUploads);
+  const roomDefault = room.roles.find((r) => r.is_everyone)?.allowed_upload_categories ?? [...UPLOAD_CATEGORIES];
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Only a changed setting is sent: the room overview edits @everyone's too.
+    const uploadsChanged = JSON.stringify(uploads) !== JSON.stringify(savedUploads);
+    const extra = uploadsChanged ? { allowed_upload_categories: uploads } : {};
     try {
-      await api.roles.update(room.id, role.id, role.is_everyone ? { permissions: perms.toString() } : { name, color: useColor ? color : null, position, hoist, mentionable, permissions: perms.toString() });
+      await api.roles.update(room.id, role.id, role.is_everyone ? { permissions: perms.toString(), ...extra } : { name, color: useColor ? color : null, position, hoist, mentionable, permissions: perms.toString(), ...extra });
       await onChanged();
       useToasts.getState().push({ kind: "info", title: t("roles.saved") });
     } catch (err) {
@@ -226,6 +236,7 @@ function RoleEditor({ role, room, canManage, myPerms, onChanged, managedBy }: { 
           <PermissionCheckboxes value={perms} onChange={setPerms} limit={room.is_owner ? undefined : myPerms} idPrefix={`role-${role.id}`} restricted={role.is_everyone ? EVERYONE_RESTRICTED : 0n} />
         </fieldset>
       </Section>
+      <RoleUploadCategories roomId={room.id} role={role} value={uploads} onChange={setUploads} roomDefault={roomDefault} disabled={!canManage} />
       {canManage && (
         <div className="flex flex-wrap justify-end gap-2">
           {!role.is_everyone && (
@@ -249,5 +260,51 @@ function RoleEditor({ role, room, canManage, myPerms, onChanged, managedBy }: { 
         }}
       />
     </form>
+  );
+}
+
+/**
+ * "Allowed file types" of a role (tavrn-protocol permissions.md "Upload categories"): a list, or for roles other than
+ * @everyone "not set", where the member's highest role with a setting decides, else @everyone (the room default,
+ * shown greyed). @everyone's list is also in the room overview.
+ */
+function RoleUploadCategories({ roomId, role, value, onChange, roomDefault, disabled }: { roomId: string; role: Role; value: string[] | null; onChange: (next: string[] | null) => void; roomDefault: string[]; disabled: boolean }) {
+  const t = useT();
+  const { roomPath } = useNode();
+  const shown = value ?? roomDefault;
+  const toggle = (category: string, on: boolean) => onChange(UPLOAD_CATEGORIES.filter((c) => (c === category ? on : shown.includes(c))));
+  return (
+    <Section title={t("roles.uploads_title")} description={t(role.is_everyone ? "roles.uploads_everyone_hint" : "roles.uploads_hint")}>
+      <div className="space-y-3" data-testid="role-uploads">
+        {!role.is_everyone && (
+          <label className="flex min-h-10 items-start gap-2 text-sm text-fg-1">
+            <input type="checkbox" className="mt-0.5 h-4 w-4 accent-accent" checked={value === null} disabled={disabled} onChange={(e) => onChange(e.target.checked ? null : [...roomDefault])} data-testid="role-uploads-inherit" />
+            <span>
+              {t("roles.uploads_inherit")}
+              <span className="block text-xs text-fg-2">{t("roles.uploads_inherit_hint")}</span>
+            </span>
+          </label>
+        )}
+        <fieldset disabled={disabled || value === null} className="disabled:opacity-60">
+          <legend className="sr-only">{t("roles.uploads_title")}</legend>
+          <div className="grid gap-1 sm:grid-cols-3">
+            {UPLOAD_CATEGORIES.map((c) => (
+              <label key={c} className="flex min-h-9 items-center gap-2 text-sm text-fg-1">
+                <input type="checkbox" className="h-4 w-4 accent-accent" checked={shown.includes(c)} onChange={(e) => toggle(c, e.target.checked)} data-testid={`role-upload-${c}`} />
+                {t(`upload.category.${c}`)}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <p className="text-xs text-fg-2">{t("upload.executables_hint")}</p>
+        {role.is_everyone && (
+          <p className="text-xs">
+            <Link to={roomPath(roomId, undefined, "settings/overview")} className="text-accent underline underline-offset-2 hover:text-accent-hover">
+              {t("roles.uploads_overview_link")}
+            </Link>
+          </p>
+        )}
+      </div>
+    </Section>
   );
 }

@@ -18,7 +18,7 @@ import { decryptAttachment, type ContentAttachment } from "@tavrn/e2ee";
 import { isSvg, safeBlobType, shouldAutoPreview } from "../lib/preview";
 import { usePrivacy } from "../stores/privacy";
 import { toastError } from "../stores/toasts";
-import { saveFile } from "../platform/saveFile";
+import { saveDownload } from "../lib/download";
 
 const MediaViewer = lazy(() => import("./MediaViewer"));
 
@@ -131,7 +131,10 @@ export function formatDuration(seconds: number): string {
   return h ? `${h}:${String(m).padStart(2, "0")}:${rest}` : `${m}:${rest}`;
 }
 
-/** A download icon button; fetches (and decrypts) on demand and saves through the platform (saveFile.ts). */
+/**
+ * A download icon button; fetches (and decrypts) on demand and saves through the platform (saveFile.ts), asking first
+ * when the file is an executable or a script (lib/download.ts).
+ */
 export function DownloadButton({ a, className = "" }: { a: ViewAttachment; className?: string }) {
   const t = useT();
   const { api } = useNode();
@@ -145,7 +148,7 @@ export function DownloadButton({ a, className = "" }: { a: ViewAttachment; class
         throw e;
       });
       setFailed(false);
-      await saveFile({ name: a.name || "download", data: blob, mime: blob.type });
+      await saveDownload({ name: a.name || "download", data: blob, mime: blob.type }, a.mime);
     } catch (e) {
       toastError(e, t("attachment.download_failed", { name: a.name }));
     } finally {
