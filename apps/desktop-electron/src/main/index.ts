@@ -9,10 +9,11 @@
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, ipcMain, Menu, protocol, session, shell } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, protocol, safeStorage, session, shell } from "electron";
 import { DIR_NAME, Settings, settingsPath } from "./config.ts";
 import { devServerUrl, isAppPage, permission } from "./guard.ts";
 import { IpcRegistry, type IpcEventLike } from "./ipc.ts";
+import { BACKEND_ENV, Keychain, passwordStoreSwitch, registerKeychainHandlers, safeStorageCipher } from "./keychain.ts";
 import { APP_SCHEME, APP_SCHEME_PRIVILEGES, installAppProtocol } from "./protocol.ts";
 import { registerShellHandlers } from "./shell.ts";
 import { createMainWindow, showMain } from "./windows.ts";
@@ -39,6 +40,9 @@ function main(): void {
     app.quit();
     return;
   }
+  // The keychain's safeStorage asks the desktop's Secret Service, also on desktops Chromium does not know (keychain.ts).
+  const passwordStore = passwordStoreSwitch(process.env, app.commandLine.hasSwitch("password-store"));
+  if (passwordStore) app.commandLine.appendSwitch("password-store", passwordStore);
   const devUrl = devServerUrl(app.isPackaged, process.env.TAVRN_DESKTOP_DEV_URL);
   const webRoot = app.isPackaged ? join(app.getAppPath(), "web") : resolve(app.getAppPath(), "../../web/dist");
   const icon = app.isPackaged ? join(app.getAppPath(), "icons", "icon.png") : resolve(app.getAppPath(), "../desktop/src-tauri/icons/icon.png");
@@ -51,6 +55,11 @@ function main(): void {
     !!mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents && event.senderFrame === mainWindow.webContents.mainFrame && isAppPage(event.senderFrame.url, devUrl);
   const registry = new IpcRegistry(trusted);
   registerShellHandlers(registry, { settings, version: appVersion(), openExternal });
+  // The keychain is chosen once the app is ready (safeStorage knows its keyring only then); no call comes earlier.
+  let keychain: Keychain | null = null;
+  const keychainNow = () =>
+    app.isReady() ? (keychain ??= Keychain.forSetting(process.env[BACKEND_ENV], { dir: app.getPath("userData"), cipher: safeStorageCipher(safeStorage) })) : Keychain.unavailable();
+  registerKeychainHandlers(registry, { settings, keychain: keychainNow });
   registry.install(ipcMain);
 
   app.on("second-instance", () => showMain(mainWindow));
