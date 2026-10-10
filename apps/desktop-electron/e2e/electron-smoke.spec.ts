@@ -342,7 +342,11 @@ test("the Linux app end to end: picker, sign-in, encrypted chat, media, voice, c
       return;
     }
     expect((tray.value as { close_to_tray: boolean }).close_to_tray, JSON.stringify(tray)).toBe(true);
-    const visible = () => page.evaluate(() => document.visibilityState);
+    // The main window as the main process sees it (development build); a package's page reports its visibility.
+    const visible = () =>
+      app!.mode === "dev"
+        ? app!.evaluate(({ BrowserWindow }) => (BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().startsWith("app://tavrn/"))?.isVisible() ? "visible" : "hidden"))
+        : page.evaluate(() => document.visibilityState);
     if (app!.mode === "dev") {
       // Closing the window as the window manager does (its close event); a page's own window.close() bypasses it.
       await app!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().startsWith("app://tavrn/"))?.close());
