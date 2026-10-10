@@ -74,7 +74,11 @@ describe("Composer: attachments", () => {
     box.setSelectionRange(4, 8);
     await u.keyboard("{Control>}{Shift>}S{/Shift}{/Control}");
     expect(box.value).toBe("das ||ende||");
-    await u.click(screen.getByRole("button", { name: "Spoiler" }));
+    const spoilerButton = screen.getByRole("button", { name: "Spoiler" });
+    // An SVG icon, not a block glyph that renders differently per font.
+    expect(spoilerButton.querySelector("svg")).not.toBeNull();
+    expect(spoilerButton.textContent).not.toContain("\u2592");
+    await u.click(spoilerButton);
     expect(box.value).toContain("||||");
     await vi.waitFor(() => expect(screen.getByRole("button", { name: "Senden" })).toBeEnabled());
     await u.click(screen.getByRole("button", { name: "Senden" }));
