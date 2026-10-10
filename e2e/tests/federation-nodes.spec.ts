@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test } from "@playwright/test";
-import { createRoomViaApi, loginViaApi, openNavIfMobile, registerViaApi, uniqueName } from "./helpers";
+import { createRoomViaApi, loginViaApi, openNavIfMobile, registerViaApi, uniqueName, railName } from "./helpers";
 import { A, B, BROWSER_API_B, FEDERATION_BROWSER, NODE_A, NODE_B, WEB_A, WEB_B, chromiumOnly, federatedSession, indexOf, loginOn } from "./federation-helpers";
 
 test.use(FEDERATION_BROWSER);
@@ -43,7 +43,7 @@ test.describe("Rooms on several nodes", () => {
     await loginOn(page2, WEB_A, { ...alice, token: second.token, refresh: second.refresh, deviceId: second.deviceId }, { domain: A, remote: false });
     await page2.goto(`${WEB_A}/`);
     await openNavIfMobile(page2);
-    await expect(page2.getByRole("link", { name: roomA.name, exact: true })).toBeVisible();
+    await expect(page2.getByRole("link", { name: railName(roomA.name) })).toBeVisible();
     const remoteLink = page2.getByRole("link", { name: `${roomB.name} (${B})` });
     await expect(remoteLink).toBeVisible();
     await expect(page2.locator(`[data-testid="node-group"][data-node="${B}"]`)).toContainText(B);
@@ -93,7 +93,7 @@ test.describe("Rooms on several nodes", () => {
     await expect(page.locator(`[data-testid="node-group"][data-node="${B}"]`)).toHaveAttribute("data-unreachable", "true");
 
     // The room on A works as before.
-    await page.getByRole("link", { name: roomA.name, exact: true }).click();
+    await page.getByRole("link", { name: railName(roomA.name) }).click();
     await expect(page).toHaveURL(new RegExp(`/rooms/${roomA.id}/channels/`));
     await expect(page.getByTestId("channel-name")).toBeVisible();
     await expect(banner).toHaveCount(0);

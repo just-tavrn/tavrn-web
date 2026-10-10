@@ -6,6 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuth } from "../stores/auth";
 import { resetNodeCaches, useNodes } from "../stores/nodes";
 import { useUnread } from "../stores/unread";
+import { DEFAULT_SETTINGS, useNotifications } from "../stores/notifications";
+import { useVoicePresence } from "../voice/presence";
+import type { VoiceParticipant } from "@tavrn/sdk";
 import { RAIL_STATE_VERSION, roomKey, useRailFolders, type RailState } from "../stores/railFolders";
 import { mockFetch, renderWithProviders } from "../test/render";
 import { RoomRail } from "./RoomRail";
@@ -36,6 +39,8 @@ beforeEach(() => {
   useNodes.getState().clear();
   useUnread.setState({ states: {}, held: {} });
   useRailFolders.getState().reset();
+  useVoicePresence.getState().reset();
+  useNotifications.setState({ settings: DEFAULT_SETTINGS });
   useAuth.setState({ token: "t", refresh: "r", user: me, deviceId: "D", home: null });
   mockFetch({
     "/rooms/A": detail("A"),
@@ -194,7 +199,7 @@ describe("room rail", () => {
     // Expanded, the rooms carry their own badges and the open room its own state.
     fireEvent.click(folderButton());
     expect(folderButton()).toHaveAccessibleName("Ordner Games, 2 Räume, Ungelesene Nachrichten");
-    expect(roomLink("Bravo")).toHaveAttribute("aria-description", "Ungelesene Nachrichten");
+    expect(roomLink("Bravo, Ungelesene Nachrichten")).toBeInTheDocument();
     expect(roomLink("Charlie")).toHaveAttribute("aria-current", "page");
   });
 
@@ -258,5 +263,47 @@ describe("room rail", () => {
     stored({ folders: [{ id: "F", name: "Games", roomIds: [k("B"), k("Z")] }], order: ["folder:F"] });
     renderWithProviders(<RoomRail />);
     await waitFor(() => expect(saved().folders[0]!.roomIds).toEqual([k("B")]));
+  });
+
+  it("the unread count follows the room's notification level: count for every message, dot for mentions only and muted", async () => {
+    mockFetch({ "/rooms/A": detail("A"), "/rooms/B": detail("B", 12, 0), "/rooms/C": detail("C"), "/rooms": { body: ROOMS }, "/conversations": { body: [] } });
+    stored({ folders: [{ id: "F", name: "Games", roomIds: [k("B")] }], order: [k("A"), "folder:F", k("C")], expanded: ["F"] });
+    renderWithProviders(<RoomRail />);
+    // Default level (mentions only): the dot as before.
+    await waitFor(() => expect(screen.getByTestId("rail-unread-dot")).toBeInTheDocument());
+    expect(screen.queryByTestId("rail-unread-count")).toBeNull();
+    // Every message: the count, bottom right, and in the name.
+    act(() => useNotifications.setState({ settings: { ...DEFAULT_SETTINGS, rooms: { B: { mode: "all" } } } }));
+    expect(screen.getByTestId("rail-unread-count")).toHaveTextContent("12");
+    expect(screen.queryByTestId("rail-unread-dot")).toBeNull();
+    expect(roomLink("Bravo, 12 ungelesen")).toBeInTheDocument();
+    // Muted: the dot stays (as before).
+    act(() => useNotifications.setState({ settings: { ...DEFAULT_SETTINGS, rooms: { B: { mode: "all", muted_until: "9999-12-31T00:00:00Z" } } } }));
+    expect(screen.queryByTestId("rail-unread-count")).toBeNull();
+    expect(screen.getByTestId("rail-unread-dot")).toBeInTheDocument();
+    // Mentions take precedence over the count.
+    act(() => useNotifications.setState({ settings: { ...DEFAULT_SETTINGS, global: { ...DEFAULT_SETTINGS.global, mode: "all" } } }));
+    act(() => useUnread.getState().seed([{ conversation_id: "cB", last_message_id: "03", last_read_message_id: "01", unread_count: 13, mention_count: 1 }]));
+    expect(screen.getByTestId("rail-mention-badge")).toHaveTextContent("1");
+    expect(screen.queryByTestId("rail-unread-count")).toBeNull();
+  });
+
+  it("voice badges: a speaker while somebody is in voice, the monitor while somebody streams, both in the name", async () => {
+    const p = (user: string, streaming = false): VoiceParticipant => ({ user: `${user}@a.test`, user_id: user, device_id: "D", identity: `${user}@a.test/D`, muted: false, deafened: false, streaming, camera: false, server_muted: false, joined_at: "", connection: "connected" });
+    stored({ folders: [{ id: "F", name: "Games", roomIds: [k("C")] }], order: [k("A"), k("B"), "folder:F"] });
+    renderWithProviders(<RoomRail />);
+    await waitFor(() => expect(topLevelNames()).toEqual(["Alpha", "Bravo", "[Games]"]));
+    expect(screen.queryByTestId("rail-voice-badge")).toBeNull();
+    act(() => useVoicePresence.getState().apply("a.test", { room_id: "B", channel_id: "V1", participants: [p("bob"), p("carol")] }));
+    const badge = within(roomLink("Bravo, 2 im Sprachkanal")).getByTestId("rail-voice-badge");
+    expect(badge).toHaveAttribute("data-kind", "voice");
+    act(() => useVoicePresence.getState().apply("a.test", { room_id: "B", channel_id: "V2", participants: [p("dave", true)] }));
+    expect(within(roomLink("Bravo, 3 im Sprachkanal, jemand streamt")).getByTestId("rail-voice-badge")).toHaveAttribute("data-kind", "stream");
+    // A collapsed folder sums its rooms; another node's channel of the same id does not count.
+    act(() => useVoicePresence.getState().apply("other.test", { room_id: "C", channel_id: "V9", participants: [p("eve")] }));
+    expect(within(folderButton()).queryByTestId("rail-voice-badge")).toBeNull();
+    act(() => useVoicePresence.getState().apply("a.test", { room_id: "C", channel_id: "V3", participants: [p("eve")] }));
+    expect(folderButton()).toHaveAccessibleName("Ordner Games, 1 Raum, 1 im Sprachkanal");
+    expect(within(folderButton()).getByTestId("rail-voice-badge")).toHaveAttribute("data-kind", "voice");
   });
 });

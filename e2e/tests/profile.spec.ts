@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { dirname, resolve } from "node:path";
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { NODE, createRoomViaApi, inviteCode, loginAs, openNavIfMobile, registerViaApi } from "./helpers";
+import { NODE, createRoomViaApi, inviteCode, loginAs, openNavIfMobile, registerViaApi, railName } from "./helpers";
 
 // Fixtures made with ffmpeg (testsrc): a still PNG and a one-second animated GIF.
 const FIXTURES = resolve(dirname(new URL(import.meta.url).pathname), "../fixtures");
@@ -115,7 +115,7 @@ test.describe("Profile", () => {
     await expect(section.getByTestId("room-icon-preview").getByTestId("avatar-image")).toBeVisible({ timeout: 20_000 });
     await page.goto(`/rooms/${room.id}`);
     await openNavIfMobile(page);
-    const rail = page.getByRole("link", { name: "Icons", exact: true }).getByTestId("room-icon");
+    const rail = page.getByRole("link", { name: railName("Icons") }).getByTestId("room-icon");
     await expect(rail.getByTestId("avatar-image")).toHaveAttribute("src", /\/api\/v1\/media\/[0-9A-Z]{26}$/);
     await expectStillThenAnimatedOnHover(page, rail);
     await expect(page.getByTestId("room-header-icon").getByTestId("avatar-image")).toBeVisible();

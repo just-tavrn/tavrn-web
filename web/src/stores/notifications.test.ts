@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TavrnApiError, type NotificationSettings } from "@tavrn/sdk";
-import { DEFAULT_SETTINGS, FOREVER, decide, effectiveMode, muteUntil, normalizeSettings, setChannelSetting, setRoomSetting, useNotifications } from "./notifications";
+import { DEFAULT_SETTINGS, FOREVER, decide, effectiveMode, muteUntil, normalizeSettings, roomBadgeLevel, setChannelSetting, setRoomSetting, useNotifications } from "./notifications";
 
 const me = { id: "u1", address: "me@x" };
 const settings = (over: Partial<NotificationSettings> = {}): NotificationSettings => ({ ...DEFAULT_SETTINGS, ...over, global: { ...DEFAULT_SETTINGS.global, ...over.global } });
@@ -117,5 +117,17 @@ describe("push_text", () => {
     expect(normalizeSettings({ global: { mode: "all", sound: true, browser: false, push_text: true } }).global).toEqual({ mode: "all", sound: true, browser: false, push_text: true });
     expect(normalizeSettings({ global: { mode: "all", push_text: false } }).global).not.toHaveProperty("push_text");
     expect(normalizeSettings({ global: { mode: "all", push_text: "yes" } }).global).not.toHaveProperty("push_text");
+  });
+});
+
+describe("roomBadgeLevel", () => {
+  it("follows the room's mode, else the global default, and treats muted rooms and nothing as muted", () => {
+    const now = Date.parse("2026-10-10T12:00:00Z");
+    expect(roomBadgeLevel(settings(), "r1", now)).toBe("mentions");
+    expect(roomBadgeLevel(settings({ global: { mode: "all", sound: true, browser: false } }), "r1", now)).toBe("all");
+    expect(roomBadgeLevel(settings({ rooms: { r1: { mode: "all" } } }), "r1", now)).toBe("all");
+    expect(roomBadgeLevel(settings({ rooms: { r1: { mode: "nothing" } } }), "r1", now)).toBe("muted");
+    expect(roomBadgeLevel(settings({ rooms: { r1: { mode: "all", muted_until: FOREVER } } }), "r1", now)).toBe("muted");
+    expect(roomBadgeLevel(settings({ rooms: { r1: { mode: "all", muted_until: "2026-10-10T11:00:00Z" } } }), "r1", now)).toBe("all");
   });
 });

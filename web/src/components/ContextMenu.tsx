@@ -73,7 +73,14 @@ export interface MenuCustom {
   render: (close: () => void) => ReactNode;
 }
 
-export type MenuEntry = MenuItem | MenuSubmenu | MenuSeparator | MenuLabel | MenuCustom;
+/** Non-interactive content at the head of a menu (the room card on touch devices); never takes focus. */
+export interface MenuHeader {
+  kind: "header";
+  id: string;
+  render: () => ReactNode;
+}
+
+export type MenuEntry = MenuItem | MenuSubmenu | MenuSeparator | MenuLabel | MenuCustom | MenuHeader;
 
 /** Builders keep the menu definitions short. */
 export const menuItem = (id: string, label: string, onSelect: (() => void) | undefined, opts: Partial<Omit<MenuItem, "kind" | "id" | "label" | "onSelect">> = {}): MenuItem => ({ kind: "item", id, label, onSelect, ...opts });
@@ -288,6 +295,12 @@ function MenuPanel({ entries, anchor, prefer, onClose, onCloseSub, label, depth,
       >
         {entries.map((e) => {
           if (e.kind === "separator") return <div key={e.id} role="separator" className="my-1 h-px bg-line" />;
+          if (e.kind === "header")
+            return (
+              <div key={e.id} className="mb-1 border-b border-line px-2 pb-2 pt-1" data-testid="menu-header">
+                {e.render()}
+              </div>
+            );
           if (e.kind === "label") return <div key={e.id} className="px-2 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-fg-2">{e.label}</div>;
           const index = items.indexOf(e);
           if (e.kind === "custom")

@@ -26,9 +26,10 @@ import { useAuth } from "../../stores/auth";
 /**
  * `node` = domain of the room's node, null for the home node. `openReports`: the moderators' open reports (badge
  * text) from the room header; "Room settings" then shows the count and opens the report inbox. `extra`: entries of
- * the place the room is shown in (the rail's folder entries), before "Leave".
+ * the place the room is shown in (the rail's folder entries), before "Leave". `header`: non-interactive entries at the
+ * head (the rail's room card on touch devices).
  */
-export function useRoomMenu(room: Pick<Room, "id" | "name">, node: string | null, { openReports = null, extra }: { openReports?: string | null; extra?: MenuEntry[] } = {}): { menu: ContextMenuTrigger; overlay: ReactNode } {
+export function useRoomMenu(room: Pick<Room, "id" | "name">, node: string | null, { openReports = null, extra, header }: { openReports?: string | null; extra?: MenuEntry[]; header?: MenuEntry[] } = {}): { menu: ContextMenuTrigger; overlay: ReactNode } {
   const t = useT();
   const menu = useContextMenu();
   const client = apiFor(node);
@@ -76,6 +77,7 @@ export function useRoomMenu(room: Pick<Room, "id" | "name">, node: string | null
           t,
         ),
         extra,
+        header,
       )
     : [];
 
@@ -111,10 +113,11 @@ export function useRoomMenu(room: Pick<Room, "id" | "name">, node: string | null
   return { menu, overlay };
 }
 
-/** Inserts `extra` before the "Leave" group. */
-function withExtra(base: MenuEntry[], extra?: MenuEntry[]): MenuEntry[] {
-  if (!extra?.length) return base;
+/** Inserts `extra` before the "Leave" group and puts `header` (the room card on touch) first. */
+function withExtra(base: MenuEntry[], extra?: MenuEntry[], header?: MenuEntry[]): MenuEntry[] {
+  const head = header ?? [];
+  if (!extra?.length) return head.length ? [...head, ...base] : base;
   const at = base.findIndex((e) => e.id === "sep-leave");
   const i = at >= 0 ? at : base.length;
-  return normalizeMenu([...base.slice(0, i), separator("sep-place"), ...extra, ...base.slice(i)]);
+  return [...head, ...normalizeMenu([...base.slice(0, i), separator("sep-place"), ...extra, ...base.slice(i)])];
 }
