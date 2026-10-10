@@ -401,11 +401,21 @@ here ever reveals a hidden channel; rooms you are not in are never shown either.
   permission come as the same messages), plus "Message", "Remove friend" and "Block". A friend in a channel you cannot
   view, or in a room you are not in, shows nothing.
 
+**Inviting friends to a room.** The friend menu and the member menu (member list, message authors) have a submenu
+"Invite to room" with your rooms on every node you are signed in to where you may create invites (owner,
+administrator or `create_invites`, from the room details the client loads when the menu opens). Rooms the person is
+known to be in are left out (the current room in a member menu, rooms whose member list is loaded); the submenu is
+missing when no room is left, and bots never get it. Choosing a room sends a direct invite (tavrn-protocol
+FEDERATION.md §3.4: single use, bound to the address, valid for 7 days) and closes the menu; a toast confirms
+"Invitation to <room> sent to <name>" or shows the node's refusal (already a member, banned, too many invitations).
+The invitation appears live in the recipient's invite list on their home view, with "Accept" and "Dismiss", on
+every node and on phones too.
+
 ## Context menus, notifications and media
 
 Members, messages, channels, rooms in the rail and DMs have context menus: right-click (or the keyboard's
 context-menu key / Shift+F10), the ⋯ button, or a long press on phones. Members: profile, message, add friend,
-mention, copy address, and with the matching permission kick, ban (with a reason), timeout, roles (checkboxes),
+invite to room, mention, copy address, and with the matching permission kick, ban (with a reason), timeout, roles (checkboxes),
 server mute, disconnect and "move to"; in your call a volume slider (0–200 %). Moderation items against someone
 whose highest role is not below yours stay greyed out with the reason. Messages: reply, react, copy text, link or
 id, create thread, reply in thread, pin, edit, delete, mark unread, report. Channels and rooms: mark as read, notification level (all / mentions only /
