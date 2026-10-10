@@ -43,7 +43,9 @@ export function AppShell({ rail, sidebar, children, aside, headerExtra }: { rail
     toggleMembers: () => setMembersOpen((v) => !v),
     closeMembers: () => setMembersOpen(false),
   };
-  const drawerOpen = navOpen || membersOpen;
+  // Pages without a member list (friends, discover, settings): no member column, no toggle (design note 3.2).
+  const hasAside = aside !== null && aside !== undefined && aside !== false;
+  const drawerOpen = navOpen || (hasAside && membersOpen);
   // Skip link (WCAG 2.4.1): to the message list of the open conversation, else to the main content.
   const [skipToMessages, setSkipToMessages] = useState(true);
 
@@ -63,7 +65,7 @@ export function AppShell({ rail, sidebar, children, aside, headerExtra }: { rail
       >
         {skipToMessages ? t("a11y.skip_to_messages") : t("a11y.skip_to_content")}
       </a>
-      <div className="relative flex h-full flex-col md:grid md:grid-cols-[312px_1fr] xl:grid-cols-[72px_240px_1fr_240px]" data-testid="app-shell" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+      <div className={`relative flex h-full flex-col md:grid md:grid-cols-[312px_1fr] ${hasAside ? "xl:grid-cols-[72px_240px_1fr_240px]" : "xl:grid-cols-[72px_240px_1fr]"}`} data-testid="app-shell" style={{ paddingTop: "env(safe-area-inset-top)" }}>
         <div
           className={`fixed inset-y-0 left-0 z-40 flex w-[312px] max-w-[85vw] transform transition-transform md:static md:z-auto md:w-auto md:max-w-none md:translate-x-0 xl:contents ${navOpen ? "translate-x-0" : "-translate-x-full"}`}
           data-testid="nav-drawer"
@@ -86,18 +88,20 @@ export function AppShell({ rail, sidebar, children, aside, headerExtra }: { rail
             <span className="flex-1" />
             {/* Phones: the footer (with the bell) is inside the closed drawer, so the bell is up here too. */}
             {headerExtra && <span className="md:hidden">{headerExtra}</span>}
-            <button type="button" aria-label={t("shell.open_members")} aria-expanded={membersOpen} onClick={() => setMembersOpen((v) => !v)} className="min-h-11 min-w-11 rounded-md hover:bg-bg-3">
-              👥
-            </button>
+            {hasAside && (
+              <button type="button" aria-label={t("shell.open_members")} aria-expanded={membersOpen} onClick={() => setMembersOpen((v) => !v)} className="min-h-11 min-w-11 rounded-md hover:bg-bg-3">
+                👥
+              </button>
+            )}
           </div>
           {children}
         </main>
 
         <aside
           aria-label={t("shell.members")}
-          className={`fixed inset-y-0 right-0 z-40 w-[240px] max-w-[85vw] transform overflow-y-auto border-l border-line bg-bg-1 p-3 transition-transform xl:static xl:z-auto xl:translate-x-0 ${membersOpen ? "translate-x-0" : "translate-x-full"}`}
+          className={`fixed inset-y-0 right-0 z-40 w-[240px] max-w-[85vw] transform overflow-y-auto border-l border-line bg-bg-1 p-3 transition-transform xl:static xl:z-auto xl:translate-x-0 ${membersOpen ? "translate-x-0" : "translate-x-full"} ${hasAside ? "" : "hidden"}`}
           data-testid="members-drawer"
-          data-open={membersOpen}
+          data-open={hasAside && membersOpen}
         >
           {aside}
         </aside>

@@ -58,3 +58,32 @@ export const UnlockIcon = (p: IconProps) => (
     <path d="M8 11V7a4 4 0 0 1 7.75-1.4" />
   </Svg>
 );
+
+/** Hidden text (spoiler): the eye struck through. */
+export const EyeOffIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
+    <path d="M10.73 5.08A10.4 10.4 0 0 1 12 5c7 0 10 7 10 7a13.2 13.2 0 0 1-1.67 2.68" />
+    <path d="M6.61 6.61A13.5 13.5 0 0 0 2 12s3 7 10 7a9.7 9.7 0 0 0 5.39-1.61" />
+    <path d="M2 2l20 20" />
+  </Svg>
+);
+
+/** "No entry" (a circle with a diagonal bar): the viewer may see a channel but not use it. */
+export const NoEntryIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M5.6 5.6l12.8 12.8" />
+  </Svg>
+);
+
+/** A group of two people with a slash: a channel only certain roles may see or join. */
+export const GroupOffIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="9" cy="8" r="3" />
+    <path d="M3 20v-1a5 5 0 0 1 9-3" />
+    <path d="M15.5 5.3a3 3 0 0 1 1.6 4.6" />
+    <path d="M18 14a5 5 0 0 1 3 5v1" />
+    <path d="M3 3l18 18" />
+  </Svg>
+);

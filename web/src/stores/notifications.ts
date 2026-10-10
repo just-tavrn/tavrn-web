@@ -74,6 +74,16 @@ export function effectiveMode(s: NotificationSettings, roomId: string | null, co
   return s.global.mode === "nothing" ? "nothing" : "all";
 }
 
+/**
+ * The room's level for its rail badge (docs/CLIENT.md "Room rail and folders"): "all" (every message: the unread
+ * count), "mentions" (mentions only: a dot) or "muted" (muted now, or nothing; the rail keeps the dot).
+ */
+export function roomBadgeLevel(s: NotificationSettings, roomId: string, now = Date.now()): "all" | "mentions" | "muted" {
+  if (mutedNow(s.rooms[roomId]?.muted_until, now)) return "muted";
+  const mode = s.rooms[roomId]?.mode ?? s.global.mode;
+  return mode === "nothing" ? "muted" : mode;
+}
+
 /** The inherited mode of a level (what "default" means in the menus). */
 export function inheritedMode(s: NotificationSettings, roomId: string | null, level: "room" | "channel"): NotificationMode {
   if (level === "channel" && roomId) return s.rooms[roomId]?.mode ?? s.global.mode;

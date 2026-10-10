@@ -42,7 +42,7 @@ test("deny view on @everyone, allow it on one channel: a member sees exactly tha
 
   // … and allows it on one channel. The editor has no sync switch and shows what "–" inherits.
   await page.goto(`/rooms/${room.id}/settings/channels`);
-  await page.getByRole("button", { name: "# offen", exact: true }).click();
+  await page.getByRole("button", { name: /^# offen\b/ }).click();
   const editor = page.getByTestId("channel-editor");
   await expect(editor.getByText("Berechtigungen mit der Kategorie synchronisieren")).toHaveCount(0);
   await expect(editor.getByTestId("inherited-VIEW_CHANNEL")).toHaveText("Geerbt: von den Rollen verboten");

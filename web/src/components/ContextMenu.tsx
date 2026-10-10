@@ -4,7 +4,9 @@
  * a right-click (`contextmenu`, the browser menu is suppressed), by the keyboard (context-menu key or
  * Shift+F10 on a focused trigger), by a "⋯" button ({@link MenuButton}) and by a long press on touch
  * devices. Rendered into `document.body` (never clipped by a scrolling or transformed parent), placed
- * with collision handling (`lib/position.ts`), closed by Escape, Tab, a click outside or a choice.
+ * with collision handling (`lib/position.ts`), closed by Escape, Tab, a click outside or a choice. A choice that
+ * only changes a state shown in the menu (a checkbox item, or `keepOpen`) keeps it open, like the voice quick
+ * menus: the menu re-renders with the new state; navigation, copy and destructive items close it.
  * Keyboard: arrows move, Home/End jump, Enter/Space choose, → opens a submenu, ← closes it; ↑/↓ also reach the
  * control of a custom entry (a slider), which keeps its own keys. Disabled items stay focusable and carry the
  * reason as a tooltip (and for screen readers).
@@ -27,7 +29,10 @@ export interface MenuItem {
   reason?: string;
   /** A checkbox item (roles, toggles); `undefined` = plain item. */
   checked?: boolean;
-  /** Keep the menu open after choosing (checkbox lists). */
+  /**
+   * Keep the menu open after choosing (a state change shown in the menu). Default: checkbox items stay open,
+   * plain items close; see {@link staysOpen}.
+   */
   keepOpen?: boolean;
   /** Short text on the right (shortcut, current value). */
   hint?: string;
@@ -68,13 +73,23 @@ export interface MenuCustom {
   render: (close: () => void) => ReactNode;
 }
 
-export type MenuEntry = MenuItem | MenuSubmenu | MenuSeparator | MenuLabel | MenuCustom;
+/** Non-interactive content at the head of a menu (the room card on touch devices); never takes focus. */
+export interface MenuHeader {
+  kind: "header";
+  id: string;
+  render: () => ReactNode;
+}
+
+export type MenuEntry = MenuItem | MenuSubmenu | MenuSeparator | MenuLabel | MenuCustom | MenuHeader;
 
 /** Builders keep the menu definitions short. */
 export const menuItem = (id: string, label: string, onSelect: (() => void) | undefined, opts: Partial<Omit<MenuItem, "kind" | "id" | "label" | "onSelect">> = {}): MenuItem => ({ kind: "item", id, label, onSelect, ...opts });
 export const submenu = (id: string, label: string, items: Array<MenuEntry | false | null | undefined>, opts: Partial<Omit<MenuSubmenu, "kind" | "id" | "label" | "items">> = {}): MenuSubmenu => ({ kind: "submenu", id, label, items: normalizeMenu(items), ...opts });
 export const separator = (id: string): MenuSeparator => ({ kind: "separator", id });
 export const menuLabel = (id: string, label: string): MenuLabel => ({ kind: "label", id, label });
+
+/** Whether choosing the item keeps the menu open: an explicit `keepOpen`, else checkbox items do. */
+export const staysOpen = (item: MenuItem): boolean => item.keepOpen ?? item.checked !== undefined;
 
 /**
  * Drops falsy entries (conditional items), empty submenus and separators at the start, at the end and
@@ -135,14 +150,21 @@ function MenuPanel({ entries, anchor, prefer, onClose, onCloseSub, label, depth,
   };
   // A menu opened by a long press sits under the finger: the compatibility mouse move of the release would hover
   // whatever item lies there (and open its submenu). Hover counts only once the panel has settled; clicks and the
-  // keyboard work right away.
+  // keyboard work right away. The same holds after a choice that keeps the menu open: the entry that replaces the
+  // chosen one (unmute → the mute submenu) lies under the pointer or finger and would open by hover.
   const settled = useRef(false);
-  useEffect(() => {
-    const timer = setTimeout(() => {
+  const settleTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const settle = useCallback(() => {
+    settled.current = false;
+    clearTimeout(settleTimer.current);
+    settleTimer.current = setTimeout(() => {
       settled.current = true;
     }, SETTLE_MS);
-    return () => clearTimeout(timer);
   }, []);
+  useEffect(() => {
+    settle();
+    return () => clearTimeout(settleTimer.current);
+  }, [settle]);
 
   const focused = useRef(false);
   useLayoutEffect(() => {
@@ -174,8 +196,26 @@ function MenuPanel({ entries, anchor, prefer, onClose, onCloseSub, label, depth,
     if (entry.disabled) return;
     if (entry.kind === "submenu") return openSub(entry);
     entry.onSelect?.();
-    if (!entry.keepOpen) onClose();
+    if (staysOpen(entry)) settle();
+    else onClose();
   };
+
+  // A choice that keeps the menu open may replace entries (mute → unmute, a submenu that vanishes): forget a
+  // submenu that is gone, so it does not pop open again when it comes back, and give the focus to the entry now at
+  // the active place when the focused one was removed (the focus would fall back to the page).
+  const subGone = !!open && !entries.some((e) => e.kind === "submenu" && e.id === open.id);
+  useEffect(() => {
+    if (subGone) setOpen(null);
+  }, [subGone]);
+  useLayoutEffect(() => {
+    if (!focused.current || !ref.current) return;
+    const current = document.activeElement;
+    if (current && current !== document.body && current.isConnected) return;
+    const index = Math.min(active, items.length - 1);
+    if (index < 0) return;
+    if (index !== active) setActive(index);
+    stopElement(items[index])?.focus({ preventScroll: true });
+  });
 
   const onKeyDown = (e: ReactKeyboardEvent) => {
     // Keys inside a submenu are handled there.
@@ -255,6 +295,12 @@ function MenuPanel({ entries, anchor, prefer, onClose, onCloseSub, label, depth,
       >
         {entries.map((e) => {
           if (e.kind === "separator") return <div key={e.id} role="separator" className="my-1 h-px bg-line" />;
+          if (e.kind === "header")
+            return (
+              <div key={e.id} className="mb-1 border-b border-line px-2 pb-2 pt-1" data-testid="menu-header">
+                {e.render()}
+              </div>
+            );
           if (e.kind === "label") return <div key={e.id} className="px-2 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-fg-2">{e.label}</div>;
           const index = items.indexOf(e);
           if (e.kind === "custom")

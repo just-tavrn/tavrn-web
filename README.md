@@ -27,7 +27,7 @@ single-page app that works on phones, tablets and desktops, in English and Germa
 | `scripts/` | license and hygiene checks |
 
 A pnpm workspace at the root ties `web`, `e2e` and `apps/desktop` together. The desktop app bundles the same client
-and talks to the home node its user picks ([DESKTOP.md](docs/DESKTOP.md)); the mobile shells join later.
+and talks to the home node its user picks ([DESKTOP.md](docs/DESKTOP.md)); there are no mobile apps yet.
 
 ## How the client reaches a node
 
@@ -99,7 +99,10 @@ with `TAVRN_VOICE_ENABLED=false`.
 | `just desktop-dev` | the desktop app with the client from the Vite dev server ([DESKTOP.md](docs/DESKTOP.md); needs Rust and the WebKitGTK packages on Linux) |
 | `just desktop-check` | cargo fmt, clippy, tests and `cargo deny` (licenses) of the desktop shell (needs `web/dist`); the CI runs it in `desktop.yml`, `just check` stays JavaScript-only |
 | `just desktop-build` | the installers of this platform (Linux `.deb` and `.AppImage`, Windows `.msi` and NSIS) |
-| `just desktop-e2e` | the WebDriver smoke test of the built Linux app (`E2E_NODE_BIN`; tauri-driver) |
+| `just desktop-e2e` | the WebDriver smoke test of the built Linux app under `xvfb-run` (`E2E_NODE_BIN`; tauri-driver) |
+| `just desktop-voice-test` | the native voice engine against a local `livekit-server` (two engines, end-to-end encrypted) |
+| `just desktop-voice-e2e` | voice between Chromium and the built Linux app's native engine under `xvfb-run` (`E2E_NODE_BIN` of a release node) |
+| `just e2e-install`, `just e2e-clean`, `just livekit-install` | Chromium for Playwright; remove the end-to-end nodes' data (`data-dev/`); `livekit-server` into `~/.local/bin` |
 
 ### Translations
 

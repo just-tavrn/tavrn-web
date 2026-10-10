@@ -9,9 +9,11 @@ every conversation: voice and text channels, DMs and group DMs. Nothing in here 
 | `protocol.ts` | Event types and timings. |
 | `controller.ts` | `WhiteboardController`: one board on this device (owner authority, proposals, snapshots, files, cursors, thumbnails, keepalive). Network and canvas are injected. |
 | `store.ts` | One controller per conversation, shared by all views; socket wiring (`ephemeral`, `whiteboard.session`), encryption, local draft. **Integration hook** `useWhiteboardSession`. |
+| `drafts.ts` | The owner's unsaved board per conversation in the local encrypted store, under a keyed record name (`whiteboard-draft:<HMAC>`) that does not reveal the conversation. |
 | `scenes.ts` | Scene library: serialization, encryption under the backup key (`encryptScene`), API. |
 | `share.ts` | "Share to channel": PNG as an (encrypted) attachment. |
 | `excalidraw.ts` | Lazy loading of Excalidraw (fonts from the node), PNG/SVG export, thumbnails. |
+| `mermaid-stub.ts` | Stands in for `@excalidraw/mermaid-to-excalidraw` (aliased in `vite.config.ts`): no text-to-diagram, pasted Mermaid code stays plain text, and the bundle stays without Mermaid. |
 | `WhiteboardCanvas.tsx` | The Excalidraw canvas (the lazy chunk). |
 | `WhiteboardSession.tsx` | The board UI: open/join/leave/close, permissions, scenes, background, export, share. |
 | `WhiteboardBadge.tsx` | `WhiteboardBadge`, `WhiteboardThumbnail`, `WhiteboardButton` (header link to the board). |

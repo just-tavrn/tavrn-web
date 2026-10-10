@@ -3,10 +3,12 @@
 //! the bundled client (`web/dist`); the client talks to the home node chosen in its node picker over https/wss.
 //! The shell offers the client a handful of commands (`commands.rs`): the chosen node, opening links in the system
 //! browser, signed updates, the OS keychain (`keychain.rs`), native notifications (`notify.rs`) and the tray
-//! (`tray.rs`), whose clicks come back to the client as shell events (`events.rs`).
+//! (`tray.rs`), whose clicks come back to the client as shell events (`events.rs`), and the native voice engine
+//! (`voice`, Linux always, Windows behind a setting).
 
 pub mod commands;
 pub mod config;
+pub mod download;
 pub mod events;
 pub mod guard;
 pub mod hotkeys;
@@ -18,6 +20,7 @@ pub mod notify;
 pub mod resolve;
 pub mod tray;
 pub mod updater;
+pub mod voice;
 
 #[cfg(test)]
 mod conf_tests;
@@ -45,7 +48,7 @@ pub fn open_connect_window<R: Runtime>(app: &AppHandle<R>, url: Url) -> tauri::R
     }
     let dev_url: Option<Url> = if cfg!(dev) { app.config().build.dev_url.clone() } else { None };
     WebviewWindowBuilder::new(app, CONNECT_WINDOW, WebviewUrl::External(url))
-        .title("Tavrn")
+        .title("tavrn")
         .inner_size(520.0, 760.0)
         .min_inner_size(360.0, 480.0)
         .on_navigation(move |url| match guard::connect_navigation(url, dev_url.as_ref()) {
@@ -73,9 +76,22 @@ pub fn run() {
     #[cfg(any(windows, target_os = "linux"))]
     let builder =
         if cfg!(windows) || session_bus() { builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| events::show_main(app))) } else { builder };
+    // Push-to-talk of the native voice engine follows the system-wide hotkey directly (also while the webview is in the
+    // background); the client hears the same events and tells the engine too.
+    let voice = voice::VoiceShell::default();
+    let hotkeys = hotkeys::Hotkeys::default();
+    let control = Arc::clone(&voice.control);
+    hotkeys.set_tap(move |e| {
+        if e.action == hotkeys::Action::PushToTalk {
+            control.set_ptt(e.pressed);
+        }
+    });
     let result = builder
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .manage(hotkeys::Hotkeys::default())
+        .plugin(tauri_plugin_dialog::init())
+        .manage(download::Downloads::from_env())
+        .manage(hotkeys)
+        .manage(voice)
         .invoke_handler(tauri::generate_handler![
             commands::get_config,
             commands::set_node,
@@ -100,6 +116,22 @@ pub fn run() {
             hotkeys::unregister_hotkey,
             hotkeys::listen_hotkeys,
             hotkeys::set_hotkeys_enabled,
+            // Downloads through the save dialog (download.rs).
+            download::save_file_begin,
+            download::save_file_chunk,
+            download::save_file_end,
+            download::save_file_abort,
+            download::save_file_reveal,
+            voice::voice_info,
+            voice::voice_devices,
+            voice::voice_join,
+            voice::voice_leave,
+            voice::voice_set_key,
+            voice::voice_set_muted,
+            voice::voice_set_deafened,
+            voice::voice_set_ptt,
+            voice::voice_configure,
+            voice::voice_set_volumes,
         ])
         .on_window_event(|window, event| {
             if window.label() != MAIN_WINDOW {
@@ -141,6 +173,7 @@ pub fn run() {
                     NewWindowResponse::Deny
                 })
                 .on_permission_request(|_, kind| media::permission(kind))
+                .on_download(download::webview_download)
                 .build()?;
             #[cfg(target_os = "linux")]
             media::enable_webrtc(&main)?;

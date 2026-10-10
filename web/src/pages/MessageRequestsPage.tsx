@@ -119,6 +119,7 @@ function RequestView({ domain, conversationId }: { domain: string | null; conver
         canPin={false}
         members={members}
         direct={members ?? undefined}
+        people={c.members}
         mayManage={false}
         domain={domain ?? fallbackDomain}
       />

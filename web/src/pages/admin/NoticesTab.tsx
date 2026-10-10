@@ -243,7 +243,7 @@ export function NoticesTab() {
           className="border border-line"
           onClick={async () => {
             try {
-              downloadJson(await api.legal.exportNotices(), "tavrn-legal-notices.json");
+              await downloadJson(await api.legal.exportNotices(), "tavrn-legal-notices.json");
             } catch (e) {
               toastError(e);
             }

@@ -81,7 +81,7 @@ describe("tray", () => {
   it("sends the voice state with the texts and hands menu actions to the subscribers", async () => {
     const { calls, emit } = shell({ tray_set: () => null });
     const { tray, notifications } = shellMembers();
-    const labels = { tooltip: "Tavrn · General · Muted", show: "Show Tavrn", hide: "Hide Tavrn", mute: "Mute microphone", deafen: "Deafen", leave: "Leave voice channel", quit: "Quit Tavrn" };
+    const labels = { tooltip: "tavrn · General · Muted", show: "Show tavrn", hide: "Hide tavrn", mute: "Mute microphone", deafen: "Deafen", leave: "Leave voice channel", quit: "Quit tavrn" };
     await tray.set("muted", labels);
     expect(calls[0]).toEqual({ cmd: "tray_set", args: { state: "muted", labels } });
     const actions = vi.fn();
@@ -99,12 +99,12 @@ describe("tray", () => {
 
   it("reads the tray status and switches close to tray", async () => {
     const { calls } = shell({
-      tray_status: () => ({ state: "connected", tooltip: "Tavrn", available: true, close_to_tray: false }),
+      tray_status: () => ({ state: "connected", tooltip: "tavrn", available: true, close_to_tray: false }),
       set_close_to_tray: () => null,
       quit_app: () => null,
     });
     const { tray } = shellMembers();
-    await expect(tray.status()).resolves.toEqual({ state: "connected", tooltip: "Tavrn", available: true, closeToTray: false });
+    await expect(tray.status()).resolves.toEqual({ state: "connected", tooltip: "tavrn", available: true, closeToTray: false });
     await tray.setCloseToTray(true);
     expect(calls.at(-1)).toEqual({ cmd: "set_close_to_tray", args: { on: true } });
     await tray.quit();

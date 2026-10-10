@@ -277,6 +277,8 @@ export function pruneRooms(s: RailState, domain: string, roomIds: string[]): Rai
 export interface Counts {
   unread: number;
   mentions: number;
+  /** The unread messages of rooms whose notification level is "all messages" (shown as a count, not a dot). */
+  listed?: number;
 }
 
 const cap = (n: number) => Math.min(UNREAD_CAP, n);
@@ -294,7 +296,22 @@ export function roomCounts(states: Record<string, ReadInfo>, channelIds: string[
 
 /** A folder's badge: the sum over its rooms. */
 export function aggregateCounts(list: Counts[]): Counts {
-  return { unread: cap(list.reduce((n, c) => n + c.unread, 0)), mentions: cap(list.reduce((n, c) => n + c.mentions, 0)) };
+  const listed = cap(list.reduce((n, c) => n + (c.listed ?? 0), 0));
+  return { unread: cap(list.reduce((n, c) => n + c.unread, 0)), mentions: cap(list.reduce((n, c) => n + c.mentions, 0)), ...(listed ? { listed } : {}) };
+}
+
+/**
+ * What the rail shows bottom right or top right of a room (or a collapsed folder): the mention count (red) when there
+ * are mentions; else the unread count (neutral) for rooms whose notification level is "all messages" (`listed`);
+ * else an unread dot ("mentions only", muted or nothing, as before).
+ */
+export type RailBadgeKind = { kind: "mentions"; count: number } | { kind: "unread"; count: number } | { kind: "dot" } | null;
+
+export function railBadge(c: Counts): RailBadgeKind {
+  if (c.mentions > 0) return { kind: "mentions", count: c.mentions };
+  if ((c.listed ?? 0) > 0) return { kind: "unread", count: c.listed! };
+  if (c.unread > 0) return { kind: "dot" };
+  return null;
 }
 
 // ---- Store ----------------------------------------------------------------------------------

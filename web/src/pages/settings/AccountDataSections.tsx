@@ -16,18 +16,11 @@ import { signOut } from "../../stores/e2ee";
 import { describeError } from "../../stores/toasts";
 import { Button, Dialog, ErrorText, Input } from "../../components/ui";
 import { ConfirmDialog, Section } from "./common";
+import { saveFile } from "../../platform/saveFile";
 
-/** Saves a JSON value as a file download. */
-export function downloadJson(data: unknown, filename: string) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+/** Saves a JSON value as a file (the browser's download, the desktop app's save dialog). */
+export async function downloadJson(data: unknown, filename: string): Promise<void> {
+  await saveFile({ name: filename, data: new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }), mime: "application/json" });
 }
 
 export function exportFilename(username: string, now = new Date()): string {
@@ -86,7 +79,7 @@ export function MyDataSection() {
     try {
       // Needs a fresh confirmation: the API client opens the dialog.
       const archive = await api.legal.exportData();
-      downloadJson(archive, exportFilename(user.username));
+      await downloadJson(archive, exportFilename(user.username));
     } catch (e) {
       if (!(e instanceof TavrnApiError && e.code === "auth.reauth_required")) setError(describeError(e));
     } finally {

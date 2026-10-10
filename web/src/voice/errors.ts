@@ -7,7 +7,7 @@ import { TavrnApiError } from "@tavrn/sdk";
 import { t } from "../i18n";
 import { describeError } from "../stores/toasts";
 
-export type VoiceErrorCode = "e2ee_unsupported" | "e2ee_failed" | "locked" | "no_group" | "connect_failed" | "busy";
+export type VoiceErrorCode = "e2ee_unsupported" | "e2ee_failed" | "locked" | "no_group" | "connect_failed" | "busy" | "native_device" | "native_unavailable";
 
 /** A failure on this device before or while connecting. */
 export class VoiceError extends Error {

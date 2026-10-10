@@ -15,7 +15,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Tavrn",
+        "title": "tavrn",
         "width": 1280,
         "height": 800,
         "minWidth": 360,
@@ -57,7 +57,7 @@
     "licenseFile": "../LICENSE.txt",
     "linux": {
       "deb": {
-        "depends": ["gstreamer1.0-plugins-bad", "gstreamer1.0-plugins-good", "gstreamer1.0-gl", "gstreamer1.0-pipewire | gstreamer1.0-pulseaudio"],
+        "depends": ["gstreamer1.0-plugins-bad", "gstreamer1.0-plugins-good", "gstreamer1.0-gl", "gstreamer1.0-pipewire | gstreamer1.0-pulseaudio", "libasound2t64 | libasound2"],
         "files": { "/usr/share/doc/tavrn/LICENSE.txt": "../LICENSE.txt" }
       }
     },

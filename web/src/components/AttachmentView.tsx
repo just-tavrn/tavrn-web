@@ -17,6 +17,8 @@ import { useT } from "../i18n";
 import { decryptAttachment, type ContentAttachment } from "@tavrn/e2ee";
 import { isSvg, safeBlobType, shouldAutoPreview } from "../lib/preview";
 import { usePrivacy } from "../stores/privacy";
+import { toastError } from "../stores/toasts";
+import { saveDownload } from "../lib/download";
 
 const MediaViewer = lazy(() => import("./MediaViewer"));
 
@@ -59,28 +61,48 @@ export function mediaKind(mime: string, name = ""): MediaKind {
   return "file";
 }
 
+type NodeApi = ReturnType<typeof useNode>["api"];
+
+const blobs = new Map<string, Promise<Blob>>();
 const objectUrls = new Map<string, Promise<string>>();
 
-/** Object URL of an attachment (downloaded with the token, decrypted when encrypted), cached per blob. */
+const cacheKey = (a: ViewAttachment) => (a.load ? `file:${a.id}` : a.encrypted ? `${a.id}|${a.encrypted.sha256}|${a.encrypted.key}` : a.id);
+
+/**
+ * The content of an attachment (downloaded with the token, decrypted when encrypted) as a blob of a safe type, cached
+ * per blob: the preview, the player and the download share one download.
+ */
+export function loadAttachment(api: NodeApi, a: ViewAttachment): Promise<Blob> {
+  const key = cacheKey(a);
+  let p = blobs.get(key);
+  if (!p) {
+    const enc = a.encrypted;
+    p = a.load
+      ? a.load().then((blob) => blob.slice(0, blob.size, safeBlobType(a.mime, a.name)))
+      : enc
+      ? api.attachments
+          .download(a.id)
+          .then(async (blob) => decryptAttachment(new Uint8Array(await blob.arrayBuffer()), enc))
+          .then((plain) => new Blob([plain as Uint8Array<ArrayBuffer>], { type: safeBlobType(enc.mime, enc.name) }))
+      : api.attachments.download(a.id).then((blob) => blob.slice(0, blob.size, safeBlobType(a.mime, a.name)));
+    blobs.set(key, p);
+    p.catch(() => blobs.delete(key));
+  }
+  return p;
+}
+
+/** Object URL of an attachment, cached per blob. */
 export function useAttachmentUrl(a: ViewAttachment, enabled: boolean): { url: string | null; failed: boolean; loading: boolean } {
   const [state, setState] = useState<{ url: string | null; failed: boolean }>({ url: null, failed: false });
   // Blobs live on the node of the conversation.
   const { api } = useNode();
-  const key = a.load ? `file:${a.id}` : a.encrypted ? `${a.id}|${a.encrypted.sha256}|${a.encrypted.key}` : a.id;
+  const key = cacheKey(a);
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
     let p = objectUrls.get(key);
     if (!p) {
-      const enc = a.encrypted;
-      p = a.load
-        ? a.load().then((blob) => URL.createObjectURL(blob.slice(0, blob.size, safeBlobType(a.mime, a.name))))
-        : enc
-        ? api.attachments
-            .download(a.id)
-            .then(async (blob) => decryptAttachment(new Uint8Array(await blob.arrayBuffer()), enc))
-            .then((plain) => URL.createObjectURL(new Blob([plain as Uint8Array<ArrayBuffer>], { type: safeBlobType(enc.mime, enc.name) })))
-        : api.attachments.download(a.id).then((blob) => URL.createObjectURL(blob.slice(0, blob.size, safeBlobType(a.mime, a.name))));
+      p = loadAttachment(api, a).then((blob) => URL.createObjectURL(blob));
       objectUrls.set(key, p);
       p.catch(() => objectUrls.delete(key));
     }
@@ -92,17 +114,6 @@ export function useAttachmentUrl(a: ViewAttachment, enabled: boolean): { url: st
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, enabled]);
   return { ...state, loading: enabled && !state.url && !state.failed };
-}
-
-/** Saves an object URL under the attachment's name (only from the explicit download icons). */
-export function saveUrl(url: string, name: string) {
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name || "download";
-  a.rel = "noopener";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
 }
 
 export function formatSize(bytes: number): string {
@@ -120,17 +131,30 @@ export function formatDuration(seconds: number): string {
   return h ? `${h}:${String(m).padStart(2, "0")}:${rest}` : `${m}:${rest}`;
 }
 
-/** A download icon button; fetches (and decrypts) on demand. */
+/**
+ * A download icon button; fetches (and decrypts) on demand and saves through the platform (saveFile.ts), asking first
+ * when the file is an executable or a script (lib/download.ts).
+ */
 export function DownloadButton({ a, className = "" }: { a: ViewAttachment; className?: string }) {
   const t = useT();
-  const [wanted, setWanted] = useState(false);
-  const { url, failed } = useAttachmentUrl(a, wanted);
-  useEffect(() => {
-    if (wanted && url) {
-      saveUrl(url, a.name);
-      setWanted(false);
+  const { api } = useNode();
+  const [failed, setFailed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const download = async () => {
+    setBusy(true);
+    try {
+      const blob = await loadAttachment(api, a).catch((e: unknown) => {
+        setFailed(true);
+        throw e;
+      });
+      setFailed(false);
+      await saveDownload({ name: a.name || "download", data: blob, mime: blob.type }, a.mime);
+    } catch (e) {
+      toastError(e, t("attachment.download_failed", { name: a.name }));
+    } finally {
+      setBusy(false);
     }
-  }, [wanted, url, a.name]);
+  };
   return (
     <button
       type="button"
@@ -138,9 +162,9 @@ export function DownloadButton({ a, className = "" }: { a: ViewAttachment; class
       title={failed ? t("attachment.decrypt_failed", { name: a.name }) : t("media.download", { name: a.name })}
       onClick={(e) => {
         e.stopPropagation();
-        if (url) saveUrl(url, a.name);
-        else setWanted(true);
+        if (!busy) void download();
       }}
+      aria-busy={busy || undefined}
       className={`flex min-h-8 min-w-8 shrink-0 items-center justify-center rounded text-fg-2 hover:bg-bg-3 hover:text-fg-0 ${className}`}
       data-testid="attachment-download"
     >

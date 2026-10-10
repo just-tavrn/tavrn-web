@@ -1,10 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { act } from "react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Permission, type VoiceParticipant } from "@tavrn/sdk";
+import { useVoicePresence } from "../voice/presence";
 import { useAuth } from "../stores/auth";
+import { useToasts } from "../stores/toasts";
 import { mockFetch, renderWithProviders } from "../test/render";
 import { FriendsPage } from "./FriendsPage";
+
+const voice = vi.hoisted(() => ({ joinVoice: vi.fn(async () => true) }));
+vi.mock("../voice", async (importOriginal) => ({ ...(await importOriginal<typeof import("../voice")>()), joinVoice: voice.joinVoice }));
 
 const user = (id: string, username: string, kind = "user") => ({ id, username, domain: "t.local", address: `${username}@t.local`, display_name: username.toUpperCase(), kind, is_node_admin: false, avatar_blob_id: null, created_at: "" });
 
@@ -51,5 +58,134 @@ describe("FriendsPage", () => {
     await waitFor(() => expect(calls.some((c) => c.url.endsWith("/users/me/blocks") && c.init.method === "POST")).toBe(true));
     const block = calls.find((c) => c.url.endsWith("/users/me/blocks") && c.init.method === "POST");
     expect(JSON.parse(String(block!.init.body))).toEqual({ user: "botty@t.local", reason: "nervt" });
+  });
+
+  describe("friends in voice", () => {
+    const vp = (username: string): VoiceParticipant => ({ user: `${username}@t.local`, user_id: `id-${username}`, device_id: "D", identity: `${username}@t.local/D`, muted: false, deafened: false, streaming: false, camera: false, server_muted: false, joined_at: "", connection: "connected" });
+    beforeEach(() => {
+      useVoicePresence.getState().reset();
+      voice.joinVoice.mockClear();
+      useAuth.setState({ token: "t", user: { ...user("u0", "me"), email: null, email_verified: false, has_identity_key: true } });
+      mockFetch({
+        "/rooms/R1": { body: { id: "R1", name: "Gilde", description: "", channels: [{ id: "T1", kind: "text", name: "general" }, { id: "V1", kind: "voice", name: "Lounge" }], read_states: [], roles: [], overrides: [], my_permissions: "0", my_roles: [], is_owner: true, member_count: 3 } },
+        "/rooms": { body: [{ id: "R1", name: "Gilde", description: "" }] },
+        "/users/me/blocks": { body: [] },
+        "/users/me/friends": {
+          body: {
+            friends: [
+              { user: user("u1", "anna"), since: "" },
+              { user: user("u2", "ben"), since: "" },
+              { user: user("u3", "carl"), since: "" },
+            ],
+            incoming: [],
+            outgoing: [],
+            blocked: [],
+          },
+        },
+      });
+    });
+
+    it("shows the room and channel of a friend in a viewable channel of a shared room, and nothing otherwise", async () => {
+      act(() => {
+        useVoicePresence.getState().apply("t.local", { room_id: "R1", channel_id: "V1", participants: [vp("anna")] });
+        // A room the viewer is not a member of (a stale entry): nothing.
+        useVoicePresence.getState().apply("t.local", { room_id: "R9", channel_id: "V9", participants: [vp("ben")] });
+      });
+      renderWithProviders(<FriendsPage />);
+      const anna = await screen.findByText("anna@t.local");
+      const item = anna.closest("li")!;
+      await waitFor(() => expect(within(item).getByTestId("friend-voice")).toHaveTextContent("Im Sprachkanal: Gilde / Lounge"));
+      const others = screen.getAllByTestId("friend-item").filter((li) => li !== item);
+      expect(others).toHaveLength(2);
+      for (const li of others) expect(within(li).queryByTestId("friend-voice")).toBeNull();
+      // Bob leaves: the line goes.
+      act(() => useVoicePresence.getState().apply("t.local", { room_id: "R1", channel_id: "V1", participants: [] }));
+      expect(within(item).queryByTestId("friend-voice")).toBeNull();
+    });
+
+    it("the friend's menu (⋯ or right-click) joins their channel the way the channel list does", async () => {
+      act(() => useVoicePresence.getState().apply("t.local", { room_id: "R1", channel_id: "V1", participants: [vp("anna")] }));
+      renderWithProviders(<FriendsPage />);
+      const item = (await screen.findByText("anna@t.local")).closest("li")!;
+      await waitFor(() => expect(within(item).getByTestId("friend-voice")).toHaveTextContent("Lounge"));
+      const u = userEvent.setup();
+      const button = within(item).getByRole("button", { name: "Optionen für ANNA" });
+      expect(button).toHaveAttribute("aria-haspopup", "menu");
+      await u.click(button);
+      const menu = screen.getByTestId("friend-menu");
+      await u.click(within(menu).getByRole("menuitem", { name: "Lounge betreten" }));
+      await waitFor(() => expect(voice.joinVoice).toHaveBeenCalledWith({ domain: "t.local", roomId: "R1", channelId: "V1" }, { canCreate: true }));
+      // Without voice there is no join entry; the menu still has the friend's actions.
+      act(() => useVoicePresence.getState().apply("t.local", { room_id: "R1", channel_id: "V1", participants: [] }));
+      fireEvent.contextMenu(item, { clientX: 5, clientY: 5 });
+      const again = screen.getByTestId("friend-menu");
+      expect(within(again).queryByRole("menuitem", { name: /betreten/ })).toBeNull();
+      expect(within(again).getByRole("menuitem", { name: "Nachricht" })).toBeInTheDocument();
+    });
+  });
+
+  describe("invite to room", () => {
+    const detail = (id: string, name: string, perms: bigint, isOwner = false) => ({ id, name, description: "", channels: [{ id: `${id}T`, kind: "text", name: "general" }], read_states: [], roles: [], overrides: [], my_permissions: perms.toString(), my_roles: [], is_owner: isOwner, member_count: 2 });
+    const setup = (direct: (init: RequestInit) => { status?: number; body: unknown }) => {
+      useVoicePresence.getState().reset();
+      useToasts.setState({ toasts: [] });
+      useAuth.setState({ token: "t", user: { ...user("u0", "me"), email: null, email_verified: false, has_identity_key: true } });
+      return mockFetch({
+        "/rooms/R1/invites/direct": direct,
+        "/rooms/R1": { body: detail("R1", "Gilde", Permission.CREATE_INVITES | Permission.SEND_MESSAGES) },
+        "/rooms/R2": { body: detail("R2", "Lesesaal", Permission.SEND_MESSAGES) },
+        "/rooms": { body: [{ id: "R1", name: "Gilde", description: "" }, { id: "R2", name: "Lesesaal", description: "" }] },
+        "/users/me/blocks": { body: [] },
+        "/users/me/friends": { body: { friends: [{ user: user("u1", "anna"), since: "" }], incoming: [], outgoing: [], blocked: [] } },
+      });
+    };
+    const openInviteMenu = async () => {
+      renderWithProviders(<FriendsPage />);
+      const item = (await screen.findByText("anna@t.local")).closest("li")!;
+      const u = userEvent.setup();
+      await u.click(within(item).getByRole("button", { name: "Optionen für ANNA" }));
+      const menu = screen.getByTestId("friend-menu");
+      const sub = await within(menu).findByRole("menuitem", { name: "Einladen in Raum" });
+      expect(sub).toHaveAttribute("aria-haspopup", "menu");
+      await u.click(sub);
+      return { u, submenu: screen.getByTestId("context-submenu") };
+    };
+
+    it("lists only the rooms where the user may create invites and sends a direct invite to the friend", async () => {
+      const calls = setup(() => ({ status: 202, body: { invite: { code: "c", room_id: "R1", uses: 0, max_uses: 1, expires_at: null, created_at: "", user: "anna@t.local" } } }));
+      const { u, submenu } = await openInviteMenu();
+      expect(within(submenu).queryByRole("menuitem", { name: "Lesesaal" })).toBeNull();
+      await u.click(within(submenu).getByRole("menuitem", { name: "Gilde" }));
+      await waitFor(() => expect(calls.some((c) => c.url.endsWith("/rooms/R1/invites/direct") && c.init.method === "POST")).toBe(true));
+      const sent = calls.find((c) => c.url.endsWith("/rooms/R1/invites/direct"))!;
+      expect(JSON.parse(String(sent.init.body))).toEqual({ user: "anna@t.local" });
+      // An action, not a state: the menu closes.
+      expect(screen.queryByTestId("friend-menu")).toBeNull();
+      await waitFor(() => expect(useToasts.getState().toasts.map((x) => [x.kind, x.title])).toContainEqual(["info", "Einladung in Gilde an ANNA gesendet"]));
+    });
+
+    it("shows the node's refusal (already a member) as an error toast", async () => {
+      setup(() => ({ status: 409, body: { type: "x", title: "Conflict", status: 409, code: "invite.already_member", detail: "Already a member of this room" } }));
+      const { u, submenu } = await openInviteMenu();
+      await u.click(within(submenu).getByRole("menuitem", { name: "Gilde" }));
+      await waitFor(() => expect(useToasts.getState().toasts.find((x) => x.kind === "error")).toMatchObject({ title: "Einladung nicht gesendet", detail: "Diese Person ist bereits Mitglied des Raums" }));
+    });
+
+    it("has no submenu when no room allows inviting", async () => {
+      setup(() => ({ status: 500, body: null }));
+      mockFetch({
+        "/rooms/R2": { body: detail("R2", "Lesesaal", Permission.SEND_MESSAGES) },
+        "/rooms": { body: [{ id: "R2", name: "Lesesaal", description: "" }] },
+        "/users/me/blocks": { body: [] },
+        "/users/me/friends": { body: { friends: [{ user: user("u1", "anna"), since: "" }], incoming: [], outgoing: [], blocked: [] } },
+      });
+      renderWithProviders(<FriendsPage />);
+      const item = (await screen.findByText("anna@t.local")).closest("li")!;
+      fireEvent.contextMenu(item, { clientX: 5, clientY: 5 });
+      const menu = screen.getByTestId("friend-menu");
+      await waitFor(() => expect(within(menu).getByRole("menuitem", { name: "Nachricht" })).toBeInTheDocument());
+      await new Promise((r) => setTimeout(r, 50));
+      expect(within(menu).queryByRole("menuitem", { name: "Einladen in Raum" })).toBeNull();
+    });
   });
 });

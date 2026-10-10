@@ -74,7 +74,11 @@ describe("Composer: attachments", () => {
     box.setSelectionRange(4, 8);
     await u.keyboard("{Control>}{Shift>}S{/Shift}{/Control}");
     expect(box.value).toBe("das ||ende||");
-    await u.click(screen.getByRole("button", { name: "Spoiler" }));
+    const spoilerButton = screen.getByRole("button", { name: "Spoiler" });
+    // An SVG icon, not a block glyph that renders differently per font.
+    expect(spoilerButton.querySelector("svg")).not.toBeNull();
+    expect(spoilerButton.textContent).not.toContain("\u2592");
+    await u.click(spoilerButton);
     expect(box.value).toContain("||||");
     await vi.waitFor(() => expect(screen.getByRole("button", { name: "Senden" })).toBeEnabled());
     await u.click(screen.getByRole("button", { name: "Senden" }));
@@ -206,5 +210,33 @@ describe("Composer: upload categories (PROTOCOL.md §7a)", () => {
     await userEvent.setup({ applyAccept: false }).upload(input, new File(["MZ"], "setup.exe"));
     expect(await screen.findByText(/Programme und Skripte sind hier nicht erlaubt/)).toBeInTheDocument();
     expect(onUpload).not.toHaveBeenCalled();
+  });
+
+  it("waits for a policy that is still loading before it uploads (a file picked right after opening the channel)", async () => {
+    const onUpload = vi.fn();
+    let resolve: (p: { allowed: string[]; executablesAllowed: boolean }) => void = () => {};
+    const resolveUploadPolicy = vi.fn(() => new Promise<{ allowed: string[]; executablesAllowed: boolean }>((r) => (resolve = r)));
+    render(<Composer placeholder="Nachricht" onSend={vi.fn()} canAttach onUpload={onUpload} resolveUploadPolicy={resolveUploadPolicy} />);
+    const input = screen.getByLabelText("Datei auswählen") as HTMLInputElement;
+    await userEvent.setup({ applyAccept: false }).upload(input, new File(["Hallo"], "notizen.txt", { type: "text/plain" }));
+    expect(resolveUploadPolicy).toHaveBeenCalled();
+    resolve({ allowed: ["images"], executablesAllowed: false });
+    expect(await screen.findByTestId("upload-error")).toHaveTextContent("Dokumente dürfen hier nicht hochgeladen werden");
+    expect(onUpload).not.toHaveBeenCalled();
+  });
+
+  it("shows the node's upload.type_forbidden refusal in the user's language", async () => {
+    const refusal = (meta: Record<string, unknown>) =>
+      Object.assign(new Error("Uploads of the category documents are not allowed here"), {
+        problem: { code: "upload.type_forbidden", detail: "Uploads of the category documents are not allowed here", meta },
+      });
+    const onUpload = vi.fn().mockRejectedValueOnce(refusal({ category: "documents", executable: false })).mockRejectedValueOnce(refusal({ category: "other", executable: true }));
+    render(<Composer placeholder="Nachricht" onSend={vi.fn()} canAttach onUpload={onUpload} />);
+    const input = screen.getByLabelText("Datei auswählen") as HTMLInputElement;
+    await userEvent.setup({ applyAccept: false }).upload(input, new File(["Hallo"], "notizen.txt", { type: "text/plain" }));
+    expect(await screen.findByTestId("upload-error")).toHaveTextContent("Dokumente dürfen hier nicht hochgeladen werden");
+    await userEvent.setup({ applyAccept: false }).upload(input, new File(["MZ"], "setup.exe"));
+    expect(await screen.findByText(/Programme und Skripte sind hier nicht erlaubt/)).toBeInTheDocument();
+    expect(screen.queryByText(/not allowed here/)).toBeNull();
   });
 });

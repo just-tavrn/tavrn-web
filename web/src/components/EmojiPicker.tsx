@@ -30,13 +30,19 @@ export interface CustomEmoji {
 
 /** Width and gap of the picker popup (px). */
 export const MENU_WIDTH = 336;
+/**
+ * Height of the picker popup (px), fixed: the content loads in steps (Unicode data, other rooms' emojis,
+ * categories frame by frame), and a popup that grew with it would leave the place it was measured for.
+ * On short viewports the popup is bounded by the viewport; the grid scrolls inside.
+ */
+export const MENU_HEIGHT = 384;
 const MENU_GAP = 4;
 const COLUMNS = 8;
 const TONE_GLYPHS = ["✋", "✋🏻", "✋🏼", "✋🏽", "✋🏾", "✋🏿"];
 
 /**
  * Where the popup goes: right-aligned to the button, below it, or above it when there is no room below;
- * always inside the viewport.
+ * always inside the viewport (when neither side fits, it starts at the top edge).
  */
 export function pickerPosition(button: { top: number; bottom: number; right: number }, menuHeight: number, viewport: { width: number; height: number }) {
   const width = Math.min(MENU_WIDTH, viewport.width - 2 * MENU_GAP);
@@ -245,7 +251,7 @@ function PickerPanel({ onPick, customEmojis }: { onPick: (emoji: string) => void
   let index = 0;
   return (
     <>
-      <div className="flex items-center gap-2 border-b border-line p-2">
+      <div className="flex shrink-0 items-center gap-2 border-b border-line p-2">
         <input
           ref={search}
           type="search"
@@ -286,7 +292,7 @@ function PickerPanel({ onPick, customEmojis }: { onPick: (emoji: string) => void
       </div>
       {!query && (
         // One tab stop for the section buttons; arrow keys move between them (roving focus).
-        <nav className="flex gap-0.5 overflow-x-auto border-b border-line px-1 py-1" aria-label={t("emoji_picker.sections")} onKeyDown={(e) => rovingKeyDown(e, "button", { orientation: "horizontal" })}>
+        <nav className="flex shrink-0 gap-0.5 overflow-x-auto border-b border-line px-1 py-1" aria-label={t("emoji_picker.sections")} onKeyDown={(e) => rovingKeyDown(e, "button", { orientation: "horizontal" })}>
           {sections.map((s, i) => (
             <button
               key={s.id}
@@ -305,7 +311,7 @@ function PickerPanel({ onPick, customEmojis }: { onPick: (emoji: string) => void
           ))}
         </nav>
       )}
-      <div ref={grid} role="menu" aria-label={t("emoji_picker.emojis")} className="max-h-72 overflow-y-auto overscroll-contain p-1" onKeyDown={onGridKey}>
+      <div ref={grid} role="menu" aria-label={t("emoji_picker.emojis")} className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-1" onKeyDown={onGridKey}>
         {visible.map((s) => (
           <div key={s.id} role="group" aria-label={s.title} data-section={s.id} data-testid="emoji-section">
             <p className="sticky top-0 z-10 bg-bg-1 px-1 py-1 text-[11px] font-semibold uppercase tracking-wide text-fg-2">{s.title}</p>
@@ -322,7 +328,7 @@ function PickerPanel({ onPick, customEmojis }: { onPick: (emoji: string) => void
         {failed && <p className="p-3 text-xs text-danger">{t("emoji_picker.load_failed")}</p>}
       </div>
       {!external && (others.personal.length > 0 || others.other.length > 0) && (
-        <p className="border-t border-line px-2 py-1 text-[11px] text-fg-2" data-testid="emoji-external-note">
+        <p className="shrink-0 border-t border-line px-2 py-1 text-[11px] text-fg-2" data-testid="emoji-external-note">
           {t("emoji_picker.external_denied")}
         </p>
       )}
@@ -333,8 +339,9 @@ function PickerPanel({ onPick, customEmojis }: { onPick: (emoji: string) => void
 /**
  * Emoji picker button with its popup. The popup is portaled to `document.body` with fixed positioning:
  * a popup inside a (virtualized, absolutely positioned) message row would be clipped by or stretch the list.
- * Escape, a click outside, scrolling or resizing close it; focus moves into the grid on open and back to
- * the button on Escape.
+ * Its size is fixed ({@link MENU_HEIGHT}, bounded by the viewport) and reserved while the data loads, so the
+ * place computed on open stays right. Escape, a click outside, scrolling or resizing close it; focus moves
+ * into the grid on open and back to the button on Escape.
  */
 export function EmojiPicker({ onPick, customEmojis = [], label }: { onPick: (emoji: string) => void; customEmojis?: CustomEmoji[]; label?: string }) {
   const t = useT();
@@ -402,8 +409,8 @@ export function EmojiPicker({ onPick, customEmojis = [], label }: { onPick: (emo
             ref={menu}
             role="dialog"
             aria-label={t("messages.pick_emoji")}
-            style={{ position: "fixed", top: pos?.top ?? 0, left: pos?.left ?? 0, width: `min(${MENU_WIDTH}px, calc(100vw - ${2 * MENU_GAP}px))`, visibility: pos ? "visible" : "hidden" }}
-            className="z-50 flex flex-col rounded-md border border-line bg-bg-1 shadow-xl"
+            style={{ position: "fixed", top: pos?.top ?? 0, left: pos?.left ?? 0, width: `min(${MENU_WIDTH}px, calc(100vw - ${2 * MENU_GAP}px))`, height: `min(${MENU_HEIGHT}px, calc(100dvh - ${2 * MENU_GAP}px))`, visibility: pos ? "visible" : "hidden" }}
+            className="z-50 flex flex-col overflow-hidden rounded-md border border-line bg-bg-1 shadow-xl"
             data-testid="emoji-picker"
           >
             <PickerPanel onPick={pick} customEmojis={customEmojis} />

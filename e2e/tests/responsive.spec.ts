@@ -72,4 +72,28 @@ test.describe("Responsive layout", () => {
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
     expect(overflow).toBe(false);
   });
+
+  test("pages without a member list use the full width on a desktop", async ({ page, request }, info) => {
+    // Friends, discover and the user settings have no member list: the desktop grid used to keep its 240 px column
+    // empty on the right. The phone and tablet layouts are covered above.
+    test.skip(info.project.name !== "chromium", "a desktop width");
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const account = await registerViaApi(request, "wide");
+    await loginAs(page, account);
+    for (const path of ["/friends", "/discover", "/settings/profile"]) {
+      await page.goto(path);
+      const main = page.locator("#main-content");
+      await expect(main).toBeVisible();
+      await expect(page.getByTestId("members-drawer")).toBeHidden();
+      await expect(page.getByRole("button", { name: "Mitglieder öffnen" })).toHaveCount(0);
+      const box = (await main.boundingBox())!;
+      // The main column reaches the right edge of the window (72 px rail + 240 px channels on the left).
+      expect(Math.round(box.x + box.width), path).toBe(1440);
+      expect(Math.round(box.x), path).toBe(312);
+    }
+    // A room keeps its member column.
+    const room = await createRoomViaApi(request, account.token, "Breit-Raum");
+    await page.goto(`/rooms/${room.id}`);
+    await expect(page.getByRole("complementary", { name: "Mitglieder" })).toBeInViewport();
+  });
 });

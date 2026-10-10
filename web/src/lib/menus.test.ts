@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it, vi } from "vitest";
 import { ALL_PERMISSIONS, Permission } from "@tavrn/sdk";
-import { findEntry, type MenuEntry } from "../components/ContextMenu";
-import { channelMenu, dmMenu, memberMenu, messageMenu, notifyEntries, roomMenu, voiceParticipantMenu, type MemberMenuActions, type MemberMenuContext, type VoiceParticipantMenuActions } from "./menus";
+import { findEntry, staysOpen, type MenuEntry } from "../components/ContextMenu";
+import { channelMenu, dmMenu, inviteRoomChoices, inviteToRoomEntry, memberMenu, messageMenu, notifyEntries, roomMenu, threadMenu, voiceParticipantMenu, type InviteRoomCandidate, type MemberMenuActions, type MemberMenuContext, type VoiceParticipantMenuActions } from "./menus";
 
 const t = (key: string, params?: Record<string, string | number>) => (params ? `${key}:${JSON.stringify(params)}` : key);
 const ids = (entries: MenuEntry[]) => entries.filter((e) => e.kind !== "separator").map((e) => e.id);
@@ -48,7 +48,7 @@ describe("memberMenu", () => {
   it("offers the everyday items and, for a moderator above the target, moderation", () => {
     const entries = memberMenu(ctx(), memberActions(), t);
     expect(ids(entries)).toEqual(["profile", "message", "call", "add-friend", "mention", "copy-address", "roles", "timeout", "kick", "ban", "block"]);
-    expect(findEntry(entries, "call")).toMatchObject({ disabled: true, reason: "menu.reason.calls_soon" });
+    expect(findEntry(entries, "call")).toMatchObject({ disabled: true, reason: "menu.reason.calls_in_dm" });
     expect(findEntry(entries, "kick")?.disabled).toBeFalsy();
   });
 
@@ -289,5 +289,128 @@ describe("notification and list menus", () => {
     expect(ids(dm)).toEqual(["mark-read", "profile", "copy-address", "dm-notify", "dm-mute", "close", "block"]);
     const group = dmMenu({ unread: false, kind: "group", peer: null, notify }, { ...notifyActions, markRead: vi.fn(), profile: vi.fn(), close: vi.fn(), block: vi.fn(), copyAddress: vi.fn() }, t);
     expect(ids(group)).not.toContain("block");
+  });
+});
+
+describe("which entries keep the menu open (state changes, like the voice quick menus)", () => {
+  /** Ids of all items (submenus included) whose choice keeps the menu open, and of those that close it. */
+  const split = (entries: MenuEntry[]) => {
+    const open: string[] = [];
+    const close: string[] = [];
+    const walk = (list: MenuEntry[]) =>
+      list.forEach((e) => {
+        if (e.kind === "submenu") walk(e.items);
+        else if (e.kind === "item") (staysOpen(e) ? open : close).push(e.id);
+      });
+    walk(entries);
+    return { open, close };
+  };
+  const notify = { mode: null, inherited: "mentions" as const, mutedUntil: null, suppressEveryone: false };
+  const notifyActions = { setMode: vi.fn(), mute: vi.fn(), unmute: vi.fn(), setSuppressEveryone: vi.fn() };
+
+  it("notification modes, @everyone, the mute durations and unmute stay open; navigation and leave close", () => {
+    const actions = { ...notifyActions, markRead: vi.fn(), invite: vi.fn(), settings: vi.fn(), leave: vi.fn(), copyId: vi.fn(), report: vi.fn() };
+    const room = split(roomMenu({ unread: true, canInvite: true, isOwner: false, notify, canReport: true }, actions, t));
+    expect(room.open).toEqual(["room-mode-default", "room-mode-all", "room-mode-mentions", "room-mode-nothing", "room-suppress-everyone", "room-mute-1", "room-mute-8", "room-mute-24", "room-mute-0"]);
+    expect(room.close).toEqual(["invite", "settings", "mark-read", "copy-id", "report", "leave"]);
+    const muted = split(roomMenu({ unread: false, canInvite: false, isOwner: false, notify: { ...notify, mutedUntil: new Date(Date.now() + 3_600_000).toISOString() } }, actions, t));
+    expect(muted.open).toContain("room-unmute");
+  });
+
+  it("channels and DMs: the notification entries and the full-history toggle stay open, the rest closes", () => {
+    // @everyone is a room setting only.
+    const notify = { mode: "all" as const, inherited: "mentions" as const, mutedUntil: null };
+    const actions = { ...notifyActions, markRead: vi.fn(), edit: vi.fn(), duplicate: vi.fn(), remove: vi.fn(), copyLink: vi.fn(), copyId: vi.fn(), moveEveryoneHere: vi.fn(), moveEveryoneTo: vi.fn(), toggleFullHistory: vi.fn() };
+    const voiceMove = { elsewhere: 1, here: 1, targets: [{ id: "v2", name: "Raid" }] };
+    const channel = split(channelMenu({ kind: "voice", unread: true, canManage: true, system: false, voiceMove, notify, fullHistory: false }, actions, t));
+    expect(channel.open).toEqual(["channel-mode-default", "channel-mode-all", "channel-mode-mentions", "channel-mode-nothing", "channel-mute-1", "channel-mute-8", "channel-mute-24", "channel-mute-0", "full-history"]);
+    expect(channel.close).toEqual(["mark-read", "move-here", "move-to-v2", "edit", "duplicate", "copy-link", "copy-id", "delete"]);
+    const dm = split(dmMenu({ unread: true, kind: "dm", peer: { address: "b@x", name: "B" }, notify, fullHistory: true }, { ...notifyActions, markRead: vi.fn(), profile: vi.fn(), close: vi.fn(), block: vi.fn(), copyAddress: vi.fn(), toggleFullHistory: vi.fn() }, t));
+    expect(dm.open).toEqual(["dm-mode-default", "dm-mode-all", "dm-mode-mentions", "dm-mode-nothing", "dm-mute-1", "dm-mute-8", "dm-mute-24", "dm-mute-0", "full-history"]);
+    expect(dm.close).toEqual(["mark-read", "profile", "copy-address", "close", "block"]);
+  });
+
+  it("members: role toggles and server mute stay open; profile, messages, moderation and block close", () => {
+    const voice = { channelId: "v1", serverMuted: false, channels: [{ id: "v2", name: "Raid" }], inMyCall: false, volume: 100 };
+    const perms = Permission.MANAGE_ROLES | Permission.MUTE_MEMBERS | Permission.MOVE_MEMBERS | Permission.MODERATE_MEMBERS | Permission.KICK_MEMBERS | Permission.BAN_MEMBERS;
+    const member = split(memberMenu(ctx({ voice, canReport: true, room: { perms, isOwner: true, myTop: 100, roles } }), { ...memberActions(), report: vi.fn() }, t));
+    expect(member.open).toEqual(["role-admin", "role-mod", "role-member", "server-mute"]);
+    expect(member.close).toEqual(["profile", "message", "call", "add-friend", "mention", "copy-address", "server-deafen", "disconnect", "move-v2", "timeout-1", "timeout-5", "timeout-10", "timeout-60", "timeout-1440", "timeout-10080", "kick", "ban", "report", "block"]);
+    const participant = split(voiceParticipantMenu({ self: false, perms: Permission.MUTE_MEMBERS | Permission.MOVE_MEMBERS, serverMuted: true, inMyCall: true, volume: 100, channels: [] }, { volume: (v) => ({ kind: "custom", id: "volume", render: () => String(v) }), serverMute: vi.fn(), disconnect: vi.fn(), moveTo: vi.fn(), copyAddress: vi.fn(), copyId: vi.fn() }, t));
+    expect(participant.open).toEqual(["server-mute"]);
+  });
+
+  it("messages: every entry closes (replies, reactions, copies, pin, edit and delete act on the message)", () => {
+    const actions = { reply: vi.fn(), react: vi.fn(), copyText: vi.fn(), copyLink: vi.fn(), copyId: vi.fn(), pin: vi.fn(), edit: vi.fn(), remove: vi.fn(), markUnread: vi.fn() };
+    const message = split(messageMenu({ own: true, text: "hi", pinned: false, canPin: true, canReact: true, canManage: false, canReply: true, canEdit: true, canDelete: true }, actions, t));
+    expect(message.open).toEqual([]);
+  });
+
+  it("the thread header: lock and archive are state toggles and stay open; rename and delete close", () => {
+    const actions = { rename: vi.fn(), setArchived: vi.fn(), setLocked: vi.fn(), remove: vi.fn() };
+    const thread = split(threadMenu({ mayManage: true, archived: false, locked: false }, actions, t));
+    expect(thread.open).toEqual(["archive", "lock"]);
+    expect(thread.close).toEqual(["rename", "delete"]);
+    const done = threadMenu({ mayManage: true, archived: true, locked: true }, actions, t);
+    expect(findEntry(done, "archive")).toMatchObject({ label: "threads.unarchive" });
+    expect(findEntry(done, "lock")).toMatchObject({ label: "threads.unlock" });
+    const archive = findEntry(done, "archive");
+    if (archive?.kind === "item") archive.onSelect?.();
+    expect(actions.setArchived).toHaveBeenCalledWith(false);
+    expect(threadMenu({ mayManage: false, archived: false, locked: false }, actions, t)).toEqual([]);
+  });
+});
+
+describe("invite to room (direct invites, FEDERATION.md §3.4)", () => {
+  const room = (id: string, name: string, over: Partial<InviteRoomCandidate> = {}): InviteRoomCandidate => ({ id, name, node: null, perms: Permission.CREATE_INVITES, isOwner: false, ...over });
+  const rooms = [
+    room("R1", "Gilde"),
+    room("R2", "Ohne Einladen", { perms: Permission.SEND_MESSAGES }),
+    room("R3", "Eigener Raum", { perms: 0n, isOwner: true }),
+    room("R4", "Admins", { perms: Permission.ADMINISTRATOR }),
+    room("R5", "Noch nicht geladen", { perms: null }),
+    room("R6", "Bob ist schon da", { members: ["bob@x"] }),
+    room("R7", "Anderer Knoten", { node: "other.example" }),
+  ];
+
+  it("lists the rooms where the user may create invites, without those the target is known to be in, sorted by name", () => {
+    expect(inviteRoomChoices(rooms, "bob@x").map((r) => r.id)).toEqual(["R4", "R7", "R3", "R1"]);
+    // Rooms named by the caller (the current room of a member menu) are left out too.
+    expect(inviteRoomChoices(rooms, "bob@x", ["R1", "R4"]).map((r) => r.id)).toEqual(["R7", "R3"]);
+    // Another target is not a member of R6.
+    expect(inviteRoomChoices(rooms, "carl@x").map((r) => r.id)).toContain("R6");
+  });
+
+  it("builds a submenu whose items invite into the room and close the menu; remote rooms show their node", () => {
+    const invite = vi.fn();
+    const entry = inviteToRoomEntry(rooms, "bob@x", invite, t);
+    expect(entry).toMatchObject({ kind: "submenu", id: "invite-room", label: "menu.invite_room" });
+    expect(entry?.kind === "submenu" && entry.items.map((i) => i.id)).toEqual(["invite-room-R4", "invite-room-R7", "invite-room-R3", "invite-room-R1"]);
+    const remote = findEntry([entry!], "invite-room-R7");
+    expect(remote).toMatchObject({ label: "Anderer Knoten", hint: "other.example" });
+    if (remote?.kind === "item") {
+      expect(staysOpen(remote)).toBe(false);
+      remote.onSelect?.();
+    }
+    expect(invite).toHaveBeenCalledWith(expect.objectContaining({ id: "R7", node: "other.example" }));
+  });
+
+  it("has no submenu when no room qualifies", () => {
+    expect(inviteToRoomEntry([room("R2", "x", { perms: 0n })], "bob@x", vi.fn(), t)).toBeNull();
+    expect(inviteToRoomEntry([], "bob@x", vi.fn(), t)).toBeNull();
+  });
+
+  it("the member menu offers it for others (not oneself, not bots) when rooms qualify", () => {
+    const inviteToRoom = vi.fn();
+    const actions = { ...memberActions(), inviteToRoom };
+    const entries = memberMenu(ctx({ inviteRooms: rooms }), actions, t);
+    expect(ids(entries)).toEqual(["profile", "message", "call", "add-friend", "invite-room", "mention", "copy-address", "roles", "timeout", "kick", "ban", "block"]);
+    const item = findEntry(entries, "invite-room-R1");
+    if (item?.kind === "item") item.onSelect?.();
+    expect(inviteToRoom).toHaveBeenCalledWith(expect.objectContaining({ id: "R1" }));
+    expect(ids(memberMenu(ctx({ self: true, inviteRooms: rooms }), actions, t))).not.toContain("invite-room");
+    expect(ids(memberMenu(ctx({ inviteRooms: rooms, target: { address: "bot@x", name: "Bot", isOwner: false, top: 0, roles: [], timedOut: false, bot: true } }), actions, t))).not.toContain("invite-room");
+    expect(ids(memberMenu(ctx({ inviteRooms: [room("R2", "x", { perms: 0n })] }), actions, t))).not.toContain("invite-room");
+    expect(ids(memberMenu(ctx(), actions, t))).not.toContain("invite-room");
   });
 });

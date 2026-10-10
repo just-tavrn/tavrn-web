@@ -5,8 +5,8 @@
  * removal from a room end the call; `call.ring`/`call.update`/`call.end` drive calls in DMs. Kept apart from `useRealtime` so the voice client stays one module.
  */
 import { useEffect } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Member, RoomDetail, TavrnSocket, VoiceChannelState } from "@tavrn/sdk";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { TavrnApiError, type Member, type RoomDetail, type TavrnSocket, type VoiceChannelState } from "@tavrn/sdk";
 import { splitIdentity } from "@tavrn/e2ee";
 import { useNodeSockets, useRealtimeState } from "../hooks/useRealtime";
 import { useAuth } from "../stores/auth";
@@ -32,6 +32,7 @@ export function useVoiceRealtime() {
   const home = useRealtimeState((s) => s.socket);
   const nodes = useNodeSockets((s) => s.sockets);
   const queryClient = useQueryClient();
+  useMyVoiceStates();
 
   // Priority speaker claims (design note 4.13 item 3) are checked against the room's roles and overrides and
   // the speaker's member entry, never trusted from the LiveKit attribute alone.
@@ -79,6 +80,39 @@ export function useVoiceRealtime() {
     ]);
     return () => offs.forEach((off) => off());
   }, [home, nodes, queryClient]);
+}
+
+/** Query key of a node's `GET /users/me/voice` (invalidated on `ready` and resyncs of that node's socket). */
+export const myVoiceKey = (domain: string) => ["my-voice", domain] as const;
+
+/**
+ * Initial voice presence of every room the user is in (`GET /users/me/voice`, VOICE.md §5), of the home node and of
+ * every node with a federated session, for the room rail and the friends list; `voice.state` keeps it current and the
+ * sockets refetch it after `ready` and a resync (`useRealtime`). Nodes without the route (404) keep the per-room
+ * snapshots of opened rooms.
+ */
+function useMyVoiceStates() {
+  const homeDomain = useAuth((s) => s.user?.domain);
+  const remote = useNodes((s) => Object.keys(s.sessions).sort().join(","));
+  const domains = [...new Set([homeDomain, ...remote.split(",")].filter((d): d is string => !!d))];
+  useQueries({
+    queries: domains.map((domain) => ({
+      queryKey: myVoiceKey(domain),
+      queryFn: async () => {
+        try {
+          const { rooms } = await apiFor(domain).voice.mine();
+          useVoicePresence.getState().seedAll(domain, rooms);
+          return rooms.length;
+        } catch (e) {
+          if (e instanceof TavrnApiError && e.status === 404) return 0;
+          throw e;
+        }
+      },
+      staleTime: Infinity,
+      refetchOnWindowFocus: false,
+      retry: 1,
+    })),
+  });
 }
 
 /** Initial voice presence of a room (`GET …/voice`), refreshed on reconnects of the node's socket. */

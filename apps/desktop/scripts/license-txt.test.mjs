@@ -20,7 +20,7 @@ test("LICENSE.txt is current and plain ASCII (the NSIS licence page shows it as 
   const committed = readFileSync(LICENSE_TXT, "utf8");
   assert.equal(committed, licenseText(), "run: pnpm --filter @tavrn/desktop license-txt");
   assert.ok(/^[\x09\x0a\x0d\x20-\x7e]*$/.test(committed), "LICENSE.txt has non-ASCII characters");
-  for (const part of ["Apache License", "Terms of use and privacy notice for the Tavrn desktop app", "github.com", "https://tavrn.org", "org.tavrn.desktop"]) {
+  for (const part of ["Apache License", "Terms of use and privacy notice for the tavrn desktop app", "github.com", "https://tavrn.org", "org.tavrn.desktop"]) {
     assert.ok(committed.includes(part), part);
   }
 });

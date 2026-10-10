@@ -40,13 +40,15 @@ export function UserSettingsPage() {
         <h1 className="truncate text-sm font-semibold">{t("user.settings")}</h1>
       </header>
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <nav aria-label={t("settings.sections")} className="flex shrink-0 gap-1 overflow-x-auto border-b border-line p-2 md:w-48 md:flex-col md:border-b-0 md:border-r">
+        <nav aria-label={t("settings.sections")} className="flex shrink-0 gap-1 overflow-x-auto border-b border-line p-2 md:w-56 md:flex-col md:border-b-0 md:border-r">
           {admin && (
             <>
               {/* Node admins of the home node: the node administration at the top (also in the account menu). */}
               <Link to="/admin" title={t("admin.link_hint")} className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-md border border-line bg-bg-1 px-3 py-2 text-sm font-medium text-fg-0 hover:bg-bg-3" data-testid="settings-admin-link">
                 <WrenchIcon size={16} className="text-accent" />
-                {t("admin.link")}
+                <span className="min-w-0 md:whitespace-normal" data-testid="settings-admin-label">
+                  {t("admin.link")}
+                </span>
               </Link>
               <div role="separator" className="mx-1 w-px shrink-0 bg-line md:mx-0 md:my-1 md:h-px md:w-auto" />
             </>

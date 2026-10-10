@@ -15,7 +15,7 @@ import { getMls, useMlsUi } from "../../stores/mls";
 import { qualify, splitIdentity, type GhostViolation } from "@tavrn/e2ee";
 import { participantsOf, useVoicePresence } from "../presence";
 import { useVoiceSettings } from "../settings";
-import { useVoice, watchStream } from "../store";
+import { ownVoiceChannel, useVoice, watchStream } from "../store";
 import { joinVoice, loadedSession } from "../index";
 import { AvatarTile } from "./AvatarTile";
 import { ConnectionGlyph, LevelMeterBars, ParticipantFlags, ScreenBadge, SoundOverlay, levelStyle, useMemberLooks, useParticipantStatus, usePriority } from "./common";
@@ -285,7 +285,8 @@ export function VoiceStage({ room, channel }: { room: RoomDetail; channel: Chann
   const locale = useLocale((s) => s.locale);
   const members = useRoomMembers(room.id);
   const memberAddresses = useMemo(() => members.data?.map((m) => m.user.address) ?? null, [members.data]);
-  const perms = channelPermissions(room, channel.id, me?.id ?? "");
+  const voiceChannelId = useVoice((s) => ownVoiceChannel(s, domain, room.id));
+  const perms = channelPermissions(room, channel.id, me?.id ?? "", voiceChannelId);
   const phone = useIsPhone();
   const [page, setPage] = useState(0);
   const q = qualify(domain, channel.id);

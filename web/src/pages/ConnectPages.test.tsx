@@ -241,7 +241,7 @@ describe("connect flow: app sessions of the desktop app (FEDERATION.md §8 step 
   const SESSION = "S".repeat(43);
   const sessionUrl = (extra = "") => `/connect?session=${SESSION}&state=${"s".repeat(22)}${extra}`;
   const localUser = { ...homeUser, domain: VISIT, address: `alice@${VISIT}` };
-  const pendingSession = () => ({ body: { status: "pending", device_name: "Tavrn auf dem Laptop", purpose: "login", expires_in: 580 } });
+  const pendingSession = () => ({ body: { status: "pending", device_name: "tavrn auf dem Laptop", purpose: "login", expires_in: 580 } });
   const KEY = "K".repeat(43);
 
   it("asks with the session's device name, issues the code for the session and stays on the page", async () => {
@@ -251,10 +251,10 @@ describe("connect flow: app sessions of the desktop app (FEDERATION.md §8 step 
     });
     useAuth.setState({ token: "local", refresh: "r", user: localUser, deviceId: "D", home: null });
     renderAt(sessionUrl());
-    expect(await screen.findByTestId("connect-text")).toHaveTextContent(`„Tavrn auf dem Laptop“ möchte sich als alice@${VISIT} anmelden`);
-    expect(screen.getByTestId("connect-warning")).toHaveTextContent("selbst in deiner eigenen Tavrn-App");
+    expect(await screen.findByTestId("connect-text")).toHaveTextContent(`„tavrn auf dem Laptop“ möchte sich als alice@${VISIT} anmelden`);
+    expect(screen.getByTestId("connect-warning")).toHaveTextContent("selbst in deiner eigenen tavrn-App");
     await userEvent.setup().click(screen.getByRole("button", { name: "In der App anmelden" }));
-    expect(await screen.findByTestId("connect-done")).toHaveTextContent("Kehre zur Tavrn-App zurück");
+    expect(await screen.findByTestId("connect-done")).toHaveTextContent("Kehre zur tavrn-App zurück");
     expect(calls.find((c) => c.url.endsWith("/auth/connect/code"))).toMatchObject({ body: { session_id: SESSION }, auth: "Bearer local" });
     expect(calls.find((c) => c.url.endsWith("/auth/connect/code"))!.body).not.toHaveProperty("origin");
     // The session is read once, before the confirmation; afterwards the app alone polls it (the code is handed out once).
@@ -273,7 +273,7 @@ describe("connect flow: app sessions of the desktop app (FEDERATION.md §8 step 
     useAuth.setState({ token: "local", refresh: "r", user: localUser, deviceId: "D", home: null });
     const { unmount } = renderAt(sessionUrl());
     await userEvent.setup().click(await screen.findByRole("button", { name: "In der App anmelden" }));
-    expect(await screen.findByTestId("connect-done")).toHaveTextContent("Kehre zur Tavrn-App zurück");
+    expect(await screen.findByTestId("connect-done")).toHaveTextContent("Kehre zur tavrn-App zurück");
     await waitFor(() => expect(signOutAfterHandoff).toHaveBeenCalledTimes(1));
     const args = vi.mocked(signOutAfterHandoff).mock.calls[0]![0];
     expect(args).toMatchObject({ before: devices, waitForExchange: true });
@@ -333,7 +333,7 @@ describe("connect flow: app sessions of the desktop app (FEDERATION.md §8 step 
     await u.click(screen.getByRole("button", { name: "Anmelden" }));
     await u.type(await screen.findByLabelText("6-stelliger Code"), "123456");
     await u.click(screen.getByRole("button", { name: "Bestätigen" }));
-    expect(await screen.findByTestId("connect-text")).toHaveTextContent("Tavrn auf dem Laptop");
+    expect(await screen.findByTestId("connect-text")).toHaveTextContent("tavrn auf dem Laptop");
     expect(screen.queryByText("Verschlüsselungsseite")).toBeNull();
   });
 
@@ -404,14 +404,14 @@ describe("connect flow: app sessions of the desktop app (FEDERATION.md §8 step 
   it("unlock session: the page asks only for the passkey and sends the sealed PRF output without a code", async () => {
     vi.mocked(evaluatePrf).mockResolvedValue({ credentialId: "Y3JlZA", prf: new Uint8Array(32).fill(7) });
     const calls = network({
-      [`origin/api/v1/auth/connect/session/${SESSION}`]: () => ({ body: { status: "pending", device_name: "Tavrn auf dem Laptop", purpose: "unlock", expires_in: 580 } }),
+      [`origin/api/v1/auth/connect/session/${SESSION}`]: () => ({ body: { status: "pending", device_name: "tavrn auf dem Laptop", purpose: "unlock", expires_in: 580 } }),
       "origin/api/v1/auth/connect/code": () => ({ status: 204, body: null }),
       "origin/api/v1/users/me/secret-storage": () => ({ body: { items: [{ method: "passkey:Y3JlZA" }] } }),
     });
     useAuth.setState({ token: "local", refresh: "r", user: localUser, deviceId: "D", home: null });
     renderAt(`${sessionUrl("&method=passkey")}#k=${KEY}`);
-    expect(await screen.findByTestId("connect-title")).toHaveTextContent("Tavrn-App entsperren?");
-    expect(screen.getByTestId("connect-text")).toHaveTextContent(`„Tavrn auf dem Laptop“ möchte die verschlüsselten Nachrichten von alice@${VISIT}`);
+    expect(await screen.findByTestId("connect-title")).toHaveTextContent("tavrn-App entsperren?");
+    expect(screen.getByTestId("connect-text")).toHaveTextContent(`„tavrn auf dem Laptop“ möchte die verschlüsselten Nachrichten von alice@${VISIT}`);
     expect(screen.queryByRole("button", { name: "In der App anmelden" })).toBeNull();
     await userEvent.setup().click(screen.getByRole("button", { name: "Mit Passkey entsperren" }));
     expect(await screen.findByTestId("connect-done")).toHaveTextContent("Die App ist entsperrt");

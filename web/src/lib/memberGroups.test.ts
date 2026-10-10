@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from "vitest";
 import type { Member } from "@tavrn/sdk";
-import { groupMembers, memberColor } from "./memberGroups";
+import { authorLooks, groupMembers, memberColor } from "./memberGroups";
 
 const member = (name: string, roles: string[] = [], nickname: string | null = null): Member =>
   ({ user: { id: name, username: name, domain: "x", address: `${name}@x`, display_name: name, kind: "user", is_node_admin: false, created_at: "" }, joined_at: "", roles, nickname }) as Member;
@@ -35,5 +35,24 @@ describe("groupMembers", () => {
     expect(memberColor({ roles: ["vip", "admin"] }, roles)).toBe("#f00");
     expect(memberColor({ roles: ["vip", "mod"] }, roles)).toBe("#0f0");
     expect(memberColor({ roles: [] }, roles)).toBeNull();
+  });
+});
+
+describe("authorLooks: names of message authors like the member list (design note 4.13 item 3)", () => {
+  it("rooms: nickname, then display name, with the role colour", () => {
+    const roles = [{ id: "r1", name: "Mod", color: "#ff0000", position: 2, is_everyone: false }];
+    const looks = authorLooks({ roomMembers: [{ nickname: "Mimi", roles: ["r1"], user: { address: "mira@t.local", display_name: "Mira Kowalski" } }], roles });
+    expect(looks?.get("mira@t.local")).toEqual({ name: "Mimi", color: "#ff0000" });
+  });
+
+  it("DMs and group DMs: the members' display names, as in the header and the member list", () => {
+    const looks = authorLooks({ people: [{ address: "mira@t.local", display_name: "Mira Kowalski" }, { address: "lena@t.local", display_name: "" }] });
+    expect(looks?.get("mira@t.local")).toEqual({ name: "Mira Kowalski", color: null });
+    // No display name: no entry, the row falls back to the address's local part.
+    expect(looks?.has("lena@t.local")).toBe(false);
+  });
+
+  it("nothing known: no map (the rows show the local part)", () => {
+    expect(authorLooks({})).toBeUndefined();
   });
 });

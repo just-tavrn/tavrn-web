@@ -34,12 +34,14 @@ export interface MemberMenuContext {
   voice?: { channelId: string; serverMuted: boolean; channels: { id: string; name: string }[]; inMyCall: boolean; volume: number; streaming?: boolean; streamVolume?: number };
   friend: boolean;
   friendPending: boolean;
-  /** DM/group calls exist (phase 4E track V); until then the item is disabled. */
+  /** A call can start from here; otherwise the item is disabled and points to the direct message, where calls start. */
   callsAvailable: boolean;
   /** Mentions only make sense where a composer is open. */
   canMention: boolean;
   /** The node takes reports (`reports.v1`, MODERATION.md). */
   canReport?: boolean;
+  /** The user's rooms for "Invite to room" (`inviteRoomChoices` filters them); absent: no entry. */
+  inviteRooms?: InviteRoomCandidate[];
 }
 
 export interface MemberMenuActions {
@@ -64,6 +66,8 @@ export interface MemberMenuActions {
   /** Copy the user id (voice participant menus only; the member list keeps "copy address"). */
   copyId?: () => void;
   report?: () => void;
+  /** Sends a direct invite into the chosen room. */
+  inviteToRoom?: (room: InviteRoomCandidate) => void;
 }
 
 export function memberMenu(c: MemberMenuContext, a: MemberMenuActions, t: T): MenuEntry[] {
@@ -93,8 +97,9 @@ export function memberMenu(c: MemberMenuContext, a: MemberMenuActions, t: T): Me
   return normalizeMenu([
     menuItem("profile", t("menu.member.profile"), a.profile, { icon: "👤" }),
     !c.self && menuItem("message", t("menu.member.message"), a.message, { icon: "✉" }),
-    !c.self && menuItem("call", t("menu.member.call"), a.call, { icon: "📞", disabled: !c.callsAvailable, reason: c.callsAvailable ? undefined : t("menu.reason.calls_soon") }),
+    !c.self && menuItem("call", t("menu.member.call"), a.call, { icon: "📞", disabled: !c.callsAvailable, reason: c.callsAvailable ? undefined : t("menu.reason.calls_in_dm") }),
     !c.self && !c.friend && menuItem("add-friend", c.friendPending ? t("menu.member.friend_pending") : t("menu.member.add_friend"), a.addFriend, { icon: "＋", disabled: c.friendPending, reason: c.friendPending ? t("menu.member.friend_pending") : undefined }),
+    !c.self && !c.target.bot && c.inviteRooms && a.inviteToRoom && inviteToRoomEntry(c.inviteRooms, c.target.address, a.inviteToRoom, t),
     c.canMention && menuItem("mention", t("menu.member.mention"), a.mention, { icon: "@" }),
     menuItem("copy-address", t("menu.copy_address"), a.copyAddress, { icon: "⧉" }),
     a.copyId && menuItem("copy-id", t("menu.copy_id"), a.copyId, { icon: "#" }),
@@ -104,7 +109,7 @@ export function memberMenu(c: MemberMenuContext, a: MemberMenuActions, t: T): Me
     separator("sep-roles"),
     roleItems.length > 0 && submenu("roles", t("menu.member.roles"), roleItems, { icon: "🏷", ...(c.self || ranked ? {} : { disabled: true, reason: hierarchyReason }) }),
     voice && separator("sep-voice"),
-    voice && mod(Permission.MUTE_MEMBERS, menuItem("server-mute", voice.serverMuted ? t("menu.member.server_unmute") : t("menu.member.server_mute"), () => a.serverMute(!voice.serverMuted), { icon: "🎙" })),
+    voice && mod(Permission.MUTE_MEMBERS, menuItem("server-mute", voice.serverMuted ? t("menu.member.server_unmute") : t("menu.member.server_mute"), () => a.serverMute(!voice.serverMuted), { icon: "🎙", keepOpen: true })),
     voice && !c.self && has(Permission.MUTE_MEMBERS) && menuItem("server-deafen", t("menu.member.server_deafen"), undefined, { icon: "🎧", disabled: true, reason: t("menu.reason.not_supported") }),
     voice && mod(Permission.MOVE_MEMBERS, menuItem("disconnect", t("menu.member.disconnect"), a.disconnect, { icon: "⏏", danger: true })),
     voice && voice.channels.length > 0 && mod(Permission.MOVE_MEMBERS, submenu("move", t("menu.member.move_to"), voice.channels.map((ch) => menuItem(`move-${ch.id}`, ch.name, () => a.moveTo(ch.id), { icon: "🔊" })), { icon: "↪" })),
@@ -121,6 +126,45 @@ export function memberMenu(c: MemberMenuContext, a: MemberMenuActions, t: T): Me
     !c.self && c.canReport && a.report && menuItem("report", t("menu.member.report"), a.report, { icon: "⚑" }),
     !c.self && menuItem("block", t("menu.member.block"), a.block, { icon: "🚫", danger: true }),
   ]);
+}
+
+// ---- Invite to room (friends and members) ----------------------------------------------------
+
+/** A room the user is in, as a target of a direct invite (FEDERATION.md §3.4). */
+export interface InviteRoomCandidate {
+  id: string;
+  name: string;
+  /** The room's node; null = the home node. */
+  node: string | null;
+  /** Room-wide permissions from the cached room detail; null while it is not loaded. */
+  perms: bigint | null;
+  isOwner: boolean;
+  /** Addresses of the room's members, when the client has its member list cached. */
+  members?: readonly string[] | null;
+}
+
+/**
+ * The rooms "Invite to room" offers for `target`: those where the user may create invites (owner, administrator
+ * or `create_invites`), without the rooms the target is known to be in and those in `exclude` (the current room
+ * of a member menu), sorted by name. The node checks the same again.
+ */
+export function inviteRoomChoices(rooms: readonly InviteRoomCandidate[], target: string, exclude: readonly string[] = []): InviteRoomCandidate[] {
+  return rooms
+    .filter((r) => !exclude.includes(r.id) && r.perms !== null && !r.members?.includes(target))
+    .filter((r) => r.isOwner || hasPermission(r.perms!, Permission.CREATE_INVITES) || hasPermission(r.perms!, Permission.ADMINISTRATOR))
+    .sort((x, y) => x.name.localeCompare(y.name) || x.id.localeCompare(y.id));
+}
+
+/** The "Invite to room" submenu (null when no room qualifies); choosing a room sends the invite and closes the menu. */
+export function inviteToRoomEntry(rooms: readonly InviteRoomCandidate[], target: string, invite: (room: InviteRoomCandidate) => void, t: T, exclude: readonly string[] = []): MenuEntry | null {
+  const choices = inviteRoomChoices(rooms, target, exclude);
+  if (!choices.length) return null;
+  return submenu(
+    "invite-room",
+    t("menu.invite_room"),
+    choices.map((r) => menuItem(`invite-room-${r.id}`, r.name, () => invite(r), r.node ? { hint: r.node } : {})),
+    { icon: "✉" },
+  );
 }
 
 // ---- Voice participants without a loaded member ---------------------------------------------
@@ -161,7 +205,7 @@ export function voiceParticipantMenu(c: VoiceParticipantMenuContext, a: VoicePar
     c.inMyCall && !c.self && a.volume(c.volume),
     c.inMyCall && !c.self && c.streaming && a.streamVolume?.(c.streamVolume ?? 100),
     separator("sep-voice"),
-    mod(Permission.MUTE_MEMBERS) && menuItem("server-mute", c.serverMuted ? t("menu.member.server_unmute") : t("menu.member.server_mute"), () => a.serverMute(!c.serverMuted), { icon: "🎙" }),
+    mod(Permission.MUTE_MEMBERS) && menuItem("server-mute", c.serverMuted ? t("menu.member.server_unmute") : t("menu.member.server_mute"), () => a.serverMute(!c.serverMuted), { icon: "🎙", keepOpen: true }),
     mod(Permission.MUTE_MEMBERS) && menuItem("server-deafen", t("menu.member.server_deafen"), undefined, { icon: "🎧", disabled: true, reason: t("menu.reason.not_supported") }),
     mod(Permission.MOVE_MEMBERS) && menuItem("disconnect", t("menu.member.disconnect"), a.disconnect, { icon: "⏏", danger: true }),
     mod(Permission.MOVE_MEMBERS) &&
@@ -257,6 +301,11 @@ export function isMuted(mutedUntil: string | null | undefined, now = Date.now())
   return !!mutedUntil && Date.parse(mutedUntil) > now;
 }
 
+/**
+ * The notification entries of rooms, channels and DMs. Every choice here only changes a state shown in the
+ * menu, so all of them keep the menu open (the modes as checkbox items, the mute durations and unmute
+ * explicitly: the menu then shows "unmute" with the end time, or the durations again).
+ */
 export function notifyEntries(prefix: string, c: NotifyMenuState, a: NotifyMenuActions, t: T, now = Date.now()): MenuEntry[] {
   const muted = isMuted(c.mutedUntil, now);
   return normalizeMenu([
@@ -272,8 +321,8 @@ export function notifyEntries(prefix: string, c: NotifyMenuState, a: NotifyMenuA
       { icon: "🔔" },
     ),
     muted
-      ? menuItem(`${prefix}-unmute`, t("menu.notify.unmute"), a.unmute, { icon: "🔕", hint: mutedHint(c.mutedUntil!, t) })
-      : submenu(`${prefix}-mute`, t("menu.notify.mute"), MUTE_CHOICES.map((h) => menuItem(`${prefix}-mute-${h}`, t(h === 0 ? "menu.duration.forever" : `menu.duration.${h}h`), () => a.mute(h))), { icon: "🔕" }),
+      ? menuItem(`${prefix}-unmute`, t("menu.notify.unmute"), a.unmute, { icon: "🔕", hint: mutedHint(c.mutedUntil!, t), keepOpen: true })
+      : submenu(`${prefix}-mute`, t("menu.notify.mute"), MUTE_CHOICES.map((h) => menuItem(`${prefix}-mute-${h}`, t(h === 0 ? "menu.duration.forever" : `menu.duration.${h}h`), () => a.mute(h), { keepOpen: true })), { icon: "🔕" }),
   ]);
 }
 
@@ -434,5 +483,33 @@ export function dmMenu(c: DmMenuContext, a: DmMenuActions, t: T): MenuEntry[] {
     separator("sep-close"),
     menuItem("close", t("menu.dm.close"), a.close, { icon: "✕" }),
     c.peer && menuItem("block", t("menu.member.block"), a.block, { icon: "🚫", danger: true }),
+  ]);
+}
+
+// ---- Threads --------------------------------------------------------------------------------
+
+export interface ThreadMenuContext {
+  /** The thread's creator or a member with MANAGE_THREADS (PROTOCOL.md §7e); otherwise the menu is empty. */
+  mayManage: boolean;
+  archived: boolean;
+  locked: boolean;
+}
+
+export interface ThreadMenuActions {
+  rename: () => void;
+  setArchived: (archived: boolean) => void;
+  setLocked: (locked: boolean) => void;
+  remove: () => void;
+}
+
+/** The thread header's menu: archive and lock are state toggles and keep the menu open (like the mute entries). */
+export function threadMenu(c: ThreadMenuContext, a: ThreadMenuActions, t: T): MenuEntry[] {
+  if (!c.mayManage) return [];
+  return normalizeMenu([
+    menuItem("rename", t("threads.rename"), a.rename, { icon: "✎" }),
+    menuItem("archive", c.archived ? t("threads.unarchive") : t("threads.archive"), () => a.setArchived(!c.archived), { icon: "🗄", keepOpen: true }),
+    menuItem("lock", c.locked ? t("threads.unlock") : t("threads.lock"), () => a.setLocked(!c.locked), { icon: "⛔", keepOpen: true }),
+    separator("sep-delete"),
+    menuItem("delete", t("threads.delete"), a.remove, { icon: "🗑", danger: true }),
   ]);
 }

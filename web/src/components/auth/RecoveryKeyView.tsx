@@ -40,7 +40,7 @@ export function RecoveryKeyView({ recoveryKey, account, onConfirm, confirmLabel,
         <Button variant="ghost" onClick={() => void copyText(recoveryKey.words)}>
           {t("recovery_key.copy_words")}
         </Button>
-        <Button variant="ghost" onClick={() => downloadText(`tavrn-recovery-${account.split("@")[0]}.txt`, recoveryKey.file)}>
+        <Button variant="ghost" onClick={() => void downloadText(`tavrn-recovery-${account.split("@")[0]}.txt`, recoveryKey.file)}>
           {t("common.download")}
         </Button>
       </div>

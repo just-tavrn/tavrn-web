@@ -41,17 +41,24 @@ export function useCallNames(): { channel: string; room: string } {
   return { channel: channel ? channelName(channel) : "…", room: room.data?.name ?? "" };
 }
 
-/** A round toggle button of the voice controls; `menu` adds a quick menu (right-click, long press); `compact` = 36 px (the voice bar). */
-export function ControlButton({ label, active = false, danger = false, solid = false, onClick, children, testid, className = "", menu, compact = false }: { label: string; active?: boolean; danger?: boolean; solid?: boolean; onClick: () => void; children: React.ReactNode; testid?: string; className?: string; menu?: ContextMenuTrigger["triggerProps"]; compact?: boolean }) {
-  const look = solid ? "bg-danger-solid text-white hover:bg-danger-solid-hover" : danger ? "text-danger hover:bg-danger/15" : active ? "bg-danger/15 text-danger hover:bg-danger/25" : "text-fg-1 hover:bg-bg-3 hover:text-fg-0";
+/**
+ * A round toggle button of the voice controls; `menu` adds a quick menu (right-click, long press); `compact` = 36 px (the
+ * voice bar). `unavailable` names why the action cannot be used here (the native voice engine has no camera): the
+ * button stays focusable and announces the reason instead of failing.
+ */
+export function ControlButton({ label, active = false, danger = false, solid = false, onClick, children, testid, className = "", menu, compact = false, unavailable }: { label: string; active?: boolean; danger?: boolean; solid?: boolean; onClick: () => void; children: React.ReactNode; testid?: string; className?: string; menu?: ContextMenuTrigger["triggerProps"]; compact?: boolean; unavailable?: string }) {
+  const look = unavailable ? "cursor-not-allowed text-fg-2 opacity-60" : solid ? "bg-danger-solid text-white hover:bg-danger-solid-hover" : danger ? "text-danger hover:bg-danger/15" : active ? "bg-danger/15 text-danger hover:bg-danger/25" : "text-fg-1 hover:bg-bg-3 hover:text-fg-0";
+  const name = unavailable ? `${label}: ${unavailable}` : label;
   return (
     <button
       type="button"
-      aria-label={label}
-      title={label}
-      aria-pressed={active}
+      aria-label={name}
+      title={name}
+      aria-pressed={unavailable ? undefined : active}
+      aria-disabled={unavailable ? true : undefined}
       data-testid={testid}
-      onClick={onClick}
+      data-unavailable={unavailable ? true : undefined}
+      onClick={unavailable ? undefined : onClick}
       {...menu}
       className={`inline-flex ${compact ? "min-h-9 min-w-9" : "min-h-10 min-w-10"} items-center justify-center rounded-md ${look} ${className}`}
     >

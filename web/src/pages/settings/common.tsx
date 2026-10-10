@@ -104,7 +104,6 @@ export type Inherited = { allowed: boolean; source: "role" | "category" };
  */
 export function OverrideTriState({ allow, deny, onChange, restricted = 0n, inherited }: { allow: bigint; deny: bigint; onChange: (allow: bigint, deny: bigint) => void; restricted?: bigint; inherited?: (bit: bigint) => Inherited }) {
   const t = useT();
-  const id = useId();
   const { label } = usePermissionLabel();
   const set = (name: PermissionName, state: OverrideState) => {
     const bit = Permission[name];
@@ -122,45 +121,62 @@ export function OverrideTriState({ allow, deny, onChange, restricted = 0n, inher
           <ul className="mt-1 divide-y divide-line">
             {g.permissions.map((name) => {
               const bit = Permission[name];
-              const state = overrideStateOf(allow, deny, bit);
-              const locked = (restricted & bit) !== 0n;
-              const inh = inherited?.(bit);
-              const descId = `${id}-${name}-inherited`;
               return (
-                <li key={name} className="flex min-h-10 items-center justify-between gap-2 py-1 text-sm" data-permission={name}>
-                  <span className="min-w-0">
-                    {label(name)}
-                    {inh && (
-                      <span id={descId} className="block text-xs text-fg-2" data-testid={`inherited-${name}`} data-allowed={inh.allowed} data-source={inh.source}>
-                        {t(`override.inherited.${inh.allowed ? "allowed" : "denied"}_${inh.source}`)}
-                      </span>
-                    )}
-                  </span>
-                  <div role="radiogroup" aria-label={label(name)} aria-describedby={inh ? descId : undefined} className="flex shrink-0 rounded-md border border-line-strong">
-                    {(["deny", "neutral", "allow"] as OverrideState[]).map((s) => (
-                      <button
-                        key={s}
-                        type="button"
-                        role="radio"
-                        disabled={locked && s === "allow" && state !== "allow"}
-                        title={locked && s === "allow" ? t("members.everyone_restricted_hint") : undefined}
-                        aria-checked={state === s}
-                        aria-label={`${label(name)}: ${t(`override.${s}`)}`}
-                        aria-describedby={inh ? descId : undefined}
-                        onClick={() => set(name, s)}
-                        className={`min-h-9 min-w-9 px-2 text-sm disabled:cursor-not-allowed disabled:opacity-30 ${state === s ? (s === "allow" ? "bg-ok/15 text-ok" : s === "deny" ? "bg-danger/15 text-danger" : "bg-bg-3 text-fg-0") : "text-fg-2 hover:bg-bg-3/60"}`}
-                      >
-                        {s === "allow" ? "✓" : s === "deny" ? "✗" : "–"}
-                      </button>
-                    ))}
-                  </div>
-                </li>
+                <TriStateRow
+                  key={name}
+                  label={label(name)}
+                  state={overrideStateOf(allow, deny, bit)}
+                  onChange={(s) => set(name, s)}
+                  inherited={inherited?.(bit)}
+                  inheritedTestId={`inherited-${name}`}
+                  lockAllow={(restricted & bit) !== 0n}
+                  rowProps={{ "data-permission": name }}
+                />
               );
             })}
           </ul>
         </fieldset>
       ))}
     </div>
+  );
+}
+
+/**
+ * One row of an override editor: deny / neutral / allow as a radio group, with what a neutral value inherits in grey
+ * under the label (also the group's accessible description). `lockAllow`: allow cannot be chosen (`@everyone`).
+ */
+export function TriStateRow({ label, state, onChange, inherited, inheritedTestId, lockAllow = false, rowProps }: { label: string; state: OverrideState; onChange: (state: OverrideState) => void; inherited?: Inherited; inheritedTestId?: string; lockAllow?: boolean; rowProps?: Record<string, string> }) {
+  const t = useT();
+  const descId = `${useId()}-inherited`;
+  return (
+    <li className="flex min-h-10 items-center justify-between gap-2 py-1 text-sm" {...rowProps}>
+      <span className="min-w-0">
+        {label}
+        {inherited && (
+          <span id={descId} className="block text-xs text-fg-2" data-testid={inheritedTestId} data-allowed={inherited.allowed} data-source={inherited.source}>
+            {t(`override.inherited.${inherited.allowed ? "allowed" : "denied"}_${inherited.source}`)}
+          </span>
+        )}
+      </span>
+      <div role="radiogroup" aria-label={label} aria-describedby={inherited ? descId : undefined} className="flex shrink-0 rounded-md border border-line-strong">
+        {(["deny", "neutral", "allow"] as OverrideState[]).map((s) => (
+          <button
+            key={s}
+            type="button"
+            role="radio"
+            disabled={lockAllow && s === "allow" && state !== "allow"}
+            title={lockAllow && s === "allow" ? t("members.everyone_restricted_hint") : undefined}
+            aria-checked={state === s}
+            aria-label={`${label}: ${t(`override.${s}`)}`}
+            aria-describedby={inherited ? descId : undefined}
+            onClick={() => onChange(s)}
+            className={`min-h-9 min-w-9 px-2 text-sm disabled:cursor-not-allowed disabled:opacity-30 ${state === s ? (s === "allow" ? "bg-ok/15 text-ok" : s === "deny" ? "bg-danger/15 text-danger" : "bg-bg-3 text-fg-0") : "text-fg-2 hover:bg-bg-3/60"}`}
+          >
+            {s === "allow" ? "✓" : s === "deny" ? "✗" : "–"}
+          </button>
+        ))}
+      </div>
+    </li>
   );
 }
 

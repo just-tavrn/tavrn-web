@@ -16,7 +16,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, us
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router";
 import type { Channel, FileEntry, FilesInfo, RoomDetail } from "@tavrn/sdk";
-import { decryptFileRecord, grantsHistory, parseHistoryPolicy, qualify, type FileRecord, type FileRecordResult } from "@tavrn/e2ee";
+import { decryptFileRecord, parseHistoryPolicy, qualify, type FileRecord, type FileRecordResult } from "@tavrn/e2ee";
 import { historyPending, historyReceive } from "../crypto/history";
 import { useE2eeConversation } from "../hooks/useE2eeConversation";
 import { LockMark } from "../components/Badges";
@@ -43,7 +43,8 @@ import { useNode } from "../components/NodeScope";
 import { useNodeSockets, useRealtimeState } from "../hooks/useRealtime";
 import { ContextMenu, menuItem, normalizeMenu, separator, type MenuEntry } from "../components/ContextMenu";
 import { pointAnchor, rectOf, type AnchorRect } from "../lib/position";
-import { AudioPlayer, mediaKind, saveUrl, useAttachmentUrl, type ViewAttachment } from "../components/AttachmentView";
+import { AudioPlayer, mediaKind, useAttachmentUrl, type ViewAttachment } from "../components/AttachmentView";
+import { saveDownload } from "../lib/download";
 import { Button, Dialog } from "../components/ui";
 import { ConfirmDialog } from "../pages/settings/common";
 import { useRoomMembers } from "../pages/ChannelPage";
@@ -183,7 +184,7 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
   const historyKeys = useHistoryKeys((s) => s.version);
   const historyPolicy = useMemo(() => (encrypted ? parseHistoryPolicy(channel.history_for_new_members) : null), [encrypted, channel.history_for_new_members]);
   useEffect(() => {
-    if (!historyPolicy || !grantsHistory(historyPolicy) || e2ee.phase !== "ready") return;
+    if (!historyPolicy || e2ee.phase !== "ready") return;
     void historyReceive(q).then((n) => n > 0 && setKeysArrived((k) => k + 1));
     historyPending(q, historyPolicy);
   }, [historyPolicy, e2ee.phase, q]);
@@ -305,10 +306,8 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
 
   const download = async (e: FileEntry) => {
     try {
-      const blob = await loadEntry(e);
-      const url = URL.createObjectURL(blob.slice(0, blob.size, "application/octet-stream"));
-      saveUrl(url, e.name);
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      // Saved as opaque bytes: the browser never renders a file of the channel. Executables ask first.
+      await saveDownload({ name: e.name, data: await loadEntry(e), mime: "application/octet-stream" }, e.mime);
     } catch (err) {
       toastError(err);
     }

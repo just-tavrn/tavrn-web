@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-save-file-abort"
+description = "Enables the save_file_abort command without any pre-configured scope."
+commands.allow = ["save_file_abort"]
+
+[[permission]]
+identifier = "deny-save-file-abort"
+description = "Denies the save_file_abort command without any pre-configured scope."
+commands.deny = ["save_file_abort"]

@@ -16,6 +16,7 @@ import {
   placeAfter,
   placeBefore,
   pruneRooms,
+  railBadge,
   removeFromFolder,
   renameFolder,
   roomCounts,
@@ -263,6 +264,18 @@ describe("rail folders: badges", () => {
   it("a room sums its channels", () => {
     expect(roomCounts(states, ["c1", "c2", "unknown"])).toEqual({ unread: 5, mentions: 1 });
     expect(roomCounts(states, [])).toEqual({ unread: 0, mentions: 0 });
+  });
+
+  it("the badge: mentions first, then the unread count of rooms with every message, else the dot", () => {
+    expect(railBadge({ unread: 0, mentions: 0 })).toBeNull();
+    expect(railBadge({ unread: 4, mentions: 2, listed: 4 })).toEqual({ kind: "mentions", count: 2 });
+    expect(railBadge({ unread: 12, mentions: 0, listed: 12 })).toEqual({ kind: "unread", count: 12 });
+    expect(railBadge({ unread: 12, mentions: 0 })).toEqual({ kind: "dot" });
+    expect(railBadge({ unread: 12, mentions: 0, listed: 0 })).toEqual({ kind: "dot" });
+    // A folder: the count of its "every message" rooms only.
+    const folder = aggregateCounts([{ unread: 3, mentions: 0, listed: 3 }, { unread: 5, mentions: 0 }]);
+    expect(folder).toEqual({ unread: 8, mentions: 0, listed: 3 });
+    expect(railBadge(folder)).toEqual({ kind: "unread", count: 3 });
   });
 
   it("a folder sums its rooms, capped like every counter", () => {

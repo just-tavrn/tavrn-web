@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { RoomIcon } from "../components/Avatar";
 import { NavLink } from "react-router";
@@ -14,10 +14,13 @@ import { Button, Dialog, ErrorText, Field, Input } from "../components/ui";
 import { describeError, toastError, useToasts } from "../stores/toasts";
 import { useUnread } from "../stores/unread";
 import { syncInboxChannels } from "../stores/mls";
-import { BotsAllowedIcon, LockMark, NoBotsIcon, UnreadBadges, useHasUnread } from "../components/Badges";
+import { useE2ee } from "../stores/e2ee";
+import { joinRoomGroups } from "../crypto/groupJoins";
+import { AccessMark, BotsAllowedIcon, LockMark, NoBotsIcon, UnreadBadges, useHasUnread } from "../components/Badges";
 import { botMarker } from "../lib/botAccess";
-import { channelPermissions } from "../lib/channelPermissions";
+import { channelAccessMarks, channelPermissions } from "../lib/channelPermissions";
 import { VoiceChannelRow } from "../voice/ui/VoiceChannelRow";
+import { ownVoiceChannel, useVoice } from "../voice/store";
 import { MenuButton } from "../components/ContextMenu";
 import { AdultsOnlyBadge } from "../components/age/LockedChannel";
 import { useChannelMenu } from "../components/menus/ChannelMenu";
@@ -30,15 +33,27 @@ import { badgeText, useCapabilities, useOpenRoomReports } from "../moderation/ho
 /** Room detail; its `read_states` seed the unread counts of the channels (design note 4.4). */
 export function useRoom(roomId: string) {
   const { api, domain } = useNode();
-  return useQuery({
+  const query = useQuery({
     queryKey: ["room", roomId],
     queryFn: async () => {
       const room = await api.rooms.get(roomId);
       useUnread.getState().seed(room.read_states ?? []);
-      void syncInboxChannels(domain, room.channels);
       return room;
     },
   });
+  // From the data, not from this query function: the room detail is also fetched with the rail's query function
+  // (same key) and by invalidations, and every copy must tell the session manager which channels have webhooks.
+  const channels = query.data?.channels;
+  useEffect(() => {
+    if (channels) void syncInboxChannels(domain, channels);
+  }, [domain, channels]);
+  // Join the groups of the encrypted channels right away, not only when one is opened (ENCRYPTION.md §7b): messages
+  // posted after the user's join but before this device's first leaf need keys shared by others, so the gap stays small.
+  const e2eeStatus = useE2ee((s) => s.status);
+  useEffect(() => {
+    if (channels && e2eeStatus === "unlocked") joinRoomGroups(domain, channels);
+  }, [domain, channels, e2eeStatus]);
+  return query;
 }
 
 /**
@@ -58,7 +73,11 @@ function ChannelLink({ room, channel, onClick }: { room: RoomDetail; channel: Ch
   const unreadCount = useHasUnread(channel.id);
   const systemNew = useSystemNew(channel.id);
   const unread = system ? systemNew : unreadCount;
-  const { roomPath } = useNode();
+  const { roomPath, me } = useNode();
+  // Access marks: private (structural) first, then restricted for this viewer, whose name is dimmed (fg-2: 4.5:1 and
+  // more on bg-1 and its hover; the open channel keeps fg-0, fg-2 would reach only 4.46:1 on the selection tint).
+  const marks = channelAccessMarks(room, channel.id, channelPermissions(room, channel.id, me?.id ?? ""));
+  const restricted = marks.some((m) => m.startsWith("restricted"));
   // Context menu (design note 4.11): right-click, long press, keyboard or the ⋯ button.
   const { menu, overlay } = useChannelMenu(room, channel);
   return (
@@ -68,10 +87,13 @@ function ChannelLink({ room, channel, onClick }: { room: RoomDetail; channel: Ch
         onClick={onClick}
         data-unread={unread || undefined}
         {...menu.triggerProps}
-        className={({ isActive }) => `flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-sm ${isActive ? "bg-accent-soft text-fg-0" : unread ? "text-fg-0 hover:bg-bg-3/60" : "text-fg-1 hover:bg-bg-3/60 hover:text-fg-0"}`}
+        className={({ isActive }) => `group/ch flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-sm ${isActive ? "bg-accent-soft text-fg-0" : unread ? "text-fg-0 hover:bg-bg-3/60" : "text-fg-1 hover:bg-bg-3/60 hover:text-fg-0"}`}
       >
         <ChannelIcon kind={channel.kind} encrypted={channel.encrypted} />
-        <span className={`min-w-0 flex-1 truncate ${unread ? "font-semibold" : ""}`}>{channelName(channel)}</span>
+        <span className={`min-w-0 flex-1 truncate ${unread ? "font-semibold" : ""} ${restricted ? "text-fg-2 group-aria-[current=page]/ch:text-fg-0" : ""}`}>{channelName(channel)}</span>
+        {marks.map((m) => (
+          <AccessMark key={m} kind={m} />
+        ))}
         {system ? systemNew && <span role="img" className="h-2 w-2 shrink-0 rounded-full bg-accent" aria-label={t("members.welcome_new")} data-testid="welcome-new" /> : <UnreadBadges conversationId={channel.id} />}
         <MutedMark conversationId={channel.id} roomId={room.id} />
         {botMarker(channel, room) === "no_bots" && <NoBotsIcon />}
@@ -123,14 +145,16 @@ export function ChannelSidebar({ roomId }: { roomId: string }) {
   const reportsOffered = !!useCapabilities(nodeKey)?.includes("reports.v1");
   const openReports = badgeText(useOpenRoomReports(node.api, nodeKey, roomId, moderates && reportsOffered));
   const headerMenu = useRoomMenu({ id: roomId, name: room.data?.name ?? "" }, nodeKey, { openReports });
+  const voiceChannelId = useVoice((s) => ownVoiceChannel(s, node.domain, roomId));
   if (room.isPending) return <p className="p-3 text-sm text-fg-2">{t("room.loading")}</p>;
   if (room.isError) return <p className="p-3 text-sm text-danger">{describeError(room.error)}</p>;
   const r = room.data;
   const perms = parsePermissions(r.my_permissions);
   const canManageChannels = hasPermission(perms, Permission.MANAGE_CHANNELS);
 
-  // Only channels the user may view (layered overrides; nodes list only those, older ones listed all).
-  const channels = r.channels.filter((c) => hasPermission(channelPermissions(r, c.id, node.me?.id ?? ""), Permission.VIEW_CHANNEL));
+  // Only channels the user may view (layered overrides; nodes list only those, older ones listed all), and the voice
+  // channel the user is in (moved there by a moderator without view_channel, VOICE.md §7).
+  const channels = r.channels.filter((c) => hasPermission(channelPermissions(r, c.id, node.me?.id ?? "", voiceChannelId), Permission.VIEW_CHANNEL));
   // The welcome channel (kind `system`, design note 4.11) is pinned at the very top, outside the categories.
   const pinned = channels.filter((c) => c.kind === "system");
   const byCategory = new Map<string | null, Channel[]>();

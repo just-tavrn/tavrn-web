@@ -5,7 +5,7 @@
 // collapsed and expanded (serious and critical WCAG violations fail, as in a11y.spec.ts).
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
-import { createRoomViaApi, loginAs, openNavIfMobile, registerViaApi } from "./helpers";
+import { createRoomViaApi, loginAs, openNavIfMobile, registerViaApi, railName } from "./helpers";
 import { isTouch, joinRoom, openContextMenu, postMessage } from "./menu-helpers";
 
 const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22a", "wcag22aa"];
@@ -33,7 +33,7 @@ test.describe("Room rail folders", () => {
     await expect(page.getByTestId("ws-status").first()).toHaveAttribute("data-status", "ready");
     await openNavIfMobile(page);
     const rail = page.getByTestId("room-rail");
-    await expect(rail.getByRole("link", { name: "Gilde", exact: true })).toBeVisible();
+    await expect(rail.getByRole("link", { name: railName("Gilde") })).toBeVisible();
 
     // The empty rail's menu: a new folder with a name and a colour.
     await openContextMenu(page, rail.getByTestId("rail-end"));
@@ -46,15 +46,16 @@ test.describe("Room rail folders", () => {
     await expect(folder).toHaveAccessibleName("Ordner Gilden, 0 Räume");
 
     // A room's menu moves it into the folder (the room's own entries stay).
-    await openContextMenu(page, rail.getByRole("link", { name: "Gilde", exact: true }));
+    await openContextMenu(page, rail.getByRole("link", { name: railName("Gilde") }));
     const roomMenu = page.getByTestId("room-menu");
     await expect(roomMenu.getByRole("menuitem", { name: "Raum verlassen" })).toBeVisible();
     await roomMenu.getByRole("menuitem", { name: "In Ordner verschieben" }).click();
     await page.getByTestId("context-submenu").getByRole("menuitem", { name: "Gilden" }).click();
-    // (The room's system messages already count as unread: "Ordner Gilden, 1 Raum, Ungelesene Nachrichten".)
-    await expect(folder).toHaveAccessibleName(/^Ordner Gilden, 1 Raum(, Ungelesene Nachrichten)?$/);
+    // (The room's system messages already count as unread: with the node's default level "all messages" as a
+    // count, "Ordner Gilden, 1 Raum, 1 ungelesen"; with "only mentions" as "Ungelesene Nachrichten".)
+    await expect(folder).toHaveAccessibleName(/^Ordner Gilden, 1 Raum(, Ungelesene Nachrichten|, \d+ ungelesen)?$/);
     await expect(folder).toHaveAttribute("aria-expanded", "false");
-    await expect(rail.getByRole("link", { name: "Gilde", exact: true })).toHaveCount(0);
+    await expect(rail.getByRole("link", { name: railName("Gilde") })).toHaveCount(0);
     await scanRail(page, "folder collapsed");
 
     // A mention in a room of the collapsed folder: the folder carries the mention badge.
@@ -66,7 +67,7 @@ test.describe("Room rail folders", () => {
     await folder.click();
     await expect(folder).toHaveAttribute("aria-expanded", "true");
     const inside = rail.getByRole("list", { name: "Räume in Gilden" });
-    await expect(inside.getByRole("link", { name: "Gilde", exact: true })).toBeVisible();
+    await expect(inside.getByRole("link", { name: railName("Gilde") })).toBeVisible();
     await expect(inside.getByTestId("rail-mention-badge")).toHaveText("1");
     await scanRail(page, "folder expanded");
     await folder.click();
@@ -81,7 +82,7 @@ test.describe("Room rail folders", () => {
     await openContextMenu(page, rail.getByTestId("rail-folder-button"));
     await page.getByTestId("folder-menu").getByRole("menuitem", { name: "Ordner löschen" }).click();
     await expect(rail.getByTestId("rail-folder")).toHaveCount(0);
-    await expect(rail.getByRole("link", { name: "Gilde", exact: true })).toBeVisible();
+    await expect(rail.getByRole("link", { name: railName("Gilde") })).toBeVisible();
   });
 
   test("with a mouse: drop a room onto a room, onto a folder, out of it and between entries", async ({ page, request }) => {

@@ -28,4 +28,28 @@ describe("i18n", () => {
     expect(errorMessage(undefined, "")).toBe("Etwas ist schiefgelaufen");
     useLocale.setState({ locale: "en" });
   });
+
+  it("user-visible strings carry no roadmap talk (phases, coming soon)", () => {
+    const roadmap = /\b(phase \d|coming (soon|in)|roadmap|todo)\b|\b(kommt|kommen) (bald|in phase)|demnächst/i;
+    for (const [code, { messages }] of Object.entries(LOCALES)) {
+      const hits = Object.entries(messages).filter(([, v]) => roadmap.test(v)).map(([k]) => k);
+      expect({ code, hits }).toEqual({ code, hits: [] });
+    }
+  });
+
+  it("writes the product name in lowercase, tavrn (HTTP header names like Tavrn-Signature excepted)", () => {
+    const capital = /\bTavrn\b(?!-Signature)/;
+    for (const [code, { messages }] of Object.entries(LOCALES)) {
+      const hits = Object.entries(messages).filter(([, v]) => capital.test(v)).map(([k]) => k);
+      expect({ code, hits }).toEqual({ code, hits: [] });
+    }
+  });
+
+  it("names no particular authenticator app (generic wording)", () => {
+    const apps = /aegis|2fas|google authenticator|authy|microsoft authenticator|freeotp/i;
+    for (const [code, { messages }] of Object.entries(LOCALES)) {
+      const hits = Object.entries(messages).filter(([, v]) => apps.test(v)).map(([k]) => k);
+      expect({ code, hits }).toEqual({ code, hits: [] });
+    }
+  });
 });

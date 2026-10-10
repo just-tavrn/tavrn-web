@@ -16,20 +16,25 @@ import { voiceDeviceMenu, type VoiceDeviceKind } from "../deviceMenu";
 import { comboLabel } from "../hotkeys";
 import { RangeSlider } from "./StreamAudio";
 import { useVoiceSettings } from "../settings";
+import { devicePatch, deviceView, useNativeDevices, useNativeVoice } from "../nativeDevices";
 
 function VoiceDeviceMenu({ kind, anchor, trigger, onClose, beforeNavigate }: { kind: VoiceDeviceKind; anchor: AnchorRect; trigger: Element | null; onClose: () => void; beforeNavigate?: () => void }) {
   const t = useT();
   const navigate = useNavigate();
-  const settings = useVoiceSettings((s) => s.settings);
-  const update = useVoiceSettings((s) => s.update);
+  const stored = useVoiceSettings((s) => s.settings);
+  const save = useVoiceSettings((s) => s.update);
+  // The native engine lists its own devices (and always chooses the output); the browser's need the page's permission.
+  const native = useNativeVoice();
+  const nativeDevices = useNativeDevices(native);
   // The desktop app's window holds the microphone permission: the device names come without a prompt.
-  const media = useMediaDevices({ autoUnlock: platform().isDesktop });
+  const media = useMediaDevices({ source: native ? null : undefined, autoUnlock: platform().isDesktop });
+  const settings = deviceView(stored, native);
   const ptt = settings.hotkeys.push_to_talk;
   const entries = voiceDeviceMenu(
     kind,
-    { devices: media.devices, settings, needsPermission: media.needsPermission, sinkSupported: outputSelectable(), pttKey: ptt ? comboLabel(ptt) : "" },
+    { devices: native ? nativeDevices : media.devices, settings, needsPermission: !native && media.needsPermission, sinkSupported: native || outputSelectable(), pttKey: ptt ? comboLabel(ptt) : "" },
     {
-      update,
+      update: (patch) => save(devicePatch(patch, native)),
       unlock: () => void media.unlock(),
       slider: (spec) => ({ kind: "custom", id: spec.id, render: () => <RangeSlider label={spec.label} value={spec.value} min={spec.min} max={spec.max} step={spec.step} unit={spec.unit} onChange={spec.onChange} testid={`voice-menu-${spec.id}`} /> }),
       openSettings: () => {

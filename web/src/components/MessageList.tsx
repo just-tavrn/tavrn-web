@@ -25,6 +25,7 @@ import { BotBadge, KeyChangedBadge, SealedMark } from "./Badges";
 import { recheckKey } from "../stores/mls";
 import { contentAttachments, plainMarker, type ContentAttachment, type Decrypted, type DecryptFailure, type PlainStatus } from "@tavrn/e2ee";
 import { UnverifiedMarker, VerifiedBadge } from "./Verification";
+import { showUnverified } from "../lib/unverified";
 import { MediaAvatar } from "./Avatar";
 import { useAuthorAvatar } from "./AuthorProfiles";
 import { LinkPreviews } from "./LinkPreviews";
@@ -911,8 +912,8 @@ const MessageRow = memo(function MessageRow({ m, grouped, own, bot, author, repl
               ⓘ {t("messages.retired_device")}
             </span>
           )}
-          {/* Webhook messages are authenticated by the node (WEBHOOK badge), never marked "unverified". */}
-          {!m.encrypted && m.device_id && m.author_kind !== "webhook" && c.kind === "text" && plainMarker(signature) === "unverified" && (
+          {/* Webhook and unsigned bot messages are authenticated by the node (badges), never marked "unverified". */}
+          {c.kind === "text" && showUnverified(m, signature, bot) && (
             <span className={m.edited_at ? "ml-1" : ""}>
               <UnverifiedMarker status={signature!} />
             </span>

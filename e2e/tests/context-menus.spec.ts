@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test } from "@playwright/test";
-import { NODE, createRoomViaApi, loginAs, openNavIfMobile, registerViaApi } from "./helpers";
+import { NODE, createRoomViaApi, loginAs, openNavIfMobile, registerViaApi, railName } from "./helpers";
 import { createRole, isTouch, joinRoom, longPress, memberRoles, openContextMenu, openMembers, postMessage } from "./menu-helpers";
 
 // Context menus (design note 4.11): right-click on desktop, long press on phones, keyboard everywhere.
@@ -85,12 +85,49 @@ test.describe("Context menus", () => {
     const menu = page.getByTestId("channel-menu");
     await menu.getByRole("menuitem", { name: "Stummschalten" }).click();
     await page.getByTestId("context-submenu").getByRole("menuitem", { name: "Für 1 Stunde" }).click();
-    await expect(menu).toHaveCount(0);
     await expect(row.getByTestId("channel-muted")).toBeVisible();
-
-    await openContextMenu(page, row);
-    await page.getByTestId("channel-menu").getByRole("menuitem", { name: "Stummschaltung aufheben" }).click();
+    // A state change keeps the menu open: "Unmute" (with the end time) takes the place of "Mute", focused.
+    const unmute = menu.getByRole("menuitem", { name: /^Stummschaltung aufheben/ });
+    await expect(unmute).toBeFocused();
+    await expect(page.getByTestId("context-submenu")).toHaveCount(0);
+    await unmute.click();
     await expect(row.getByTestId("channel-muted")).toHaveCount(0);
+    await expect(menu.getByRole("menuitem", { name: "Stummschalten" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+  });
+
+  test("Room: a notification mode keeps the menu open with the new mode checked; settings close it", async ({ page, request }) => {
+    const owner = await registerViaApi(request, "own");
+    const room = await createRoomViaApi(request, owner.token, "Glocken-Raum");
+    await loginAs(page, owner);
+    await page.goto(`/rooms/${room.id}`);
+    await expect(page.getByTestId("channel-name")).toHaveText("allgemein");
+    await openNavIfMobile(page);
+    await openContextMenu(page, page.getByTestId("room-rail").getByRole("link", { name: railName("Glocken-Raum") }));
+    const menu = page.getByTestId("room-menu");
+    await menu.getByRole("menuitem", { name: "Benachrichtigungen" }).click();
+    const sub = page.getByTestId("context-submenu");
+    await expect(sub.getByRole("menuitemcheckbox", { name: /^Standard/ })).toHaveAttribute("aria-checked", "true");
+    await sub.getByRole("menuitemcheckbox", { name: "Nur Erwähnungen" }).click();
+    // Menu and submenu stay open and show the new state; a second change needs no reopening.
+    await expect(sub.getByRole("menuitemcheckbox", { name: "Nur Erwähnungen" })).toHaveAttribute("aria-checked", "true");
+    await expect(sub.getByRole("menuitemcheckbox", { name: /^Standard/ })).toHaveAttribute("aria-checked", "false");
+    await sub.getByRole("menuitemcheckbox", { name: "@everyone unterdrücken" }).click();
+    await expect(sub.getByRole("menuitemcheckbox", { name: "@everyone unterdrücken" })).toHaveAttribute("aria-checked", "true");
+    await expect(menu).toBeVisible();
+    // The node has the new setting.
+    await expect
+      .poll(async () => {
+        const resp = await request.get(`${NODE}/api/v1/users/me/notification-settings`, { headers: { Authorization: `Bearer ${owner.token}` } });
+        const body = (await resp.json()) as { rooms?: Record<string, { mode?: string; suppress_everyone?: boolean }> };
+        return body.rooms?.[room.id];
+      })
+      .toMatchObject({ mode: "mentions", suppress_everyone: true });
+    // Navigation still closes the menu.
+    await menu.getByRole("menuitem", { name: "Raumeinstellungen" }).click();
+    await expect(menu).toHaveCount(0);
+    await expect(page).toHaveURL(new RegExp(`/rooms/${room.id}/settings`));
   });
 
   test("Voice channel: the same dropdown as text channels plus bulk move (right click, long press, ⋯)", async ({ page, request }) => {

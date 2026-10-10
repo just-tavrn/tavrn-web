@@ -38,6 +38,18 @@ export function Toaster() {
                 {x.detail && <p className="mt-0.5 text-fg-1">{x.detail}</p>}
               </div>
             )}
+            {x.action && (
+              <button
+                type="button"
+                onClick={() => {
+                  dismiss(x.id);
+                  x.action!.run();
+                }}
+                className="-my-1 min-h-8 shrink-0 rounded px-2 font-medium text-accent underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                {x.action.label}
+              </button>
+            )}
             <button type="button" aria-label={t("common.close")} onClick={() => dismiss(x.id)} className="min-h-6 min-w-6 text-fg-2 hover:text-fg-0">
               ×
             </button>

@@ -65,3 +65,39 @@ describe("ChannelsTab: layered overrides", () => {
     expect(JSON.parse(String(puts[0]!.init.body))).toEqual({ target_type: "channel", target_id: "c1", subject_type: "role", subject_id: "everyone", allow: "0", deny: "0", upload_allow: [], upload_deny: [] });
   });
 });
+
+describe("ChannelsTab: the access marks of the channel list", () => {
+  beforeEach(() => useAuth.setState({ token: "acc" }));
+
+  const { VIEW_CHANNEL: V, CONNECT: C } = Permission;
+  const marked = {
+    ...room,
+    channels: [channel("c1", "allgemein", "team"), channel("c2", "intern", "team"), { ...channel("v1", "Bühne", null), kind: "voice" }],
+    roles: [{ ...room.roles[0]!, permissions: (V | C | Permission.SEND_MESSAGES).toString() }],
+    overrides: [
+      { id: "o1", target_type: "channel", target_id: "c2", subject_type: "role", subject_id: "everyone", allow: "0", deny: V.toString() },
+      { id: "o2", target_type: "channel", target_id: "v1", subject_type: "role", subject_id: "everyone", allow: "0", deny: C.toString() },
+    ],
+  } as unknown as RoomDetail;
+
+  it("the editor says under the channel name when only certain roles may see or join it", async () => {
+    mockFetch({});
+    renderWithProviders(<ChannelsTab room={marked} />, { route: "/rooms/r1/settings/channels?channel=c2" });
+    const editor = await screen.findByTestId("channel-editor");
+    const line = within(editor).getByTestId("channel-access-line");
+    expect(line).toHaveTextContent("Nur für bestimmte Rollen sichtbar");
+    expect(line.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+    // The list names the mark on the channel's button too.
+    expect(screen.getByRole("button", { name: /intern.*Nur für bestimmte Rollen sichtbar/ })).toBeInTheDocument();
+  });
+
+  it("join-only voice channels say so; open channels have no line", async () => {
+    mockFetch({});
+    const u = userEvent.setup();
+    renderWithProviders(<ChannelsTab room={marked} />, { route: "/rooms/r1/settings/channels?channel=c1" });
+    const editor = await screen.findByTestId("channel-editor");
+    expect(within(editor).queryByTestId("channel-access-line")).toBeNull();
+    await u.click(screen.getByRole("button", { name: /Bühne/ }));
+    expect(await screen.findByTestId("channel-access-line")).toHaveTextContent("Beitreten nur für bestimmte Rollen");
+  });
+});

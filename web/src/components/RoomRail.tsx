@@ -29,6 +29,12 @@ import { useReach } from "../stores/reach";
 import { useConversationIndex } from "../stores/conversationIndex";
 import { useRoomMenu } from "./menus/RoomMenu";
 import { loadRoomDetails } from "../lib/notify";
+import { roomBadgeLevel, useNotifications } from "../stores/notifications";
+import { useVoicePresence } from "../voice/presence";
+import { mergeVoice, roomVoiceSignature, voiceBadge } from "../voice/roomActivity";
+import { ScreenIcon, SpeakerIcon } from "../voice/ui/icons";
+import { RoomCardContent, RoomHoverCard, useRoomHoverCard } from "./RoomHoverCard";
+import type { MenuEntry } from "./ContextMenu";
 import { railFolderMenu, railMenu, railRoomEntries, type Shift } from "../lib/railMenus";
 import {
   FOLDER_COLORS,
@@ -44,6 +50,7 @@ import {
   placeAfter,
   placeBefore,
   pruneRooms,
+  railBadge,
   removeFromFolder,
   renameFolder,
   roomCounts,
@@ -64,6 +71,7 @@ interface RailRoomData {
   name: string;
   icon?: string | null;
   icon_still?: string | null;
+  description?: string | null;
 }
 
 /** A room in the rail with its node (null: the home node) and its key in the folder state. */
@@ -124,25 +132,69 @@ function detailQuery(node: string | null, roomId: string) {
   };
 }
 
-/** Unread and mention counts summed over rooms (from their cached details and the unread store). */
+/**
+ * Unread and mention counts summed over rooms (from their cached details and the unread store); `listed`: the unread
+ * messages of the rooms whose notification level is "all messages" (the rail shows those as a count).
+ */
 function useCounts(rooms: Resolved[]): Counts {
   const details = useQueries({ queries: rooms.map((r) => detailQuery(r.node, r.room.id)) });
-  const channelIds = details.flatMap((d) => (d.data?.channels ?? []).filter((c) => c.kind !== "voice").map((c) => c.id));
+  const settings = useNotifications((s) => s.settings);
+  const groups = details.map((d, i) => ({ roomId: rooms[i]!.room.id, ids: (d.data?.channels ?? []).filter((c) => c.kind !== "voice").map((c) => c.id) }));
+  const channelIds = groups.flatMap((g) => g.ids);
+  const listedIds = groups.filter((g) => roomBadgeLevel(settings, g.roomId) === "all").flatMap((g) => g.ids);
   const unread = useUnread((s) => roomCounts(s.states, channelIds).unread);
   const mentions = useUnread((s) => roomCounts(s.states, channelIds).mentions);
-  return { unread, mentions };
+  const listed = useUnread((s) => roomCounts(s.states, listedIds).unread);
+  return { unread, mentions, listed };
 }
 
-/** Mention count (it takes precedence) or an unread dot; the text alternative is on the item itself. */
+/** Who is in voice in these rooms (count, streaming), from the presence store (viewable channels only). */
+function useRailVoice(rooms: Resolved[]): { count: number; streaming: boolean } {
+  const homeDomain = useAuth((s) => s.user?.domain ?? "");
+  // A string per room keeps the selector stable (no re-render for changes elsewhere).
+  const sig = useVoicePresence((s) => rooms.map((r) => roomVoiceSignature(s, r.node ?? homeDomain, r.room.id)).join(","));
+  return mergeVoice(
+    sig.split(",").map((part) => {
+      const [count, streaming] = part.split(":");
+      return { count: Number(count) || 0, streaming: streaming === "1" };
+    }),
+  );
+}
+
+/**
+ * The mention count (red, bottom right) takes precedence, then the unread count of "all messages" rooms (neutral,
+ * same place), else an unread dot (top right); the text alternative is on the item itself.
+ */
 function RailBadge({ counts }: { counts: Counts }) {
-  if (counts.mentions > 0)
+  const badge = railBadge(counts);
+  if (badge?.kind === "mentions")
     return (
       <span aria-hidden="true" className="pointer-events-none absolute -bottom-1 -right-1 h-5 min-w-5 rounded-full border-2 border-bg-0 bg-danger-solid px-1 text-center text-[11px] font-semibold leading-4 text-white" data-testid="rail-mention-badge">
-        {formatCount(counts.mentions)}
+        {formatCount(badge.count)}
       </span>
     );
-  if (counts.unread > 0) return <span aria-hidden="true" className="pointer-events-none absolute right-0 top-0 h-3 w-3 rounded-full border-2 border-bg-0 bg-accent" data-testid="rail-unread-dot" />;
+  if (badge?.kind === "unread")
+    return (
+      <span aria-hidden="true" className="pointer-events-none absolute -bottom-1 -right-1 h-5 min-w-5 rounded-full border-2 border-bg-0 bg-fg-1 px-1 text-center text-[11px] font-semibold leading-4 text-bg-0" data-testid="rail-unread-count">
+        {formatCount(badge.count)}
+      </span>
+    );
+  if (badge?.kind === "dot") return <span aria-hidden="true" className="pointer-events-none absolute right-0 top-0 h-3 w-3 rounded-full border-2 border-bg-0 bg-accent" data-testid="rail-unread-dot" />;
   return null;
+}
+
+/**
+ * Voice activity top left: a monitor when somebody streams (it takes precedence), else a speaker while somebody is
+ * in voice (glyph on amber or green: ≥ 7:1, the badge against the rail ≥ 7:1); the text alternative is on the item.
+ */
+function VoiceRailBadge({ voice }: { voice: { count: number; streaming: boolean } }) {
+  const kind = voiceBadge(voice);
+  if (!kind) return null;
+  return (
+    <span aria-hidden="true" className={`pointer-events-none absolute -left-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-bg-0 text-bg-0 ${kind === "stream" ? "bg-warn" : "bg-ok"}`} data-testid="rail-voice-badge" data-kind={kind}>
+      {kind === "stream" ? <ScreenIcon size={11} /> : <SpeakerIcon size={11} />}
+    </span>
+  );
 }
 
 /** The drop indicator line above or below an entry (accent on the rail background: 6.97:1). */
@@ -151,9 +203,19 @@ function DropLine({ at }: { at: "before" | "after" }) {
 }
 
 function countsText(t: ReturnType<typeof useT>, c: Counts): string | null {
-  if (c.mentions > 0) return t("unread.mentions", { count: formatCount(c.mentions) });
-  if (c.unread > 0) return t("dm.unread");
+  const badge = railBadge(c);
+  if (badge?.kind === "mentions") return t("unread.mentions", { count: formatCount(badge.count) });
+  if (badge?.kind === "unread") return t("rail.unread_count", { count: formatCount(badge.count) });
+  if (badge?.kind === "dot") return t("dm.unread");
   return null;
+}
+
+/** The voice part of a rail item's accessible name ("3 in voice, someone is streaming"). */
+function voiceText(t: ReturnType<typeof useT>, v: { count: number; streaming: boolean }): string[] {
+  const parts: string[] = [];
+  if (v.count > 0) parts.push(t("rail.voice.count", { count: v.count }));
+  if (v.streaming) parts.push(t("rail.voice.streaming"));
+  return parts;
 }
 
 /**
@@ -206,7 +268,7 @@ function useDragTarget(key: string, { between, into }: { between: boolean; into:
 /** A room in the rail with its context menu (right-click, long press, keyboard; design note 4.11). */
 function RailRoom({ entry, title, label, dimmed = false, folderId = null, shift, between }: { entry: Resolved; title: string; label: string; dimmed?: boolean; folderId?: string | null; shift: Shift; between: boolean }) {
   const t = useT();
-  const { change, folders, openDialog, drop } = useRail();
+  const { change, folders, openDialog, drop, dragging } = useRail();
   const { key, room, node } = entry;
   const extra = railRoomEntries(
     { folders, current: folderId, shift },
@@ -219,17 +281,24 @@ function RailRoom({ entry, title, label, dimmed = false, folderId = null, shift,
     },
     t,
   );
-  const { menu, overlay } = useRoomMenu(room, node, { extra });
   const counts = useCounts([entry]);
+  const voice = useRailVoice([entry]);
+  // On touch the card's content heads the long-press menu (no second gesture); elsewhere it is the hover card.
+  const [touch] = useState(coarsePointer);
+  const header: MenuEntry[] | undefined = touch ? [{ kind: "header", id: "room-card", render: () => <RoomCardContent room={room} node={node} counts={counts} inMenu /> }] : undefined;
+  const { menu, overlay } = useRoomMenu(room, node, { extra, header });
+  const card = useRoomHoverCard({ disabled: touch || menu.open || dragging !== null });
+  const cardId = useId();
   const drag = useDragTarget(key, { between, into: true });
   const target = drop?.target === key ? drop.mode : null;
+  const name = [label, countsText(t, counts), ...voiceText(t, voice)].filter(Boolean).join(", ");
   return (
     <>
       <NavLink
         to={roomPath(node, room.id)}
         title={title}
-        aria-label={label}
-        aria-description={countsText(t, counts) ?? undefined}
+        aria-label={name}
+        aria-describedby={card.open ? cardId : undefined}
         data-testid="rail-room"
         data-room={room.id}
         data-rail-key={key}
@@ -238,12 +307,19 @@ function RailRoom({ entry, title, label, dimmed = false, folderId = null, shift,
         data-in-folder={folderId ?? undefined}
         {...menu.triggerProps}
         {...drag}
+        {...card.triggerProps}
         className={({ isActive }) => `relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl transition-all ${isActive ? "rounded-xl ring-2 ring-accent" : "hover:rounded-xl"} ${target === "into" ? "rounded-xl ring-2 ring-accent ring-offset-2 ring-offset-bg-0" : ""} ${dimmed ? "opacity-50" : ""}`}
       >
         <RoomIcon room={room} size={44} node={node} />
+        <VoiceRailBadge voice={voice} />
         <RailBadge counts={counts} />
         {(target === "before" || target === "after") && <DropLine at={target} />}
       </NavLink>
+      {card.open && card.anchor && (
+        <RoomHoverCard id={cardId} anchor={card.anchor} cardProps={card.cardProps}>
+          <RoomCardContent room={room} node={node} counts={counts} />
+        </RoomHoverCard>
+      )}
       {overlay}
     </>
   );
@@ -257,11 +333,13 @@ function RailFolderItem({ folder, rooms, expanded, shift }: { folder: RailFolder
   const listId = useId();
   const entry = folderEntry(folder.id);
   const counts = useCounts(rooms);
+  const voice = useRailVoice(rooms);
   const display = folderDisplayName(t, folder, rooms);
   const holdsActive = !!activeKey && folder.roomIds.includes(activeKey);
   const parts = [t("rail.folder.label", { name: display }), rooms.length === 1 ? t("rail.folder.rooms_one") : t("rail.folder.rooms", { count: rooms.length })];
   const text = countsText(t, counts);
   if (text) parts.push(text);
+  if (!expanded) parts.push(...voiceText(t, voice));
   if (holdsActive && !expanded) parts.push(t("rail.folder.selected"));
   const drag = useDragTarget(entry, { between: true, into: true });
   const target = drop?.target === entry ? drop.mode : null;
@@ -312,6 +390,7 @@ function RailFolderItem({ folder, rooms, expanded, shift }: { folder: RailFolder
               ))}
             </span>
           )}
+          {!expanded && <VoiceRailBadge voice={voice} />}
           {!expanded && <RailBadge counts={counts} />}
           {(target === "before" || target === "after") && <DropLine at={target} />}
         </button>

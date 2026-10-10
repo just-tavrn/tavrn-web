@@ -95,6 +95,15 @@ export const IDLE: VoiceState = {
 
 export const useVoice = create<VoiceState>(() => IDLE);
 
+/**
+ * The voice channel of room `roomId` on `domain` this device's voice session is in (joining, connected or
+ * reconnecting), or null: `channelPermissions` grants view, read and connect there (a moderator may move a member
+ * into a channel they may not view, VOICE.md §7).
+ */
+export function ownVoiceChannel(s: VoiceState, domain: string, roomId: string): string | null {
+  return s.status !== "idle" && s.target && !s.target.call && s.target.domain === domain && s.target.roomId === roomId ? s.target.channelId : null;
+}
+
 /** Speaking level (0…1, 0 = silent) per identity of the own call. */
 export const useSpeaking = create<{ levels: Record<string, number> }>(() => ({ levels: {} }));
 

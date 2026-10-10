@@ -7,14 +7,15 @@ import { useNode } from "../../components/NodeScope";
 import { channelName } from "../../lib/names";
 import { channelPermissions } from "../../pages/ChannelPage";
 import { participantsOf, useVoicePresence } from "../presence";
-import { useVoice } from "../store";
+import { ownVoiceChannel, useVoice } from "../store";
 import { joinVoice } from "../index";
 import { useRoomVoiceStates } from "../useVoiceRealtime";
 import { AvatarTile } from "./AvatarTile";
 import { ConnectionGlyph, ParticipantFlags, levelStyle, useMemberLooks, useParticipantStatus, usePriority } from "./common";
 import { useParticipantMenu } from "./useParticipantMenu";
 import { MegaphoneIcon, SpeakerIcon } from "./icons";
-import { LockMark } from "../../components/Badges";
+import { AccessMark, LockMark, accessMarkKey } from "../../components/Badges";
+import { channelAccessMarks } from "../../lib/channelPermissions";
 import { sortByRank, type ParticipantLook } from "../order";
 import { WhiteboardOwnerBadge } from "../../whiteboard/WhiteboardStage";
 import { useToasts } from "../../stores/toasts";
@@ -55,10 +56,14 @@ export function VoiceChannelRow({ room, channel, onNavigate }: { room: RoomDetai
     [unsorted, version, locale],
   );
   const connected = useVoice((s) => s.status !== "idle" && s.target?.domain === domain && s.target.channelId === channel.id);
-  const perms = channelPermissions(room, channel.id, me?.id ?? "");
+  const voiceChannelId = useVoice((s) => ownVoiceChannel(s, domain, room.id));
+  const perms = channelPermissions(room, channel.id, me?.id ?? "", voiceChannelId);
   const limit = channel.user_limit ?? 0;
   const count = limit > 0 ? `${participants.length}/${limit}` : participants.length > 0 ? String(participants.length) : "";
   const canMove = hasPermission(perms, Permission.MOVE_MEMBERS);
+  // Access marks (private first, then restricted for this viewer); the link's own name repeats them.
+  const marks = channelAccessMarks(room, channel.id, perms);
+  const canConnect = hasPermission(perms, Permission.CONNECT);
   const [dropping, setDropping] = useState(false);
   const { menu, overlay } = useChannelMenu(room, channel);
 
@@ -85,7 +90,8 @@ export function VoiceChannelRow({ room, channel, onNavigate }: { room: RoomDetai
   const open = () => {
     onNavigate();
     navigate(roomPath(room.id, channel.id));
-    if (!connected) void joinVoice({ domain, roomId: room.id, channelId: channel.id }, { canCreate: hasPermission(perms, Permission.SEND_MESSAGES) });
+    // Without connect the stage explains it ("You may not join this voice channel."); no join attempt to refuse.
+    if (!connected && canConnect) void joinVoice({ domain, roomId: room.id, channelId: channel.id }, { canCreate: hasPermission(perms, Permission.SEND_MESSAGES) });
   };
 
   return (
@@ -112,15 +118,18 @@ export function VoiceChannelRow({ room, channel, onNavigate }: { room: RoomDetai
           e.preventDefault();
           open();
         }}
-        className={({ isActive }) => `flex min-h-10 items-center gap-2 rounded-md px-2 text-sm ${isActive ? "bg-accent-soft text-fg-0" : connected ? "text-fg-0 hover:bg-bg-3/60" : "text-fg-1 hover:bg-bg-3/60 hover:text-fg-0"}`}
-        aria-label={t("voice.channel_label", { name: channelName(channel) })}
+        className={({ isActive }) => `group/ch flex min-h-10 items-center gap-2 rounded-md px-2 text-sm ${isActive ? "bg-accent-soft text-fg-0" : connected ? "text-fg-0 hover:bg-bg-3/60" : "text-fg-1 hover:bg-bg-3/60 hover:text-fg-0"}`}
+        aria-label={[t("voice.channel_label", { name: channelName(channel) }), ...marks.map((m) => t(accessMarkKey(m)))].join(", ")}
       >
         {/* Voice is always end-to-end encrypted: the speaker and the 16 px lock, aligned with the text channels. */}
         <span className="flex w-9 shrink-0 items-center gap-1">
           <SpeakerIcon size={16} className={connected ? "text-accent" : "text-fg-2"} />
           <LockMark testId="voice-channel-lock" />
         </span>
-        <span className="min-w-0 flex-1 truncate">{channelName(channel)}</span>
+        <span className={`min-w-0 flex-1 truncate ${canConnect ? "" : "text-fg-2 group-aria-[current=page]/ch:text-fg-0"}`}>{channelName(channel)}</span>
+        {marks.map((m) => (
+          <AccessMark key={m} kind={m} />
+        ))}
         {count && (
           <span className="text-[11px] tabular-nums text-fg-2" data-testid="voice-count" title={limit > 0 ? t("voice.limit_hint", { limit }) : undefined}>
             {count}

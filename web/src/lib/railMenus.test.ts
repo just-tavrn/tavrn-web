@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it, vi } from "vitest";
-import { findEntry, type MenuEntry, type MenuItem, type MenuSubmenu } from "../components/ContextMenu";
+import { findEntry, staysOpen, type MenuEntry, type MenuItem, type MenuSubmenu } from "../components/ContextMenu";
 import { railFolderMenu, railMenu, railRoomEntries } from "./railMenus";
 
 const t = (key: string, params?: Record<string, string | number>) => (params ? `${key}(${Object.values(params).join(",")})` : key);
@@ -49,6 +49,9 @@ describe("rail menus", () => {
     expect(ids(colors.items)).toEqual(["color-none", "color-teal", "color-blue", "color-violet", "color-rose", "color-amber", "color-green"]);
     expect((findEntry(entries, "color-rose") as MenuItem).checked).toBe(true);
     expect((findEntry(entries, "color-none") as MenuItem).checked).toBe(false);
+    // Choosing a colour keeps the menu open (the new colour is checked); rename, expand and delete close it.
+    expect(staysOpen(findEntry(entries, "color-rose") as MenuItem)).toBe(true);
+    expect(["rename", "toggle", "delete"].map((id) => staysOpen(findEntry(entries, id) as MenuItem))).toEqual([false, false, false]);
     (findEntry(entries, "color-none") as MenuItem).onSelect!();
     expect(a.setColor).toHaveBeenCalledWith(undefined);
     expect((findEntry(entries, "delete") as MenuItem).danger).toBe(true);

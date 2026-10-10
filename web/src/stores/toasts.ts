@@ -10,6 +10,8 @@ export interface Toast {
   /** A route the toast jumps to when clicked (notifications). */
   path?: string;
   testId?: string;
+  /** A button next to the text (e.g. "show in folder" after a download); a click runs it and closes the toast. */
+  action?: { label: string; run: () => void };
 }
 
 interface ToastState {
@@ -25,7 +27,7 @@ export const useToasts = create<ToastState>((set) => ({
   push: (toast) => {
     const id = ++counter;
     set((s) => ({ toasts: [...s.toasts, { ...toast, id }] }));
-    setTimeout(() => set((s) => ({ toasts: s.toasts.filter((x) => x.id !== id) })), toast.kind === "error" ? 8000 : 5000);
+    setTimeout(() => set((s) => ({ toasts: s.toasts.filter((x) => x.id !== id) })), toast.kind === "error" || toast.action ? 8000 : 5000);
   },
   dismiss: (id) => set((s) => ({ toasts: s.toasts.filter((x) => x.id !== id) })),
 }));
