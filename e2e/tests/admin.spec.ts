@@ -106,6 +106,27 @@ test.describe("Node administration", () => {
     await expect(page.getByTestId("settings-admin-link")).toHaveCount(0);
   });
 
+  test.describe("in English", () => {
+    test.use({ locale: "en-US" });
+    test("the settings link to the node administration keeps its padding", async ({ page, request }, info) => {
+      // The English label used to run into the link's right border in the 192 px settings navigation.
+      test.skip(info.project.name !== "chromium", "the desktop settings column");
+      await page.setViewportSize({ width: 1440, height: 900 });
+      const admin = await adminAccount(request);
+      await loginAs(page, admin);
+      await page.goto("/settings/profile");
+      const link = page.getByTestId("settings-admin-link");
+      await expect(link).toContainText("Node administration");
+      const fit = await link.evaluate((el) => {
+        const label = el.querySelector("[data-testid=settings-admin-label]")!.getBoundingClientRect();
+        const box = el.getBoundingClientRect();
+        return { overflow: el.scrollWidth - el.clientWidth, right: box.right - label.right, left: label.left - box.left };
+      });
+      expect(fit.overflow).toBeLessThanOrEqual(0);
+      expect(fit.right).toBeGreaterThanOrEqual(11);
+    });
+  });
+
   test("Forgot-password page and invalid reset link", async ({ page }) => {
     await page.goto("/login");
     await page.getByRole("link", { name: "Passwort vergessen?" }).click();
