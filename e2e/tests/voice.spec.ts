@@ -354,6 +354,9 @@ test.describe("Voice channels", () => {
     await row(mod, bob.address).getByRole("button", { name: /Optionen für/ }).click();
     await mod.getByTestId("member-menu").getByRole("menuitem", { name: "Serverseitig stummschalten" }).click();
     for (const p of [alice.page, bob.page]) await expect(row(p, bob.address).getByTestId("flag-server-muted")).toBeAttached({ timeout: 15_000 });
+    // A state change keeps the menu open: it now offers the reverse.
+    await expect(mod.getByTestId("member-menu").getByRole("menuitem", { name: "Stummschaltung aufheben" })).toBeVisible({ timeout: 15_000 });
+    await mod.keyboard.press("Escape");
     // Bob cannot unmute himself while server-muted.
     await bob.page.getByTestId("voice-mute").click();
     await expect(bob.page.getByText("Ein Moderator hat dich stummgeschaltet")).toBeVisible();

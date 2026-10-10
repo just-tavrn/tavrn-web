@@ -368,6 +368,12 @@ id, create thread, reply in thread, pin, edit, delete, mark unread, report. Chan
 nothing), mute for 1 h, 8 h, 24 h or until turned back on, edit/duplicate/delete with `manage_channels`, "move
 everyone here" on voice channels. DMs: close (until a new message arrives), mute, block. Logging out is the last
 item of the status menu on your avatar (with a confirmation).
+A choice that only changes a state shown in the menu (notification level, @everyone, mute and unmute, roles, server
+mute, keep the full history, folder colour) keeps the menu and an open submenu open and shows the new state, like the
+voice quick menus; navigation, copy, join/leave, moderation and destructive items close it.
+The emoji picker (composer, message reactions, sound emojis) has a fixed size (bounded by the viewport) and opens
+below its button or above it when there is no room; the grid scrolls inside, and the space is reserved while the
+emoji data loads, so the panel never grows out of the viewport.
 
 The sidebar has three bars. At the top, the **room header** is one button (room icon, name, chevron ⌄; rooms of
 other nodes show their domain below the name) that opens the room menu: "Invite people" and "Room settings" first,
