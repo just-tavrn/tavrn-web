@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test } from "@playwright/test";
-import { NODE, createRoomViaApi, loginAs, openNavIfMobile, registerViaApi } from "./helpers";
+import { NODE, createRoomViaApi, loginAs, openNavIfMobile, registerViaApi, railName } from "./helpers";
 import { createRole, isTouch, joinRoom, longPress, memberRoles, openContextMenu, openMembers, postMessage } from "./menu-helpers";
 
 // Context menus (design note 4.11): right-click on desktop, long press on phones, keyboard everywhere.
@@ -104,7 +104,7 @@ test.describe("Context menus", () => {
     await page.goto(`/rooms/${room.id}`);
     await expect(page.getByTestId("channel-name")).toHaveText("allgemein");
     await openNavIfMobile(page);
-    await openContextMenu(page, page.getByTestId("room-rail").getByRole("link", { name: "Glocken-Raum", exact: true }));
+    await openContextMenu(page, page.getByTestId("room-rail").getByRole("link", { name: railName("Glocken-Raum") }));
     const menu = page.getByTestId("room-menu");
     await menu.getByRole("menuitem", { name: "Benachrichtigungen" }).click();
     const sub = page.getByTestId("context-submenu");

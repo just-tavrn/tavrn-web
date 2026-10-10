@@ -318,8 +318,11 @@ into forum channels too; the settings explain that every payload then names a po
 ## Room rail and folders
 
 The room rail (the narrow bar on the far left; inside the navigation drawer on phones) lists Home, your rooms,
-the rooms of other nodes under their domain, "+" (create or join) and Discover. Rooms show a mention count (red)
-or an unread dot once their channels' counts are known. Rooms can be grouped into **folders**:
+the rooms of other nodes under their domain, "+" (create or join) and Discover. Once their channels' counts are known,
+rooms show a mention count (red, bottom right); without mentions a room whose notification level is "All messages"
+shows its unread count there (neutral grey, capped at "999+"; "All messages" is the node's default level), a room
+with "Only mentions", "Nothing" or a mute keeps the unread dot (top right). Voice activity is a badge top left (see "Voice activity in the
+room rail and the friends list"). Rooms can be grouped into **folders**:
 
 - **Create**: right-click (long press on touch, the context-menu key or Shift+F10 on Home, + or Discover) on the
   empty rail → "New folder…" asks for a name (up to 32 characters; without one the folder is named after its
@@ -333,12 +336,14 @@ or an unread dot once their channels' counts are known. Rooms can be grouped int
   action is also a menu entry (WCAG 2.5.7).
 - **Display**: a collapsed folder is a rounded square with up to four mini icons on its colour; a click expands
   it inline (its rooms follow on a slightly lighter background) and collapses it again. A collapsed folder shows
-  the sum of its rooms' counts (a mention count wins over the unread dot) and the selected ring while it holds the
+  the sum of its rooms' counts (a mention count wins over the unread count of its "All messages" rooms, which wins
+  over the unread dot), the voice badge of its rooms and the selected ring while it holds the
   open room. Rooms of several nodes can share a folder; their names carry their domain. A room you leave (or one
   its node no longer lists) leaves its folder; rooms of a node that cannot be reached stay where they are.
 - **Accessibility**: the rooms stay links in a list ("Your rooms"); a folder is a disclosure button
   (`aria-expanded`, `aria-controls`) whose accessible name holds its name, the number of rooms, the mention or
-  unread count and "contains the open room"; a room's counts are its accessible description. ↑/↓, Home and End
+  unread count, the voice activity and "contains the open room"; a room's accessible name is its name followed by
+  its counts and voice activity ("Raids, 12 unread, 3 in voice, someone is streaming"). ↑/↓, Home and End
   move through the rail, → expands a folder or enters it, ← goes back to the folder or collapses it, Enter and
   Space toggle it.
 
@@ -359,6 +364,29 @@ Room keys are node-qualified (`<domain>/<room id>`); `order` lists the top-level
 and folders; rooms of other nodes outside folders stay under their domain), rooms the order does not know yet
 are appended in the node's order; `expanded` is device state. A newer `clientStateVersion` than the client
 knows is ignored (the rail shows no folders) instead of being misread.
+
+## Voice activity in the room rail and the friends list
+
+The client knows who is in which voice channel of every room you are in, not only of the open one: at start, after
+every reconnect and resync it loads `GET /users/me/voice` (VOICE.md §5) from the home node and from every node with a
+federated session, and `voice.state` events keep it current. The node only reports channels you may view, so nothing
+here ever reveals a hidden channel; rooms you are not in are never shown either.
+
+- **Rail badges**: a room with somebody in voice gets a small speaker badge in the top left corner of its icon
+  (green); while somebody shares a screen it becomes a monitor (amber). The unread dot (top right) and the
+  mention or unread count (bottom right) stay. A collapsed folder shows the badge of its rooms. The item's accessible
+  name says "3 in voice" and "someone is streaming".
+- **Room card**: resting the mouse on a rail room for 300 ms, or moving the keyboard focus onto it, opens a card to
+  the right of the rail: the icon, name (and node), member count, online count (when the member list was loaded),
+  description, the unread or mention state and who is in which voice channel (avatars grouped under the channel name,
+  at most eight, then "+n"; a small monitor marks who streams). The card stays open while the pointer is over it and
+  closes with Escape, when the focus leaves the room or the pointer leaves both. On touch devices there is no hover:
+  the long press on a room opens its menu with the card's content as a non-interactive head above the entries.
+- **Friends list**: a friend in a voice channel you can view shows "In voice: <room> / <channel>" under their name.
+  Each friend has a menu (right-click, long press or the "⋯" button) with "Join <channel>" while they are in voice,
+  which opens the channel and joins it like a click in the channel list (errors such as a full channel or a missing
+  permission come as the same messages), plus "Message", "Remove friend" and "Block". A friend in a channel you cannot
+  view, or in a room you are not in, shows nothing.
 
 ## Context menus, notifications and media
 

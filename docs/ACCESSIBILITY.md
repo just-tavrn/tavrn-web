@@ -97,6 +97,19 @@ Before: 3 critical + 325 serious + 241 moderate + 25 minor nodes. After: 0 criti
   the menus. Every drag-and-drop action is a menu entry too (WCAG 2.5.7). Badges and the drop indicator use
   `danger-solid` (3.2:1 on `bg-0`) and `accent` (6.97:1); targets stay 48 × 48 px. `e2e/tests/rail-folders.spec.ts`
   scans the rail with axe with a folder collapsed and expanded.
+- **Room card and voice badges** (`components/RoomHoverCard.tsx`, `components/RoomRail.tsx`): content on hover follows
+  WCAG 1.4.13 and the client's rule "no hover-only functionality": the card opens on mouse hover after 300 ms and at
+  once on keyboard focus (not on the focus of a click or tap), is `role="tooltip"` referenced by the room link's
+  `aria-describedby` while open, stays while the pointer moves onto it (hoverable), stays until the pointer leaves
+  both or the focus leaves the room (persistent) and closes with Escape wherever the focus is (dismissible). It holds
+  no controls. On touch the same content is the non-interactive head of the room's long-press menu (a `header`
+  menu entry: no stop of the arrow keys, no list roles inside the menu). Voice participants are listed with their
+  names as text (avatars are decorative). The speaker and monitor badges are glyphs on `ok`/`warn` (7.65:1 and
+  9.24:1 against `bg-0`, glyph in `bg-0` on them), the unread count badge is `bg-0` text on `fg-1` (9.7:1); their
+  meaning is in the room's accessible name ("12 unread, 3 in voice, someone is streaming"), never in colour alone.
+  The friends list's voice line is text (`ok` on `bg-1`, 7.12:1) with a decorative speaker icon; every friend has a
+  "⋯" menu button (`aria-haspopup="menu"`, 40 px) besides right-click and long press. `e2e/tests/social-voice.spec.ts`
+  scans the card (desktop), the room menu with the card head (phone) and the friends list with axe.
 - **History restore after a key reset** (`components/HistoryRestoreBanner.tsx`, `pages/settings/HistoryRequestsTab.tsx`):
   the requester's banner is a labelled region with real buttons and a labelled message field; each request on the
   settings page is a labelled section with a definition list for the dates, the channels as a list and the identity
