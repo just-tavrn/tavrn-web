@@ -16,3 +16,14 @@ export function electronBridge(): TavrnShellBridge | null {
 export function detectElectron(): boolean {
   return electronBridge() !== null;
 }
+
+/**
+ * The user agent marker of the Electron shell's sign-in window (`SIGN_IN_MARKER`, `apps/desktop-electron/src/main/
+ * connect.ts`): the window has no preload, so the node's page there knows it only by this.
+ */
+const SIGN_IN_MARKER = /(^|\s)TavrnDesktopSignIn\/1(\s|$)/;
+
+/** True for the node's page in the Electron shell's sign-in window (not in a browser tab). */
+export function inElectronSignInWindow(): boolean {
+  return typeof navigator !== "undefined" && SIGN_IN_MARKER.test(navigator.userAgent);
+}

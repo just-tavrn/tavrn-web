@@ -57,15 +57,20 @@ export function newWindow(url: string): string | null {
   return externalLink(url);
 }
 
-/** Permissions the bundled client gets in the main window (Electron's permission names). */
-const GRANTED: readonly string[] = ["media", "clipboard-sanitized-write", "fullscreen", "speaker-selection"];
+/**
+ * Permissions the bundled client gets in the main window (Electron's names): `media` (the microphone and the camera),
+ * writing to the clipboard, fullscreen, choosing the speaker. Screen capture is not a permission here: it goes through
+ * the shell's picker (`capture.ts`).
+ */
+export const GRANTED: readonly string[] = ["media", "clipboard-sanitized-write", "fullscreen", "speaker-selection"];
 
 /**
  * The answer to a permission request or check: `origin` is the requesting frame's URL or origin, `mainWindow` whether
- * it belongs to the main window.
+ * it belongs to the main window, `mediaTypes` what a `media` request asks for (only `audio` and `video` are granted).
  */
-export function permission(name: string, origin: string, mainWindow: boolean, devUrl: string | null): boolean {
-  return mainWindow && GRANTED.includes(name) && isAppPage(origin, devUrl);
+export function permission(name: string, origin: string, mainWindow: boolean, devUrl: string | null, mediaTypes: readonly string[] = []): boolean {
+  if (!mainWindow || !GRANTED.includes(name) || !isAppPage(origin, devUrl)) return false;
+  return name !== "media" || mediaTypes.every((t) => t === "audio" || t === "video");
 }
 
 /**
@@ -82,4 +87,55 @@ export function devServerUrl(packaged: boolean, value: string | undefined): stri
   }
   console.error(`tavrn: ignoring TAVRN_DESKTOP_DEV_URL=${value} (only http://localhost:<port> or http://127.0.0.1:<port>)`);
   return null;
+}
+
+/**
+ * The decision for a navigation of the sign-in window or one of its frames (docs/DESKTOP.md "Signing in"): the node's
+ * page and wherever single sign-on sends it (https; plain http only on this computer), never the bundled client and
+ * never `app:`, `file:`, `data:`, `javascript:` or `blob:` URLs.
+ */
+export function connectNavigation(url: string, devUrl: string | null): Navigation {
+  if (isAppPage(url, devUrl)) return { kind: "deny" };
+  const u = parse(url);
+  if (!u) return { kind: "deny" };
+  if (u.protocol === "https:" && u.hostname) return { kind: "allow" };
+  if (u.protocol === "http:" && DEV_HOSTS_HTTP.includes(u.hostname)) return { kind: "allow" };
+  if (u.protocol === "about:" && (u.pathname === "blank" || u.pathname === "srcdoc")) return { kind: "allow" };
+  if (u.protocol === "http:" || u.protocol === "mailto:") return { kind: "external", url: u.href };
+  return { kind: "deny" };
+}
+
+/** Hosts reached over plain http: a node in development mode on this computer. */
+const DEV_HOSTS_HTTP: readonly string[] = ["localhost", "127.0.0.1"];
+
+/** Why `openConnect` refused a URL. */
+export type ConnectUrlError = "invalid" | "other_origin";
+
+const b64url43 = (v: string) => /^[A-Za-z0-9_-]{43}$/.test(v);
+
+/**
+ * `openConnect`: the chosen node's sign-in page for an app session,
+ * `<web origin>/connect?session=<43 characters of base64url>[&state=…][&mode=register][&method=passkey|sso]` with an
+ * optional fragment `#k=<43 characters of base64url>` (the app's key for sealed unlock material, FEDERATION.md §8
+ * step 3), nothing else. Returns the URL or the refusal.
+ */
+export function connectUrl(url: string, web: string): { ok: true; url: string } | { ok: false; error: ConnectUrlError } {
+  const u = parse(url);
+  const w = parse(web);
+  if (!u || !w) return { ok: false, error: "invalid" };
+  if (u.origin !== w.origin || u.origin === "null" || !["https:", "http:"].includes(u.protocol)) return { ok: false, error: "other_origin" };
+  if (u.protocol === "http:" && !DEV_HOSTS_HTTP.includes(u.hostname)) return { ok: false, error: "invalid" };
+  const hash = url.includes("#") ? url.slice(url.indexOf("#") + 1) : null;
+  const fragmentOk = hash === null || (hash.startsWith("k=") && b64url43(hash.slice(2)));
+  if (u.pathname !== "/connect" || !fragmentOk || u.username || u.password) return { ok: false, error: "invalid" };
+  let session = false;
+  let method = false;
+  for (const [key, value] of u.searchParams) {
+    if (key === "session" && b64url43(value) && !session) session = true;
+    else if (key === "state" && value.length >= 16 && value.length <= 128 && /^[A-Za-z0-9_-]+$/.test(value)) continue;
+    else if (key === "mode" && value === "register") continue;
+    else if (key === "method" && (value === "passkey" || value === "sso") && !method) method = true;
+    else return { ok: false, error: "invalid" };
+  }
+  return session ? { ok: true, url: u.href } : { ok: false, error: "invalid" };
 }

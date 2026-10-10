@@ -2,7 +2,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createElectronPlatform } from "./electron";
 import type { BridgeEvent, ShellConfig, TavrnShellBridge } from "./electronBridge";
-import { detectElectron, electronBridge } from "./electronDetect";
+import { detectElectron, electronBridge, inElectronSignInWindow } from "./electronDetect";
+import { inSignInWindow } from "./tauriDetect";
 import { SAVE_CHUNK_BYTES } from "./files";
 import type { HotkeyEvent } from "./types";
 
@@ -91,6 +92,28 @@ describe("detectElectron", () => {
       (window as unknown as { tavrnShell: unknown }).tavrnShell = fake;
       expect(detectElectron(), JSON.stringify(fake)).toBe(false);
     }
+  });
+});
+
+describe("the Electron shell's sign-in window", () => {
+  const agent = (ua: string) => vi.spyOn(navigator, "userAgent", "get").mockReturnValue(ua);
+  afterEach(() => vi.restoreAllMocks());
+
+  it("is known by the marker of its user agent, never in a browser tab", () => {
+    const chromium = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) tavrn/0.2.0 Chrome/146.0.0.0 Electron/44.7.0 Safari/537.36";
+    agent(`${chromium} TavrnDesktopSignIn/1`);
+    expect(inElectronSignInWindow()).toBe(true);
+    expect(inSignInWindow(), "the page signs itself out after the handoff").toBe(true);
+    for (const ua of [chromium, `${chromium} TavrnDesktopSignIn/2`, `${chromium} XTavrnDesktopSignIn/1`]) {
+      agent(ua);
+      expect(inElectronSignInWindow(), ua).toBe(false);
+      expect(inSignInWindow(), ua).toBe(false);
+    }
+  });
+
+  it("has no bridge: the page there is a plain web client", () => {
+    agent("Mozilla/5.0 (X11; Linux x86_64) Electron/44.7.0 TavrnDesktopSignIn/1");
+    expect(detectElectron()).toBe(false);
   });
 });
 

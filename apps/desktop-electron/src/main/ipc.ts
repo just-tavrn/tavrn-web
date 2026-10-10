@@ -21,6 +21,14 @@ export interface IpcEventLike {
   senderFrame: { url: string } | null;
 }
 
+/**
+ * Whether an IPC call comes from the main window's own page: sent by its web contents, from its top frame (not an embed),
+ * which shows the bundled client (`isApp`, `guard.isAppPage`). A frame that is gone (`senderFrame` null) is refused.
+ */
+export function fromMainPage(event: IpcEventLike, main: { webContents: unknown; mainFrame: unknown } | null, isApp: (url: string) => boolean): boolean {
+  return !!main && event.sender === main.webContents && !!event.senderFrame && event.senderFrame === main.mainFrame && isApp(event.senderFrame.url);
+}
+
 /** The part of Electron's `ipcMain` the registry uses. */
 export interface IpcMainLike {
   handle(channel: string, listener: (event: IpcEventLike, ...args: unknown[]) => unknown): void;
