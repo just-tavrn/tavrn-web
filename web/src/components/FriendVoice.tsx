@@ -4,7 +4,10 @@
  * channel under the friend in the friends list and a "Join <channel>" entry in the friend's menu. Only rooms the user
  * is a member of (the room lists of the home node and of the nodes with a session) and only channels in the presence
  * store, which holds the channels the node lets the user view: a friend in a hidden channel or a foreign room shows
- * nothing at all. Joining goes the way of the channel list (`joinVoice`, its errors as toasts).
+ * nothing at all. A friend whose presence is offline shows nothing either: a user who chose "invisible" is reported
+ * as offline to others and must stay offline in the friends list, also while in voice (the channel itself still
+ * lists them for everybody who can view it). Joining goes the way of the channel list (`joinVoice`, its errors as
+ * toasts).
  */
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
@@ -15,6 +18,7 @@ import { channelName } from "../lib/names";
 import { channelPermissions } from "../lib/channelPermissions";
 import { useAuth } from "../stores/auth";
 import { apiFor, isHome, useNodes } from "../stores/nodes";
+import { statusOf, usePresence } from "../stores/presence";
 import { roomKey } from "../stores/railFolders";
 import { useUnread } from "../stores/unread";
 import { toastError } from "../stores/toasts";
@@ -60,15 +64,17 @@ function detailQuery(node: string | null, roomId: string) {
   };
 }
 
-/** Where `address` is in voice, or null (see the module comment). */
+/** Where `address` is in voice, or null (see the module comment): nothing while the friend's presence is offline. */
 export function useFriendVoice(address: string): FriendVoice | null {
   const t = useT();
   const rooms = useMemberRooms();
+  const online = usePresence((s) => statusOf(s.users, address) !== "offline");
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const keys = new Set(rooms.keys());
   // A string keeps the selector stable.
   const found = useVoicePresence((s) => {
+    if (!online) return "";
     const l = voiceLocationOf(s, address, keys);
     return l ? `${l.domain}\n${l.roomId}\n${l.channelId}` : "";
   });

@@ -95,6 +95,20 @@ test.describe("Voice activity in the rail and the friends list", () => {
     await expect(alice.page.locator(`[data-testid="voice-tile"][data-user="${bob.address}"]`)).toBeVisible({ timeout: 30_000 });
     await alice.page.getByTestId("voice-leave").click();
 
+    // Bob goes invisible: Alice's friends list shows him offline, without the voice line (the channel still lists him).
+    await alice.page.goto("/friends");
+    await expect(friend.getByTestId("friend-voice")).toHaveText("Im Sprachkanal: Stammtisch / Sprache", { timeout: 20_000 });
+    await openNavIfMobile(bob.page);
+    await bob.page.getByTestId("presence-menu-button").click();
+    await bob.page.getByTestId("presence-invisible").click();
+    await expect(friend.getByTestId("friend-voice")).toHaveCount(0, { timeout: 20_000 });
+    await friend.getByTestId("friend-menu-button").click();
+    await expect(alice.page.getByTestId("friend-menu").getByRole("menuitem", { name: /betreten/ })).toHaveCount(0);
+    await alice.page.keyboard.press("Escape");
+    await bob.page.getByTestId("presence-menu-button").click();
+    await bob.page.getByTestId("presence-online").click();
+    await expect(friend.getByTestId("friend-voice")).toHaveText("Im Sprachkanal: Stammtisch / Sprache", { timeout: 20_000 });
+
     // Bob moves to the channel Alice cannot view: no badge, no card entry, no line in the friends list.
     await joinFromSidebar(bob.page, roomId, "Geheim");
     await alice.page.goto("/friends");
