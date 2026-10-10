@@ -79,6 +79,10 @@ test.describe("Rooms on several nodes", () => {
     await expect(remoteLink).toBeVisible();
 
     // b.test goes down (every request of the browser to its API fails).
+    let lastRequestToB = Date.now();
+    page.on("request", (r) => {
+      if (r.url().startsWith(`${BROWSER_API_B}/`)) lastRequestToB = Date.now();
+    });
     await page.route(`${BROWSER_API_B}/**`, (route) => route.abort("connectionrefused"));
     await remoteLink.click();
     const banner = page.getByTestId("node-unreachable-banner");
@@ -94,14 +98,23 @@ test.describe("Rooms on several nodes", () => {
     await expect(page.getByTestId("channel-name")).toBeVisible();
     await expect(banner).toHaveCount(0);
 
-    // b.test is back: retrying clears the state.
-    await page.unroute(`${BROWSER_API_B}/**`);
+    // Back in b.test's room while it is still down: its views fail again and keep the banner with the retry.
     await openNavIfMobile(page);
     await remoteLink.click();
     // Phones: the drawer stays open after picking a room; close it to reach the banner.
     if ((await page.getByTestId("nav-drawer").getAttribute("data-open")) === "true") await page.getByRole("button", { name: "Drawer schließen" }).click({ position: { x: (page.viewportSize()?.width ?? 400) - 10, y: 200 } });
-    await page.getByTestId("node-unreachable-banner").getByRole("button", { name: "Erneut versuchen" }).click();
-    await expect(page.getByTestId("node-unreachable-banner")).toHaveCount(0);
+    const retry = banner.getByRole("button", { name: "Erneut versuchen" });
+    await expect(retry).toBeVisible();
+    // Any answer of b.test clears the state by itself, and the client retries a failed request once after a second:
+    // wait until it has given up, so that only the retry button reaches b.test once it is back (on a slow machine a
+    // pending retry, or opening the room after b.test is back, would clear the banner before the click).
+    await expect.poll(() => Date.now() - lastRequestToB, { timeout: 30_000 }).toBeGreaterThan(2_000);
+    await expect(retry).toBeVisible();
+
+    // b.test is back: retrying clears the state.
+    await page.unroute(`${BROWSER_API_B}/**`);
+    await retry.click();
+    await expect(banner).toHaveCount(0);
     await expect(page.getByTestId("channel-name")).toBeVisible();
     await expect(page.locator(`[data-testid="node-group"][data-node="${B}"]`)).not.toHaveAttribute("data-unreachable", "true");
   });
