@@ -1453,7 +1453,7 @@
   "second_factor.enroll_title": "Zweiten Faktor einrichten",
   "second_factor.enroll_intro": "Jedes Konto auf tavrn ist mit einem zweiten Faktor geschützt. Wähle einen aus – weitere kannst du später in den Einstellungen hinzufügen.",
   "second_factor.totp": "Authenticator-App",
-  "second_factor.totp_hint": "6-stellige Codes aus einer App wie Aegis, 2FAS oder Google Authenticator",
+  "second_factor.totp_hint": "6-stellige Codes aus einer Authenticator-App (TOTP)",
   "second_factor.passkey": "Passkey",
   "second_factor.passkey_hint": "Fingerabdruck, Gesicht, PIN oder Sicherheitsschlüssel; kann auch deine verschlüsselten Nachrichten entsperren",
   "totp.intro": "Scanne den QR-Code mit deiner Authenticator-App und gib dann den 6-stelligen Code ein, den sie anzeigt.",

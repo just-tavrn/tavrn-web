@@ -36,4 +36,12 @@ describe("i18n", () => {
       expect({ code, hits }).toEqual({ code, hits: [] });
     }
   });
+
+  it("names no particular authenticator app (generic wording)", () => {
+    const apps = /aegis|2fas|google authenticator|authy|microsoft authenticator|freeotp/i;
+    for (const [code, { messages }] of Object.entries(LOCALES)) {
+      const hits = Object.entries(messages).filter(([, v]) => apps.test(v)).map(([k]) => k);
+      expect({ code, hits }).toEqual({ code, hits: [] });
+    }
+  });
 });
