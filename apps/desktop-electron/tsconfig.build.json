@@ -11,5 +11,5 @@
     "paths": {}
   },
   "include": ["src/main", "src/shared"],
-  "exclude": ["src/**/*.test.ts"]
+  "exclude": ["src/**/*.test.ts", "src/**/*.fixture.ts"]
 }

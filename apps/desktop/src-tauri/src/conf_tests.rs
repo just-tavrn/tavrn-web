@@ -159,8 +159,12 @@ fn updates_come_from_the_github_releases_and_are_signed() {
 }
 
 #[test]
-fn installers_for_linux_and_windows() {
-    assert_eq!(conf()["bundle"]["targets"], serde_json::json!(["deb", "appimage", "msi", "nsis"]));
+fn installers_for_windows_only() {
+    // Linux ships the Electron shell (docs/DESKTOP.md "Builds and releases"): no Tauri .deb or AppImage, and no Linux
+    // package settings that would suggest one.
+    let c = conf();
+    assert_eq!(c["bundle"]["targets"], serde_json::json!(["msi", "nsis"]));
+    assert!(c["bundle"]["linux"].is_null(), "no Linux bundle settings");
 }
 
 #[test]
@@ -173,14 +177,12 @@ fn the_installers_show_the_licence_and_terms() {
     {
         assert!(text.contains(part), "LICENSE.txt lacks {part:?}");
     }
-    // .deb has no accept step: the same file is shipped in the package.
-    assert_eq!(c["bundle"]["linux"]["deb"]["files"]["/usr/share/doc/tavrn/LICENSE.txt"], "../LICENSE.txt");
 }
 
 #[test]
 fn the_icons_of_the_bundle_exist() {
     let icons = conf()["bundle"]["icon"].as_array().cloned().unwrap_or_default();
-    assert!(icons.len() >= 5, "PNG sizes for Linux, .ico for Windows, .icns for macOS");
+    assert!(icons.len() >= 5, "PNG sizes (the window; the Electron shell's Linux packages), .ico for Windows, .icns for macOS");
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     for icon in &icons {
         let path = dir.join(icon.as_str().unwrap_or_default());
@@ -189,15 +191,4 @@ fn the_icons_of_the_bundle_exist() {
     for kind in [".png", ".ico", ".icns"] {
         assert!(icons.iter().any(|i| i.as_str().is_some_and(|i| i.ends_with(kind))), "no {kind} icon");
     }
-}
-
-#[test]
-fn the_deb_brings_the_gstreamer_plugins_of_webrtc() {
-    let depends: Vec<String> =
-        conf()["bundle"]["linux"]["deb"]["depends"].as_array().map(|d| d.iter().filter_map(Value::as_str).map(str::to_string).collect()).unwrap_or_default();
-    for plugin in ["gstreamer1.0-plugins-bad", "gstreamer1.0-plugins-good", "gstreamer1.0-gl", "gstreamer1.0-pipewire | gstreamer1.0-pulseaudio"] {
-        assert!(depends.contains(&plugin.to_string()), "the .deb lacks {plugin} (voice on Linux, docs/DESKTOP.md)");
-    }
-    // The native voice engine's audio devices (cpal links ALSA; PulseAudio is spoken in pure Rust).
-    assert!(depends.contains(&"libasound2t64 | libasound2".to_string()), "the .deb lacks ALSA (the native voice engine, docs/DESKTOP.md)");
 }

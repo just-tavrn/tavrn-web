@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // The built desktop app under WebDriver (tauri-driver, WebKitWebDriver) for specs that need a browser participant and
-// the app in one call (desktop-voice.spec.ts). Plain WebDriver over HTTP like apps/desktop/e2e/smoke.mjs; the app runs
+// the app in one call (desktop-voice.spec.ts). Plain WebDriver over HTTP (no client library); the app runs
 // on the X display of xvfb-run (`just desktop-voice-e2e` forces GTK to X11 and removes WAYLAND_DISPLAY, the display
 // rule of docs/DESKTOP.md "Tests"), with its settings and web storage in a temporary directory.
 import { spawn, type ChildProcess } from "node:child_process";

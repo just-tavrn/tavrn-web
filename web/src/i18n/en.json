@@ -2288,6 +2288,7 @@
   "errors.connect.purpose_invalid": "This request of the app is invalid.",
   "errors.connect.unlock_unsupported": "Your node cannot unlock the app with a passkey yet. Use your recovery key.",
   "errors.connect.unlock_failed": "The passkey did not unlock the app. Try again or use your recovery key.",
+  "errors.update.signature_invalid": "The update was refused: its update files are not signed with this app's update key. Try again later or download the app from the project's releases.",
   "errors.federation.peer_unreachable": "That node cannot be reached.",
   "errors.federation.peer_invalid": "That node does not answer like a tavrn node with federation.",
   "errors.federation.peer_blocked": "Your node does not federate with that node.",

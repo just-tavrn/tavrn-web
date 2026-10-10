@@ -19,3 +19,11 @@ description = "Debian package names of the Electron installer"
 paths = ['''^apps/desktop-electron/electron-builder\.config\.mjs$''']
 regexTarget = "line"
 regexes = ['''depends: \[''']
+
+[[allowlists]]
+description = "Throwaway minisign test key"
+# The Tauri CLI's signature of a test feed and the public key of a throwaway key pair whose secret half was discarded
+# (key id 502C71651358215B); the test checks that the shell verifies the real signer's output.
+paths = ['''^apps/desktop-electron/src/main/minisign\.test\.ts$''']
+regexTarget = "line"
+regexes = ['''"RURbIVgTZXEsU[A-Za-z0-9+/]+={0,2}",''', '''"dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUwMkM3MTY1MTM1ODIxNUIK[A-Za-z0-9+/]+={0,2}";''']

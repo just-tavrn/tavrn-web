@@ -19,9 +19,13 @@ updates:
     groups:
       actions:
         patterns: ["*"]
-  # The Rust crates of the desktop shell (its own Cargo workspace, apps/desktop/src-tauri).
+  # The Rust crates of the desktop shells: the Tauri app and the key listener crate shared with the Electron shell
+  # and its Node-API module (three Cargo workspaces with their own lockfiles).
   - package-ecosystem: cargo
-    directory: /apps/desktop/src-tauri
+    directories:
+      - /apps/desktop/src-tauri
+      - /apps/desktop/crates/keywatch
+      - /apps/desktop-electron/native/keywatch
     schedule: { interval: weekly }
     groups:
       rust:
