@@ -382,6 +382,12 @@ libwebrtc uses the static C runtime, so the shell links with `+crt-static` (`src
 own hybrid runtime is switched off in `build.rs`; the installer needs no Visual C++ redistributable. With libwebrtc the
 app binary is about 40 MB and the NSIS installer about 22 MB. Not yet started on a Windows machine.
 
+**Measured** (release build, Linux under WSL2, fake audio backend, a two-person call with Chromium, 10 s each,
+`desktop-voice.spec.ts`; budgets of `tavrn-node/perf/budgets.json`): talking, the shell (with the engine) 7.4 % and
+the WebKit processes 2.1 % of one core, together 9.5 % (budget 15 %); muted, 2.8 % + 1.4 % = 4.2 % (budget 5 %).
+On Windows the same comparison (the shell plus the `msedgewebview2` renderer, browser engine against native engine,
+talking and muted, with real devices) decides whether the setting becomes the default there.
+
 ### The webview's own WebRTC on Linux
 
 WebKitGTK runs WebRTC through GStreamer and keeps it off unless the app switches it on: the shell turns on
