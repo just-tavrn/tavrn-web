@@ -12,7 +12,9 @@ import { ConfirmDialog, OverrideTriState, Section, Select, TriStateRow } from ".
 import { UPLOAD_CATEGORIES } from "../../lib/uploads";
 import { effectiveUploads, inheritedUpload, overrideUploadState, setOverrideUpload, type UploadOverrideInput, type UploadSubject } from "../../lib/uploadPolicy";
 import { categoryName, channelName } from "../../lib/names";
-import { BotsAllowedIcon, LockMark, NoBotsIcon } from "../../components/Badges";
+import { AccessMark, BotsAllowedIcon, LockMark, NoBotsIcon, accessMarkKey } from "../../components/Badges";
+import { GroupOffIcon } from "../../components/icons";
+import { channelPrivacy } from "../../lib/channelPermissions";
 import { botMarker } from "../../lib/botAccess";
 import { ChannelBotsAllowed } from "./BotsEncryptionSection";
 import { HistoryPolicySection } from "./HistoryPolicy";
@@ -115,17 +117,21 @@ export function ChannelsTab({ room }: { room: RoomDetail }) {
 function ChannelButtons({ room, channels, selectedId, onSelect }: { room: RoomDetail; channels: Channel[]; selectedId?: string; onSelect: (id: string) => void }) {
   return (
     <ul className="mt-1 space-y-0.5">
-      {channels.map((c) => (
-        <li key={c.id}>
-          <button type="button" onClick={() => onSelect(c.id)} className={`flex min-h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm ${selectedId === c.id ? "bg-bg-3 text-fg-0" : "text-fg-1 hover:bg-bg-3/60"}`}>
-            <span className="text-fg-2">{c.kind === "voice" ? "🔊" : c.kind === "files" ? "📁" : "#"}</span>
-            <span className="truncate">{channelName(c)}</span>
-            {!c.encrypted && c.kind !== "voice" && <LockMark open />}
-            {botMarker(c, room) === "no_bots" && <NoBotsIcon />}
-            {botMarker(c, room) === "bots_allowed" && <BotsAllowedIcon />}
-          </button>
-        </li>
-      ))}
+      {channels.map((c) => {
+        const privacy = channelPrivacy(room, c.id);
+        return (
+          <li key={c.id}>
+            <button type="button" onClick={() => onSelect(c.id)} className={`flex min-h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm ${selectedId === c.id ? "bg-bg-3 text-fg-0" : "text-fg-1 hover:bg-bg-3/60"}`}>
+              <span className="text-fg-2">{c.kind === "voice" ? "🔊" : c.kind === "files" ? "📁" : "#"}</span>
+              <span className="truncate">{channelName(c)}</span>
+              {privacy && <AccessMark kind={privacy} />}
+              {!c.encrypted && c.kind !== "voice" && <LockMark open />}
+              {botMarker(c, room) === "no_bots" && <NoBotsIcon />}
+              {botMarker(c, room) === "bots_allowed" && <BotsAllowedIcon />}
+            </button>
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -146,6 +152,8 @@ function ChannelEditor({ channel, room, canManage, onChanged }: { channel: Chann
   const filesUsage = useQuery({ queryKey: ["files-usage", domain, channel.id], queryFn: () => api.files.usage(room.id, channel.id), enabled: isFiles && confirmDelete });
   const [keepExternal, setKeepExternal] = useState(false);
   const canManageRoles = hasPermission(parsePermissions(room.my_permissions), Permission.MANAGE_ROLES);
+  // What the overrides mean for @everyone: the channel list's private mark, spelled out for the admins.
+  const privacy = channelPrivacy(room, channel.id);
 
   const save = async () => {
     try {
@@ -168,6 +176,12 @@ function ChannelEditor({ channel, room, canManage, onChanged }: { channel: Chann
         }}
       >
         <Section title={`${isVoice ? "🔊" : isFiles ? "📁" : "#"} ${channelName(channel)}`}>
+          {privacy && (
+            <p className="flex items-center gap-2 text-xs text-fg-1" data-testid="channel-access-line">
+              <GroupOffIcon size={16} className="text-fg-2" />
+              {t(accessMarkKey(privacy))}
+            </p>
+          )}
           <Field label={t("common.name")}>
             <Input value={name} onChange={(e) => setName(e.target.value)} disabled={!canManage} maxLength={100} required />
           </Field>

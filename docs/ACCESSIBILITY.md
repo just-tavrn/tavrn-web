@@ -139,6 +139,15 @@ Before: 3 critical + 325 serious + 241 moderate + 25 minor nodes. After: 0 criti
 - **Toasts**: `role="status"` (errors `role="alert"`) inside a polite live region.
 - **Icon buttons and badges**: names on every icon-only button (translated), `role="img"` with a label on icon
   badges and unread counters, decorative avatars and icons `alt=""`/`aria-hidden`.
+- **Channel access marks** (`AccessMark` in `components/Badges.tsx`, icons `NoEntryIcon` and `GroupOffIcon` in
+  `components/icons.tsx`): 16 px SVG glyphs in `fg-2` (5.62:1 on the sidebar `bg-1`, 4.46:1 on the selection tint,
+  above the 3:1 for graphics), each a `role="img"` named by its text with the same text as tooltip ("Visible only to
+  certain roles", "Joining only for certain roles", "You can see this channel but not join it", "Read only for you").
+  They are part of the channel link's name (the voice row's `aria-label` repeats them), so the meaning never depends on
+  colour or the glyph. The dimmed name of a restricted channel uses `fg-2` (4.5:1 or more on `bg-1` and its hover)
+  and returns to `fg-0` as the open channel; the lock stays the encryption mark only. The channel editor's line uses a
+  decorative glyph next to the text. `e2e/tests/channel-access-marks.spec.ts` scans the channel list and the channel
+  editor with axe on the desktop and the phone project.
 - **Time stamps**: `<time datetime>` with the full date and time as `title`.
 - **Motion**: a global `prefers-reduced-motion` rule ends every remaining animation and transition (drawers,
   pulses, the speaking glow, the composer growth, cue indicators); the speaking ring stays static.

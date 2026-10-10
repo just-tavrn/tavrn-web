@@ -482,6 +482,25 @@ sends a private channel's events only to the members it is listed to: a member w
 channel from the sidebar like a deleted one, but an open channel says **You no longer have access to this channel**
 instead of "Channel not found", and the channel's local search entries stay (`web/src/lib/hiddenChannels.ts`).
 
+**Channel list marks.** Besides the encryption lock (which never means anything else), two SVG marks after the
+channel name tell who may use a channel (`web/src/lib/channelPermissions.ts`, `AccessMark` in
+`web/src/components/Badges.tsx`):
+
+- **Private** (a group with a slash, the same for everyone who sees the channel): the `@everyone` role has no
+  effective `view_channel` there, evaluated like `channelPermissions` but for `@everyone` alone (its role bits, then
+  the category's and the channel's `@everyone` overrides; other roles' and members' overrides are ignored): **Visible
+  only to certain roles**. A voice channel `@everyone` may view but not `connect` to: **Joining only for certain
+  roles**. The welcome channel is never private.
+- **Restricted for you** (no entry, per viewer): the viewer sees the channel but lacks the bit the channel's view
+  needs: `connect` for voice (**You can see this channel but not join it**), `send_messages` for text, announcement
+  and forum channels, `attach_files` for files channels (**Read only for you**). The name is dimmed (`fg-2`; the open
+  channel keeps `fg-0`); the row stays clickable and the stage or composer explains the rest. A voice row without
+  `connect` opens the stage without trying to join. Members with the rights see nothing.
+
+When both apply the private mark comes first. Each mark is a named image with the same text as its tooltip; the voice
+row's accessible name repeats them. The channel editor in **Room settings → Channels** shows the private state as a
+line under the channel name (and the mark in its channel list), so admins see what their overrides do.
+
 **File types** (PROTOCOL.md §7a, [permissions.md](https://github.com/just-tavrn/tavrn-protocol/blob/main/permissions.md)
 "Upload categories"): images, audio, videos, documents, archives and other files. **Room settings → Overview →
 Uploads** sets what everyone may attach (`@everyone`, the room default) and links to the roles. In **Room settings →
