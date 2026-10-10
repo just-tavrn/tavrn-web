@@ -145,7 +145,12 @@ export async function startApp(options: StartOptions = {}): Promise<ElectronApp>
   const debug = ["--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0", ...(packaged ? [] : ["--inspect=0"])];
   const child = spawn(file, [...args, ...debug], { cwd: appDir, env, stdio: ["ignore", "pipe", "pipe"], detached: true });
   const output: string[] = [];
-  const read = (d: Buffer) => void output.push(String(d));
+  let inspector: Inspector | null = null;
+  const read = (d: Buffer) => {
+    output.push(String(d));
+    // Node keeps an exiting process alive while a debugger is attached: let go once it says so.
+    if (String(d).includes("Waiting for the debugger to disconnect")) inspector?.close();
+  };
   child.stdout!.on("data", read);
   child.stderr!.on("data", read);
   const found = (re: RegExp) => re.exec(output.join(""))?.[1] ?? null;
@@ -158,8 +163,12 @@ export async function startApp(options: StartOptions = {}): Promise<ElectronApp>
     if (!(endpoint && (packaged || inspectorUrl))) await sleep(250);
   }
   if (!endpoint) throw new Error(`no DevTools endpoint after 60 s:\n${output.join("").slice(-3000)}`);
-  const inspector = !packaged && inspectorUrl ? await Inspector.connect(inspectorUrl) : null;
+  inspector = !packaged && inspectorUrl ? await Inspector.connect(inspectorUrl) : null;
   const browser: Browser = await chromium.connectOverCDP(endpoint);
+  // Playwright takes over the downloads of a browser it connects to; the app's own handling (the save dialog, the test
+  // hook's directory) must stay in charge.
+  const cdp = await browser.newBrowserCDPSession();
+  await cdp.send("Browser.setDownloadBehavior", { behavior: "default" });
   const context: BrowserContext = browser.contexts()[0]!;
   const isMain = (p: Page) => p.url().startsWith("app://tavrn/");
   let page = context.pages().find(isMain);
