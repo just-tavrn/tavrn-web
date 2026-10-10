@@ -5,6 +5,7 @@
  * reporter and times the author out from the inbox. A room reported from the header menu reaches the node admins.
  * Phone and desktop.
  */
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type APIRequestContext } from "@playwright/test";
 import { NODE, adminAccount, createRoomViaApi, inviteCode, loginAs, openNavIfMobile, registerViaApi, registerViaUi, uniqueName } from "./helpers";
 import { createGroup, cryptoAccountViaApi, sendEncrypted, type CryptoAccount } from "./crypto-helpers";
@@ -134,6 +135,9 @@ test.describe("Reports", () => {
       const heights = await bar.locator("button[data-testid^=report-action-]").evaluateAll((buttons) => buttons.map((b) => [b.getAttribute("data-testid"), Math.round(b.getBoundingClientRect().height)]));
       expect(heights.length).toBeGreaterThanOrEqual(3);
       for (const [id, h] of heights) expect(h, String(id)).toBeLessThanOrEqual(44);
+      // The axe gate (a11y.spec.ts rules) on the report detail with its action row.
+      const axe = await new AxeBuilder({ page }).include("[data-testid=report-detail]").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22a", "wcag22aa"]).analyze();
+      expect(axe.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => v.id)).toEqual([]);
     });
   });
 
