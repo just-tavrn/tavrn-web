@@ -461,7 +461,9 @@ the MLS state. Browsing decrypts the records of the listed folder (names, types,
 SVG lock), downloads and previews decrypt chunk by chunk, and media keep their safe blob types (SVG is never
 rendered). The node cannot search: the search box filters the open folder, and the global search finds the files
 through the local index ("Search" below). The node cannot check name uniqueness either, so the client numbers
-duplicates (`name (2).ext`) before it uploads and refuses a rename to a name the folder has.
+duplicates (`name (2).ext`) before it uploads and refuses a rename to a name the folder has. While the channel's
+encryption group is still joining on this device, the "New folder" and "Rename" dialogs keep their button disabled
+and say so; the name stays typed and the button opens as soon as the view is ready.
 
 Entries this device cannot decrypt are listed as "Encrypted file"/"Encrypted folder" with size and date; the channel
 shows the same states as the message list: "locked" (key store locked), joining, no group yet, an error, or "some
