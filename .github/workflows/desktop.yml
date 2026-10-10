@@ -10,6 +10,8 @@
 #     desktop-linux.
 #   - `windows-nsis`: the NSIS installer cross-compiled with cargo-xwin (artifact desktop-windows-nsis), so main
 #     always has a current Windows installer.
+#   - `linux-electron`: the Linux app's Electron shell: checks, the key listener's Node-API module, .AppImage and .deb,
+#     the full Playwright smoke test of the AppImage under xvfb; artifact desktop-linux-electron (not for release tags).
 # - GitHub-hosted runners: `linux` falls back to ubuntu-latest for pull requests from forks and Dependabot (and for
 #   release tags: the updater key never reaches a self-hosted runner); `windows-nsis` is skipped there. `windows` on
 #   windows-latest builds the .msi and NSIS installers on release tags and by hand (`windows: true`) only.
@@ -208,6 +210,137 @@ jobs:
         with:
           name: desktop-smoke-screenshot
           path: test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # The Linux app's Electron shell (apps/desktop-electron, docs/DESKTOP.md "The Linux shell (Electron)", "Builds and
+  # releases"): the checks, the key listener's Node-API module, the .AppImage and .deb, the full smoke test against the
+  # AppImage (no FUSE: extracted and run) with a second user in Chromium, voice through the node's livekit-server, the
+  # global hotkey through xdotool; artifacts desktop-linux-electron and the screenshots. Not for release tags yet: the
+  # release still ships the Tauri Linux bundles (release.yml wiring, docs/DESKTOP.md "Builds and releases").
+  linux-electron:
+    name: Desktop (Linux, Electron)
+    if: ${{ vars.CI_ENABLED == 'true' && !inputs.release-tag }}
+    # tavrn-heavy for trusted events, the same rule as the Tauri job above; forks and Dependabot on ubuntu-latest.
+    runs-on: ${{ fromJSON(github.event_name != 'pull_request_target' && github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && '["self-hosted","linux","x64","tavrn-heavy"]' || '"ubuntu-latest"') }}
+    permissions:
+      contents: read
+      packages: read
+    timeout-minutes: 60
+    steps:
+      - name: Access to private organization repositories
+        env:
+          READ_TOKEN: ${{ secrets.TAVRN_READ_PAT }}
+        run: |
+          if [ -n "$READ_TOKEN" ]; then
+            git config --global url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "https://github.com/just-tavrn/"
+            git config --global --add url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "ssh://git@github.com/just-tavrn/"
+            git config --global --add url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "git@github.com:just-tavrn/"
+          fi
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # GitHub-hosted: what the runner image of tavrn-heavy ships (Chromium's libraries through Playwright, xvfb,
+      # xdotool, livekit-server, Rust); the self-hosted job installs nothing.
+      - uses: pnpm/action-setup@v6
+        if: ${{ runner.environment == 'github-hosted' }}
+      - uses: actions/setup-node@v7
+        if: ${{ runner.environment == 'github-hosted' }}
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Rust toolchain
+        if: ${{ runner.environment == 'github-hosted' }}
+        run: rustup toolchain install stable --profile minimal --component clippy,rustfmt && rustup default stable
+      - uses: Swatinem/rust-cache@v2
+        if: ${{ runner.environment == 'github-hosted' }}
+        with:
+          workspaces: apps/desktop-electron/native/keywatch -> target
+      - uses: taiki-e/install-action@v2
+        if: ${{ runner.environment == 'github-hosted' }}
+        with:
+          tool: cargo-deny
+      - name: Tools of the runner image
+        if: ${{ runner.environment == 'self-hosted' }}
+        run: |
+          missing=()
+          for t in cargo cargo-deny xvfb-run xdotool livekit-server docker; do
+            command -v "$t" >/dev/null || missing+=("$t")
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::not in the runner image (just-tavrn/.github, runner/Dockerfile): ${missing[*]}"; exit 1
+          fi
+          [ "$(node -p 'process.versions.node.split(".")[0]')" = 24 ] || { echo "::error::the runner image has Node.js $(node --version), the job wants 24"; exit 1; }
+          rustc --version && node --version && pnpm --version && livekit-server --version
+      - run: pnpm install --frozen-lockfile
+      - name: System packages (xvfb, xdotool, Chromium's libraries, livekit-server)
+        if: ${{ runner.environment == 'github-hosted' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xdotool
+          pnpm --filter @tavrn/desktop-electron exec playwright install --with-deps chromium
+          LIVEKIT_INSTALL_DIR="$HOME/.local/bin" just livekit-install || {
+            curl -fsSL https://just.systems/install.sh | bash -s -- --to "$HOME/.local/bin" && LIVEKIT_INSTALL_DIR="$HOME/.local/bin" "$HOME/.local/bin/just" livekit-install
+          }
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Web client (web/dist, bundled into the app)
+        run: pnpm --filter @tavrn/web build
+      - name: Checks (typecheck, node --test, SPDX headers, licenses)
+        run: |
+          pnpm --filter @tavrn/desktop-electron typecheck
+          pnpm --filter @tavrn/desktop-electron test
+          scripts/check-spdx.sh
+          node scripts/check-js-licenses.mjs
+      - name: Key listener module (fmt, clippy, licenses, napi build, node test under xvfb)
+        working-directory: apps/desktop-electron/native/keywatch
+        run: |
+          (cd ../../../desktop/crates/keywatch && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked)
+          cargo fmt --check
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo deny check licenses
+          pnpm run build
+          xvfb-run -a pnpm test
+      - name: Packages (.AppImage, .deb)
+        run: |
+          # The working directory outlives the job on a self-hosted runner only in its cache slot: start clean.
+          rm -rf apps/desktop-electron/release
+          pnpm --filter @tavrn/desktop-electron package
+          ls -l apps/desktop-electron/release
+      # The node runs as a process of the job (the Playwright config starts it with E2E_NODE_BIN), copied out of the
+      # node image as in the Tauri job; voice through the livekit-server of the runner image.
+      - name: Smoke test of the AppImage (sign-in, encrypted chat, media, voice, camera, screen share, global hotkey, tray)
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+          NODE_IMAGE: ${{ vars.TAVRN_NODE_IMAGE || 'ghcr.io/just-tavrn/tavrn-node:edge' }}
+        run: |
+          bin="$RUNNER_TEMP/tavrn-node-bin"
+          mkdir -p "$bin"
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker pull "$NODE_IMAGE"
+          cid="$(docker create "$NODE_IMAGE")"
+          docker cp "$cid:/usr/local/bin/tavrn-node" "$bin/tavrn-node"
+          docker rm -f "$cid" >/dev/null
+          docker logout ghcr.io
+          "$bin/tavrn-node" --version
+          app="$(ls "$PWD"/apps/desktop-electron/release/*.AppImage)"
+          cd apps/desktop-electron
+          E2E_NODE_BIN="$bin/tavrn-node" E2E_ELECTRON_APP="$app" \
+            env -u WAYLAND_DISPLAY -u ELECTRON_RUN_AS_NODE xvfb-run -a pnpm exec playwright test --config e2e/playwright.config.ts electron-smoke.spec.ts
+      - name: Collect the packages
+        run: |
+          mkdir -p dist-electron
+          cp apps/desktop-electron/release/*.AppImage apps/desktop-electron/release/*.deb apps/desktop-electron/release/latest-linux.yml dist-electron/
+          ls -l dist-electron
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-linux-electron
+          path: dist-electron/
+          retention-days: 7
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: desktop-linux-electron-screenshots
+          path: apps/desktop-electron/test-results/
           retention-days: 7
           if-no-files-found: ignore
 
