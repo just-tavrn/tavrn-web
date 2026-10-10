@@ -3,9 +3,10 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { Permission, type VoiceParticipant } from "@tavrn/sdk";
+import { Permission, type Presence, type VoiceParticipant } from "@tavrn/sdk";
 import { useVoicePresence } from "../voice/presence";
 import { useAuth } from "../stores/auth";
+import { usePresence } from "../stores/presence";
 import { useToasts } from "../stores/toasts";
 import { mockFetch, renderWithProviders } from "../test/render";
 import { FriendsPage } from "./FriendsPage";
@@ -62,10 +63,14 @@ describe("FriendsPage", () => {
 
   describe("friends in voice", () => {
     const vp = (username: string): VoiceParticipant => ({ user: `${username}@t.local`, user_id: `id-${username}`, device_id: "D", identity: `${username}@t.local/D`, muted: false, deafened: false, streaming: false, camera: false, server_muted: false, joined_at: "", connection: "connected" });
+    const online = (username: string): Presence => ({ user: `${username}@t.local`, user_id: `id-${username}`, status: "online", custom_status: null, activity: null });
     beforeEach(() => {
       useVoicePresence.getState().reset();
       voice.joinVoice.mockClear();
       useAuth.setState({ token: "t", user: { ...user("u0", "me"), email: null, email_verified: false, has_identity_key: true } });
+      // The friends' presences: anna is online; ben and carl have no entry (offline, or invisible: the node reports both as offline).
+      usePresence.getState().clear();
+      usePresence.getState().seed([online("anna")]);
       mockFetch({
         "/rooms/R1": { body: { id: "R1", name: "Gilde", description: "", channels: [{ id: "T1", kind: "text", name: "general" }, { id: "V1", kind: "voice", name: "Lounge" }], read_states: [], roles: [], overrides: [], my_permissions: "0", my_roles: [], is_owner: true, member_count: 3 } },
         "/rooms": { body: [{ id: "R1", name: "Gilde", description: "" }] },
@@ -101,6 +106,25 @@ describe("FriendsPage", () => {
       // Bob leaves: the line goes.
       act(() => useVoicePresence.getState().apply("t.local", { room_id: "R1", channel_id: "V1", participants: [] }));
       expect(within(item).queryByTestId("friend-voice")).toBeNull();
+    });
+
+    it("shows nothing for a friend whose presence is offline (invisible), even in a viewable channel", async () => {
+      // ben is in the viewable channel but has no presence: the node reports invisible users as offline.
+      act(() => useVoicePresence.getState().apply("t.local", { room_id: "R1", channel_id: "V1", participants: [vp("anna"), vp("ben")] }));
+      renderWithProviders(<FriendsPage />);
+      const anna = (await screen.findByText("anna@t.local")).closest("li")!;
+      const ben = (await screen.findByText("ben@t.local")).closest("li")!;
+      await waitFor(() => expect(within(anna).getByTestId("friend-voice")).toHaveTextContent("Lounge"));
+      expect(within(ben).queryByTestId("friend-voice")).toBeNull();
+      const u = userEvent.setup();
+      await u.click(within(ben).getByRole("button", { name: "Optionen für BEN" }));
+      expect(within(screen.getByTestId("friend-menu")).queryByRole("menuitem", { name: /betreten/ })).toBeNull();
+      await u.keyboard("{Escape}");
+      // ben appears (online): the line shows; invisible again (reported offline): it goes.
+      act(() => usePresence.getState().apply(online("ben")));
+      await waitFor(() => expect(within(ben).getByTestId("friend-voice")).toHaveTextContent("Gilde / Lounge"));
+      act(() => usePresence.getState().apply({ ...online("ben"), status: "offline" }));
+      expect(within(ben).queryByTestId("friend-voice")).toBeNull();
     });
 
     it("the friend's menu (⋯ or right-click) joins their channel the way the channel list does", async () => {
