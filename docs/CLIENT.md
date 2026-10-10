@@ -58,7 +58,7 @@ the page for such a confirmation skips the encryption step, because the app crea
 (or `sso`) starts that method at once with only "Signing in with a passkey…" and "Use another method". After a passkey
 ceremony with the PRF extension the page seals the passkey's unlock secret to the app's key from the URL fragment
 (`#k=`, never sent to a server) and sends it with the confirmation, so the passkey unlocks the app's encrypted messages
-as it does in the browser; an *unlock* request of a signed-in app ("Unlock the Tavrn app?") asks only for the passkey. Encryption works across nodes: the MLS group of a
+as it does in the browser; an *unlock* request of a signed-in app ("Unlock the tavrn app?") asks only for the passkey. Encryption works across nodes: the MLS group of a
 conversation lives on the node that hosts it, while every user's keys are checked against that user's own
 home node. Friends and DMs work by full address (`bob@other.example`); a DM lives on the home node of the
 person who starts it and shows its node's domain in the DM list; DMs started by a friend on another node

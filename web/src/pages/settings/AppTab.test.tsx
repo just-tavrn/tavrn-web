@@ -77,7 +77,7 @@ describe("AppTab: keys, tray and quit", () => {
       state,
       set: vi.fn(async () => {}),
       onAction: () => () => {},
-      status: vi.fn(async () => ({ state: "disconnected" as const, tooltip: "Tavrn", available: true, closeToTray: state.closeToTray })),
+      status: vi.fn(async () => ({ state: "disconnected" as const, tooltip: "tavrn", available: true, closeToTray: state.closeToTray })),
       setCloseToTray: vi.fn(async (on: boolean) => void (state.closeToTray = on)),
       quit: vi.fn(async () => {}),
     };
@@ -119,13 +119,13 @@ describe("AppTab: keys, tray and quit", () => {
     await u.click(box);
     expect(t.setCloseToTray).toHaveBeenCalledWith(false);
     await vi.waitFor(() => expect(box).not.toBeChecked());
-    await u.click(screen.getByRole("button", { name: "Tavrn beenden" }));
+    await u.click(screen.getByRole("button", { name: "tavrn beenden" }));
     expect(t.quit).toHaveBeenCalled();
   });
 
   it("says when the desktop has no tray", async () => {
     const t = tray();
-    t.status.mockResolvedValue({ state: "disconnected", tooltip: "Tavrn", available: false, closeToTray: false });
+    t.status.mockResolvedValue({ state: "disconnected", tooltip: "tavrn", available: false, closeToTray: false });
     withShell("keychain", "secret-service", t);
     renderWithProviders(<AppTab />);
     expect(await screen.findByTestId("app-tray-unavailable")).toBeInTheDocument();

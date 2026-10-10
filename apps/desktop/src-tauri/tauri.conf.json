@@ -15,7 +15,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Tavrn",
+        "title": "tavrn",
         "width": 1280,
         "height": 800,
         "minWidth": 360,

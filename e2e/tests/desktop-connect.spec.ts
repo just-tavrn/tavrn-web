@@ -53,7 +53,7 @@ async function appCompletes(request: APIRequestContext, s: AppSession, address: 
 
 /** The confirmation on the page: the app's device name, the warning, then "return to the app". */
 async function confirmOnPage(page: Page, address: string, deviceName: string) {
-  await expect(page.getByTestId("connect-title")).toHaveText("Bei der Tavrn-App anmelden?", { timeout: 20_000 });
+  await expect(page.getByTestId("connect-title")).toHaveText("Bei der tavrn-App anmelden?", { timeout: 20_000 });
   await expect(page.getByTestId("connect-text")).toContainText(deviceName);
   await expect(page.getByTestId("connect-text")).toContainText(address);
   await expect(page.getByTestId("connect-warning")).toBeVisible();
@@ -61,13 +61,13 @@ async function confirmOnPage(page: Page, address: string, deviceName: string) {
   // The page fits the phone width without horizontal scrolling.
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.getByTestId("connect-allow").click();
-  await expect(page.getByTestId("connect-done")).toHaveText("Du bist angemeldet. Kehre zur Tavrn-App zurück.");
+  await expect(page.getByTestId("connect-done")).toHaveText("Du bist angemeldet. Kehre zur tavrn-App zurück.");
 }
 
 test.describe("Sign-in page of the desktop app (app sessions, FEDERATION.md §8 step 3)", () => {
   test("password and TOTP on the node's page; the app polls the code and gets its own device", async ({ page, request }) => {
     const account = await registerViaApi(request, "dc");
-    const device = "Tavrn-Desktop (Test)";
+    const device = "tavrn-Desktop (Test)";
     const s = await createAppSession(request, device);
     await page.goto(s.url);
     await page.getByLabel("Benutzername", { exact: true }).fill(account.username);
@@ -226,10 +226,10 @@ test.describe("Sign-in page of the desktop app: passkeys unlock the app (sealed 
     const s = await createAppSession(request, "Desktop app");
     await page.goto(`${s.url}&method=passkey${fragment}`);
     // The passkey runs at once (no form), then the usual confirmation; the key left the address bar.
-    await expect(page.getByTestId("connect-title")).toHaveText("Bei der Tavrn-App anmelden?", { timeout: 20_000 });
+    await expect(page.getByTestId("connect-title")).toHaveText("Bei der tavrn-App anmelden?", { timeout: 20_000 });
     expect(page.url()).not.toContain("#k=");
     await page.getByTestId("connect-allow").click();
-    await expect(page.getByTestId("connect-done")).toHaveText("Du bist angemeldet, und dein Passkey entsperrt die App. Kehre zur Tavrn-App zurück.");
+    await expect(page.getByTestId("connect-done")).toHaveText("Du bist angemeldet, und dein Passkey entsperrt die App. Kehre zur tavrn-App zurück.");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     const signIn = await appReceives(request, s.id, pair);
     const exchange = await request.post(`${NODE}/api/v1/auth/connect/token`, { data: { code: signIn.code, code_verifier: s.verifier } });
@@ -248,10 +248,10 @@ test.describe("Sign-in page of the desktop app: passkeys unlock the app (sealed 
     const unlockId = (await created.json()).session_id as string;
     expect((await (await request.get(`${NODE}/api/v1/auth/connect/session/${unlockId}`)).json()).purpose).toBe("unlock");
     await page.goto(`/connect?session=${unlockId}&state=${randomBytes(16).toString("base64url")}&method=passkey${unlockKeys.fragment}`);
-    await expect(page.getByTestId("connect-title")).toHaveText("Tavrn-App entsperren?", { timeout: 20_000 });
+    await expect(page.getByTestId("connect-title")).toHaveText("tavrn-App entsperren?", { timeout: 20_000 });
     await expect(page.getByTestId("connect-text")).toContainText(address);
     await page.getByTestId("connect-unlock").click();
-    await expect(page.getByTestId("connect-done")).toHaveText("Die App ist entsperrt. Kehre zur Tavrn-App zurück.");
+    await expect(page.getByTestId("connect-done")).toHaveText("Die App ist entsperrt. Kehre zur tavrn-App zurück.");
     const unlock = await appReceives(request, unlockId, unlockKeys.pair);
     expect(unlock.code, "an unlock session never yields a sign-in code").toBeNull();
     // The unlock assertion was built by the page (not from node options) and named the node's relying party id.
