@@ -37,8 +37,14 @@ impl Drop for Server {
 }
 
 fn start_server() -> Server {
+    // A server of an earlier run may still be shutting down on the port.
+    let free = Instant::now() + Duration::from_secs(15);
+    while TcpStream::connect(("127.0.0.1", PORT)).is_ok() {
+        assert!(Instant::now() < free, "port {PORT} is taken");
+        std::thread::sleep(Duration::from_millis(200));
+    }
     let dir = std::env::temp_dir().join(format!("tavrn-voice-test-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap_or_else(|e| panic!("temp dir: {e}"));
+    std::fs::create_dir_all(&dir).unwrap_or_else(|e| unreachable!("temp dir: {e}"));
     let config = dir.join("livekit.yaml");
     std::fs::write(
         &config,
@@ -47,14 +53,14 @@ fn start_server() -> Server {
             UDP_RANGE.0, UDP_RANGE.1
         ),
     )
-    .unwrap_or_else(|e| panic!("config: {e}"));
+    .unwrap_or_else(|e| unreachable!("config: {e}"));
     let child = Command::new(std::env::var("TAVRN_LIVEKIT_BINARY").unwrap_or_else(|_| "livekit-server".into()))
         .arg("--config")
         .arg(&config)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .unwrap_or_else(|e| panic!("livekit-server could not start (on the PATH? TAVRN_LIVEKIT_BINARY?): {e}"));
+        .unwrap_or_else(|e| unreachable!("livekit-server could not start (on the PATH? TAVRN_LIVEKIT_BINARY?): {e}"));
     let server = Server(child, dir);
     let end = Instant::now() + Duration::from_secs(15);
     while TcpStream::connect(("127.0.0.1", PORT)).is_err() {
@@ -125,7 +131,8 @@ async fn join(identity: &str, room: &str, key: [u8; 32], epoch: u64, tone: f32) 
         muted: false,
         deafened: false,
     };
-    let (engine, reply) = Engine::join(args, io.clone(), Arc::new(Control::default()), tx).await.unwrap_or_else(|e| panic!("{identity} could not join: {e}"));
+    let (engine, reply) =
+        Engine::join(args, io.clone(), Arc::new(Control::default()), tx).await.unwrap_or_else(|e| unreachable!("{identity} could not join: {e}"));
     assert_eq!(reply.identity, identity);
     assert!(reply.can_speak);
     Peer { engine, io, events }

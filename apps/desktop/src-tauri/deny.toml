@@ -30,6 +30,12 @@ unused-allowed-license = "allow"
 crate = "webpki-root-certs"
 allow = ["CDLA-Permissive-2.0"]
 
+# The same bundle in the signalling stack of LiveKit's Rust SDK (the native voice engine, rustls via reqwest and
+# tokio-tungstenite): data, not code (the same exception as tavrn-node).
+[[licenses.exceptions]]
+crate = "webpki-roots"
+allow = ["CDLA-Permissive-2.0"]
+
 [advisories]
 yanked = "deny"
 # Accepted until upstream moves. Review on every dependency update.
