@@ -1114,7 +1114,8 @@ installer runs in passive mode). The signature uses a minisign key pair of the T
 2. The **public** key (the content of `tavrn-updater.key.pub`) replaces the placeholder
    `REPLACE_WITH_THE_OWNERS_MINISIGN_PUBLIC_KEY` in `apps/desktop/src-tauri/tauri.conf.json` (`plugins.updater.pubkey`)
    and is committed. Until then the app offers no updates (Settings → App says so) and the release workflow refuses
-   to build the desktop installers.
+   to build the desktop installers. The repository carries the key of the project's own releases; a fork that ships
+   its own builds replaces it with its own.
 3. The **private** key (the content of `tavrn-updater.key`) and its password become the repository secrets
    `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. They are used only by tagged release builds;
    pull requests build without them. Never commit the private key; losing it means installed apps cannot update to
