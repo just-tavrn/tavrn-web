@@ -145,6 +145,12 @@ test.describe("Accessibility (axe, WCAG 2.2 AA)", () => {
     await page.getByTestId("room-header-menu").click();
     await expect(page.getByTestId("room-menu")).toBeVisible();
     await scan(page, "room header menu");
+    // A state change keeps the menu and its submenu open (checkmarks re-rendered).
+    await page.getByTestId("room-menu").getByRole("menuitem", { name: "Benachrichtigungen" }).click();
+    await page.getByTestId("context-submenu").getByRole("menuitemcheckbox", { name: "Nur Erwähnungen" }).click();
+    await expect(page.getByTestId("context-submenu").getByRole("menuitemcheckbox", { name: "Nur Erwähnungen" })).toHaveAttribute("aria-checked", "true");
+    await scan(page, "room header menu: notifications after a change");
+    await page.keyboard.press("Escape");
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("room-menu")).toHaveCount(0);
     await page.getByTestId("presence-menu-button").click();
@@ -157,7 +163,7 @@ test.describe("Accessibility (axe, WCAG 2.2 AA)", () => {
     // Composer with the emoji picker.
     await expect(page.getByLabel("Nachricht", { exact: true })).toBeEnabled({ timeout: 20_000 });
     await page.getByRole("button", { name: "Emoji einfügen" }).click();
-    await expect(page.getByTestId("emoji-picker")).toBeVisible();
+    await expect(page.getByTestId("emoji-picker").getByRole("group", { name: "Smileys & Emotionen" })).toBeVisible();
     await scan(page, "composer: emoji picker");
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("emoji-picker")).toHaveCount(0);

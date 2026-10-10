@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { NODE, createRoomViaApi, inviteCode, loginAs, registerViaApi, type Account } from "./helpers";
+import { expectInsideViewport, isTouch } from "./menu-helpers";
 
 /**
  * Feature round 3 (design note 4.13 items 4 and 5): the emoji picker, personal emojis and sounds with the external
@@ -80,6 +81,52 @@ test.describe("Emojis, sounds and formatting (design note 4.13)", () => {
     await expect(page.getByTestId("emoji-search")).toHaveValue("feuer");
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("emoji-picker")).toHaveCount(0);
+  });
+
+  test("picker: a fixed size inside the viewport, no growth when the emoji data arrives", async ({ page, request }) => {
+    const owner = await registerViaApi(request, "size");
+    const room = await createRoomViaApi(request, owner.token, "Größen-Raum");
+    const channelId = room.channels.find((c: { kind: string }) => c.kind === "text").id as string;
+    await request.post(`${NODE}/api/v1/conversations/${channelId}/messages`, { headers: auth(owner), data: { content: { type: "text", body: "Ganz oben" } } });
+    await loginAs(page, owner);
+    // Hold the lazily imported Unicode data back, so the panel is measured before and after it arrives.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    await page.route(/emojibase-data/, async (route) => {
+      await gate;
+      await route.continue();
+    });
+    await openRoom(page, room.id);
+
+    // The composer sits at the bottom: the picker opens above it, completely visible.
+    await page.getByRole("button", { name: "Emoji einfügen" }).click();
+    const picker = page.getByTestId("emoji-picker");
+    await expectInsideViewport(page, picker);
+    await expect(picker.getByText("Lade…")).toBeVisible();
+    const before = (await picker.boundingBox())!;
+    release();
+    // All categories rendered (chunked, frame by frame): the panel kept its place and size.
+    await expect(picker.getByRole("group", { name: "Flaggen" })).toBeAttached();
+    await expect(picker.getByText("Lade…")).toHaveCount(0);
+    const after = (await picker.boundingBox())!;
+    expect(Math.round(after.height)).toBe(Math.round(before.height));
+    expect(Math.round(after.y)).toBe(Math.round(before.y));
+    await expectInsideViewport(page, picker);
+    // The grid scrolls inside the panel; the keyboard still lands in it.
+    const grid = picker.getByRole("menu");
+    expect(await grid.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+    await expect(picker.getByRole("menuitem").first()).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(picker).toHaveCount(0);
+
+    if (!isTouch()) {
+      // The reaction picker of a message near the top opens below its button, also inside the viewport.
+      const message = page.getByTestId("message").filter({ hasText: "Ganz oben" });
+      await message.hover();
+      await message.getByRole("button", { name: "Reagieren" }).click();
+      await expectInsideViewport(page, picker);
+      await page.keyboard.press("Escape");
+    }
   });
 
   test("personal emoji: upload in the settings, use it in another room, greyed out without the permission", async ({ page, request }) => {

@@ -37,6 +37,11 @@ async function toggleFullHistory(page: Page, expected: boolean) {
   await expect(item).toHaveAttribute("aria-checked", String(!expected));
   await item.click();
   await expect(page.getByText(expected ? "Der gesamte Verlauf wird auf diesem Gerät behalten" : "Auf diesem Gerät werden nur noch die letzten 90 Tage behalten")).toBeVisible();
+  // A toggle keeps the menu open with the new state; close it.
+  // (The label gains the space it takes while on.)
+  await expect(page.getByTestId("channel-menu").getByRole("menuitemcheckbox", { name: /Gesamten Verlauf auf diesem Gerät behalten/ })).toHaveAttribute("aria-checked", String(expected));
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("channel-menu")).toHaveCount(0);
   // Phones: the navigation drawer covers the conversation header; close it again.
   const overlay = page.getByRole("button", { name: "Drawer schließen" });
   if (await overlay.isVisible()) await overlay.click({ position: { x: (page.viewportSize()?.width ?? 400) - 8, y: 300 } });
