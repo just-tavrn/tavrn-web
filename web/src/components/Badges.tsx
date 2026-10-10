@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useT } from "../i18n";
-import { LockIcon, UnlockIcon } from "./icons";
+import { GroupOffIcon, LockIcon, NoEntryIcon, UnlockIcon } from "./icons";
 import { acknowledgeKeyChange, useMlsUi } from "../stores/mls";
 import { formatCount, useUnread } from "../stores/unread";
+import type { AccessMarkKind } from "../lib/channelPermissions";
 
 /**
  * Bots are always marked (design note 4.7). Webhook authors get the WEBHOOK badge (APPLICATIONS.md §1.5); every other
@@ -138,6 +139,35 @@ export function UnreadBadges({ conversationId }: { conversationId: string }) {
           {formatCount(info.unread)}
         </span>
       )}
+    </span>
+  );
+}
+
+const ACCESS_LABEL: Record<AccessMarkKind, string> = {
+  private: "channel.access.private",
+  join_private: "channel.access.join_private",
+  restricted_join: "channel.access.restricted_join",
+  restricted_read: "channel.access.restricted_read",
+};
+
+/** The translation key of an access mark's text (also used where a parent's accessible name repeats it). */
+export function accessMarkKey(kind: AccessMarkKind): string {
+  return ACCESS_LABEL[kind];
+}
+
+/**
+ * An access mark of a channel as a 16 px SVG, named and with the same text as tooltip. "Private" (a group with a
+ * slash) is structural: `@everyone` may not view the channel, or may not join the voice channel. "Restricted" (no
+ * entry) is per viewer: they see the channel but may not join or write. The lock stays the encryption mark. The glyph
+ * uses `fg-2` (at least 4.5:1 on `bg-0`…`bg-3`, above the 3:1 icons need); the name carries the meaning, not the colour.
+ */
+export function AccessMark({ kind, size = 16 }: { kind: AccessMarkKind; size?: number }) {
+  const t = useT();
+  const label = t(ACCESS_LABEL[kind]);
+  const isPrivate = kind === "private" || kind === "join_private";
+  return (
+    <span role="img" aria-label={label} title={label} className="inline-flex shrink-0 text-fg-2" data-testid={isPrivate ? "channel-private" : "channel-restricted"} data-access={kind}>
+      {isPrivate ? <GroupOffIcon size={size} /> : <NoEntryIcon size={size} />}
     </span>
   );
 }

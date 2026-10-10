@@ -58,3 +58,22 @@ export const UnlockIcon = (p: IconProps) => (
     <path d="M8 11V7a4 4 0 0 1 7.75-1.4" />
   </Svg>
 );
+
+/** "No entry" (a circle with a diagonal bar): the viewer may see a channel but not use it. */
+export const NoEntryIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M5.6 5.6l12.8 12.8" />
+  </Svg>
+);
+
+/** A group of two people with a slash: a channel only certain roles may see or join. */
+export const GroupOffIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="9" cy="8" r="3" />
+    <path d="M3 20v-1a5 5 0 0 1 9-3" />
+    <path d="M15.5 5.3a3 3 0 0 1 1.6 4.6" />
+    <path d="M18 14a5 5 0 0 1 3 5v1" />
+    <path d="M3 3l18 18" />
+  </Svg>
+);
