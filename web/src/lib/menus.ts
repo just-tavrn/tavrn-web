@@ -40,6 +40,8 @@ export interface MemberMenuContext {
   canMention: boolean;
   /** The node takes reports (`reports.v1`, MODERATION.md). */
   canReport?: boolean;
+  /** The user's rooms for "Invite to room" (`inviteRoomChoices` filters them); absent: no entry. */
+  inviteRooms?: InviteRoomCandidate[];
 }
 
 export interface MemberMenuActions {
@@ -64,6 +66,8 @@ export interface MemberMenuActions {
   /** Copy the user id (voice participant menus only; the member list keeps "copy address"). */
   copyId?: () => void;
   report?: () => void;
+  /** Sends a direct invite into the chosen room. */
+  inviteToRoom?: (room: InviteRoomCandidate) => void;
 }
 
 export function memberMenu(c: MemberMenuContext, a: MemberMenuActions, t: T): MenuEntry[] {
@@ -95,6 +99,7 @@ export function memberMenu(c: MemberMenuContext, a: MemberMenuActions, t: T): Me
     !c.self && menuItem("message", t("menu.member.message"), a.message, { icon: "✉" }),
     !c.self && menuItem("call", t("menu.member.call"), a.call, { icon: "📞", disabled: !c.callsAvailable, reason: c.callsAvailable ? undefined : t("menu.reason.calls_soon") }),
     !c.self && !c.friend && menuItem("add-friend", c.friendPending ? t("menu.member.friend_pending") : t("menu.member.add_friend"), a.addFriend, { icon: "＋", disabled: c.friendPending, reason: c.friendPending ? t("menu.member.friend_pending") : undefined }),
+    !c.self && !c.target.bot && c.inviteRooms && a.inviteToRoom && inviteToRoomEntry(c.inviteRooms, c.target.address, a.inviteToRoom, t),
     c.canMention && menuItem("mention", t("menu.member.mention"), a.mention, { icon: "@" }),
     menuItem("copy-address", t("menu.copy_address"), a.copyAddress, { icon: "⧉" }),
     a.copyId && menuItem("copy-id", t("menu.copy_id"), a.copyId, { icon: "#" }),
@@ -121,6 +126,45 @@ export function memberMenu(c: MemberMenuContext, a: MemberMenuActions, t: T): Me
     !c.self && c.canReport && a.report && menuItem("report", t("menu.member.report"), a.report, { icon: "⚑" }),
     !c.self && menuItem("block", t("menu.member.block"), a.block, { icon: "🚫", danger: true }),
   ]);
+}
+
+// ---- Invite to room (friends and members) ----------------------------------------------------
+
+/** A room the user is in, as a target of a direct invite (FEDERATION.md §3.4). */
+export interface InviteRoomCandidate {
+  id: string;
+  name: string;
+  /** The room's node; null = the home node. */
+  node: string | null;
+  /** Room-wide permissions from the cached room detail; null while it is not loaded. */
+  perms: bigint | null;
+  isOwner: boolean;
+  /** Addresses of the room's members, when the client has its member list cached. */
+  members?: readonly string[] | null;
+}
+
+/**
+ * The rooms "Invite to room" offers for `target`: those where the user may create invites (owner, administrator
+ * or `create_invites`), without the rooms the target is known to be in and those in `exclude` (the current room
+ * of a member menu), sorted by name. The node checks the same again.
+ */
+export function inviteRoomChoices(rooms: readonly InviteRoomCandidate[], target: string, exclude: readonly string[] = []): InviteRoomCandidate[] {
+  return rooms
+    .filter((r) => !exclude.includes(r.id) && r.perms !== null && !r.members?.includes(target))
+    .filter((r) => r.isOwner || hasPermission(r.perms!, Permission.CREATE_INVITES) || hasPermission(r.perms!, Permission.ADMINISTRATOR))
+    .sort((x, y) => x.name.localeCompare(y.name) || x.id.localeCompare(y.id));
+}
+
+/** The "Invite to room" submenu (null when no room qualifies); choosing a room sends the invite and closes the menu. */
+export function inviteToRoomEntry(rooms: readonly InviteRoomCandidate[], target: string, invite: (room: InviteRoomCandidate) => void, t: T, exclude: readonly string[] = []): MenuEntry | null {
+  const choices = inviteRoomChoices(rooms, target, exclude);
+  if (!choices.length) return null;
+  return submenu(
+    "invite-room",
+    t("menu.invite_room"),
+    choices.map((r) => menuItem(`invite-room-${r.id}`, r.name, () => invite(r), r.node ? { hint: r.node } : {})),
+    { icon: "✉" },
+  );
 }
 
 // ---- Voice participants without a loaded member ---------------------------------------------
