@@ -7,7 +7,7 @@ signing in, updates, development and tests) is in [docs/DESKTOP.md](../../docs/D
 
 | Path | What |
 |---|---|
-| `src/main/` | the main process, one module per concern (`index.ts` lifecycle, `windows.ts`, `protocol.ts` the `app://tavrn` scheme, `csp.ts`, `guard.ts`, `config.ts`, `node_url.ts`, `ipc.ts`, `events.ts`, `shell.ts`), unit tests next to them (`*.test.ts`, `node --test`) |
+| `src/main/` | the main process, one module per concern (`index.ts` lifecycle, `windows.ts`, `protocol.ts` the `app://tavrn` scheme, `csp.ts`, `guard.ts`, `config.ts`, `node_url.ts`, `ipc.ts`, `events.ts`, `shell.ts`, `keychain.ts`, `notify.ts`, `tray.ts` with `tray_icon.ts`, `downloads.ts`), unit tests next to them (`*.test.ts`, `node --test`) |
 | `src/preload/` | the preload: `window.tavrnShell`, typed by the client's `web/src/platform/electronBridge.ts` |
 | `src/shared/bridge.ts` | the bridge's methods and IPC channels, shared by the preload and the main process |
 | `e2e/` | the Playwright smoke test (Playwright's Electron driver, under `xvfb-run`) |

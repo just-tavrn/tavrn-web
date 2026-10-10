@@ -123,7 +123,9 @@ storage key*, which is derived from the master secret and the device id. A brows
   the groups), and everything else of the store stays as in the browser. IndexedDB then holds ciphertext only.
 - **Where:** the Secret Service on Linux (GNOME Keyring, KWallet), the Credential Manager on Windows, the Keychain on
   macOS later; through the keyring crates (`keyring-core` with `zbus-secret-service-keyring-store`,
-  `windows-native-keyring-store`, `apple-native-keyring-store`), off the main thread.
+  `windows-native-keyring-store`, `apple-native-keyring-store`), off the main thread. The Linux app (Electron) keeps the
+  key with Electron's `safeStorage` under a secret in the same keyring: [Keys in the keychain
+  (Electron)](#keys-in-the-keychain-electron).
 - **Entries:** service `org.tavrn.desktop`, user `local-key/<home node origin>/<account address>`. The shell takes the
   node from its settings file, never from the page, and accepts only plain account addresses and 32-byte values.
 - **Migration:** on the first start of a store of the browser kind (a key in IndexedDB) the client writes the key into
@@ -156,7 +158,8 @@ messages show a fixed text, never their content. Settings → Notifications has 
 notifications while tavrn is in the background"); the web push section and the browser permission switch are not shown
 in the app, and the app never registers a service worker or a push subscription.
 
-The shell shows them with notify-rust (the backend of tauri-plugin-notification; the plugin itself offers no click
+The Linux app shows them with Electron's `Notification` ([Notifications (Electron)](#notifications-electron)); the Tauri
+shell (Windows, macOS) shows them with notify-rust (the backend of tauri-plugin-notification; the plugin itself offers no click
 events on desktop and would replace the webview's `Notification` with an IPC bridge that needs plugin permissions):
 
 | Platform | Shown by | Click |
@@ -170,7 +173,8 @@ events on desktop and would replace the webview's `Notification` with an IPC bri
 The webview of the app (WebView2, WebKitGTK) does nothing with the blob downloads a browser handles, so every download
 of the client (attachments, files channels, the data export, recovery keys and codes, whiteboard images) goes through
 one entry point, `saveFile({ name, data, mime })` in `web/src/platform/saveFile.ts`. In the browser it is the anchor
-download of before; in the app the shell shows the native save dialog and writes the file (`src-tauri/src/download.rs`):
+download of before; in the app the shell shows the native save dialog and writes the file (the Tauri shell's `src-tauri/src/download.rs`
+below; the Linux app's `downloads.ts` has the same methods, see [Downloads (Electron)](#downloads-electron)):
 
 | Command | What it does |
 |---|---|
@@ -212,7 +216,8 @@ Mute microphone, Deafen, Leave voice channel, Quit tavrn; a left click on Window
 keeps running (voice, notifications). The tray menu brings it back, and so does starting the app again (a second start
 shows the running app instead of opening another one; on Linux this needs the D-Bus session bus). Quit is in the tray
 menu and in Settings → App, where close to tray can be turned off. GNOME shows tray icons only with the AppIndicator
-extension; without it, start the app again to get the window back.
+extension; without it, start the app again to get the window back. The Linux app draws the same icons in its Electron
+shell ([Tray and close to tray (Electron)](#tray-and-close-to-tray-electron)).
 
 ## Icons
 
@@ -476,9 +481,8 @@ Tauri shell wherever this document describes a behaviour; this section names wha
 
 **Not yet in the Electron shell** (the bridge has these methods, and they reject with `not implemented: <method>`
 until their part lands): the address-first node picker's resolver (`resolveNode`; the advanced node URL works), the
-sign-in window (`openConnect`, `closeConnect`), updates, the keychain, native notifications, the tray, downloads through
-the save dialog, the system-wide hotkeys and the screen-share picker. The client copes: the keychain falls back to
-IndexedDB with the warning of Settings → App, the hotkeys say that they cannot be registered.
+sign-in window (`openConnect`, `closeConnect`), updates, the system-wide hotkeys and the screen-share picker. The client
+copes: the hotkeys say that they cannot be registered.
 
 ### Layout
 
@@ -493,6 +497,10 @@ IndexedDB with the warning of Settings → App, the hotkeys say that they cannot
 | `src/main/ipc.ts` | the registry of the bridge's IPC channels: sender check, argument checks, handlers |
 | `src/main/events.ts` | the shell's events for the client (one channel) |
 | `src/main/shell.ts` | the `shell` namespace: settings, version, external links |
+| `src/main/keychain.ts` | the `keychain` namespace: the local storage keys over `safeStorage` ([Keys in the keychain](#keys-in-the-keychain-electron)) |
+| `src/main/notify.ts` | the `notify` namespace: native notifications and their clicks ([Notifications](#notifications-electron)) |
+| `src/main/tray.ts`, `tray_icon.ts` | the `tray` namespace, the tray icon and its menu, close to tray; the badged icons drawn from the logo ([Tray](#tray-and-close-to-tray-electron)) |
+| `src/main/downloads.ts` | the `files` namespace: the save dialog, chunked writes, the safety net ([Downloads](#downloads-electron)) |
 | `src/preload/` | `window.tavrnShell` (`index.ts` composes the namespaces, `invoke.ts` the calls, `events.ts` the subscription) |
 | `src/shared/bridge.ts` | the bridge's methods and channels, used by the preload and the main process |
 | `e2e/` | the Playwright smoke test |
@@ -536,6 +544,77 @@ Tauri shell's `config.json` (`node`, `web`, `domain`, `close_to_tray`) and the s
 means "no node yet", a stored node that no longer passes the validation is dropped, writes are atomic. The same
 directory holds Chromium's profile of the app (the client's IndexedDB and local storage) and the single-instance lock.
 
+### Keys in the keychain (Electron)
+
+The same entries, rules and lifecycle as [Keys in the OS keychain](#keys-in-the-os-keychain): one 32-byte local storage
+key per account, named `local-key/<home node origin>/<account address>` with the node taken from the settings file,
+never from the page; `keychain.invalid`, `keychain.no_node`, `keychain.unavailable` and `keychain.corrupt` as refusals;
+Settings → App shows the backend (`secret-service`) or the fallback warning.
+
+**Backend: Electron's `safeStorage`.** Chromium keeps one random secret of the app in the desktop's keyring (the Secret
+Service through libsecret: GNOME Keyring, KeePassXC, KWallet's Secret Service; on KDE KWallet directly) and encrypts
+with it; the shell stores the encrypted keys in `keychain.json` of the profile directory (`~/.config/tavrn-desktop/`,
+mode 0600, written atomically). That keeps the property of the Tauri shell: the files of the profile alone open nothing
+(the IndexedDB holds ciphertext under the local storage key, `keychain.json` holds that key under the keyring's
+secret). It needs no native module (a direct Secret Service library for Node would be one, built per Electron version)
+and works headless with gnome-keyring in a D-Bus session. Two details make it as strict as the Tauri shell:
+
+- Chromium falls back to a fixed, built-in key when no keyring answers (ciphertext prefix `v10`; its asynchronous API
+  even reports itself available then). The shell writes only `v11` ciphertext, a key from the keyring, and treats
+  everything else as "no keychain", so the client keeps the key in IndexedDB with the warning, exactly the fallback of
+  the Tauri shell.
+- Chromium picks the keyring by the desktop and uses the fixed key on desktops it does not know (sway, Hyprland, i3,
+  a bare X session). The shell asks for the Secret Service on every desktop except KDE (`--password-store=gnome-libsecret`,
+  unless the user passed a `--password-store` of their own), as the Tauri shell does everywhere.
+
+Differences that are not user-visible: the keyring holds one entry for the app ("tavrn Safe Storage") instead of one per
+account; the entries of the Tauri shell (service `org.tavrn.desktop`) are not read, which does not matter because the two
+shells have separate web profiles anyway (a switch of shells signs in on a new device, like a new browser). A keyring
+secret that was deleted by hand makes the stored keys unreadable (`keychain.corrupt`): the store then locks until the
+recovery key or a passkey unlocks it, as with a deleted entry in the Tauri shell. `TAVRN_DESKTOP_KEYCHAIN=memory` and
+`=unavailable` work as in the Tauri shell.
+
+### Notifications (Electron)
+
+Electron's `Notification` (libnotify, the desktop's notification server over D-Bus) with the Tauri shell's fields and
+checks: title (at most 200 characters), body (at most 1000), an optional path of the client (at most 512 bytes, inside
+the client, no whitespace or control characters; otherwise `notify.invalid`), the app icon. The client decides when
+(the window is not focused), as before. A click on the notification (the server's default action) brings the main
+window to the front, also out of the tray, and the client opens the path. At most 16 notifications wait for their click
+at once (each is kept referenced until it is clicked or closed); later ones are shown without one. Without a
+notification server nothing is shown and the call still succeeds.
+
+### Tray and close to tray (Electron)
+
+The same icons, tooltip, menu and rules as [Tray and close to tray](#tray-and-close-to-tray): the five icons are drawn
+at start from the Tauri app's `icons/128x128@2x.png` by a port of its drawing code (`tray_icon.ts`, the same unit tests
+on the same logo), the menu has Show/Hide tavrn, Mute microphone, Deafen, Leave voice channel and Quit tavrn in the
+client's language, the voice items reach the client as tray actions, close to tray is on by default (only while there is
+a tray icon) and Quit ends the app. A left click on the icon shows the window, a right click opens the menu.
+
+Electron's tray speaks the StatusNotifierItem protocol on Linux, like the libayatana-appindicator of the Tauri shell:
+KDE, Xfce, Cinnamon, MATE, Budgie, Ubuntu's GNOME session and GNOME with the AppIndicator extension show it. Plain GNOME
+without the extension shows no icon (Electron then has nowhere to put it, the app keeps running); start the app again to
+get the window back. Under xvfb (the smoke test) the icon is created but nothing displays it, so the test reads the
+tray's state through `trayStatus`.
+
+### Downloads (Electron)
+
+The `files` namespace behaves like the Tauri commands of [Downloads](#downloads): `saveFileBegin(name, mime, size)`
+shows the native save dialog (the cleaned name as suggestion, a filter for its extension; it opens in the directory used
+last, at first in Downloads) and answers `{ status: "ready", id }` or `{ status: "cancelled" }`, at most 8 saves at once;
+`saveFileChunk(id, bytes)` appends at most 4 MiB (more than the announced size: `download.too_large`) to a temporary
+file next to the target, readable by the user only; `saveFileEnd(id)` checks the size, flushes and renames it into place
+and answers the path and its folder's name; `saveFileAbort(id)` removes it; `saveFileReveal(id)` shows the file in the
+file manager (`shell.showItemInFolder`). Temporary files of saves still running when the app quits are removed. The
+client's "Saved to \<folder>" toast with **Show in folder** works unchanged.
+
+The safety net: a download the main window starts itself (an `<a download>`, a navigation to a file) arrives at the
+session's `will-download` and gets the same save dialog (Electron's own, with the same options); downloads of any other
+web contents, and of schemes other than blob, data, http(s) and the app's own, are cancelled.
+`TAVRN_DESKTOP_TEST_SAVE_DIR=<dir>` saves into that directory without a dialog, never overwriting (`name (1).ext`), for
+both paths.
+
 ### Development and tests (Electron)
 
 Requirements: the web client's (Node.js 24, pnpm); for the smoke test `xvfb-run`. Electron's binary is not downloaded
@@ -555,8 +634,14 @@ remove it.
   file and `setNode` (the Tauri shell's cases), the CSP against `tauri.conf.json`, the `app://tavrn` handler (types,
   caching, routes, 404s, no way out of the bundle, streaming), the navigation, new-window, external-link and
   permission decisions, the dev server URL, the IPC registry (every channel registered, sender and argument checks,
-  refusals as values, not implemented), the events and the `shell` handlers.
-- Vitest (`web/src/platform/electron.test.ts`, `index.test.ts`): the detection, the detection order, and the binding
+  refusals as values, not implemented), the events and the `shell` handlers; the keychain (the Tauri shell's cases,
+  the memory and unavailable modes, the `safeStorage` store with a fake cipher: only ciphertext in the file, a
+  foreign keyring secret opens nothing, the fixed fallback key counts as no keychain, the password-store switch),
+  notifications (validation, the click path, the limit), the tray (states, menu, labels, close to tray, the
+  handlers) and its icons (the Tauri shell's drawing tests on the same logo, the PNG codec), downloads (the chunk
+  writer, names that cannot leave the directory, the test hook, the safety net, 100 MB in 4 MiB pieces through the
+  handlers with a fake dialog).
+- Vitest (`web/src/platform/electron.test.ts`, `electronFiles.test.ts`, `index.test.ts`): the detection, the detection order, and the binding
   with a fake bridge (node choice, delegation, refusals, external links, updater, hotkeys, events, keychain, tray,
   downloads in 4 MiB pieces).
 - Playwright (`apps/desktop-electron/e2e/smoke.spec.ts`, Playwright's Electron driver, no WebDriver): the app starts on
@@ -565,7 +650,23 @@ remove it.
   the shell stores it and the app reaches the login page (screenshot in `apps/desktop-electron/test-results/`). The
   node runs in development mode with a fresh database in `data-dev/electron-<port>`; the app gets its own
   `XDG_CONFIG_HOME`, always on xvfb's X display (`WAYLAND_DISPLAY` removed, `--ozone-platform=x11`), so no window
-  appears on the desktop.
+  appears on the desktop. `e2e/electron-services.spec.ts`: a key survives a restart of the app in the real keyring
+  (skipped without a Secret Service in the session, see below), a notification's click brings the hidden window back
+  and the page receives its path (xvfb has no notification server: the test replaces `Notification` in the main
+  process by a recorder and clicks that, so the shell's real click path runs), the client's voice state and texts
+  reach the tray, close to tray hides the window, the setting is persisted and Quit ends the app, a save goes into
+  `TAVRN_DESKTOP_TEST_SAVE_DIR` byte for byte, "show in folder" names exactly that file (the file manager replaced by a
+  recorder) and the page's own `<a download>` lands there too.
+
+The keychain step with the real keyring runs the recipe in a D-Bus session of its own with an unlocked gnome-keyring
+(as the Tauri workflow's "The real Linux keychain" step), so nothing touches the keyring of the desktop session:
+
+```sh
+xvfb-run -a dbus-run-session -- bash -c 'echo e2e-keyring | gnome-keyring-daemon --components=secrets --daemonize --unlock >/dev/null &&
+  cd apps/desktop-electron && env -u WAYLAND_DISPLAY -u ELECTRON_RUN_AS_NODE E2E_NODE_BIN=/path/to/tavrn-node pnpm exec playwright test --config e2e/playwright.config.ts'
+```
+
+(set `XDG_DATA_HOME` to a scratch directory around it to keep the test keyring's files out of `~/.local/share/keyrings`).
 
 The app reads `TAVRN_DESKTOP_DEV_URL` (development runs only). The Tauri shell's test hooks keep their names where the
 feature exists in the Electron shell (`TAVRN_DESKTOP_KEYCHAIN`, `TAVRN_DESKTOP_TEST_SAVE_DIR`); `TAVRN_DESKTOP_FAKE_AUDIO`
