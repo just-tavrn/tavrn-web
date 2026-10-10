@@ -1,9 +1,20 @@
 # The desktop app
 
-The desktop app is a [Tauri 2](https://v2.tauri.app) shell around the web client: the same React client, bundled into
-an installable app for Linux (`.deb`, `.AppImage`) and Windows (`.msi`, NSIS `.exe`), that updates itself with signed
-releases; macOS is not supported yet. It lives in [`apps/desktop`](../apps/desktop): the pnpm package `@tavrn/desktop` (the
-Tauri CLI) and the Rust crate `tavrn-desktop` in `apps/desktop/src-tauri` with a Cargo workspace of its own.
+The desktop app is a shell around the web client: the same React client, bundled into an installable app for Linux
+(`.deb`, `.AppImage`) and Windows (`.msi`, NSIS `.exe`), that updates itself with signed releases; macOS is not
+supported yet. There are two shells:
+
+- **Tauri (Windows, macOS)**: a [Tauri 2](https://v2.tauri.app) shell in [`apps/desktop`](../apps/desktop), the pnpm
+  package `@tavrn/desktop` (the Tauri CLI) and the Rust crate `tavrn-desktop` in `apps/desktop/src-tauri` with a Cargo
+  workspace of its own. It also builds the Linux packages until the Electron shell replaces them in the releases.
+- **Electron (Linux)**: an [Electron](https://www.electronjs.org) shell in
+  [`apps/desktop-electron`](../apps/desktop-electron), the pnpm package `@tavrn/desktop-electron` ("The Linux shell
+  (Electron)" below). The distributions' WebKitGTK has no WebRTC ("The webview's own WebRTC on Linux"), so the Tauri app
+  on Linux needs a native voice engine and would need every video feature built twice; Chromium brings voice, video,
+  screen sharing (PipeWire on Wayland), the soundboard and background effects with the client unchanged.
+
+Both shells run the same client and behave alike wherever this document describes a behaviour; sections that apply to
+one shell only say so.
 
 ## What the app is
 
@@ -21,6 +32,8 @@ Tauri CLI) and the Rust crate `tavrn-desktop` in `apps/desktop/src-tauri` with a
 
 ### Security of the shell
 
+The Tauri shell's properties; the Electron shell's are in "Security of the shell (Electron)".
+
 | What | Where |
 |---|---|
 | The main window shows only the bundled client: `tauri://localhost` (Linux), `https://tauri.localhost` (Windows), in development the Vite dev server. Every other navigation is refused; web links (http, https, mailto) open in the system browser, new windows are never opened. The click-to-play embeds load in their frames. | `src-tauri/src/guard.rs`, `src/lib.rs` |
@@ -35,10 +48,14 @@ Unit tests in `src-tauri/src/conf_tests.rs` keep these properties of `tauri.conf
 
 ### The platform layer of the client
 
-`web/src/platform/` decides where the client's node lives. The interface `Platform` (`types.ts`) has two
-implementations: `browser.ts` (today's behaviour: the node is the origin the client was loaded from) and `tauri.ts`
-(the desktop app), detected at start with `isTauri()` from `@tauri-apps/api` and loaded lazily, so the browser never
-runs Tauri code. Everything that imports Tauri APIs lives under `platform/tauri*`.
+`web/src/platform/` decides where the client's node lives. The interface `Platform` (`types.ts`) has three
+implementations: `browser.ts` (today's behaviour: the node is the origin the client was loaded from), `tauri.ts` (the
+Tauri shell), detected at start with `isTauri()` from `@tauri-apps/api`, and `electron.ts` (the Electron shell),
+detected by the bridge its preload exposes (`electronDetect.ts`). `initPlatform` tries Tauri, then Electron; both are
+loaded lazily, so the browser never runs shell code. Everything that imports Tauri APIs lives under `platform/tauri*`;
+the Electron shell is reached only through `window.tavrnShell` (`platform/electron*`). Both report `kind: "desktop"`:
+the client does not care which shell it runs in. The table names the Tauri commands; the Electron bridge has the same
+methods in camelCase.
 
 | Member | Browser | Desktop |
 |---|---|---|
@@ -87,8 +104,9 @@ the home node as you open it in the browser (`https://tavrn.example`; without a 
 - the node must answer its discovery document (`/.well-known/tavrn`) with its domain (`localhost` for a development
   node);
 - the shell validates the address again and stores it in `config.json` in the app's config directory
-  (Linux `~/.config/org.tavrn.desktop/`, Windows `%APPDATA%\org.tavrn.desktop\`). A missing or corrupt file means
-  "no node yet"; a stored address that no longer passes the validation is dropped.
+  (Linux `~/.config/org.tavrn.desktop/`, Windows `%APPDATA%\org.tavrn.desktop\`; the Electron shell:
+  `~/.config/tavrn-desktop/settings.json`, same schema). A missing or corrupt file means "no node yet"; a stored address
+  that no longer passes the validation is dropped.
 
 **Settings → App** (only in the app) shows the version, the node with "Change node" (the picker again; changing the
 node signs out of the old one first), the updates, where the keys of this device are kept, close to tray and Quit.
@@ -449,6 +467,109 @@ What the browser gets from "the client is served by the node" and what the app d
 | Popping out the whiteboard, "open original" in the media viewer | not offered | the app opens no window for content (only the sign-in window); maximize and the download icon cover it. |
 | The terms and other pages that open in a new tab | open on the node's web client in the system browser | the app opens no window for content. |
 | Updates while the repository is private | do not download | the updater fetches `latest.json` and the installers from the public release URLs. |
+
+## The Linux shell (Electron)
+
+The Linux app is an Electron shell around the same bundled client ([`apps/desktop-electron`](../apps/desktop-electron),
+Electron pinned to an exact version of the newest stable major, packages by electron-builder). It behaves like the
+Tauri shell wherever this document describes a behaviour; this section names what is specific to it.
+
+**Not yet in the Electron shell** (the bridge has these methods, and they reject with `not implemented: <method>`
+until their part lands): the address-first node picker's resolver (`resolveNode`; the advanced node URL works), the
+sign-in window (`openConnect`, `closeConnect`), updates, the keychain, native notifications, the tray, downloads through
+the save dialog, the system-wide hotkeys and the screen-share picker. The client copes: the keychain falls back to
+IndexedDB with the warning of Settings → App, the hotkeys say that they cannot be registered.
+
+### Layout
+
+| Path | What |
+|---|---|
+| `src/main/index.ts` | app lifecycle: the `app` scheme registered before start, the profile directory, one instance per user (a second start shows the running window), the IPC registry, the session's permission handlers, the main window |
+| `src/main/windows.ts` | the main window (1280×800, at least 360×560, title "tavrn", no menu bar) and its navigation guards |
+| `src/main/protocol.ts` | `app://tavrn`: the bundled `web/dist` (inside the asar archive) with its content types; `index.html` for document requests of the client's routes; `Cache-Control: immutable` for Vite's hashed `assets/`, `no-cache` for the rest; the Content Security Policy on every document |
+| `src/main/csp.ts` | the policy (the Tauri shell's, see the table below) |
+| `src/main/guard.ts` | the decisions of navigations, new windows, external links, permissions and the dev server URL (pure functions, unit-tested) |
+| `src/main/config.ts`, `node_url.ts` | the settings file and the node URL rules (the Tauri shell's `config.rs` and `node_url.rs`, with their test cases) |
+| `src/main/ipc.ts` | the registry of the bridge's IPC channels: sender check, argument checks, handlers |
+| `src/main/events.ts` | the shell's events for the client (one channel) |
+| `src/main/shell.ts` | the `shell` namespace: settings, version, external links |
+| `src/preload/` | `window.tavrnShell` (`index.ts` composes the namespaces, `invoke.ts` the calls, `events.ts` the subscription) |
+| `src/shared/bridge.ts` | the bridge's methods and channels, used by the preload and the main process |
+| `e2e/` | the Playwright smoke test |
+| `electron-builder.config.mjs` | the `.AppImage` and `.deb` packages, Electron's fuses |
+
+### The bridge
+
+The preload exposes one object to the bundled client, `window.tavrnShell`, with `kind: "electron"` and
+`window: "main"` (the only window with a preload) and the namespaces `shell`, `updater`, `files`, `keychain`, `notify`,
+`tray`, `hotkeys` and `events`. Its TypeScript shape is `TavrnShellBridge` in the client
+([`web/src/platform/electronBridge.ts`](../web/src/platform/electronBridge.ts), types only, without imports); the
+preload type-checks against it through a path alias of its `tsconfig.json` (`@tavrn/web/electronBridge`), and a
+compile-time check keeps the method list of `src/shared/bridge.ts` equal to it. The method names are the Tauri
+commands' in camelCase (`get_config` → `shell.getConfig`, `save_file_chunk` → `files.saveFileChunk`), with the same
+arguments in the same order and the same answers; a refusal rejects with the value the Tauri command rejects with (an
+error code such as `node_url.insecure`, or the resolve failure object). The Tauri shell's two event channels
+(`shell_events`: notification clicks and tray actions; `listen_hotkeys`: presses and releases) arrive through
+`events.subscribe(handler)` as `{ channel: "shell_events" | "hotkeys", event }` with their payloads unchanged.
+
+Every method is one IPC channel, `tavrn:<namespace>.<method>`; the main process listens to all of them
+(`src/main/ipc.ts`) and answers `{ ok, value }` or `{ ok: false, error }`. A part of the shell registers its handlers
+with `IpcRegistry.handle(namespace, method, argumentCheck, handler)`. The preload is bundled into one CommonJS file
+(`vite.preload.config.ts`): a sandboxed preload cannot load other files.
+
+### Security of the shell (Electron)
+
+| What | Where |
+|---|---|
+| The main window shows only the bundled client: `app://tavrn`, a standard and secure custom scheme (own origin, secure context) that serves `web/dist` from the app's asar archive; `file://` is never used. In development the Vite dev server instead (`TAVRN_DESKTOP_DEV_URL`, only `http://localhost` or `http://127.0.0.1`, ignored by a packaged app). Every other navigation of the window and its frames is refused (`will-frame-navigate`, `will-redirect`); web links (http, https, mailto) open in the system browser, new windows are never opened (`setWindowOpenHandler`), `<webview>` is refused. The click-to-play embeds load in their frames. | `src/main/guard.ts`, `windows.ts`, `protocol.ts` |
+| Content Security Policy: the Tauri shell's without its IPC origins (a unit test compares both), sent with every document of `app://tavrn`: scripts only from the bundle (`script-src 'self' 'wasm-unsafe-eval'`, no eval, no inline scripts, no third-party scripts), `connect-src` https and wss to any node plus plain http/ws to `localhost` and `127.0.0.1`, images and media from https, frames only for the embed providers. The Vite dev server runs without it (its hot reload needs inline scripts). | `src/main/csp.ts`, `protocol.ts` |
+| The renderer: `contextIsolation`, `sandbox`, no Node integration (also not in frames and workers), `webSecurity`, no insecure content, no `<webview>`, DevTools only in development; no application menu. The page never sees `ipcRenderer`, `require` or `process` (the smoke test checks). | `src/main/windows.ts`, `src/preload/` |
+| The bridge: only the main window's top frame showing the bundled client may call it (`event.sender` and `event.senderFrame` checked, its URL must be the app's), so the embeds cannot; every method's arguments are checked before its handler runs (hand-written guards: types, lengths, ranges, exact arity, no unknown fields; refused with `ipc.invalid_arguments`). Event subscribers get the payload only, never Electron's IPC event. | `src/main/ipc.ts`, `index.ts`, `src/preload/` |
+| Permissions: the microphone and the camera (`media`) are granted to the main window's own pages without a prompt, as are writing to the clipboard, fullscreen and choosing the speaker (the client's copy buttons, fullscreen video and output device; the Tauri shell's webviews allow them by default); everything else is denied, for every page, and so are device permissions (HID, USB, serial). | `src/main/guard.ts`, `index.ts` |
+| The node URL is validated twice: in the client and again in the shell before it is stored. | `web/src/platform/nodeUrl.ts`, `src/main/node_url.ts` |
+| Electron's fuses in the packages: no `ELECTRON_RUN_AS_NODE`, no `NODE_OPTIONS`, no `--inspect`, the app only from `app.asar`, embedded asar integrity validation (Electron enforces it on macOS and Windows; on Linux it has no effect yet), cookie encryption, no extra privileges for `file://`. | `electron-builder.config.mjs` |
+
+### Settings and profile
+
+The settings file is `~/.config/tavrn-desktop/settings.json` (`$XDG_CONFIG_HOME/tavrn-desktop/`) with the schema of the
+Tauri shell's `config.json` (`node`, `web`, `domain`, `close_to_tray`) and the same rules: a missing or corrupt file
+means "no node yet", a stored node that no longer passes the validation is dropped, writes are atomic. The same
+directory holds Chromium's profile of the app (the client's IndexedDB and local storage) and the single-instance lock.
+
+### Development and tests (Electron)
+
+Requirements: the web client's (Node.js 24, pnpm); for the smoke test `xvfb-run`. Electron's binary is not downloaded
+by `pnpm install`: the first start fetches the pinned version from Electron's GitHub releases into `~/.cache/electron`
+(`node apps/desktop-electron/node_modules/electron/install.js` does it ahead). An environment that exports
+`ELECTRON_RUN_AS_NODE` (some editors and tools do) makes the binary behave as plain Node; the recipes and the harness
+remove it.
+
+| Recipe | What it does |
+|---|---|
+| `just electron-dev` | the client's Vite dev server (`E2E_WEB_PORT`, default 5173) and the app in development mode on it (`TAVRN_DESKTOP_DEV_URL`); restart it after changing the shell |
+| `just electron-check` | `tsc` (main process, preload against the client's bridge types, harness), `node --test` of the main-process modules, SPDX headers and dependency licenses; typecheck and tests also run in `just check` |
+| `just electron-package` | `web/dist`, then the `.AppImage` and `.deb` in `apps/desktop-electron/release/` |
+| `just electron-e2e` | the Playwright smoke test under `xvfb-run` (`E2E_NODE_BIN` or `E2E_NODE_URL`, port `E2E_NODE_PORT`, default 8300) |
+
+- `node --test` (`src/main/*.test.ts`, run as TypeScript by Node): node URL validation and node domains, the settings
+  file and `setNode` (the Tauri shell's cases), the CSP against `tauri.conf.json`, the `app://tavrn` handler (types,
+  caching, routes, 404s, no way out of the bundle, streaming), the navigation, new-window, external-link and
+  permission decisions, the dev server URL, the IPC registry (every channel registered, sender and argument checks,
+  refusals as values, not implemented), the events and the `shell` handlers.
+- Vitest (`web/src/platform/electron.test.ts`, `index.test.ts`): the detection, the detection order, and the binding
+  with a fake bridge (node choice, delegation, refusals, external links, updater, hotkeys, events, keychain, tray,
+  downloads in 4 MiB pieces).
+- Playwright (`apps/desktop-electron/e2e/smoke.spec.ts`, Playwright's Electron driver, no WebDriver): the app starts on
+  `app://tavrn` in a secure context with the bridge and nothing of Node, the CSP blocks an inline script, a missing
+  part of the shell says "not implemented", the node picker refuses `http://evil`, takes the development node's URL,
+  the shell stores it and the app reaches the login page (screenshot in `apps/desktop-electron/test-results/`). The
+  node runs in development mode with a fresh database in `data-dev/electron-<port>`; the app gets its own
+  `XDG_CONFIG_HOME`, always on xvfb's X display (`WAYLAND_DISPLAY` removed, `--ozone-platform=x11`), so no window
+  appears on the desktop.
+
+The app reads `TAVRN_DESKTOP_DEV_URL` (development runs only). The Tauri shell's test hooks keep their names where the
+feature exists in the Electron shell (`TAVRN_DESKTOP_KEYCHAIN`, `TAVRN_DESKTOP_TEST_SAVE_DIR`); `TAVRN_DESKTOP_FAKE_AUDIO`
+has no counterpart: Chromium's fake devices (`--use-fake-device-for-media-stream`) replace it.
 
 ## Development
 

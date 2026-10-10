@@ -22,12 +22,14 @@ single-page app that works on phones, tablets and desktops, in English and Germa
 |---|---|
 | [`web/`](web) | `@tavrn/web`: the client (`src/`), its static assets and generated icons (`public/`), translations (`src/i18n/`), Vitest tests next to the code |
 | [`e2e/`](e2e) | `@tavrn/e2e`: the Playwright suite (`tests/`), its fixtures (a fake OpenID provider, the example bot) and `playwright.config.ts` |
-| [`apps/desktop/`](apps/desktop) | `@tavrn/desktop`: the desktop app, a Tauri 2 shell around the client (Rust crate `tavrn-desktop` in `src-tauri/` with its own Cargo workspace, the WebDriver smoke test in `e2e/`) |
+| [`apps/desktop/`](apps/desktop) | `@tavrn/desktop`: the desktop app for Windows (and macOS later), a Tauri 2 shell around the client (Rust crate `tavrn-desktop` in `src-tauri/` with its own Cargo workspace, the WebDriver smoke test in `e2e/`) |
+| [`apps/desktop-electron/`](apps/desktop-electron) | `@tavrn/desktop-electron`: the desktop app for Linux, an Electron shell around the client (TypeScript main process and preload, the Playwright smoke test in `e2e/`) |
 | [`docs/`](docs) | [CLIENT.md](docs/CLIENT.md) (what the client does), [DESKTOP.md](docs/DESKTOP.md) (the desktop app), [ACCESSIBILITY.md](docs/ACCESSIBILITY.md), [GITHUB.md](docs/GITHUB.md) (repository setup) |
 | `scripts/` | license and hygiene checks |
 
-A pnpm workspace at the root ties `web`, `e2e` and `apps/desktop` together. The desktop app bundles the same client
-and talks to the home node its user picks ([DESKTOP.md](docs/DESKTOP.md)); there are no mobile apps yet.
+A pnpm workspace at the root ties `web`, `e2e`, `apps/desktop` and `apps/desktop-electron` together. The desktop app
+bundles the same client and talks to the home node its user picks ([DESKTOP.md](docs/DESKTOP.md)); there are no mobile
+apps yet.
 
 ## How the client reaches a node
 
@@ -38,7 +40,9 @@ node offers (registration mode, captcha, voice, single sign-on, limits) comes fr
 
 **The desktop app** bundles the client instead and asks for the home node on its first start; the client's platform
 layer (`web/src/platform/`) then gives that node's URL to the API client, the WebSocket and the link builders
-([DESKTOP.md](docs/DESKTOP.md)).
+([DESKTOP.md](docs/DESKTOP.md)). It has two shells around the same client: Tauri on Windows (WebView2) and macOS, and
+Electron on Linux, where the distributions' WebKitGTK has no WebRTC and Chromium brings voice, video and screen sharing
+as in the browser.
 
 **Other nodes** are reached from that client: rooms on other nodes open a federated session with a token of the home
 node, and the login page offers "Sign in with an account of another node". When a sign-in needs the home node itself
@@ -102,6 +106,10 @@ with `TAVRN_VOICE_ENABLED=false`.
 | `just desktop-e2e` | the WebDriver smoke test of the built Linux app under `xvfb-run` (`E2E_NODE_BIN`; tauri-driver) |
 | `just desktop-voice-test` | the native voice engine against a local `livekit-server` (two engines, end-to-end encrypted) |
 | `just desktop-voice-e2e` | voice between Chromium and the built Linux app's native engine under `xvfb-run` (`E2E_NODE_BIN` of a release node) |
+| `just electron-dev` | the Linux app (Electron shell) on the Vite dev server ([DESKTOP.md](docs/DESKTOP.md) "The Linux shell (Electron)") |
+| `just electron-check` | `tsc`, `node --test`, SPDX headers and licenses of the Electron shell (typecheck and tests also run in `just check`) |
+| `just electron-package` | the Electron shell's `.AppImage` and `.deb` |
+| `just electron-e2e` | the Playwright smoke test of the Electron shell under `xvfb-run` (`E2E_NODE_BIN`) |
 | `just e2e-install`, `just e2e-clean`, `just livekit-install` | Chromium for Playwright; remove the end-to-end nodes' data (`data-dev/`); `livekit-server` into `~/.local/bin` |
 
 ### Translations
