@@ -225,6 +225,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends xvfb xdotool gnome-keyring dbus
+          # Chromium's sandbox needs unprivileged user namespaces, which Ubuntu 24.04 restricts to AppArmor profiles that
+          # allow them; the runner VM is thrown away after the job (the self-hosted VM sets the same, runner/README.md).
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           pnpm --filter @tavrn/desktop-electron exec playwright install --with-deps chromium
           LIVEKIT_INSTALL_DIR="$HOME/.local/bin" just livekit-install || {
             curl -fsSL https://just.systems/install.sh | bash -s -- --to "$HOME/.local/bin" && LIVEKIT_INSTALL_DIR="$HOME/.local/bin" "$HOME/.local/bin/just" livekit-install
@@ -278,7 +281,7 @@ jobs:
           # The app always runs with Chromium's sandbox, which needs unprivileged user namespaces (the setuid helper is
           # out: the runner forbids new privileges). A runner that cannot create them (Docker's default seccomp
           # profile; just-tavrn/.github runner/README.md "Security") skips the specs loudly instead of switching the
-          # sandbox off; the packages above are built either way. GitHub-hosted runners can create them.
+          # sandbox off; the packages above are built either way. GitHub-hosted runners can (sysctl above).
           if ! unshare -U true 2>/dev/null; then
             echo "::warning title=Electron specs skipped::this runner cannot create user namespaces, so Chromium's sandbox cannot start; the runner stack needs seccomp=unconfined for the runner service (runner/README.md)"
             exit 0
