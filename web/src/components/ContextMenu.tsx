@@ -4,7 +4,9 @@
  * a right-click (`contextmenu`, the browser menu is suppressed), by the keyboard (context-menu key or
  * Shift+F10 on a focused trigger), by a "⋯" button ({@link MenuButton}) and by a long press on touch
  * devices. Rendered into `document.body` (never clipped by a scrolling or transformed parent), placed
- * with collision handling (`lib/position.ts`), closed by Escape, Tab, a click outside or a choice.
+ * with collision handling (`lib/position.ts`), closed by Escape, Tab, a click outside or a choice. A choice that
+ * only changes a state shown in the menu (a checkbox item, or `keepOpen`) keeps it open, like the voice quick
+ * menus: the menu re-renders with the new state; navigation, copy and destructive items close it.
  * Keyboard: arrows move, Home/End jump, Enter/Space choose, → opens a submenu, ← closes it; ↑/↓ also reach the
  * control of a custom entry (a slider), which keeps its own keys. Disabled items stay focusable and carry the
  * reason as a tooltip (and for screen readers).
@@ -27,7 +29,10 @@ export interface MenuItem {
   reason?: string;
   /** A checkbox item (roles, toggles); `undefined` = plain item. */
   checked?: boolean;
-  /** Keep the menu open after choosing (checkbox lists). */
+  /**
+   * Keep the menu open after choosing (a state change shown in the menu). Default: checkbox items stay open,
+   * plain items close; see {@link staysOpen}.
+   */
   keepOpen?: boolean;
   /** Short text on the right (shortcut, current value). */
   hint?: string;
@@ -75,6 +80,9 @@ export const menuItem = (id: string, label: string, onSelect: (() => void) | und
 export const submenu = (id: string, label: string, items: Array<MenuEntry | false | null | undefined>, opts: Partial<Omit<MenuSubmenu, "kind" | "id" | "label" | "items">> = {}): MenuSubmenu => ({ kind: "submenu", id, label, items: normalizeMenu(items), ...opts });
 export const separator = (id: string): MenuSeparator => ({ kind: "separator", id });
 export const menuLabel = (id: string, label: string): MenuLabel => ({ kind: "label", id, label });
+
+/** Whether choosing the item keeps the menu open: an explicit `keepOpen`, else checkbox items do. */
+export const staysOpen = (item: MenuItem): boolean => item.keepOpen ?? item.checked !== undefined;
 
 /**
  * Drops falsy entries (conditional items), empty submenus and separators at the start, at the end and
@@ -174,8 +182,25 @@ function MenuPanel({ entries, anchor, prefer, onClose, onCloseSub, label, depth,
     if (entry.disabled) return;
     if (entry.kind === "submenu") return openSub(entry);
     entry.onSelect?.();
-    if (!entry.keepOpen) onClose();
+    if (!staysOpen(entry)) onClose();
   };
+
+  // A choice that keeps the menu open may replace entries (mute → unmute, a submenu that vanishes): forget a
+  // submenu that is gone, so it does not pop open again when it comes back, and give the focus to the entry now at
+  // the active place when the focused one was removed (the focus would fall back to the page).
+  const subGone = !!open && !entries.some((e) => e.kind === "submenu" && e.id === open.id);
+  useEffect(() => {
+    if (subGone) setOpen(null);
+  }, [subGone]);
+  useLayoutEffect(() => {
+    if (!focused.current || !ref.current) return;
+    const current = document.activeElement;
+    if (current && current !== document.body && current.isConnected) return;
+    const index = Math.min(active, items.length - 1);
+    if (index < 0) return;
+    if (index !== active) setActive(index);
+    stopElement(items[index])?.focus({ preventScroll: true });
+  });
 
   const onKeyDown = (e: ReactKeyboardEvent) => {
     // Keys inside a submenu are handled there.

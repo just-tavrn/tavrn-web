@@ -104,7 +104,7 @@ export function memberMenu(c: MemberMenuContext, a: MemberMenuActions, t: T): Me
     separator("sep-roles"),
     roleItems.length > 0 && submenu("roles", t("menu.member.roles"), roleItems, { icon: "🏷", ...(c.self || ranked ? {} : { disabled: true, reason: hierarchyReason }) }),
     voice && separator("sep-voice"),
-    voice && mod(Permission.MUTE_MEMBERS, menuItem("server-mute", voice.serverMuted ? t("menu.member.server_unmute") : t("menu.member.server_mute"), () => a.serverMute(!voice.serverMuted), { icon: "🎙" })),
+    voice && mod(Permission.MUTE_MEMBERS, menuItem("server-mute", voice.serverMuted ? t("menu.member.server_unmute") : t("menu.member.server_mute"), () => a.serverMute(!voice.serverMuted), { icon: "🎙", keepOpen: true })),
     voice && !c.self && has(Permission.MUTE_MEMBERS) && menuItem("server-deafen", t("menu.member.server_deafen"), undefined, { icon: "🎧", disabled: true, reason: t("menu.reason.not_supported") }),
     voice && mod(Permission.MOVE_MEMBERS, menuItem("disconnect", t("menu.member.disconnect"), a.disconnect, { icon: "⏏", danger: true })),
     voice && voice.channels.length > 0 && mod(Permission.MOVE_MEMBERS, submenu("move", t("menu.member.move_to"), voice.channels.map((ch) => menuItem(`move-${ch.id}`, ch.name, () => a.moveTo(ch.id), { icon: "🔊" })), { icon: "↪" })),
@@ -161,7 +161,7 @@ export function voiceParticipantMenu(c: VoiceParticipantMenuContext, a: VoicePar
     c.inMyCall && !c.self && a.volume(c.volume),
     c.inMyCall && !c.self && c.streaming && a.streamVolume?.(c.streamVolume ?? 100),
     separator("sep-voice"),
-    mod(Permission.MUTE_MEMBERS) && menuItem("server-mute", c.serverMuted ? t("menu.member.server_unmute") : t("menu.member.server_mute"), () => a.serverMute(!c.serverMuted), { icon: "🎙" }),
+    mod(Permission.MUTE_MEMBERS) && menuItem("server-mute", c.serverMuted ? t("menu.member.server_unmute") : t("menu.member.server_mute"), () => a.serverMute(!c.serverMuted), { icon: "🎙", keepOpen: true }),
     mod(Permission.MUTE_MEMBERS) && menuItem("server-deafen", t("menu.member.server_deafen"), undefined, { icon: "🎧", disabled: true, reason: t("menu.reason.not_supported") }),
     mod(Permission.MOVE_MEMBERS) && menuItem("disconnect", t("menu.member.disconnect"), a.disconnect, { icon: "⏏", danger: true }),
     mod(Permission.MOVE_MEMBERS) &&
@@ -257,6 +257,11 @@ export function isMuted(mutedUntil: string | null | undefined, now = Date.now())
   return !!mutedUntil && Date.parse(mutedUntil) > now;
 }
 
+/**
+ * The notification entries of rooms, channels and DMs. Every choice here only changes a state shown in the
+ * menu, so all of them keep the menu open (the modes as checkbox items, the mute durations and unmute
+ * explicitly: the menu then shows "unmute" with the end time, or the durations again).
+ */
 export function notifyEntries(prefix: string, c: NotifyMenuState, a: NotifyMenuActions, t: T, now = Date.now()): MenuEntry[] {
   const muted = isMuted(c.mutedUntil, now);
   return normalizeMenu([
@@ -272,8 +277,8 @@ export function notifyEntries(prefix: string, c: NotifyMenuState, a: NotifyMenuA
       { icon: "🔔" },
     ),
     muted
-      ? menuItem(`${prefix}-unmute`, t("menu.notify.unmute"), a.unmute, { icon: "🔕", hint: mutedHint(c.mutedUntil!, t) })
-      : submenu(`${prefix}-mute`, t("menu.notify.mute"), MUTE_CHOICES.map((h) => menuItem(`${prefix}-mute-${h}`, t(h === 0 ? "menu.duration.forever" : `menu.duration.${h}h`), () => a.mute(h))), { icon: "🔕" }),
+      ? menuItem(`${prefix}-unmute`, t("menu.notify.unmute"), a.unmute, { icon: "🔕", hint: mutedHint(c.mutedUntil!, t), keepOpen: true })
+      : submenu(`${prefix}-mute`, t("menu.notify.mute"), MUTE_CHOICES.map((h) => menuItem(`${prefix}-mute-${h}`, t(h === 0 ? "menu.duration.forever" : `menu.duration.${h}h`), () => a.mute(h), { keepOpen: true })), { icon: "🔕" }),
   ]);
 }
 

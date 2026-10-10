@@ -318,6 +318,8 @@ describe("which entries keep the menu open (state changes, like the voice quick 
   });
 
   it("channels and DMs: the notification entries and the full-history toggle stay open, the rest closes", () => {
+    // @everyone is a room setting only.
+    const notify = { mode: "all" as const, inherited: "mentions" as const, mutedUntil: null };
     const actions = { ...notifyActions, markRead: vi.fn(), edit: vi.fn(), duplicate: vi.fn(), remove: vi.fn(), copyLink: vi.fn(), copyId: vi.fn(), moveEveryoneHere: vi.fn(), moveEveryoneTo: vi.fn(), toggleFullHistory: vi.fn() };
     const voiceMove = { elsewhere: 1, here: 1, targets: [{ id: "v2", name: "Raid" }] };
     const channel = split(channelMenu({ kind: "voice", unread: true, canManage: true, system: false, voiceMove, notify, fullHistory: false }, actions, t));
