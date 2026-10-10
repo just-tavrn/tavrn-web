@@ -16,7 +16,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, us
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router";
 import type { Channel, FileEntry, FilesInfo, RoomDetail } from "@tavrn/sdk";
-import { decryptFileRecord, grantsHistory, parseHistoryPolicy, qualify, type FileRecord, type FileRecordResult } from "@tavrn/e2ee";
+import { decryptFileRecord, parseHistoryPolicy, qualify, type FileRecord, type FileRecordResult } from "@tavrn/e2ee";
 import { historyPending, historyReceive } from "../crypto/history";
 import { useE2eeConversation } from "../hooks/useE2eeConversation";
 import { LockMark } from "../components/Badges";
@@ -184,7 +184,7 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
   const historyKeys = useHistoryKeys((s) => s.version);
   const historyPolicy = useMemo(() => (encrypted ? parseHistoryPolicy(channel.history_for_new_members) : null), [encrypted, channel.history_for_new_members]);
   useEffect(() => {
-    if (!historyPolicy || !grantsHistory(historyPolicy) || e2ee.phase !== "ready") return;
+    if (!historyPolicy || e2ee.phase !== "ready") return;
     void historyReceive(q).then((n) => n > 0 && setKeysArrived((k) => k + 1));
     historyPending(q, historyPolicy);
   }, [historyPolicy, e2ee.phase, q]);

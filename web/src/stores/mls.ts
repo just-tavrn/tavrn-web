@@ -13,6 +13,7 @@ import { apiFor, homeKeys, useNodes } from "./nodes";
 import { useAuth } from "./auth";
 import { cryptoStore } from "../crypto/store";
 import { historyAdded, resetHistory } from "../crypto/history";
+import { resetGroupJoins } from "../crypto/groupJoins";
 
 interface MlsUiState {
   /** Users whose security key changed (notice not acknowledged yet). */
@@ -157,6 +158,7 @@ export async function ownIdentityRotated(): Promise<void> {
 /** Sign-out, lock or identity change: forget the manager (state stays in the encrypted store). */
 export function resetMls(): void {
   resetHistory();
+  resetGroupJoins();
   current?.manager.then((m) => m?.dispose()).catch(() => undefined);
   current = null;
   eventSource = null;

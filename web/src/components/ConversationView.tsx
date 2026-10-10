@@ -21,7 +21,7 @@ import { archiveMessages, pageWithArchive } from "../history/local";
 import { rememberRoom } from "../search/sync";
 import { SearchButton } from "../search/SearchPanel";
 import { useDecrypted, useE2eeConversation, usePlainSignatures } from "../hooks/useE2eeConversation";
-import { encryptAttachment, encryptCommandArgs, grantsHistory, parseHistoryPolicy, qualify, signedAttachments, type ContentAttachment, type MessageContext } from "@tavrn/e2ee";
+import { encryptAttachment, encryptCommandArgs, parseHistoryPolicy, qualify, signedAttachments, type ContentAttachment, type MessageContext } from "@tavrn/e2ee";
 import { withFreshEpoch } from "../lib/epochRetry";
 import { historyPending, historyReceive } from "../crypto/history";
 import { HistoryRestoreBanner } from "./HistoryRestoreBanner";
@@ -264,12 +264,13 @@ export function ConversationView(p: ConversationViewProps) {
   const usersById = useMemo(() => (p.roomMembers ? new Map(p.roomMembers.map((m) => [m.user.id, m.user])) : undefined), [p.roomMembers]);
   const verificationBlock = !!p.direct && broken.length > 0;
 
-  // History for new members (ENCRYPTION.md §7b): room channels whose policy gives members older messages.
+  // History for new members (ENCRYPTION.md §7b): every encrypted room channel, `since_join` included (the messages since
+  // the join that were posted before this device entered the group).
   const historyPolicy = useMemo(() => {
     const channel = p.room?.channels.find((c) => c.id === conversationId);
     return channel && p.encrypted ? parseHistoryPolicy(channel.history_for_new_members) : null;
   }, [p.room, conversationId, p.encrypted]);
-  const historyActive = !!historyPolicy && grantsHistory(historyPolicy) && e2ee.phase === "ready";
+  const historyActive = !!historyPolicy && e2ee.phase === "ready";
   const historyPendingList = useQuery({
     queryKey: ["history-pending", domain, conversationId],
     queryFn: () => api.history.pending(conversationId),
