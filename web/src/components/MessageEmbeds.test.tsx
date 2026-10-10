@@ -67,6 +67,19 @@ describe("message embeds (APPLICATIONS.md §6.4)", () => {
     expect(screen.getByTestId("message-embed")).toBeTruthy();
   });
 
+  it("shows an unsigned bot message with an embed with the BOT badge and without the unverified marker", () => {
+    const m: Message = {
+      id: "m2", conversation_id: "c1", author: "ci-bot@t.local", author_id: "u2", author_kind: "bot",
+      device_id: "01JDEVICE0000000000000000", encrypted: false, format: 1, epoch: null, content: { type: "text", body: "Build done", embeds: [card] }, reply_to_id: null,
+      thread_id: null, mentions: [], mentions_everyone: false, created_at: "2026-10-05T12:00:00.000Z", edited_at: null, attachments: [],
+      reactions: [], pinned: false, signature: null,
+    };
+    render(<MessageList messages={[m]} currentUserId="me" canManage={false} hasMore={false} signatures={{ m2: "unsigned" }} />);
+    expect(screen.getByTestId("bot-badge")).toBeTruthy();
+    expect(screen.getByTestId("message-embed")).toBeTruthy();
+    expect(screen.queryByTestId("unverified-marker")).toBeNull();
+  });
+
   it("shows sealed webhook messages with the name from the box, the badge and a lock that says who sealed them", () => {
     const base: Message = {
       id: "m1", conversation_id: "c1", author: "wh.01jabcdefghjkmnpqrstvwxyz0@t.local", author_id: "u1", author_kind: "webhook",
