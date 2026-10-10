@@ -3,8 +3,8 @@
 # Release of the web client (docs/GITHUB.md "Releases"). Push a tag vX.Y.Z whose commit carries version X.Y.Z in
 # web/package.json: the workflow checks the tag, runs the checks, builds web/dist and attaches it as
 # tavrn-web-X.Y.Z.tar.gz (with its SHA-256 sum) to a GitHub release, so the node's image build can embed a pinned
-# bundle instead of building this repository. The job `desktop` then attaches the desktop installers, their updater
-# signatures and latest.json to the same release (desktop.yml, docs/DESKTOP.md). Gated by CI_ENABLED.
+# bundle instead of building this repository. The job `desktop` then attaches the desktop installers, their SHA-256
+# sums (<asset>.sha256), their updater signatures and latest.json to the same release (desktop.yml, docs/DESKTOP.md). Gated by CI_ENABLED.
 name: Release
 
 on:

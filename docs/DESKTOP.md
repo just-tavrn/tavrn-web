@@ -587,7 +587,11 @@ All artifacts are kept for 7 days.
 - By hand for any branch: `gh workflow run desktop.yml --ref <branch> -f windows=true` adds the `windows-latest`
   installers.
 - Release tags: `release.yml` creates the GitHub release, then calls `desktop.yml`, which builds Linux and Windows
-  with the updater signatures and attaches the installers, their `.sig` files and `latest.json` to that release.
+  with the updater signatures and attaches the installers, their `.sig` files, a `<asset>.sha256` file per installer
+  (`.deb`, `.AppImage`, `.msi`, NSIS `-setup.exe`; written by `apps/desktop/scripts/checksums.mjs` in `sha256sum`
+  format) and `latest.json` to that release. Check a download with `sha256sum -c Tavrn_<version>_amd64.deb.sha256`
+  in the download folder. `latest.json` carries no checksums (the updater's format has no field for them; the app
+  checks the `.sig` signature instead). The web client tarball has its `.sha256` from `release.yml`.
 
 The installers are not signed by an OS code-signing certificate (Windows SmartScreen warns on the first start); the
 updater signature is the only signature.
