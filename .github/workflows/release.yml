@@ -6,7 +6,8 @@
 # SHA-256 sum) to a GitHub release, so the node's image build can embed a pinned bundle instead of building this
 # repository; the release notes start with the table of the downloads. The job `desktop` then builds the desktop apps
 # from the tag and attaches the installers, their SHA-256 sums (<asset>.sha256), the updater signatures and feeds to
-# the same release (desktop.yml); `website` finally asks tavrn-website to rebuild its download page. Gated by CI_ENABLED.
+# the same release (desktop.yml). The website's download page reads the releases through GitHub's API itself.
+# Gated by CI_ENABLED.
 name: Release
 
 on:
@@ -99,27 +100,3 @@ jobs:
       TAVRN_READ_PAT: ${{ secrets.TAVRN_READ_PAT }}
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-
-  # The website's download page reads the latest releases of tavrn-web and tavrn-node (tavrn-website
-  # docs/RELEASE-DISPATCH.md); it rebuilds on this event once the installers are attached. GITHUB_TOKEN cannot start
-  # workflows in another repository: WEBSITE_DISPATCH_TOKEN (docs/GITHUB.md) may, and without it the job only warns.
-  website:
-    name: Rebuild the download page
-    needs: desktop
-    if: ${{ vars.CI_ENABLED == 'true' }}
-    runs-on: ubuntu-latest
-    permissions: {}
-    steps:
-      - name: repository_dispatch to tavrn-website
-        env:
-          GH_TOKEN: ${{ secrets.WEBSITE_DISPATCH_TOKEN }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          if [ -z "$GH_TOKEN" ]; then
-            echo "::warning::WEBSITE_DISPATCH_TOKEN is not set: the download page is not rebuilt automatically"
-            exit 0
-          fi
-          gh api --method POST repos/just-tavrn/tavrn-website/dispatches \
-            -f event_type=release-published \
-            -F "client_payload[repository]=$GITHUB_REPOSITORY" \
-            -F "client_payload[tag]=$TAG"

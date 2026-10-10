@@ -37,7 +37,6 @@ Every job carries `if: ${{ vars.CI_ENABLED == 'true' }}`.
 | Dependabot secrets | secret (Dependabot) | Dependabot pull requests run with Dependabot's own secret store: add `TAVRN_READ_PAT` and `PUBLISH_CHECK_PRIVATE` again under Settings → Secrets and variables → Dependabot (or as organization Dependabot secrets), otherwise their CI fails at the private git dependencies and at the hygiene check. |
 | `TAURI_SIGNING_PRIVATE_KEY` | secret | the private minisign key of the desktop apps' updates (content of the key file of `tauri signer generate`, [DESKTOP.md](DESKTOP.md) "Updates"): it signs the Tauri installers and the Electron shell's feeds; only tagged release builds use it, on GitHub-hosted runners. Its public key replaces the placeholder in `apps/desktop/src-tauri/tauri.conf.json`; without both, the desktop part of a release fails on purpose. |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | secret | the password of that key |
-| `WEBSITE_DISPATCH_TOKEN` | secret (repository or organization) | lets `release.yml` start the rebuild of the website's download page (`POST /repos/just-tavrn/tavrn-website/dispatches`, event `release-published`; `GITHUB_TOKEN` cannot start workflows in another repository): a fine-grained personal access token with access to `just-tavrn/tavrn-website` only and the repository permission **Contents: Read and write**, or an installation token of an organization GitHub App with that permission. tavrn-node's release workflow uses the same secret. Without it the job `website` warns and the page is rebuilt by hand. |
 | `CLA_PAT` | organization secret | the CLA bot's token (`contents: write` on `just-tavrn/cla-signatures`). Organization secrets do not reach private repositories on the free plan: until the repository is public, add it as a repository secret as well. |
 
 ## End-to-end tests on the self-hosted runner
@@ -60,7 +59,8 @@ repository is public, also require approval for workflows from outside collabora
    the new tags and run `pnpm install`.
 2. `just check`, the end-to-end suite against the matching node, commit, tag `vX.Y.Z`, push the tag.
 3. With `CI_ENABLED` the release workflow attaches the bundle tarball to a GitHub release, then the desktop assets
-   (installers, checksums, signed feeds; [DESKTOP.md](DESKTOP.md) "The release procedure"), and tells the website. A
+   (installers, checksums, signed feeds; [DESKTOP.md](DESKTOP.md) "The release procedure"); the website's download
+   page reads the releases through GitHub's API by itself. A
    failed desktop job is re-run, never re-tagged. `v0.1.0` was tagged before the CI ran, without a GitHub release.
 4. In tavrn-node, set `TAVRN_WEB_REF` to the tag before tagging a node release, so the image embeds this version.
 
@@ -101,7 +101,6 @@ token read-only. Labels from `scripts/github-labels.sh` (idempotent; rerun it af
 - [ ] `CI_ENABLED` and the secrets above when CI should run.
 - [ ] The desktop updater key: `tauri signer generate`, the public key into `tauri.conf.json`, the private key and its
       password as `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` ([DESKTOP.md](DESKTOP.md) "Updates").
-- [ ] `WEBSITE_DISPATCH_TOKEN` (above), so a release rebuilds the website's download page.
 - [ ] Later, once public: a Windows code-signing certificate for both Windows installers ([DESKTOP.md](DESKTOP.md)
       "What a release carries").
 - [ ] Secret scanning with push protection (Settings → Code security; free for public repositories).
