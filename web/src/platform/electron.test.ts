@@ -6,6 +6,9 @@ import { detectElectron, electronBridge, inElectronSignInWindow } from "./electr
 import { inSignInWindow } from "./tauriDetect";
 import { SAVE_CHUNK_BYTES } from "./files";
 import type { HotkeyEvent } from "./types";
+import { describeError } from "../stores/toasts";
+import en from "../i18n/en.json";
+import de from "../i18n/de.json";
 
 const detached = () => document.implementation.createHTMLDocument("app");
 const notImplemented = (name: string) => () => Promise.reject(new Error(`not implemented: ${name}`));
@@ -199,6 +202,22 @@ describe("createElectronPlatform", () => {
     expect(bridge.updater.installUpdate).toHaveBeenCalled();
     bridge.updater.checkUpdate.mockResolvedValueOnce(null as never);
     await expect(p.updater?.check()).resolves.toBeNull();
+  });
+
+  it("a refused feed signature reaches Settings → App as its own message", async () => {
+    const { bridge } = fakeBridge({ node: "https://tavrn.example" }, true);
+    const p = await createElectronPlatform(bridge, detached());
+    bridge.updater.checkUpdate.mockRejectedValueOnce("update.signature_invalid" as never);
+    const refused = await p.updater!.check().catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(Error);
+    expect(refused).toMatchObject({ problem: { code: "update.signature_invalid" } });
+    expect([en["errors.update.signature_invalid"], de["errors.update.signature_invalid"]]).toContain(describeError(refused));
+    const update = await p.updater!.check();
+    bridge.updater.installUpdate.mockRejectedValueOnce("update.signature_invalid" as never);
+    await expect(update!.install()).rejects.toMatchObject({ problem: { code: "update.signature_invalid" } });
+    // Other refusals stay as they are.
+    bridge.updater.checkUpdate.mockRejectedValueOnce("update.not_configured" as never);
+    await expect(p.updater!.check()).rejects.toBe("update.not_configured");
   });
 
   it("installs the link handler: other sites open in the system browser", async () => {

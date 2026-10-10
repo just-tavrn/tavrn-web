@@ -43,6 +43,15 @@ function eventHub(bridge: TavrnShellBridge) {
   return { onOpen: add(opens), onTray: add(actions), onHotkey: add(hotkeys) };
 }
 
+/**
+ * The shell refused an update whose feed is not signed with the app's update key (apps/desktop-electron
+ * src/main/updater.ts): an error with its code, so Settings → App shows `errors.update.signature_invalid`.
+ */
+function updateRefusal(e: unknown): never {
+  if (e === "update.signature_invalid") throw Object.assign(new Error(e), { problem: { code: e } });
+  throw e;
+}
+
 /** The desktop platform over the Electron shell's bridge; `doc` receives the link handler (tests pass a detached document). */
 export async function createElectronPlatform(bridge: TavrnShellBridge | null = electronBridge(), doc: Document = document): Promise<Platform> {
   if (!bridge) throw new Error("not inside the Electron shell");
@@ -57,9 +66,9 @@ export async function createElectronPlatform(bridge: TavrnShellBridge | null = e
   };
   const updater: AppUpdater = {
     check: async () => {
-      const found = await bridge.updater.checkUpdate();
+      const found = await bridge.updater.checkUpdate().catch(updateRefusal);
       if (!found) return null;
-      return { version: found.version, notes: found.notes ?? null, install: () => bridge.updater.installUpdate() };
+      return { version: found.version, notes: found.notes ?? null, install: () => bridge.updater.installUpdate().catch(updateRefusal) };
     },
   };
   const hotkeys: PlatformHotkeys = {
