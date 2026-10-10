@@ -10,7 +10,7 @@
 import { runAppSession, runAppUnlock } from "./appSession";
 import { electronBridge } from "./electronDetect";
 import type { BridgeEvent, TavrnShellBridge } from "./electronBridge";
-import { asBlob, SAVE_CHUNK_BYTES, type SaveFile } from "./files";
+import { createElectronSaveFile } from "./electronFiles";
 import { externalUrl, installLinkHandler } from "./links";
 import type { AppUpdater, HotkeyAction, HotkeyEvent, Platform, PlatformHotkeys, PlatformKeystore, PlatformNotifications, PlatformTray, TrayAction } from "./types";
 
@@ -41,27 +41,6 @@ function eventHub(bridge: TavrnShellBridge) {
       return () => void set.delete(fn);
     };
   return { onOpen: add(opens), onTray: add(actions), onHotkey: add(hotkeys) };
-}
-
-/** Downloads through the shell's save dialog (docs/DESKTOP.md "Downloads"): the file streamed in 4 MiB pieces. */
-function saveFileOver(files: TavrnShellBridge["files"]): SaveFile {
-  return async (file) => {
-    const blob = asBlob(file);
-    const mime = file.mime || blob.type || "application/octet-stream";
-    const begin = await files.saveFileBegin(file.name, mime, blob.size);
-    if (begin.status !== "ready") return { status: "cancelled" };
-    const { id } = begin;
-    try {
-      for (let offset = 0; offset < blob.size; offset += SAVE_CHUNK_BYTES) {
-        await files.saveFileChunk(id, new Uint8Array(await blob.slice(offset, offset + SAVE_CHUNK_BYTES).arrayBuffer()));
-      }
-      const saved = await files.saveFileEnd(id);
-      return { status: "saved", name: file.name, path: saved.path, folder: saved.folder, reveal: () => files.saveFileReveal(id) };
-    } catch (e) {
-      await files.saveFileAbort(id).catch(() => {});
-      throw e;
-    }
-  };
 }
 
 /** The desktop platform over the Electron shell's bridge; `doc` receives the link handler (tests pass a detached document). */
@@ -162,7 +141,7 @@ export async function createElectronPlatform(bridge: TavrnShellBridge | null = e
     keystore,
     notifications,
     tray,
-    saveFile: saveFileOver(bridge.files),
+    saveFile: createElectronSaveFile(bridge.files),
   };
   installLinkHandler(doc, openExternal, platform.webOrigin);
   return platform;
