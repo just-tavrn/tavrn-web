@@ -18,6 +18,7 @@ import { BotsAllowedIcon, LockMark, NoBotsIcon, UnreadBadges, useHasUnread } fro
 import { botMarker } from "../lib/botAccess";
 import { channelPermissions } from "../lib/channelPermissions";
 import { VoiceChannelRow } from "../voice/ui/VoiceChannelRow";
+import { ownVoiceChannel, useVoice } from "../voice/store";
 import { MenuButton } from "../components/ContextMenu";
 import { AdultsOnlyBadge } from "../components/age/LockedChannel";
 import { useChannelMenu } from "../components/menus/ChannelMenu";
@@ -129,14 +130,16 @@ export function ChannelSidebar({ roomId }: { roomId: string }) {
   const reportsOffered = !!useCapabilities(nodeKey)?.includes("reports.v1");
   const openReports = badgeText(useOpenRoomReports(node.api, nodeKey, roomId, moderates && reportsOffered));
   const headerMenu = useRoomMenu({ id: roomId, name: room.data?.name ?? "" }, nodeKey, { openReports });
+  const voiceChannelId = useVoice((s) => ownVoiceChannel(s, node.domain, roomId));
   if (room.isPending) return <p className="p-3 text-sm text-fg-2">{t("room.loading")}</p>;
   if (room.isError) return <p className="p-3 text-sm text-danger">{describeError(room.error)}</p>;
   const r = room.data;
   const perms = parsePermissions(r.my_permissions);
   const canManageChannels = hasPermission(perms, Permission.MANAGE_CHANNELS);
 
-  // Only channels the user may view (layered overrides; nodes list only those, older ones listed all).
-  const channels = r.channels.filter((c) => hasPermission(channelPermissions(r, c.id, node.me?.id ?? ""), Permission.VIEW_CHANNEL));
+  // Only channels the user may view (layered overrides; nodes list only those, older ones listed all), and the voice
+  // channel the user is in (moved there by a moderator without view_channel, VOICE.md §7).
+  const channels = r.channels.filter((c) => hasPermission(channelPermissions(r, c.id, node.me?.id ?? "", voiceChannelId), Permission.VIEW_CHANNEL));
   // The welcome channel (kind `system`, design note 4.11) is pinned at the very top, outside the categories.
   const pinned = channels.filter((c) => c.kind === "system");
   const byCategory = new Map<string | null, Channel[]>();

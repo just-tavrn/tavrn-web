@@ -12,6 +12,7 @@ import { useRoom } from "./ChannelSidebar";
 import { channelName } from "../lib/names";
 import { mayManageRoom } from "../lib/rooms";
 import { VoiceStage } from "../voice/ui/VoiceStage";
+import { ownVoiceChannel, useVoice } from "../voice/store";
 import { useOriginDomain } from "../lib/origin";
 import { toastError } from "../stores/toasts";
 import { ThreadPanel } from "../threads/ThreadPanel";
@@ -90,6 +91,7 @@ export function ChannelPage() {
   const lock = useChannelLock(room.data?.channels.find((c) => c.id === channelId));
   // Lost access (`channel.delete` with `hidden`): said as such, not as "not found".
   const hidden = useHiddenChannels((s) => s.ids[channelId] === true);
+  const voiceChannelId = useVoice((s) => ownVoiceChannel(s, domain, roomId));
   const mentionBase = useMemo(
     () => ({ users: (members.data ?? []).map((m) => ({ address: m.user.address })), roles: roles ?? [], memberRoles: Object.fromEntries((members.data ?? []).map((m) => [m.user.address, m.roles])) }),
     [members.data, roles],
@@ -99,7 +101,7 @@ export function ChannelPage() {
   if (room.isError) return <p className="p-4 text-sm text-danger">{describeError(room.error)}</p>;
   const channel = room.data.channels.find((c) => c.id === channelId);
   if (!channel) return <p className="p-4 text-sm text-fg-2">{t(hidden ? "room.channel_hidden" : "room.channel_not_found")}</p>;
-  const perms = channelPermissions(room.data, channelId, user?.id ?? "");
+  const perms = channelPermissions(room.data, channelId, user?.id ?? "", voiceChannelId);
   // Announcement channels: only members with manage_messages post; the others react and reply in threads.
   const announcementBlocked = channel.kind === "announcement" && !hasPermission(perms, Permission.MANAGE_MESSAGES);
   const canSend = hasPermission(perms, Permission.SEND_MESSAGES);
