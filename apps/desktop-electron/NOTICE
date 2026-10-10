@@ -10,6 +10,9 @@ Third-party software:
 - Electron (https://www.electronjs.org), Copyright (c) Electron contributors and GitHub Inc., MIT License. The app
   is built on Electron's runtime, which contains Chromium and Node.js; their licenses ship with every package as
   LICENSE and LICENSES.chromium.html next to the app's binary.
+- electron-updater (https://www.electron.build), Copyright (c) 2015 Loopline Systems, MIT License: the app's updates;
+  with its dependencies, among them sax (BlueOak Model License 1.0.0) and argparse (Python Software Foundation License),
+  whose licence texts ship inside the package.
 - electron-builder (https://www.electron.build), Copyright (c) 2015 Loopline Systems, MIT License: builds the
   .AppImage and .deb packages (not part of the installed app).
 

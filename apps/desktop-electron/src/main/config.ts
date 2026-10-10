@@ -6,7 +6,7 @@
  * node's URL), and "close to tray". A missing, unreadable or corrupt file means "no settings" (the node picker asks
  * again); a stored node that no longer passes the validation is dropped.
  */
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { NodeUrlError, validIdentityDomain, validateNodeUrl } from "./node_url.ts";
 
@@ -29,6 +29,25 @@ const EMPTY: Config = { node: null, web: null, domain: null };
 /** The settings file below the user's config directory (`app.getPath("appData")`, `$XDG_CONFIG_HOME` or `~/.config`). */
 export function settingsPath(configDir: string): string {
   return join(configDir, DIR_NAME, FILE_NAME);
+}
+
+/** The Tauri shell's settings file below the same directory (`config.rs`: `org.tavrn.desktop/config.json`). */
+export function tauriSettingsPath(configDir: string): string {
+  return join(configDir, "org.tavrn.desktop", "config.json");
+}
+
+/**
+ * Switching shells: on the first start (no settings file yet) the home node of the Tauri shell's settings is taken
+ * over once, the node URL with its web origin and identity domain only, validated as fresh input (an invalid node
+ * imports nothing). Returns the imported node, or null.
+ */
+export function importTauriSettings(path: string, tauriPath: string): string | null {
+  if (existsSync(path) || !existsSync(tauriPath)) return null;
+  const theirs = loadConfig(tauriPath);
+  if (!theirs.node) return null;
+  saveConfig(path, { node: theirs.node, web: theirs.web, domain: theirs.domain });
+  console.info(`tavrn: took over the home node ${theirs.node} from the Tauri app's settings (${tauriPath})`);
+  return theirs.node;
 }
 
 const optionalString = (v: unknown): v is string | null | undefined => v === undefined || v === null || typeof v === "string";

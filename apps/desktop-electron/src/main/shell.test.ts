@@ -15,10 +15,21 @@ function setup(t: { after: (fn: () => void) => void }) {
   t.after(() => rmSync(d, { recursive: true, force: true }));
   const settings = new Settings(join(d, "settings.json"));
   const opened: string[] = [];
+  const windows: string[] = [];
   const registry = new IpcRegistry((e) => e === me);
-  registerShellHandlers(registry, { settings, version: "0.2.0", openExternal: async (url) => void opened.push(url) });
+  registerShellHandlers(registry, {
+    settings,
+    version: "0.2.0",
+    updater: false,
+    openExternal: async (url) => void opened.push(url),
+    resolve: async (domain) => {
+      if (domain === "nowhere.example") throw { code: "resolve.not_found", step: "direct", domain };
+      return { domain, api: `https://${domain}/api/v1`, ws: `wss://${domain}/api/v1/ws`, web: `https://${domain}`, source: "well_known" };
+    },
+    connect: { open: async (url) => void windows.push(url), close: () => void windows.push("closed") },
+  });
   const call = (method: string, ...args: unknown[]) => registry.dispatch(`tavrn:shell.${method}`, method, me, args);
-  return { settings, opened, call };
+  return { settings, opened, windows, call };
 }
 
 test("getConfig and setNode work on the settings file", async (t) => {
@@ -44,4 +55,22 @@ test("openExternal hands web links to the system browser and refuses everything 
     assert.deepEqual(await call("openExternal", bad), { ok: false, error: "link.refused" }, bad);
   }
   assert.deepEqual(opened, ["https://example.org/a", "mailto:x@example.org"]);
+});
+
+test("resolveNode answers the node or the resolve failure as an object", async (t) => {
+  const { call } = setup(t);
+  assert.deepEqual(await call("resolveNode", "home.example"), { ok: true, value: { domain: "home.example", api: "https://home.example/api/v1", ws: "wss://home.example/api/v1/ws", web: "https://home.example", source: "well_known" } });
+  assert.deepEqual(await call("resolveNode", "nowhere.example"), { ok: false, error: { code: "resolve.not_found", step: "direct", domain: "nowhere.example" } });
+});
+
+test("openConnect shows only the chosen node's sign-in page; closeConnect closes it", async (t) => {
+  const { settings, windows, call } = setup(t);
+  const page = `https://web.home.example/connect?session=${"S".repeat(43)}`;
+  assert.deepEqual(await call("openConnect", page), { ok: false, error: "connect.no_node" });
+  settings.setNode("https://app.home.example", "https://web.home.example", "home.example");
+  assert.deepEqual(await call("openConnect", page), { ok: true, value: undefined });
+  assert.deepEqual(await call("openConnect", `https://app.home.example/connect?session=${"S".repeat(43)}`), { ok: false, error: "connect.url_refused: other_origin" });
+  assert.deepEqual(await call("openConnect", "https://web.home.example/login"), { ok: false, error: "connect.url_refused: invalid" });
+  assert.deepEqual(await call("closeConnect"), { ok: true, value: undefined });
+  assert.deepEqual(windows, [page, "closed"]);
 });

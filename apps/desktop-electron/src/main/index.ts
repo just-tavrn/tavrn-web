@@ -9,18 +9,23 @@
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, protocol, safeStorage, session, shell, Tray } from "electron";
-import { DIR_NAME, Settings, settingsPath } from "./config.ts";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, net, Notification, protocol, safeStorage, session, shell, Tray } from "electron";
+import { installDisplayMediaHandler } from "./capture.ts";
+import { DIR_NAME, Settings, importTauriSettings, settingsPath, tauriSettingsPath } from "./config.ts";
+import { ConnectWindow } from "./connect.ts";
+import type { ShellContext, ShellPart } from "./context.ts";
 import { Downloads, handleWillDownload, registerFilesHandlers, saveDialogOptions, TEST_SAVE_DIR_ENV } from "./downloads.ts";
 import { ShellEvents } from "./events.ts";
 import { devServerUrl, isAppPage, permission } from "./guard.ts";
-import { IpcRegistry, type IpcEventLike } from "./ipc.ts";
+import { IpcRegistry, fromMainPage, type IpcEventLike } from "./ipc.ts";
 import { BACKEND_ENV, Keychain, passwordStoreSwitch, registerKeychainHandlers, safeStorageCipher } from "./keychain.ts";
 import { Notifier, registerNotifyHandlers } from "./notify.ts";
 import { APP_SCHEME, APP_SCHEME_PRIVILEGES, installAppProtocol } from "./protocol.ts";
+import { HttpFetcher, resolveNode, systemSrv } from "./resolve.ts";
 import { registerShellHandlers } from "./shell.ts";
 import { attachWindow, electronTrayHost, registerTrayHandlers, TrayController } from "./tray.ts";
 import { decodePng } from "./tray_icon.ts";
+import { registerUpdaterHandlers, updaterConfigured } from "./updater.ts";
 import { createMainWindow, showMain } from "./windows.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -53,40 +58,44 @@ function main(): void {
   const icon = app.isPackaged ? join(app.getAppPath(), "icons", "icon.png") : resolve(app.getAppPath(), "../desktop/src-tauri/icons/icon.png");
   // The base of the tray icons (tray_icon.ts draws the badges on it).
   const trayLogo = app.isPackaged ? join(app.getAppPath(), "icons", "128x128@2x.png") : resolve(app.getAppPath(), "../desktop/src-tauri/icons/128x128@2x.png");
-  const settings = new Settings(settingsPath(app.getPath("appData")));
+  const configDir = app.getPath("appData");
+  // Switching shells: the Tauri app's home node is taken over once, before the settings are read.
+  importTauriSettings(settingsPath(configDir), tauriSettingsPath(configDir));
+  const settings = new Settings(settingsPath(configDir));
   let mainWindow: BrowserWindow | null = null;
 
   const openExternal = (url: string) => shell.openExternal(url);
   // Only the main window's top frame showing the bundled client may call the bridge.
   const trusted = (event: IpcEventLike) =>
-    !!mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents && event.senderFrame === mainWindow.webContents.mainFrame && isAppPage(event.senderFrame.url, devUrl);
-  const registry = new IpcRegistry(trusted);
-  registerShellHandlers(registry, { settings, version: appVersion(), openExternal });
+    fromMainPage(event, mainWindow && !mainWindow.isDestroyed() ? { webContents: mainWindow.webContents, mainFrame: mainWindow.webContents.mainFrame } : null, (url) => isAppPage(url, devUrl));
+  const context: ShellContext = {
+    registry: new IpcRegistry(trusted),
+    events: new ShellEvents(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null)),
+    settings,
+    mainWindow: () => mainWindow,
+    showMain: () => showMain(mainWindow),
+    devUrl,
+    icon,
+    openExternal,
+  };
+  const version = appVersion();
+  const connect = new ConnectWindow({ devUrl, icon, openExternal: (url) => void openExternal(url) });
+  const updates = updaterConfigured(app.isPackaged, process.resourcesPath);
   // The keychain is chosen once the app is ready (safeStorage knows its keyring only then); no call comes earlier.
   let keychain: Keychain | null = null;
   const keychainNow = () =>
     app.isReady() ? (keychain ??= Keychain.forSetting(process.env[BACKEND_ENV], { dir: app.getPath("userData"), cipher: safeStorageCipher(safeStorage) })) : Keychain.unavailable();
-  registerKeychainHandlers(registry, { settings, keychain: keychainNow });
-  // Notifications and the tray; their clicks come back to the client as shell events.
-  const events = new ShellEvents(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null));
-  const show = () => showMain(mainWindow);
   let quitting = false;
-  app.on("before-quit", () => {
-    quitting = true;
-    downloads.abortAll();
-  });
   const quit = () => app.quit();
-  registerNotifyHandlers(registry, { notifier: new Notifier({ create: (o) => new Notification(o), supported: () => Notification.isSupported(), showMain: show, events, icon }) });
   const tray = new TrayController({
     createHost: (onMenu, onClick) => electronTrayHost({ Tray, Menu, nativeImage }, decodePng(readFileSync(trayLogo)), onMenu, onClick),
     settings,
-    events,
+    events: context.events,
     windowVisible: () => !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized(),
-    showMain: show,
+    showMain: context.showMain,
     hideMain: () => mainWindow?.hide(),
     quit,
   });
-  registerTrayHandlers(registry, { tray, settings, quit });
   // Downloads through the save dialog (the test hook's directory instead when set).
   const downloads = new Downloads({
     testDir: process.env[TEST_SAVE_DIR_ENV] || null,
@@ -104,10 +113,36 @@ function main(): void {
     },
     reveal: (path) => shell.showItemInFolder(path),
   });
-  registerFilesHandlers(registry, { downloads });
-  registry.install(ipcMain);
+  app.on("before-quit", () => {
+    quitting = true;
+    downloads.abortAll();
+  });
+  // The parts of the shell; each registers its handlers on the registry (src/main/context.ts).
+  const parts: ShellPart[] = [
+    (ctx) =>
+      registerShellHandlers(ctx.registry, {
+        settings: ctx.settings,
+        version,
+        updater: updates,
+        openExternal: ctx.openExternal,
+        // Chromium's network stack: verified TLS with the system's trust store, the system's proxy settings.
+        resolve: (domain) => resolveNode(domain, new HttpFetcher((url, init) => net.fetch(url, init), version), systemSrv),
+        connect: { open: (url) => connect.open(url), close: () => connect.close() },
+      }),
+    (ctx) => registerUpdaterHandlers(ctx.registry, updates),
+    (ctx) => registerKeychainHandlers(ctx.registry, { settings: ctx.settings, keychain: keychainNow }),
+    // Notifications and the tray; their clicks come back to the client as shell events.
+    (ctx) =>
+      registerNotifyHandlers(ctx.registry, {
+        notifier: new Notifier({ create: (o) => new Notification(o), supported: () => Notification.isSupported(), showMain: ctx.showMain, events: ctx.events, icon: ctx.icon }),
+      }),
+    (ctx) => registerTrayHandlers(ctx.registry, { tray, settings: ctx.settings, quit }),
+    (ctx) => registerFilesHandlers(ctx.registry, { downloads }),
+  ];
+  for (const part of parts) part(context);
+  context.registry.install(ipcMain);
 
-  app.on("second-instance", () => showMain(mainWindow));
+  app.on("second-instance", () => context.showMain());
   // No other web contents ever opens windows or embeds a webview.
   app.on("web-contents-created", (_event, contents) => {
     contents.on("will-attach-webview", (e) => e.preventDefault());
@@ -125,10 +160,13 @@ function main(): void {
     const ses = session.defaultSession;
     installAppProtocol(ses.protocol, webRoot);
     const fromMain = (contents: Electron.WebContents | null) => !!mainWindow && !mainWindow.isDestroyed() && contents === mainWindow.webContents;
-    ses.setPermissionRequestHandler((contents, name, callback, details) => callback(permission(name, details.requestingUrl, fromMain(contents), devUrl)));
+    ses.setPermissionRequestHandler((contents, name, callback, details) =>
+      callback(permission(name, details.requestingUrl, fromMain(contents), devUrl, "mediaTypes" in details ? (details.mediaTypes ?? []) : [])),
+    );
     ses.setPermissionCheckHandler((contents, name, origin, details) => permission(name, details.requestingUrl ?? origin, fromMain(contents), devUrl));
     ses.setDevicePermissionHandler(() => false);
     ses.on("will-download", (_event, item, contents) => handleWillDownload(item, fromMain(contents), downloads));
+    installDisplayMediaHandler(ses, { mainWindow: () => mainWindow, isApp: (origin) => isAppPage(origin, devUrl), preload: join(here, "../preload/picker.cjs"), locale: () => app.getLocale() });
     tray.create();
     mainWindow = createMainWindow({ preload: join(here, "../preload/index.cjs"), icon, devUrl, openExternal: (url) => void openExternal(url) });
     attachWindow(mainWindow, tray, () => quitting);

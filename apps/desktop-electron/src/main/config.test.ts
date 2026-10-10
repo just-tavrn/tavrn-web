@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { FILE_NAME, Settings, loadConfig, saveConfig, settingsPath, type Config } from "./config.ts";
+import { FILE_NAME, Settings, importTauriSettings, loadConfig, saveConfig, settingsPath, tauriSettingsPath, type Config } from "./config.ts";
 
 const empty: Config = { node: null, web: null, domain: null };
 
@@ -108,4 +108,30 @@ test("the settings in memory change only when the file was written", (t) => {
   const s = new Settings(join(path, FILE_NAME));
   assert.throws(() => s.setNode("https://tavrn.example"), /config\.write_failed/);
   assert.equal(s.get().node, null);
+});
+
+test("switching shells: the Tauri app's home node is taken over once, validated, without its other settings", (t) => {
+  const d = dir(t);
+  assert.equal(tauriSettingsPath("/home/u/.config"), join("/home/u/.config", "org.tavrn.desktop", "config.json"));
+  const ours = settingsPath(d);
+  const theirs = tauriSettingsPath(d);
+  assert.equal(importTauriSettings(ours, theirs), null, "nothing to take over");
+  mkdirSync(join(d, "org.tavrn.desktop"), { recursive: true });
+  writeFileSync(theirs, JSON.stringify({ node: "https://App.Home.Example/", web: "https://web.home.example", domain: "home.example", close_to_tray: false }));
+  assert.equal(importTauriSettings(ours, theirs), "https://app.home.example");
+  assert.deepEqual(loadConfig(ours), { node: "https://app.home.example", web: "https://web.home.example", domain: "home.example" });
+  // Once: an existing settings file is never replaced.
+  writeFileSync(theirs, JSON.stringify({ node: "https://other.example" }));
+  assert.equal(importTauriSettings(ours, theirs), null);
+  assert.equal(loadConfig(ours).node, "https://app.home.example");
+});
+
+test("switching shells: an invalid or corrupt Tauri settings file imports nothing", (t) => {
+  const d = dir(t);
+  mkdirSync(join(d, "org.tavrn.desktop"), { recursive: true });
+  for (const text of ['{"node": "http://evil.example"}', "{not json", '{"web": "https://web.home.example"}']) {
+    writeFileSync(tauriSettingsPath(d), text);
+    assert.equal(importTauriSettings(settingsPath(d), tauriSettingsPath(d)), null, text);
+    assert.ok(!existsSync(settingsPath(d)), text);
+  }
 });
