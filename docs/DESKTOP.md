@@ -1100,9 +1100,8 @@ signatures are the only signatures.
    - writes a `.sha256` per installer and `latest.json` (the Tauri installers only; the Electron Windows installer is
      never a Tauri update), checks the directory against the expected set, uploads it (`--clobber`), and checks the whole
      release including the web bundle.
-4. `release.yml`'s job `website` sends the `repository_dispatch` `release-published` to tavrn-website (secret
-   `WEBSITE_DISPATCH_TOKEN`, GITHUB.md; without it the job warns and the page is rebuilt by hand), whose download page
-   reads the latest release.
+4. The website's download page reads the latest release through GitHub's API by itself (tavrn-website serves the
+   release data from a cached server-side proxy), so nothing tells it: the new version appears within minutes.
 
 When a desktop job fails, the release exists with the web bundle and whatever was uploaded before: re-run the failed
 jobs of the run (the upload replaces files), never tag again.
