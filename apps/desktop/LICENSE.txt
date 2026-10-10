@@ -214,10 +214,10 @@ in the root of this repository.
 
 ==============================================================================
 
-Terms of use and privacy notice for the Tavrn desktop app
+Terms of use and privacy notice for the tavrn desktop app
 =========================================================
 
-This notice covers the Tavrn desktop app, the program you install on your computer. It is published by the tavrn
+This notice covers the tavrn desktop app, the program you install on your computer. It is published by the tavrn
 project. The project is a community of contributors and not a company or other legal entity.
 
 1. Open source, no warranty

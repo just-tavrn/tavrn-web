@@ -232,6 +232,34 @@ test.describe("Emojis, sounds and formatting (design note 4.13)", () => {
     await expect(withFile.getByTestId("attachment-image").locator("img")).toBeVisible();
   });
 
+  test("a spoiler that wraps onto several lines reads as one element, hidden and revealed", async ({ page, request }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const owner = await registerViaApi(request, "spoilwrap");
+    const room = await createRoomViaApi(request, owner.token, "Umbruch-Spoiler");
+    await loginAs(page, owner);
+    await openRoom(page, room.id);
+    await send(page, `Lang: ||${"ein ziemlich langer verborgener Satz ".repeat(4).trim()}||`);
+    const spoiler = page.getByTestId("message").filter({ hasText: "Lang:" }).locator("span.spoiler");
+    await expect(spoiler).toBeVisible();
+    /** The line boxes of the spoiler: every line padded and rounded on its own (clone), no gap between the lines. */
+    const lines = () =>
+      spoiler.evaluate((el) => {
+        const rects = [...el.getClientRects()].map((r) => ({ top: r.top, bottom: r.bottom }));
+        const style = getComputedStyle(el);
+        return { count: rects.length, gaps: rects.slice(1).map((r, i) => r.top - rects[i]!.bottom), clone: style.boxDecorationBreak || style.getPropertyValue("-webkit-box-decoration-break") };
+      });
+    for (const state of ["hidden", "revealed"]) {
+      const l = await lines();
+      expect(l.count, state).toBeGreaterThanOrEqual(2);
+      expect(l.clone, state).toBe("clone");
+      for (const gap of l.gaps) expect(gap, state).toBeLessThanOrEqual(0.5);
+      if (state === "hidden") {
+        await spoiler.click();
+        await expect(spoiler).toHaveClass(/revealed/);
+      }
+    }
+  });
+
   test("code blocks: highlighted with a label, copy and wrap; quotes; deleted reply originals", async ({ page, request, context, browserName }) => {
     if (browserName === "chromium") await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     const owner = await registerViaApi(request, "code");

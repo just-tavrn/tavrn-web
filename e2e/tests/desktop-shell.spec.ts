@@ -115,7 +115,7 @@ test.describe("Desktop app: tray", () => {
     await asDesktopShell(page, { node: NODE });
     await registerViaUi(page, { prefix: "dtray" });
     await expect.poll(async () => (await last(page))?.state).toBe("disconnected");
-    expect((await last(page))?.labels).toMatchObject({ tooltip: "Tavrn", hide: "Tavrn ausblenden", mute: "Mikrofon stummschalten", quit: "Tavrn beenden" });
+    expect((await last(page))?.labels).toMatchObject({ tooltip: "tavrn", hide: "tavrn ausblenden", mute: "Mikrofon stummschalten", quit: "tavrn beenden" });
 
     const roomId = await voiceRoom(request, page);
     await page.goto(`/rooms/${roomId}`);
@@ -123,13 +123,13 @@ test.describe("Desktop app: tray", () => {
     await page.getByRole("link", { name: "Sprachkanal Sprache" }).click();
     await expect(page.getByTestId("voice-stage")).toBeVisible({ timeout: 30_000 });
     await expect.poll(async () => (await last(page))?.state, { timeout: 15_000 }).toMatch(/^(connected|speaking)$/);
-    expect((await last(page))?.labels.tooltip).toMatch(/^Tavrn · Sprache \(Stammtisch\) · (Im Sprachkanal|Du sprichst)$/);
+    expect((await last(page))?.labels.tooltip).toMatch(/^tavrn · Sprache \(Stammtisch\) · (Im Sprachkanal|Du sprichst)$/);
     // The fake microphone plays a tone: voice activation lets it through.
     await expect.poll(async () => (await shellRecord(page)).tray.map((t) => t.state), { timeout: 20_000 }).toContain("speaking");
 
     await shellEmit(page, { kind: "tray", action: "mute" });
     await expect.poll(async () => (await last(page))?.state).toBe("muted");
-    expect((await last(page))?.labels.tooltip).toBe("Tavrn · Sprache (Stammtisch) · Mikrofon stummgeschaltet");
+    expect((await last(page))?.labels.tooltip).toBe("tavrn · Sprache (Stammtisch) · Mikrofon stummgeschaltet");
     await shellEmit(page, { kind: "tray", action: "deafen" });
     await expect.poll(async () => (await last(page))?.state).toBe("deafened");
     await shellEmit(page, { kind: "tray", action: "leave" });

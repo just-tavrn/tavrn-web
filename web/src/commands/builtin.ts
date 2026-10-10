@@ -31,7 +31,6 @@ export const BUILTIN_COMMANDS: CommandDefinition[] = [
     source: "builtin",
   },
   { id: "", name: "whiteboard", description: "Open the whiteboard of this conversation", args: [], permission: p(Permission.USE_WHITEBOARD), dm_allowed: true, source: "builtin" },
-  { id: "", name: "poll", description: "Create a poll (coming in phase 5)", args: [], permission: p(Permission.SEND_MESSAGES), dm_allowed: true, source: "builtin" },
   {
     id: "",
     name: "nick",

@@ -52,7 +52,7 @@ pub fn validate(n: &Notice) -> Result<(), &'static str> {
 pub fn notify<R: Runtime>(app: AppHandle<R>, notice: Notice) -> Result<(), String> {
     validate(&notice).map_err(str::to_string)?;
     let mut n = notify_rust::Notification::new();
-    n.summary(&notice.title).body(&notice.body).appname("Tavrn").auto_icon();
+    n.summary(&notice.title).body(&notice.body).appname("tavrn").auto_icon();
     #[cfg(target_os = "linux")]
     n.action("default", &notice.title);
     #[cfg(windows)]

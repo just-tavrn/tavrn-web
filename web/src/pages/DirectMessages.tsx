@@ -364,6 +364,7 @@ export function ConversationPage() {
       direct={members ?? undefined}
       mayManage
       bots={bots}
+      people={c.members}
       domain={nodeDomain}
       mentionContext={{ domain: nodeDomain, users: c.members.map((m) => ({ address: m.address })), canMentionEveryone: false }}
       permissions={DIRECT_PERMISSIONS}

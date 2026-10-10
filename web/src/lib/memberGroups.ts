@@ -42,3 +42,33 @@ export function groupMembers(members: Member[], roles: Pick<Role, "id" | "name" 
 export function memberColor(member: Pick<Member, "roles">, roles: Pick<Role, "id" | "name" | "color" | "position" | "is_everyone">[]): string | null {
   return sortRoles(roles.filter((r) => !r.is_everyone && r.color && member.roles.includes(r.id)))[0]?.color ?? null;
 }
+
+/** How a message author is shown: the name and its colour. */
+export interface AuthorName {
+  name: string;
+  color: string | null;
+}
+
+/**
+ * Names of message authors like the member list: in rooms the nickname or display name with the role colour, in
+ * DMs and group DMs the members' display names (the same source as the header and the member list). Authors
+ * without an entry show the local part of their address.
+ */
+export function authorLooks(src: {
+  roomMembers?: Array<Pick<Member, "nickname" | "roles"> & { user: Pick<Member["user"], "address" | "display_name"> }>;
+  roles?: Pick<Role, "id" | "name" | "color" | "position" | "is_everyone">[];
+  people?: { address: string; display_name?: string | null }[];
+}): Map<string, AuthorName> | undefined {
+  if (src.roomMembers) {
+    const map = new Map<string, AuthorName>();
+    for (const m of src.roomMembers) map.set(m.user.address, { name: m.nickname || m.user.display_name, color: src.roles ? memberColor(m, src.roles) : null });
+    return map;
+  }
+  if (src.people) {
+    const map = new Map<string, AuthorName>();
+    for (const p of src.people) if (p.display_name) map.set(p.address, { name: p.display_name, color: null });
+    return map;
+  }
+  return undefined;
+}
+

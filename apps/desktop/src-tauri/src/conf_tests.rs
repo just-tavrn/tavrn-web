@@ -141,7 +141,10 @@ fn no_capability_reaches_the_sign_in_window() {
 fn version_and_identity() {
     let c = conf();
     assert_eq!(c["version"], "../../../web/package.json", "one version number: the web client's");
+    // The installers keep the capitalised product name (file names like Tavrn_<version>_x64-setup.exe, the Windows
+    // start menu); everything the app shows says "tavrn" in lowercase.
     assert_eq!(c["productName"], "Tavrn");
+    assert_eq!(c["app"]["windows"][0]["title"], "tavrn");
     assert_eq!(c["identifier"], "org.tavrn.desktop");
 }
 
@@ -166,7 +169,7 @@ fn the_installers_show_the_licence_and_terms() {
     assert_eq!(c["bundle"]["licenseFile"], "../LICENSE.txt", "NSIS shows it as the licence page to accept, the MSI as its licence dialog");
     let text = include_str!("../../LICENSE.txt");
     assert!(text.len() > 10_000, "the licence file is the Apache-2.0 text, the NOTICE and the terms");
-    for part in ["Apache License", "Version 2.0, January 2004", "Terms of use and privacy notice for the Tavrn desktop app", "https://tavrn.org", "github.com"]
+    for part in ["Apache License", "Version 2.0, January 2004", "Terms of use and privacy notice for the tavrn desktop app", "https://tavrn.org", "github.com"]
     {
         assert!(text.contains(part), "LICENSE.txt lacks {part:?}");
     }

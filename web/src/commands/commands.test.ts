@@ -23,13 +23,13 @@ describe("command registry", () => {
     const reg = builtinRegistry();
     const member = Permission.VIEW_CHANNEL | Permission.SEND_MESSAGES | Permission.CHANGE_NICKNAME | Permission.USE_WHITEBOARD;
     const names = (perms: bigint, direct = false, hasVoice = true) => availableCommands(reg, { permissions: perms, direct, hasVoice }).map((d) => d.name);
-    expect(names(member)).toEqual(["help", "me", "shrug", "whiteboard", "poll", "nick"]);
+    expect(names(member)).toEqual(["help", "me", "shrug", "whiteboard", "nick"]);
     expect(names(member | Permission.MODERATE_MEMBERS)).toContain("timeout");
     expect(names(member | Permission.MODERATE_MEMBERS)).not.toContain("kick");
     const all = names(ALL_PERMISSIONS);
     for (const n of ["kick", "ban", "timeout", "mute", "unmute", "move", "purge", "slowmode", "topic"]) expect(all).toContain(n);
     expect(names(ALL_PERMISSIONS, false, false)).not.toContain("move");
-    expect(names(ALL_PERMISSIONS, true)).toEqual(["help", "me", "shrug", "whiteboard", "poll"]);
+    expect(names(ALL_PERMISSIONS, true)).toEqual(["help", "me", "shrug", "whiteboard"]);
   });
 
   it("puts built-ins first and keeps application commands by id", () => {

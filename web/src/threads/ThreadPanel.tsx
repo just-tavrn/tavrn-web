@@ -7,7 +7,7 @@ import { useT } from "../i18n";
 import { useNode } from "../components/NodeScope";
 import { ConversationView } from "../components/ConversationView";
 import { ContextMenu, MenuButton, useContextMenu } from "../components/ContextMenu";
-import { menuItem, normalizeMenu, separator } from "../components/ContextMenu";
+import { threadMenu } from "../lib/menus";
 import { Button, Dialog, Field, Input } from "../components/ui";
 import { describeError, toastError } from "../stores/toasts";
 import { channelName } from "../lib/names";
@@ -83,27 +83,24 @@ export function ThreadPanel({ threadId, channel, perms, onClose, view }: { threa
     }
   };
   const menuEntries = menu.open
-    ? normalizeMenu([
-        mayManage && menuItem("rename", t("threads.rename"), () => setRenaming(true), { icon: "✎" }),
-        mayManage && menuItem("archive", d.archived_at ? t("threads.unarchive") : t("threads.archive"), () => void update({ archived: !d.archived_at }), { icon: "🗄" }),
-        mayManage && menuItem("lock", d.locked ? t("threads.unlock") : t("threads.lock"), () => void update({ locked: !d.locked }), { icon: "⛔" }),
-        mayManage && separator("sep-delete"),
-        mayManage &&
-          menuItem(
-            "delete",
-            t("threads.delete"),
-            async () => {
-              if (!confirm(t("threads.delete_confirm"))) return;
-              try {
-                await api.threads.delete(threadId);
-                onClose();
-              } catch (e) {
-                toastError(e);
-              }
-            },
-            { icon: "🗑", danger: true },
-          ),
-      ])
+    ? threadMenu(
+        { mayManage, archived: !!d.archived_at, locked: d.locked },
+        {
+          rename: () => setRenaming(true),
+          setArchived: (archived) => void update({ archived }),
+          setLocked: (locked) => void update({ locked }),
+          remove: async () => {
+            if (!confirm(t("threads.delete_confirm"))) return;
+            try {
+              await api.threads.delete(threadId);
+              onClose();
+            } catch (e) {
+              toastError(e);
+            }
+          },
+        },
+        t,
+      )
     : [];
   const header = (
     <>

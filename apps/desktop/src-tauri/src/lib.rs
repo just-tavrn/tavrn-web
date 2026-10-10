@@ -48,7 +48,7 @@ pub fn open_connect_window<R: Runtime>(app: &AppHandle<R>, url: Url) -> tauri::R
     }
     let dev_url: Option<Url> = if cfg!(dev) { app.config().build.dev_url.clone() } else { None };
     WebviewWindowBuilder::new(app, CONNECT_WINDOW, WebviewUrl::External(url))
-        .title("Tavrn")
+        .title("tavrn")
         .inner_size(520.0, 760.0)
         .min_inner_size(360.0, 480.0)
         .on_navigation(move |url| match guard::connect_navigation(url, dev_url.as_ref()) {

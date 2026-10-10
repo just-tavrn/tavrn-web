@@ -58,7 +58,7 @@ the page for such a confirmation skips the encryption step, because the app crea
 (or `sso`) starts that method at once with only "Signing in with a passkey…" and "Use another method". After a passkey
 ceremony with the PRF extension the page seals the passkey's unlock secret to the app's key from the URL fragment
 (`#k=`, never sent to a server) and sends it with the confirmation, so the passkey unlocks the app's encrypted messages
-as it does in the browser; an *unlock* request of a signed-in app ("Unlock the Tavrn app?") asks only for the passkey. Encryption works across nodes: the MLS group of a
+as it does in the browser; an *unlock* request of a signed-in app ("Unlock the tavrn app?") asks only for the passkey. Encryption works across nodes: the MLS group of a
 conversation lives on the node that hosts it, while every user's keys are checked against that user's own
 home node. Friends and DMs work by full address (`bob@other.example`); a DM lives on the home node of the
 person who starts it and shows its node's domain in the DM list; DMs started by a friend on another node
@@ -255,6 +255,14 @@ in the signed content (the client picks the thread id where the node announces `
 and the answers of bots name the interaction they answer: a title or answer the node moved elsewhere is shown like
 anything else that cannot be read.
 
+Plaintext messages carry the author device's signature (FEDERATION.md §10.3). A message whose signature is missing
+or cannot be checked gets a small "unverified" marker, because the hosting node could have written it; a wrong or
+reused signature hides the content. Messages the node itself vouches for as application content get no marker:
+webhook messages (WEBHOOK badge) and unsigned messages of bots, which post with an app token the node authenticated
+and carry the BOT badge (many bots use the REST API without a device key). A bot signature that cannot be checked is
+marked like anyone's. Message authors are shown like the member list everywhere: in rooms the nickname or display name
+with the role colour, in DMs and group DMs the members' display names (as in the header), otherwise the address.
+
 ## Files channels
 
 A files channel (kind `files`, [FILES.md](https://github.com/just-tavrn/tavrn-protocol/blob/main/FILES.md)) is a file
@@ -413,7 +421,7 @@ nothing), mute for 1 h, 8 h, 24 h or until turned back on, edit/duplicate/delete
 everyone here" on voice channels. DMs: close (until a new message arrives), mute, block. Logging out is the last
 item of the status menu on your avatar (with a confirmation).
 A choice that only changes a state shown in the menu (notification level, @everyone, mute and unmute, roles, server
-mute, keep the full history, folder colour) keeps the menu and an open submenu open and shows the new state, like the
+mute, keep the full history, folder colour, a thread's archive and lock) keeps the menu and an open submenu open and shows the new state, like the
 voice quick menus; navigation, copy, join/leave, moderation and destructive items close it.
 The emoji picker (composer, message reactions, sound emojis) has a fixed size (bounded by the viewport) and opens
 below its button or above it when there is no room; the grid scrolls inside, and the space is reserved while the

@@ -14,8 +14,10 @@ Tauri CLI) and the Rust crate `tavrn-desktop` in `apps/desktop/src-tauri` with a
 - **It talks to the home node you choose.** The first start shows the node picker; the client then uses that node's
   API, WebSocket and media over https and wss. Rooms and conversations of other nodes work as in the browser
   (federated sessions, [CLIENT.md](CLIENT.md) "Several nodes in one client").
-- **One version number.** The app's version is `web/package.json`'s (`tauri.conf.json` points at it); the product
-  name is "Tavrn", the identifier `org.tavrn.desktop` (the project domain tavrn.org).
+- **One version number.** The app's version is `web/package.json`'s (`tauri.conf.json` points at it); the bundle's
+  product name is "Tavrn" (installer file names such as `Tavrn_<version>_x64-setup.exe`, the Windows start menu and
+  the Linux menu entry follow platform conventions), the identifier `org.tavrn.desktop` (the project domain tavrn.org);
+  everything the app itself shows (window title, tray, notifications) writes the name in lowercase, "tavrn".
 
 ### Security of the shell
 
@@ -133,7 +135,7 @@ read the client's memory), nor does it replace the recovery key. Who can reach t
 While the window is not focused, mentions, direct messages and incoming calls (whatever the notification settings let
 through) become native notifications; while it is focused, the client shows its toasts as in the browser. Encrypted
 messages show a fixed text, never their content. Settings → Notifications has a switch for this device ("System
-notifications while Tavrn is in the background"); the web push section and the browser permission switch are not shown
+notifications while tavrn is in the background"); the web push section and the browser permission switch are not shown
 in the app, and the app never registers a service worker or a push subscription.
 
 The shell shows them with notify-rust (the backend of tauri-plugin-notification; the plugin itself offers no click
@@ -184,9 +186,9 @@ teal logo:
 | microphone muted | amber badge with a bar |
 | deafened (speakers and microphone; wins over muted) | red badge with a cross |
 
-The tooltip names the channel and the state ("Tavrn · Lounge (Gaming) · Speaking"). The voice store drives it at most
-every 150 ms, so speaking does not make the icon flicker. The menu (right click; on Linux any click): Show/Hide Tavrn,
-Mute microphone, Deafen, Leave voice channel, Quit Tavrn; a left click on Windows shows the window.
+The tooltip names the channel and the state ("tavrn · Lounge (Gaming) · Speaking"). The voice store drives it at most
+every 150 ms, so speaking does not make the icon flicker. The menu (right click; on Linux any click): Show/Hide tavrn,
+Mute microphone, Deafen, Leave voice channel, Quit tavrn; a left click on Windows shows the window.
 
 **Close to tray** is on by default on every platform (the owner's choice): closing the window hides it and the app
 keeps running (voice, notifications). The tray menu brings it back, and so does starting the app again (a second start
@@ -241,7 +243,7 @@ FEDERATION.md §8 step 3) the app signs in on the **node's own page** instead:
    "Signing in with a passkey…" with "Use another method". The key is in the URL fragment, which never reaches a
    server; the page keeps it for the window's session and removes it from the address bar.
 3. The user signs in there with any method (password and second factor, passkey, SSO, registration with captcha) and
-   confirms "Sign in to the Tavrn app?" with the app's device name; the page says "return to the app". The page never
+   confirms "Sign in to the tavrn app?" with the app's device name; the page says "return to the app". The page never
    creates device keys and skips the encryption step. After a passkey ceremony with the PRF extension (the passkey
    login, a passkey as second factor, or, when the app asked for the passkey and the page was already signed in, an
    assertion at the confirmation) the page seals the credential id and the PRF output to the app's key and sends the
@@ -257,7 +259,7 @@ FEDERATION.md §8 step 3) the app signs in on the **node's own page** instead:
 keychain entry, lock on close) offers "Unlock with a passkey" on its unlock screen when the account has a passkey
 entry and the node announces `connect.app`. The app creates an *unlock* session with its own session (`purpose:
 "unlock"`), checks with one poll that the node knows it (otherwise it says so and keeps the recovery key), and opens
-the sign-in window with `method=passkey`. The page asks only for the passkey ("Unlock the Tavrn app?"; after a passkey
+the sign-in window with `method=passkey`. The page asks only for the passkey ("Unlock the tavrn app?"; after a passkey
 sign-in there it needs no second ceremony) and returns the sealed box without a code; the node accepts it only from
 the account the app is signed in with. The app unlocks and stores the master secret in its (keychain-protected) local
 key store.
@@ -541,7 +543,7 @@ picker accepts `http://127.0.0.1:8080`).
   so no window appears on the desktop. The node must serve its web client: a release build or the container image (a
   debug tavrn-node reads `web/dist` from its build tree at run time; the test refuses a node that serves the
   placeholder instead). The app is a single instance: the test waits for a quit app to exit before starting it again
-  and refuses to start while the same binary runs; an installed Tavrn that is running takes over the test's start too,
+  and refuses to start while the same binary runs; an installed tavrn that is running takes over the test's start too,
   so quit it first.
 
 - Voice between a browser and the app (`e2e/tests/desktop-voice.spec.ts`, `just desktop-voice-e2e`, under xvfb-run):
@@ -585,7 +587,11 @@ All artifacts are kept for 7 days.
 - By hand for any branch: `gh workflow run desktop.yml --ref <branch> -f windows=true` adds the `windows-latest`
   installers.
 - Release tags: `release.yml` creates the GitHub release, then calls `desktop.yml`, which builds Linux and Windows
-  with the updater signatures and attaches the installers, their `.sig` files and `latest.json` to that release.
+  with the updater signatures and attaches the installers, their `.sig` files, a `<asset>.sha256` file per installer
+  (`.deb`, `.AppImage`, `.msi`, NSIS `-setup.exe`; written by `apps/desktop/scripts/checksums.mjs` in `sha256sum`
+  format) and `latest.json` to that release. Check a download with `sha256sum -c Tavrn_<version>_amd64.deb.sha256`
+  in the download folder. `latest.json` carries no checksums (the updater's format has no field for them; the app
+  checks the `.sig` signature instead). The web client tarball has its `.sha256` from `release.yml`.
 
 The installers are not signed by an OS code-signing certificate (Windows SmartScreen warns on the first start); the
 updater signature is the only signature.

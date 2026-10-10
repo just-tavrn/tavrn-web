@@ -154,7 +154,8 @@ test.describe("Direct messages and groups", () => {
     test.setTimeout(240_000);
     const alice = await registerViaUi(page, { prefix: "alice" });
     const bobPage = await newPage(browser);
-    const bob = await registerViaUi(bobPage, { prefix: "bob" });
+    // Bob has a display name: the DM shows it in the header, the member list and on his messages alike.
+    const bob = await registerViaUi(bobPage, { prefix: "bob", displayName: "Bob Baumann" });
     const carolPage = await newPage(browser);
     const carol = await registerViaUi(carolPage, { prefix: "carol" });
 
@@ -175,7 +176,7 @@ test.describe("Direct messages and groups", () => {
 
     // DM: Alice writes first; Bob's device is added with a Welcome and reads it.
     await page.getByTestId("friends-list").locator("li").filter({ hasText: bob.address }).getByRole("button", { name: "Nachricht" }).click();
-    await expect(page.getByTestId("conversation-name")).toHaveText(bob.username);
+    await expect(page.getByTestId("conversation-name")).toHaveText("Bob Baumann");
     await expect(page.getByTestId("encrypted-marker")).toBeVisible();
     await send(page, "Hallo Bob, ganz privat");
     await bobPage.goto("/");
@@ -194,6 +195,8 @@ test.describe("Direct messages and groups", () => {
     await expect(page.getByTestId("typing-indicator")).toHaveText("Jemand schreibt…");
     await send(bobPage, "Hallo Alice, angekommen");
     await expect(message(page, "Hallo Alice, angekommen")).toBeVisible();
+    await expect(message(page, "Hallo Alice, angekommen").getByTestId("message-author")).toHaveText("Bob Baumann");
+    await expect(message(page, "Hallo Alice, angekommen").getByTestId("message-avatar")).toHaveAccessibleName(/Bob Baumann/);
     await openMembers(page);
     await expect(page.getByTestId("conversation-members")).toContainText(bob.address);
 

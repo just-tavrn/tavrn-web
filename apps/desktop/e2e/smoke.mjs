@@ -348,10 +348,10 @@ async function main() {
   // The tray: the client reported its voice state; the shell maps a state to its icon and tooltip.
   const tray = await until("the client's tray state", async () => {
     const s = await shell("tray_status");
-    return s?.state === "disconnected" && s.tooltip === "Tavrn" ? s : null;
+    return s?.state === "disconnected" && s.tooltip === "tavrn" ? s : null;
   });
   if (tray.close_to_tray !== true) throw new Error(`close to tray is on by default: ${JSON.stringify(tray)}`);
-  const labels = { tooltip: "Tavrn · Lounge (Smoke) · Microphone muted", show: "Show Tavrn", hide: "Hide Tavrn", mute: "Mute microphone", deafen: "Deafen", leave: "Leave voice channel", quit: "Quit Tavrn" };
+  const labels = { tooltip: "tavrn · Lounge (Smoke) · Microphone muted", show: "Show tavrn", hide: "Hide tavrn", mute: "Mute microphone", deafen: "Deafen", leave: "Leave voice channel", quit: "Quit tavrn" };
   const set = await shell("tray_set", { state: "muted", labels });
   if (set?.error) throw new Error(`tray_set: ${set.error}`);
   const muted = await shell("tray_status");

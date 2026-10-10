@@ -17,6 +17,7 @@ import { useComposePreview } from "./ComposePreview";
 import { wrapSpoiler } from "../lib/markdown";
 import { composerGrowth, type Growth } from "../lib/composerGrowth";
 import { blockedText, isAutomodBlock } from "../moderation/blocked";
+import { EyeOffIcon } from "./icons";
 
 export interface PendingUpload {
   key: string;
@@ -539,8 +540,8 @@ export function Composer({
           className={`composer-text ${growth.expanded ? "" : "max-h-40"} min-h-6 flex-1 resize-none bg-transparent px-1 text-sm text-fg-0 outline-none placeholder:text-fg-2 disabled:opacity-50`}
         />
         {!disabled && (
-          <button type="button" aria-label={t("composer.spoiler")} title={t("composer.spoiler_hint")} onClick={spoiler} className="min-h-10 min-w-8 rounded-md text-xs font-semibold text-fg-2 hover:bg-bg-3 hover:text-fg-0" data-testid="composer-spoiler">
-            ▒
+          <button type="button" aria-label={t("composer.spoiler")} title={t("composer.spoiler_hint")} onClick={spoiler} className="flex min-h-10 min-w-10 items-center justify-center rounded-md text-fg-2 hover:bg-bg-3 hover:text-fg-0" data-testid="composer-spoiler">
+            <EyeOffIcon size={18} />
           </button>
         )}
         {!disabled && <EmojiPicker customEmojis={customEmojis} onPick={insertAtCursor} label={t("composer.emoji")} />}

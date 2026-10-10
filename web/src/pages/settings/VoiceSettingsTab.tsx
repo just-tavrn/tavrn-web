@@ -527,9 +527,9 @@ export function VoiceSettingsTab() {
               const file = e.target.files?.[0];
               e.target.value = "";
               if (!file) return;
-              // Animated backgrounds (GIF, short videos) need the node's media pipeline (phase 4C).
+              // Animated backgrounds (GIF, short videos) are not supported: only still images are drawn.
               if (!STATIC_IMAGES.includes(file.type)) {
-                setBgNote(t("voice.settings.bg_animated_soon"));
+                setBgNote(t("voice.settings.bg_still_only"));
                 return;
               }
               setBgNote(null);
