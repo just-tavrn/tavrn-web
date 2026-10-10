@@ -22,7 +22,7 @@ export default {
     "dist/shared/**/*.js",
     "dist/preload/index.cjs",
     { from: "../../web/dist", to: "web", filter: ["**/*", "!**/*.map"] },
-    { from: "../desktop/src-tauri/icons", to: "icons", filter: ["icon.png"] },
+    { from: "../desktop/src-tauri/icons", to: "icons", filter: ["icon.png", "128x128@2x.png"] },
   ],
   electronFuses: {
     runAsNode: false,

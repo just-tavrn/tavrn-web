@@ -9,13 +9,17 @@
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, ipcMain, Menu, protocol, safeStorage, session, shell } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, Notification, protocol, safeStorage, session, shell, Tray } from "electron";
 import { DIR_NAME, Settings, settingsPath } from "./config.ts";
+import { ShellEvents } from "./events.ts";
 import { devServerUrl, isAppPage, permission } from "./guard.ts";
 import { IpcRegistry, type IpcEventLike } from "./ipc.ts";
 import { BACKEND_ENV, Keychain, passwordStoreSwitch, registerKeychainHandlers, safeStorageCipher } from "./keychain.ts";
+import { Notifier, registerNotifyHandlers } from "./notify.ts";
 import { APP_SCHEME, APP_SCHEME_PRIVILEGES, installAppProtocol } from "./protocol.ts";
 import { registerShellHandlers } from "./shell.ts";
+import { attachWindow, electronTrayHost, registerTrayHandlers, TrayController } from "./tray.ts";
+import { decodePng } from "./tray_icon.ts";
 import { createMainWindow, showMain } from "./windows.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -46,6 +50,8 @@ function main(): void {
   const devUrl = devServerUrl(app.isPackaged, process.env.TAVRN_DESKTOP_DEV_URL);
   const webRoot = app.isPackaged ? join(app.getAppPath(), "web") : resolve(app.getAppPath(), "../../web/dist");
   const icon = app.isPackaged ? join(app.getAppPath(), "icons", "icon.png") : resolve(app.getAppPath(), "../desktop/src-tauri/icons/icon.png");
+  // The base of the tray icons (tray_icon.ts draws the badges on it).
+  const trayLogo = app.isPackaged ? join(app.getAppPath(), "icons", "128x128@2x.png") : resolve(app.getAppPath(), "../desktop/src-tauri/icons/128x128@2x.png");
   const settings = new Settings(settingsPath(app.getPath("appData")));
   let mainWindow: BrowserWindow | null = null;
 
@@ -60,6 +66,25 @@ function main(): void {
   const keychainNow = () =>
     app.isReady() ? (keychain ??= Keychain.forSetting(process.env[BACKEND_ENV], { dir: app.getPath("userData"), cipher: safeStorageCipher(safeStorage) })) : Keychain.unavailable();
   registerKeychainHandlers(registry, { settings, keychain: keychainNow });
+  // Notifications and the tray; their clicks come back to the client as shell events.
+  const events = new ShellEvents(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null));
+  const show = () => showMain(mainWindow);
+  let quitting = false;
+  app.on("before-quit", () => {
+    quitting = true;
+  });
+  const quit = () => app.quit();
+  registerNotifyHandlers(registry, { notifier: new Notifier({ create: (o) => new Notification(o), supported: () => Notification.isSupported(), showMain: show, events, icon }) });
+  const tray = new TrayController({
+    createHost: (onMenu, onClick) => electronTrayHost({ Tray, Menu, nativeImage }, decodePng(readFileSync(trayLogo)), onMenu, onClick),
+    settings,
+    events,
+    windowVisible: () => !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized(),
+    showMain: show,
+    hideMain: () => mainWindow?.hide(),
+    quit,
+  });
+  registerTrayHandlers(registry, { tray, settings, quit });
   registry.install(ipcMain);
 
   app.on("second-instance", () => showMain(mainWindow));
@@ -83,7 +108,9 @@ function main(): void {
     ses.setPermissionRequestHandler((contents, name, callback, details) => callback(permission(name, details.requestingUrl, fromMain(contents), devUrl)));
     ses.setPermissionCheckHandler((contents, name, origin, details) => permission(name, details.requestingUrl ?? origin, fromMain(contents), devUrl));
     ses.setDevicePermissionHandler(() => false);
+    tray.create();
     mainWindow = createMainWindow({ preload: join(here, "../preload/index.cjs"), icon, devUrl, openExternal: (url) => void openExternal(url) });
+    attachWindow(mainWindow, tray, () => quitting);
     mainWindow.on("closed", () => {
       mainWindow = null;
     });
