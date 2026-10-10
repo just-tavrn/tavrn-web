@@ -74,7 +74,8 @@ function ChannelLink({ room, channel, onClick }: { room: RoomDetail; channel: Ch
   const systemNew = useSystemNew(channel.id);
   const unread = system ? systemNew : unreadCount;
   const { roomPath, me } = useNode();
-  // Access marks: private (structural) first, then restricted for this viewer, whose name is dimmed (fg-2, 4.5:1).
+  // Access marks: private (structural) first, then restricted for this viewer, whose name is dimmed (fg-2: 4.5:1 and
+  // more on bg-1 and its hover; the open channel keeps fg-0, fg-2 would reach only 4.46:1 on the selection tint).
   const marks = channelAccessMarks(room, channel.id, channelPermissions(room, channel.id, me?.id ?? ""));
   const restricted = marks.some((m) => m.startsWith("restricted"));
   // Context menu (design note 4.11): right-click, long press, keyboard or the ⋯ button.
@@ -86,10 +87,10 @@ function ChannelLink({ room, channel, onClick }: { room: RoomDetail; channel: Ch
         onClick={onClick}
         data-unread={unread || undefined}
         {...menu.triggerProps}
-        className={({ isActive }) => `flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-sm ${isActive ? "bg-accent-soft text-fg-0" : unread ? "text-fg-0 hover:bg-bg-3/60" : "text-fg-1 hover:bg-bg-3/60 hover:text-fg-0"}`}
+        className={({ isActive }) => `group/ch flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-sm ${isActive ? "bg-accent-soft text-fg-0" : unread ? "text-fg-0 hover:bg-bg-3/60" : "text-fg-1 hover:bg-bg-3/60 hover:text-fg-0"}`}
       >
         <ChannelIcon kind={channel.kind} encrypted={channel.encrypted} />
-        <span className={`min-w-0 flex-1 truncate ${unread ? "font-semibold" : ""} ${restricted ? "text-fg-2" : ""}`}>{channelName(channel)}</span>
+        <span className={`min-w-0 flex-1 truncate ${unread ? "font-semibold" : ""} ${restricted ? "text-fg-2 group-aria-[current=page]/ch:text-fg-0" : ""}`}>{channelName(channel)}</span>
         {marks.map((m) => (
           <AccessMark key={m} kind={m} />
         ))}

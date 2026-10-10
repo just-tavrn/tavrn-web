@@ -118,7 +118,7 @@ export function VoiceChannelRow({ room, channel, onNavigate }: { room: RoomDetai
           e.preventDefault();
           open();
         }}
-        className={({ isActive }) => `flex min-h-10 items-center gap-2 rounded-md px-2 text-sm ${isActive ? "bg-accent-soft text-fg-0" : connected ? "text-fg-0 hover:bg-bg-3/60" : "text-fg-1 hover:bg-bg-3/60 hover:text-fg-0"}`}
+        className={({ isActive }) => `group/ch flex min-h-10 items-center gap-2 rounded-md px-2 text-sm ${isActive ? "bg-accent-soft text-fg-0" : connected ? "text-fg-0 hover:bg-bg-3/60" : "text-fg-1 hover:bg-bg-3/60 hover:text-fg-0"}`}
         aria-label={[t("voice.channel_label", { name: channelName(channel) }), ...marks.map((m) => t(accessMarkKey(m)))].join(", ")}
       >
         {/* Voice is always end-to-end encrypted: the speaker and the 16 px lock, aligned with the text channels. */}
@@ -126,7 +126,7 @@ export function VoiceChannelRow({ room, channel, onNavigate }: { room: RoomDetai
           <SpeakerIcon size={16} className={connected ? "text-accent" : "text-fg-2"} />
           <LockMark testId="voice-channel-lock" />
         </span>
-        <span className={`min-w-0 flex-1 truncate ${canConnect ? "" : "text-fg-2"}`}>{channelName(channel)}</span>
+        <span className={`min-w-0 flex-1 truncate ${canConnect ? "" : "text-fg-2 group-aria-[current=page]/ch:text-fg-0"}`}>{channelName(channel)}</span>
         {marks.map((m) => (
           <AccessMark key={m} kind={m} />
         ))}
