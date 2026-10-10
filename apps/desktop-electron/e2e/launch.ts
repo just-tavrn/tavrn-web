@@ -66,7 +66,8 @@ export async function startSmokeApp(extraArgs: string[], extraEnv: Record<string
   // The AppImage runs without FUSE (extracted into a temporary directory first).
   const env = appEnv(process.env, configHome, { APPIMAGE_EXTRACT_AND_RUN: "1", ...extraEnv });
 
-  const child = spawn(file, [...args, "--remote-debugging-port=0"], { cwd: appDir, env, stdio: ["ignore", "pipe", "pipe"] });
+  // A process group of its own: an AppImage's runtime starts Electron as its child, and the group is ended as a whole.
+  const child = spawn(file, [...args, "--remote-debugging-port=0"], { cwd: appDir, env, stdio: ["ignore", "pipe", "pipe"], detached: true });
   const log: string[] = [];
   let endpoint: string | null = null;
   const read = (d: Buffer) => {
@@ -99,10 +100,18 @@ export async function startSmokeApp(extraArgs: string[], extraEnv: Record<string
     exited: async (timeoutMs) => (await waitExit(child, timeoutMs)) !== null,
     close: async () => {
       await browser.close().catch(() => undefined);
-      if (!ended(child)) {
-        child.kill("SIGTERM");
-        if ((await waitExit(child, 10_000)) === null) child.kill("SIGKILL");
-      }
+      const group = (signal: NodeJS.Signals) => {
+        try {
+          process.kill(-child.pid!, signal);
+        } catch {
+          /* already gone */
+        }
+      };
+      group("SIGTERM");
+      if ((await waitExit(child, 10_000)) === null) group("SIGKILL");
+      // Electron's processes may outlive an AppImage's runtime: a last sweep of the group.
+      await sleep(500);
+      group("SIGKILL");
       rmSync(configHome, { recursive: true, force: true });
     },
   };
