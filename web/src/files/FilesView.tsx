@@ -561,8 +561,10 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
       {/* History restore after a key reset (ENCRYPTION.md §7b): the requester's banner, next to the states above when
           entries cannot be decrypted. */}
       {encrypted && <HistoryRestoreBanner room={room} />}
+      {/* The breadcrumbs keep a minimum width and the toolbar wraps below them (and within itself) on narrow screens or
+          with wide fonts: a toolbar that cannot fit must never be laid over the crumbs. */}
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-3 py-2">
-        <nav aria-label={t("files.breadcrumbs")} className="flex min-w-0 flex-1 flex-wrap items-center gap-1 text-sm" data-testid="files-breadcrumbs">
+        <nav aria-label={t("files.breadcrumbs")} className="flex min-w-32 flex-1 flex-wrap items-center gap-1 text-sm" data-testid="files-breadcrumbs">
           {search ? (
             <span className="text-fg-1" data-testid="files-search-results">
               {t("files.results_for", { query: search })}
@@ -583,7 +585,7 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
             </>
           )}
         </nav>
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center gap-1" data-testid="files-toolbar">
           <select
             value={`${sort.key}:${sort.dir}`}
             onChange={(e) => {
@@ -815,6 +817,7 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
           title={t("files.new_folder")}
           initial=""
           action={t("common.create")}
+          pending={encrypted && lockState === "joining" ? t("files.e2ee_not_ready") : undefined}
           onClose={() => setDialog(null)}
           onSubmit={async (name) => {
             const enc = encrypted ? ctx() : null;
@@ -833,6 +836,7 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
           title={t("files.rename")}
           initial={dialog.entry.name}
           action={t("common.save")}
+          pending={encrypted && lockState === "joining" ? t("files.e2ee_not_ready") : undefined}
           onClose={() => setDialog(null)}
           onSubmit={async (name) => {
             const enc = encrypted ? ctx() : null;
