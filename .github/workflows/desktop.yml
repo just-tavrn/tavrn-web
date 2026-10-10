@@ -1,31 +1,34 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# The desktop app (apps/desktop, docs/DESKTOP.md). Gated by CI_ENABLED (docs/GITHUB.md). Two routes:
+# The desktop app (docs/DESKTOP.md "Builds and releases"): the Tauri shell for Windows (apps/desktop) and the Electron
+# shell for Linux, with its Windows build as the fallback (apps/desktop-electron). Gated by CI_ENABLED (docs/GITHUB.md).
 #
-# - The self-hosted runner tavrn-heavy (the organization's runner image ships WebKitGTK, tauri-driver, xvfb, xdotool,
-#   gnome-keyring, cargo-xwin, NSIS and LLVM; the Microsoft CRT and Windows SDK wait in the runner's cache,
+# - The self-hosted runner tavrn-heavy (the organization's runner image ships WebKitGTK, xvfb, xdotool, gnome-keyring,
+#   livekit-server, cargo-xwin, NSIS and LLVM; the Microsoft CRT and Windows SDK wait in the runner's cache,
 #   XWIN_CACHE_DIR) for trusted events only: pushes, manual runs and pull requests from branches of this repository.
-#   - `linux`: cargo fmt, clippy, tests, cargo deny (licenses), a round trip through the real Secret Service
-#     (gnome-keyring), the .deb and .AppImage, the WebDriver smoke test of the built app under xvfb; artifact
-#     desktop-linux.
-#   - `windows-nsis`: the NSIS installer cross-compiled with cargo-xwin (artifact desktop-windows-nsis), so main
+#   - `tauri-linux`: the Tauri shell's checks on Linux (cargo fmt, clippy, tests of src-tauri and the key listener
+#     crate, cargo deny, a round trip through the real Secret Service); Linux ships the Electron shell, so no bundles.
+#   - `windows-nsis`: the Tauri NSIS installer cross-compiled with cargo-xwin (artifact desktop-windows-nsis), so main
 #     always has a current Windows installer.
-#   - `linux-electron`: the Linux app's Electron shell: checks, the key listener's Node-API module, .AppImage and .deb,
-#     the Playwright specs under xvfb (the full smoke test against the AppImage, the real keyring in a D-Bus session of
-#     its own); artifact desktop-linux-electron (not for release tags).
-# - GitHub-hosted runners: `linux` falls back to ubuntu-latest for pull requests from forks and Dependabot (and for
-#   release tags: the updater key never reaches a self-hosted runner); `windows-nsis` is skipped there. `windows` on
-#   windows-latest builds the .msi and NSIS installers on release tags and by hand (`windows: true`) only.
-# - Release tags: release.yml calls this workflow with `release-tag` after it created the GitHub release; the Linux
-#   and Windows installers (from `linux` and `windows`), their updater signatures and latest.json are attached to that
-#   release (never a second one).
+#   - `linux-electron`: the Electron shell's checks, the key listener's Node-API module, .AppImage, .deb and
+#     latest-linux.yml, the Playwright specs under xvfb (the full smoke test against the AppImage, the real keyring in
+#     a D-Bus session of its own); artifact desktop-linux-electron.
+# - GitHub-hosted runners: forks and Dependabot fall back to ubuntu-latest (`windows-nsis` is skipped there); release
+#   builds are GitHub-hosted throughout, since the updater key never reaches a self-hosted runner (just-tavrn/.github,
+#   runner/README.md "Security"). On windows-latest, by hand or for a release tag: `windows` (the Tauri .msi and NSIS
+#   installers, `windows: true`) and `windows-electron` (the Electron fallback's NSIS installer and latest.yml,
+#   `electron-windows: true`).
+# - Release tags: release.yml calls this workflow with `release-tag` after it created the GitHub release; `linux-electron`
+#   (on ubuntu-latest), `windows` and `windows-electron` build from the tag, and `release-assets` signs the Electron feeds,
+#   writes the checksums and latest.json, checks the file names against the download page's rules and attaches
+#   everything to that release (never a second one). `tauri-linux` and `windows-nsis` do not run for a release.
 name: Desktop
 
 on:
-  # Development phase (2026-10-08): pull requests run the quick checks of ci.yml only. The Linux build with its
-  # smoke test and the NSIS cross-build run on pushes to main that touch the app or the client, and by hand
-  # (`gh workflow run desktop.yml --ref <branch>` for a pull request branch). The .msi (windows-latest) only by
-  # hand with `windows: true` and on release tags. Changes to this file alone start nothing: dispatch to verify.
+  # Development phase (2026-10-08): pull requests run the quick checks of ci.yml only. The Linux checks and packages
+  # with their tests and the NSIS cross-build run on pushes to main that touch the apps or the client, and by hand
+  # (`gh workflow run desktop.yml --ref <branch>` for a pull request branch). The windows-latest builds only by hand and
+  # on release tags. Changes to this file alone start nothing: dispatch to verify.
   push:
     branches: [main]
     paths:
@@ -37,7 +40,11 @@ on:
   workflow_dispatch:
     inputs:
       windows:
-        description: "Also build the Windows installers on windows-latest (.msi, NSIS)"
+        description: "Also build the Tauri installers on windows-latest (.msi, NSIS)"
+        type: boolean
+        default: false
+      electron-windows:
+        description: "Also build the Electron fallback for Windows on windows-latest (NSIS, latest.yml)"
         type: boolean
         default: false
   workflow_call:
@@ -66,12 +73,101 @@ env:
   RELEASE_TAG: ${{ inputs.release-tag || '' }}
 
 jobs:
-  linux:
-    name: Desktop (Linux)
-    if: ${{ vars.CI_ENABLED == 'true' }}
+  # The Tauri shell is Windows' (and later macOS'); its Rust code still builds and is tested on Linux, where the runner
+  # has WebKitGTK. No bundles: Linux ships the Electron shell. `just desktop-check` is the local equivalent.
+  tauri-linux:
+    name: Tauri shell (Linux checks)
+    if: ${{ vars.CI_ENABLED == 'true' && !inputs.release-tag }}
     # tavrn-heavy for trusted events (the trust rule of the organization's rust-ci.yml: never forks or Dependabot,
-    # whose code would run in the runner VM); release builds stay GitHub-hosted, since they carry the updater key and
-    # no long-lived secret besides TAVRN_READ_PAT belongs on the self-hosted runners.
+    # whose code would run in the runner VM).
+    runs-on: ${{ fromJSON(github.event_name != 'pull_request_target' && github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && '["self-hosted","linux","x64","tavrn-heavy"]' || '"ubuntu-latest"') }}
+    permissions:
+      contents: read
+    timeout-minutes: 45
+    steps:
+      - name: Access to private organization repositories
+        env:
+          READ_TOKEN: ${{ secrets.TAVRN_READ_PAT }}
+        run: |
+          if [ -n "$READ_TOKEN" ]; then
+            git config --global url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "https://github.com/just-tavrn/"
+            git config --global --add url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "ssh://git@github.com/just-tavrn/"
+            git config --global --add url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "git@github.com:just-tavrn/"
+          fi
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # GitHub-hosted: install what the runner image of tavrn-heavy ships (the self-hosted job writes nothing into
+      # its container's system: no apt, no toolchain setup, no Actions cache; Cargo builds in the cache slot's
+      # target directory, CARGO_TARGET_DIR).
+      - name: System packages (WebKitGTK, ALSA, gnome-keyring)
+        if: ${{ runner.environment == 'github-hosted' }}
+        run: |
+          sudo apt-get update
+          # libasound2-dev: the native voice engine's audio devices (cpal links ALSA).
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev libasound2-dev gnome-keyring dbus
+      - uses: pnpm/action-setup@v6
+        if: ${{ runner.environment == 'github-hosted' }}
+      - uses: actions/setup-node@v7
+        if: ${{ runner.environment == 'github-hosted' }}
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Rust toolchain
+        if: ${{ runner.environment == 'github-hosted' }}
+        run: rustup toolchain install stable --profile minimal --component clippy,rustfmt && rustup default stable
+      - uses: Swatinem/rust-cache@v2
+        if: ${{ runner.environment == 'github-hosted' }}
+        with:
+          workspaces: apps/desktop/src-tauri -> target
+      - uses: taiki-e/install-action@v2
+        if: ${{ runner.environment == 'github-hosted' }}
+        with:
+          tool: cargo-deny
+      - name: Tools of the runner image
+        if: ${{ runner.environment == 'self-hosted' }}
+        run: |
+          missing=()
+          for t in cargo cargo-deny dbus-run-session gnome-keyring-daemon; do
+            command -v "$t" >/dev/null || missing+=("$t")
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::not in the runner image (just-tavrn/.github, runner/Dockerfile): ${missing[*]}"; exit 1
+          fi
+          want="$(node -p "require('./package.json').packageManager.split('@')[1]")"
+          [ "$(pnpm --version)" = "$want" ] || { echo "::error::the runner image has pnpm $(pnpm --version), package.json wants $want"; exit 1; }
+          [ "$(node -p 'process.versions.node.split(".")[0]')" = 24 ] || { echo "::error::the runner image has Node.js $(node --version), the job wants 24"; exit 1; }
+          rustc --version && cargo clippy --version && rustfmt --version && node --version
+          echo "CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-unset}"
+      - run: pnpm install --frozen-lockfile
+      - name: Web client (web/dist, embedded by the shell)
+        run: pnpm --filter @tavrn/web build
+      - name: Checks (fmt, clippy, tests, licenses)
+        working-directory: apps/desktop/src-tauri
+        run: |
+          # The key listener crate shared with the Electron shell (its own Cargo workspace).
+          (cd ../crates/keywatch && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked)
+          cargo fmt --check
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo test --locked
+          cargo deny check licenses
+      - name: The real Linux keychain (gnome-keyring in a D-Bus session)
+        working-directory: apps/desktop/src-tauri
+        run: |
+          dbus-run-session -- bash -c 'echo ci-keyring | gnome-keyring-daemon --components=secrets --daemonize --unlock >/dev/null && cargo test --locked -- --ignored os_keychain'
+      - name: Release scripts (latest.json, checksums, the asset set, the installer licence)
+        run: pnpm --filter @tavrn/desktop test
+
+  # The Linux app (apps/desktop-electron, docs/DESKTOP.md "The Linux shell (Electron)", "Builds and releases"): the
+  # checks, the key listener's Node-API module, the .AppImage, .deb and latest-linux.yml, the full smoke test against
+  # the AppImage (no FUSE: extracted and run) with a second user in Chromium, voice through the node's livekit-server,
+  # the global hotkey through xdotool; artifacts desktop-linux-electron and the screenshots. For a release tag on
+  # ubuntu-latest, built from the tag: release-assets attaches its packages and feed.
+  linux-electron:
+    name: Desktop (Linux, Electron)
+    if: ${{ vars.CI_ENABLED == 'true' }}
+    # tavrn-heavy for trusted events, the same rule as the Tauri job above; forks, Dependabot and releases on ubuntu-latest.
     runs-on: ${{ fromJSON(github.event_name != 'pull_request_target' && github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && !inputs.release-tag && '["self-hosted","linux","x64","tavrn-heavy"]' || '"ubuntu-latest"') }}
     permissions:
       contents: read
@@ -91,158 +187,8 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.release-tag || github.ref }}
-      # GitHub-hosted: install what the runner image of tavrn-heavy ships (the self-hosted job writes nothing into
-      # its container's system: no apt, no toolchain setup, no Actions cache; Cargo builds in the cache slot's
-      # target directory, CARGO_TARGET_DIR).
-      - name: System packages (WebKitGTK, WebDriver, xvfb, xdotool, gnome-keyring)
-        if: ${{ runner.environment == 'github-hosted' }}
-        run: |
-          sudo apt-get update
-          # The WebKit WebDriver is webkit2gtk-driver up to Ubuntu 24.04 and webkitgtk-webdriver from 26.04 on.
-          driver=webkit2gtk-driver
-          apt-cache policy webkitgtk-webdriver | grep -q 'Candidate: [0-9]' && driver=webkitgtk-webdriver
-          # libasound2-dev: the native voice engine's audio devices (cpal links ALSA).
-          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
-            librsvg2-dev libasound2-dev patchelf xdg-utils "$driver" xvfb xdotool gnome-keyring
-      - uses: pnpm/action-setup@v6
-        if: ${{ runner.environment == 'github-hosted' }}
-      - uses: actions/setup-node@v7
-        if: ${{ runner.environment == 'github-hosted' }}
-        with:
-          node-version: 24
-          cache: pnpm
-      - name: Rust toolchain
-        if: ${{ runner.environment == 'github-hosted' }}
-        run: rustup toolchain install stable --profile minimal --component clippy,rustfmt && rustup default stable
-      - uses: Swatinem/rust-cache@v2
-        if: ${{ runner.environment == 'github-hosted' }}
-        with:
-          workspaces: apps/desktop/src-tauri -> target
-      - uses: taiki-e/install-action@v2
-        if: ${{ runner.environment == 'github-hosted' }}
-        with:
-          tool: cargo-deny,tauri-driver
-      - name: Tools of the runner image
-        if: ${{ runner.environment == 'self-hosted' }}
-        run: |
-          missing=()
-          for t in cargo cargo-deny tauri-driver WebKitWebDriver xvfb-run xdotool dbus-run-session gnome-keyring-daemon docker; do
-            command -v "$t" >/dev/null || missing+=("$t")
-          done
-          if [ "${#missing[@]}" -gt 0 ]; then
-            echo "::error::not in the runner image (just-tavrn/.github, runner/Dockerfile): ${missing[*]}"; exit 1
-          fi
-          want="$(node -p "require('./package.json').packageManager.split('@')[1]")"
-          [ "$(pnpm --version)" = "$want" ] || { echo "::error::the runner image has pnpm $(pnpm --version), package.json wants $want"; exit 1; }
-          [ "$(node -p 'process.versions.node.split(".")[0]')" = 24 ] || { echo "::error::the runner image has Node.js $(node --version), the job wants 24"; exit 1; }
-          rustc --version && cargo clippy --version && rustfmt --version && node --version
-          echo "CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-unset}"
-      - run: pnpm install --frozen-lockfile
-      - name: Release builds need the owner's updater key
-        if: ${{ inputs.release-tag }}
-        env:
-          KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        run: |
-          if grep -q REPLACE_WITH_THE_OWNERS_MINISIGN_PUBLIC_KEY apps/desktop/src-tauri/tauri.conf.json; then
-            echo "tauri.conf.json still carries the placeholder public key (docs/DESKTOP.md, Updates)" >&2; exit 1
-          fi
-          [ -n "$KEY" ] || { echo "the secret TAURI_SIGNING_PRIVATE_KEY is missing (docs/GITHUB.md)" >&2; exit 1; }
-      - name: Web client (web/dist, embedded by the shell)
-        run: pnpm --filter @tavrn/web build
-      - name: Checks (fmt, clippy, tests, licenses)
-        working-directory: apps/desktop/src-tauri
-        run: |
-          # The key listener crate shared with the Electron shell (its own Cargo workspace).
-          (cd ../crates/keywatch && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked)
-          cargo fmt --check
-          cargo clippy --all-targets --locked -- -D warnings
-          cargo test --locked
-          cargo deny check licenses
-      - name: The real Linux keychain (gnome-keyring in a D-Bus session)
-        working-directory: apps/desktop/src-tauri
-        run: |
-          dbus-run-session -- bash -c 'echo ci-keyring | gnome-keyring-daemon --components=secrets --daemonize --unlock >/dev/null && cargo test --locked -- --ignored os_keychain'
-      - name: Update manifest script
-        run: pnpm --filter @tavrn/desktop test
-      - name: Build (.deb, .AppImage)
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ env.RELEASE_TAG != '' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ env.RELEASE_TAG != '' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
-        run: |
-          target="${CARGO_TARGET_DIR:-$PWD/apps/desktop/src-tauri/target}"
-          echo "DESKTOP_TARGET=$target" >> "$GITHUB_ENV"
-          # The self-hosted target directory outlives the job: no installers of earlier builds in the artifact.
-          rm -rf "$target/release/bundle"
-          # Updater artifacts (signatures) only for releases: pull requests build without the secret.
-          extra=()
-          [ -n "$RELEASE_TAG" ] && extra=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
-          pnpm --filter @tavrn/desktop tauri build --bundles deb,appimage "${extra[@]}"
-      # The node runs as a process of the job (smoke.mjs starts it with E2E_NODE_BIN), copied out of the node image:
-      # the self-hosted runners reach Docker only through the stack's DinD, whose network is not the job's.
-      - name: WebDriver smoke test (node picker, sign-in with TOTP, encrypted message, media, global hotkey)
-        env:
-          GHCR_TOKEN: ${{ github.token }}
-          NODE_IMAGE: ${{ vars.TAVRN_NODE_IMAGE || 'ghcr.io/just-tavrn/tavrn-node:edge' }}
-        run: |
-          bin="$RUNNER_TEMP/tavrn-node-bin"
-          mkdir -p "$bin"
-          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          docker pull "$NODE_IMAGE"
-          cid="$(docker create "$NODE_IMAGE")"
-          docker cp "$cid:/usr/local/bin/tavrn-node" "$bin/tavrn-node"
-          docker rm -f "$cid" >/dev/null
-          docker logout ghcr.io
-          "$bin/tavrn-node" --version
-          E2E_NODE_BIN="$bin/tavrn-node" TAVRN_DESKTOP_APP="$DESKTOP_TARGET/release/tavrn" \
-            xvfb-run -a node apps/desktop/e2e/smoke.mjs
-      - name: Collect the installers
-        run: |
-          mkdir -p dist-desktop
-          cp "$DESKTOP_TARGET"/release/bundle/deb/*.deb dist-desktop/
-          cp "$DESKTOP_TARGET"/release/bundle/appimage/*.AppImage* dist-desktop/
-          ls -l dist-desktop
-      - uses: actions/upload-artifact@v7
-        with:
-          name: desktop-linux
-          path: dist-desktop/
-          retention-days: 7
-      - uses: actions/upload-artifact@v7
-        if: ${{ failure() }}
-        with:
-          name: desktop-smoke-screenshot
-          path: test-results/
-          retention-days: 7
-          if-no-files-found: ignore
-
-  # The Linux app's Electron shell (apps/desktop-electron, docs/DESKTOP.md "The Linux shell (Electron)", "Builds and
-  # releases"): the checks, the key listener's Node-API module, the .AppImage and .deb, the full smoke test against the
-  # AppImage (no FUSE: extracted and run) with a second user in Chromium, voice through the node's livekit-server, the
-  # global hotkey through xdotool; artifacts desktop-linux-electron and the screenshots. Not for release tags yet: the
-  # release still ships the Tauri Linux bundles (release.yml wiring, docs/DESKTOP.md "Builds and releases").
-  linux-electron:
-    name: Desktop (Linux, Electron)
-    if: ${{ vars.CI_ENABLED == 'true' && !inputs.release-tag }}
-    # tavrn-heavy for trusted events, the same rule as the Tauri job above; forks and Dependabot on ubuntu-latest.
-    runs-on: ${{ fromJSON(github.event_name != 'pull_request_target' && github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && '["self-hosted","linux","x64","tavrn-heavy"]' || '"ubuntu-latest"') }}
-    permissions:
-      contents: read
-      packages: read
-    timeout-minutes: 60
-    steps:
-      - name: Access to private organization repositories
-        env:
-          READ_TOKEN: ${{ secrets.TAVRN_READ_PAT }}
-        run: |
-          if [ -n "$READ_TOKEN" ]; then
-            git config --global url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "https://github.com/just-tavrn/"
-            git config --global --add url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "ssh://git@github.com/just-tavrn/"
-            git config --global --add url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "git@github.com:just-tavrn/"
-          fi
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
       # GitHub-hosted: what the runner image of tavrn-heavy ships (Chromium's libraries through Playwright, xvfb,
-      # xdotool, livekit-server, Rust); the self-hosted job installs nothing.
+      # xdotool, gnome-keyring, livekit-server, Rust); the self-hosted job installs nothing.
       - uses: pnpm/action-setup@v6
         if: ${{ runner.environment == 'github-hosted' }}
       - uses: actions/setup-node@v7
@@ -274,11 +220,11 @@ jobs:
           [ "$(node -p 'process.versions.node.split(".")[0]')" = 24 ] || { echo "::error::the runner image has Node.js $(node --version), the job wants 24"; exit 1; }
           rustc --version && node --version && pnpm --version && livekit-server --version
       - run: pnpm install --frozen-lockfile
-      - name: System packages (xvfb, xdotool, Chromium's libraries, livekit-server)
+      - name: System packages (xvfb, xdotool, gnome-keyring, Chromium's libraries, livekit-server)
         if: ${{ runner.environment == 'github-hosted' }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends xvfb xdotool
+          sudo apt-get install -y --no-install-recommends xvfb xdotool gnome-keyring dbus
           pnpm --filter @tavrn/desktop-electron exec playwright install --with-deps chromium
           LIVEKIT_INSTALL_DIR="$HOME/.local/bin" just livekit-install || {
             curl -fsSL https://just.systems/install.sh | bash -s -- --to "$HOME/.local/bin" && LIVEKIT_INSTALL_DIR="$HOME/.local/bin" "$HOME/.local/bin/just" livekit-install
@@ -301,14 +247,15 @@ jobs:
           cargo deny check licenses
           pnpm run build
           xvfb-run -a pnpm test
-      - name: Packages (.AppImage, .deb)
+      - name: Packages (.AppImage, .deb, latest-linux.yml)
         run: |
           # The working directory outlives the job on a self-hosted runner only in its cache slot: start clean.
           rm -rf apps/desktop-electron/release
           pnpm --filter @tavrn/desktop-electron package
           ls -l apps/desktop-electron/release
       # The node runs as a process of the job (the Playwright config starts it with E2E_NODE_BIN), copied out of the
-      # node image as in the Tauri job; voice through the livekit-server of the runner image.
+      # node image (the self-hosted runners reach Docker only through the stack's DinD, whose network is not the job's);
+      # voice through the livekit-server of the runner image.
       - name: Playwright specs (the full smoke test of the AppImage; the shell's and the services' specs, the real keyring)
         env:
           GHCR_TOKEN: ${{ github.token }}
@@ -331,7 +278,7 @@ jobs:
           # The app always runs with Chromium's sandbox, which needs unprivileged user namespaces (the setuid helper is
           # out: the runner forbids new privileges). A runner that cannot create them (Docker's default seccomp
           # profile; just-tavrn/.github runner/README.md "Security") skips the specs loudly instead of switching the
-          # sandbox off; the packages above are built either way.
+          # sandbox off; the packages above are built either way. GitHub-hosted runners can create them.
           if ! unshare -U true 2>/dev/null; then
             echo "::warning title=Electron specs skipped::this runner cannot create user namespaces, so Chromium's sandbox cannot start; the runner stack needs seccomp=unconfined for the runner service (runner/README.md)"
             exit 0
@@ -357,7 +304,7 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-  # The NSIS installer cross-compiled on tavrn-heavy (docs/DESKTOP.md "Builds and releases"): trusted events only,
+  # The Tauri NSIS installer cross-compiled on tavrn-heavy (docs/DESKTOP.md "Builds and releases"): trusted events only,
   # never for release tags (the windows job builds the release installers with the updater signatures). The
   # Microsoft CRT and Windows SDK come from the runner's cache; the job never downloads them.
   windows-nsis:
@@ -431,8 +378,9 @@ jobs:
           path: dist-desktop/
           retention-days: 7
 
-  # The .msi needs WiX, which runs on Windows only: windows-latest for release tags (the release installers, .msi and
-  # NSIS, with updater signatures) and by hand (`windows: true`, also a cross-check of the cross-compiled NSIS).
+  # The Tauri installers: the .msi needs WiX, which runs on Windows only: windows-latest for release tags (the release
+  # installers, .msi and NSIS, with updater signatures) and by hand (`windows: true`, also a cross-check of the
+  # cross-compiled NSIS).
   windows:
     name: Desktop (Windows)
     if: ${{ vars.CI_ENABLED == 'true' && (inputs.windows || inputs.release-tag) }}
@@ -468,6 +416,15 @@ jobs:
         with:
           workspaces: apps/desktop/src-tauri -> target
       - run: pnpm install --frozen-lockfile
+      - name: Release builds need the owner's updater key
+        if: ${{ inputs.release-tag }}
+        env:
+          KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if grep -q REPLACE_WITH_THE_OWNERS_MINISIGN_PUBLIC_KEY apps/desktop/src-tauri/tauri.conf.json; then
+            echo "tauri.conf.json still carries the placeholder public key (docs/DESKTOP.md, Updates)" >&2; exit 1
+          fi
+          [ -n "$KEY" ] || { echo "the secret TAURI_SIGNING_PRIVATE_KEY is missing (docs/GITHUB.md)" >&2; exit 1; }
       - name: Build (.msi, NSIS)
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ env.RELEASE_TAG != '' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
@@ -475,6 +432,12 @@ jobs:
         run: |
           extra=()
           [ -n "$RELEASE_TAG" ] && extra=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
+          # A pre-release (1.2.3-rc.1): the MSI's product version must be numeric, so it gets 1.2.3 (the file name keeps
+          # the full version).
+          version="$(node -p "require('./web/package.json').version")"
+          if [[ "$version" == *-* ]]; then
+            extra+=(--config "{\"bundle\":{\"windows\":{\"wix\":{\"version\":\"${version%%-*}\"}}}}")
+          fi
           pnpm --filter @tavrn/desktop tauri build --bundles msi,nsis "${extra[@]}"
       - name: Collect the installers
         run: |
@@ -488,33 +451,161 @@ jobs:
           path: dist-desktop/
           retention-days: 7
 
-  # The only job that writes: installers, their checksums, signatures and latest.json go to the release release.yml created. They come
-  # from linux and windows (artifacts desktop-linux, desktop-windows); windows-nsis never runs for a release tag.
+  # The Electron shell for Windows: the fallback for computers where WebView2 causes trouble (the Tauri installer stays
+  # the recommended one). An NSIS installer per user, `tavrn-electron_<version>_x64-setup.exe` (the download page tells
+  # the two Windows builds apart by "electron" in the name), its block map and the feed latest.yml; the key listener's
+  # Node-API module built here with the MSVC toolchain. Not code-signed yet (docs/DESKTOP.md "Builds and releases").
+  # The shell's tests run in linux-electron; this job builds and checks the package only.
+  windows-electron:
+    name: Desktop (Windows, Electron fallback)
+    if: ${{ vars.CI_ENABLED == 'true' && (inputs.electron-windows || inputs.release-tag) }}
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Access to private organization repositories
+        env:
+          READ_TOKEN: ${{ secrets.TAVRN_READ_PAT }}
+        run: |
+          if [ -n "$READ_TOKEN" ]; then
+            git config --global url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "https://github.com/just-tavrn/"
+            git config --global --add url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "ssh://git@github.com/just-tavrn/"
+            git config --global --add url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "git@github.com:just-tavrn/"
+          fi
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.release-tag || github.ref }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop-electron/native/keywatch -> target
+      - run: pnpm install --frozen-lockfile
+      - name: Web client (web/dist, bundled into the app)
+        run: pnpm --filter @tavrn/web build
+      - name: Key listener module (napi build for windows-x64)
+        run: pnpm --filter @tavrn/keywatch-native build
+      - name: Package (NSIS, latest.yml)
+        env:
+          # Unsigned for now: electron-builder must not look for a certificate.
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: |
+          rm -rf apps/desktop-electron/release
+          pnpm --filter @tavrn/desktop-electron package:win
+          ls -l apps/desktop-electron/release
+      - name: Collect the installer
+        run: |
+          version="$(node -p "require('./web/package.json').version")"
+          exe="tavrn-electron_${version}_x64-setup.exe"
+          cd apps/desktop-electron/release
+          for f in "$exe" "$exe.blockmap" latest.yml; do
+            [ -s "$f" ] || { echo "::error::electron-builder wrote no $f (electron-builder.config.mjs, nsis.artifactName)"; exit 1; }
+          done
+          grep -q "url: $exe" latest.yml || { echo "::error::latest.yml does not name $exe"; cat latest.yml; exit 1; }
+          mkdir -p ../../../dist-electron-windows
+          cp "$exe" "$exe.blockmap" latest.yml ../../../dist-electron-windows/
+          ls -l ../../../dist-electron-windows
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-windows-electron
+          path: dist-electron-windows/
+          retention-days: 7
+
+  # The only job that writes, and the only one that holds the updater key besides `windows`: it signs the Electron feeds
+  # (latest-linux.yml, latest.yml) with the Tauri updater's key (<feed>.minisig, checked by the apps before they offer
+  # an update), writes a <asset>.sha256 for every installer and latest.json for the Tauri updater, checks the complete
+  # set against the names the website's download page expects (apps/desktop/scripts/release-assets.mjs) and attaches it
+  # to the release release.yml created. Its inputs: the artifacts desktop-windows (Tauri), desktop-linux-electron and
+  # desktop-windows-electron, all built from the tag on GitHub-hosted runners.
   release-assets:
-    name: Release assets (installers, checksums, latest.json)
+    name: Release assets (installers, checksums, signed feeds)
     if: ${{ vars.CI_ENABLED == 'true' && inputs.release-tag }}
-    needs: [linux, windows]
+    needs: [linux-electron, windows-electron, windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - name: Access to private organization repositories
+        env:
+          READ_TOKEN: ${{ secrets.TAVRN_READ_PAT }}
+        run: |
+          if [ -n "$READ_TOKEN" ]; then
+            git config --global url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "https://github.com/just-tavrn/"
+            git config --global --add url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "ssh://git@github.com/just-tavrn/"
+            git config --global --add url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "git@github.com:just-tavrn/"
+          fi
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
           ref: ${{ inputs.release-tag }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Release builds need the owner's updater key
+        env:
+          KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if grep -q REPLACE_WITH_THE_OWNERS_MINISIGN_PUBLIC_KEY apps/desktop/src-tauri/tauri.conf.json; then
+            echo "tauri.conf.json still carries the placeholder public key (docs/DESKTOP.md, Updates)" >&2; exit 1
+          fi
+          [ -n "$KEY" ] || { echo "the secret TAURI_SIGNING_PRIVATE_KEY is missing (docs/GITHUB.md)" >&2; exit 1; }
+      # The installers only, by name: never the screenshots of the specs.
       - uses: actions/download-artifact@v8
         with:
-          pattern: desktop-*
+          name: desktop-windows
           path: installers
-          merge-multiple: true
-      - name: latest.json, the checksums and the upload
+      - uses: actions/download-artifact@v8
+        with:
+          name: desktop-linux-electron
+          path: installers
+      - uses: actions/download-artifact@v8
+        with:
+          name: desktop-windows-electron
+          path: installers
+      # The signer of the Tauri installers (the Tauri CLI, pinned by the lockfile): only the package that carries it.
+      - run: pnpm install --frozen-lockfile --filter @tavrn/desktop
+      - name: Sign the Electron feeds (<feed>.minisig)
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          version="${RELEASE_TAG#v}"
+          for feed in latest-linux.yml latest.yml; do
+            # The trusted comment names the file and the version; the apps check both (apps/desktop-electron/src/main/updater.ts).
+            pnpm --filter @tavrn/desktop exec tauri signer sign --app-version "$version" "$GITHUB_WORKSPACE/installers/$feed" >/dev/null
+            # The CLI writes the minisign signature base64-encoded once more (<feed>.sig): the plain minisign file is published.
+            base64 -d "installers/$feed.sig" > "installers/$feed.minisig"
+            rm "installers/$feed.sig"
+          done
+          # What the apps will check, before anything is uploaded: the key of tauri.conf.json, the file name, the version.
+          node apps/desktop-electron/scripts/verify-feed.mjs installers/latest-linux.yml installers/latest.yml
+      - name: Checksums, latest.json and the asset check
+        run: |
+          # <asset>.sha256 (sha256sum format) for every installer; the update feeds carry their own hashes and signatures.
+          node apps/desktop/scripts/checksums.mjs installers
+          node apps/desktop/scripts/latest-json.mjs installers "$RELEASE_TAG" "$GITHUB_REPOSITORY" \
+            "See https://github.com/$GITHUB_REPOSITORY/releases/tag/$RELEASE_TAG" > installers/latest.json
+          cat installers/latest.json
+          # Exactly the files the download page and the updaters expect, nothing else (docs/DESKTOP.md "Builds and releases").
+          node apps/desktop/scripts/release-assets.mjs check "$RELEASE_TAG" installers
+          ls -l installers
+      - name: Upload to the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # <asset>.sha256 (sha256sum format) for every installer and bundle; the updater manifest has no checksum
-          # field (the .sig files are its integrity check), so the sums are release assets only.
-          node apps/desktop/scripts/checksums.mjs installers
-          node apps/desktop/scripts/latest-json.mjs installers "$RELEASE_TAG" "$GITHUB_REPOSITORY" \
-            "See https://github.com/$GITHUB_REPOSITORY/releases/tag/$RELEASE_TAG" > latest.json
-          cat latest.json
-          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber installers/* latest.json
+          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber installers/*
+          # The whole release, with the web bundle of release.yml: complete before the website is told.
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' \
+            | node apps/desktop/scripts/release-assets.mjs check-release "$RELEASE_TAG"
