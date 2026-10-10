@@ -31,23 +31,6 @@ const EXTENSIONS: Record<Exclude<UploadCategory, "other">, string[]> = {
   archives: "zip 7z rar tar gz tgz bz2 tbz2 xz txz zst lz lzma".split(" "),
 };
 
-const DANGEROUS_TYPES = [
-  "application/x-msdownload",
-  "application/x-msdos-program",
-  "application/x-ms-installer",
-  "application/x-executable",
-  "application/x-sh",
-  "application/x-bat",
-  "application/java-archive",
-  "application/vnd.android.package-archive",
-  "application/x-apple-diskimage",
-  "application/x-iso9660-image",
-  "application/javascript",
-  "text/javascript",
-  "application/hta",
-  "application/x-ms-shortcut",
-];
-
 /** Last extension, lowercase (`"a.tar.gz"` → `gz`); trailing dots and spaces are ignored like on Windows. */
 export function extensionOf(name: string): string {
   const clean = name.trim().replace(/[. ]+$/, "");
@@ -77,27 +60,99 @@ function categoryOfType(type: string): UploadCategory | null {
   return null;
 }
 
-/** Magic bytes of executables (the node checks more; this catches the common renamed binaries). */
-export function looksExecutable(head: Uint8Array): boolean {
-  const starts = (...b: number[]) => b.every((v, i) => head[i] === v);
-  return starts(0x4d, 0x5a) || starts(0x7f, 0x45, 0x4c, 0x46) || starts(0x23, 0x21) || starts(0xca, 0xfe, 0xba, 0xbe) || starts(0xcf, 0xfa, 0xed, 0xfe) || starts(0xce, 0xfa, 0xed, 0xfe);
+/** What kind of program a file is (the download warning names it); every kind is `other` + executable for uploads. */
+export type ExecutableKind = "windows" | "linux" | "macos" | "java" | "mobile_app" | "script" | "shortcut" | "installer" | "disk_image" | "macro_document" | "library" | "program";
+
+/** Bytes {@link executableKind} looks at: disk images carry their signature at 32–36 KiB. */
+export const HEAD_BYTES = 0x9001 + 5;
+
+/** Magic bytes of executables, scripts, shortcuts and disk images (`sniff` of the node's uploads.rs). */
+function sniffKind(head: Uint8Array): ExecutableKind | null {
+  const at = (offset: number, ...b: number[]) => b.every((v, i) => head[offset + i] === v);
+  const text = (offset: number, s: string) => at(offset, ...[...s].map((c) => c.charCodeAt(0)));
+  if (text(0, "MZ")) return "windows";
+  if (at(0, 0x7f, 0x45, 0x4c, 0x46)) return "linux";
+  if (text(0, "#!")) return "script";
+  if (text(0, "dex\n")) return "mobile_app";
+  // Java class files and universal Mach-O binaries share this one.
+  if (at(0, 0xca, 0xfe, 0xba, 0xbe)) return "java";
+  if (at(0, 0xfe, 0xed, 0xfa, 0xce) || at(0, 0xfe, 0xed, 0xfa, 0xcf) || at(0, 0xce, 0xfa, 0xed, 0xfe) || at(0, 0xcf, 0xfa, 0xed, 0xfe)) return "macos";
+  if (at(0, 0x4c, 0, 0, 0, 0x01, 0x14, 0x02, 0x00)) return "shortcut";
+  if (text(0x8001, "CD001") || text(0x8801, "CD001") || text(0x9001, "CD001") || text(0, "koly")) return "disk_image";
+  return null;
+}
+
+const KIND_OF_EXTENSION: Record<string, ExecutableKind> = Object.fromEntries(
+  (
+    [
+      ["windows", "exe com pif scr cpl msc gadget application xll"],
+      ["installer", "msi msix msp appx appxbundle deb rpm snap flatpakref appimage pkg mpkg"],
+      ["script", "bat cmd ps1 psm1 psd1 vbs vbe js jse mjs wsf wsh wsc sct hta reg inf scf sh bash zsh csh ksh fish command py pyw pl rb php workflow action"],
+      ["shortcut", "lnk url website settingcontent-ms desktop"],
+      ["java", "jar class"],
+      ["mobile_app", "apk aab xapk ipa"],
+      ["disk_image", "dmg iso img vhd vhdx"],
+      ["macro_document", "docm xlsm pptm dotm xltm potm ppam xlam"],
+      ["library", "dll sys drv ocx"],
+      ["macos", "app"],
+      ["program", "run bin elf"],
+    ] as const
+  ).flatMap(([kind, list]) => list.split(" ").map((ext) => [ext, kind])),
+);
+
+const KIND_OF_TYPE: [string, ExecutableKind][] = [
+  ["application/x-msdownload", "windows"],
+  ["application/x-msdos-program", "windows"],
+  ["application/x-ms-installer", "installer"],
+  ["application/x-executable", "program"],
+  ["application/x-sh", "script"],
+  ["application/x-bat", "script"],
+  ["application/java-archive", "java"],
+  ["application/vnd.android.package-archive", "mobile_app"],
+  ["application/x-apple-diskimage", "disk_image"],
+  ["application/x-iso9660-image", "disk_image"],
+  ["application/javascript", "script"],
+  ["text/javascript", "script"],
+  ["application/hta", "script"],
+  ["application/x-ms-shortcut", "shortcut"],
+];
+
+/**
+ * Is a file an executable, a script or another type that runs code when opened, and which kind? The node's rules
+ * (uploads.rs): content (magic bytes) first, then the extension, then the type. Archives (zip, 7z, rar, tar.*) are
+ * not executables (owner decision); ZIP-based apps (jar, apk) and macro documents are, by their extension.
+ */
+export function executableKind(name: string, type: string, head?: Uint8Array): ExecutableKind | null {
+  const sniffed = head ? sniffKind(head) : null;
+  if (sniffed) return sniffed;
+  const ext = extensionOf(name);
+  const byExt = Object.prototype.hasOwnProperty.call(KIND_OF_EXTENSION, ext) ? KIND_OF_EXTENSION[ext]! : null;
+  if (byExt) return byExt;
+  const t = type.toLowerCase();
+  return KIND_OF_TYPE.find(([prefix]) => t.startsWith(prefix))?.[1] ?? null;
+}
+
+export function isExecutable(name: string, type: string, head?: Uint8Array): boolean {
+  return executableKind(name, type, head) !== null;
+}
+
+/** The first {@link HEAD_BYTES} of a file's content, for {@link executableKind}. */
+export async function readHead(data: Blob | Uint8Array): Promise<Uint8Array> {
+  if (data instanceof Uint8Array) return data.subarray(0, HEAD_BYTES);
+  return new Uint8Array(await data.slice(0, HEAD_BYTES).arrayBuffer());
 }
 
 /** Category by name and type (and, if given, the first bytes). */
 export function classifyName(name: string, type: string, head?: Uint8Array): Classified {
-  const ext = extensionOf(name);
-  const t = type.toLowerCase();
-  if (DANGEROUS_EXTENSIONS.has(ext) || DANGEROUS_TYPES.some((d) => t.startsWith(d)) || (head && looksExecutable(head))) {
-    return { category: "other", executable: true };
-  }
-  return { category: categoryOfExtension(ext) ?? categoryOfType(type) ?? "other", executable: false };
+  if (isExecutable(name, type, head)) return { category: "other", executable: true };
+  return { category: categoryOfExtension(extensionOf(name)) ?? categoryOfType(type) ?? "other", executable: false };
 }
 
 /** Classifies a file, reading its first bytes. */
 export async function classifyFile(file: File): Promise<Classified> {
   let head: Uint8Array | undefined;
   try {
-    head = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+    head = await readHead(file);
   } catch {
     head = undefined;
   }
