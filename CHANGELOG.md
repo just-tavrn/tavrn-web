@@ -18,3 +18,16 @@ First public release of the web client and the desktop apps.
   native notifications and downloads.
 - **Desktop app for Linux** (Electron): `.AppImage` and `.deb` with the same client in Chromium (voice, video and
   screen sharing as in the browser), the desktop's keyring, tray, notifications, global hotkeys and its own updater.
+
+### Security
+
+- Release builds no longer see the updater signing key: a separate job in a protected `release` environment signs the
+  finished installers and feeds, installs only the signer without lifecycle scripts and verifies every signature.
+- The Linux packages of a release are hashed and uploaded before the end-to-end specs download and run anything; the
+  specs test a copy and use a node image pinned by digest.
+- CI installs `just` and `livekit-server` only from downloads with pinned checksums.
+- Release assets carry GitHub build provenance attestations; the docs explain how to verify a first install against
+  the signed feed.
+- Self-hosted CI runners refuse `dependabot/*` branches even when a run is dispatched by hand.
+- `cargo deny` checks advisories, bans and sources (not only licenses) for both desktop shells.
+- The publication check prints only file and line of a private match, never the matching text.

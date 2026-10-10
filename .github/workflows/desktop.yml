@@ -29,8 +29,9 @@ name: Desktop
 on:
   # Development phase (2026-10-08): pull requests run the quick checks of ci.yml only. The Linux checks and packages
   # with their tests and the NSIS cross-build run on pushes to main that touch the apps or the client, and by hand
-  # (`gh workflow run desktop.yml --ref <branch>` for a pull request branch). The windows-latest builds only by hand and
-  # on release tags. Changes to this file alone start nothing: dispatch to verify.
+  # (`gh workflow run desktop.yml --ref <branch>` for a pull request branch whose diff you have read: the self-hosted
+  # runner executes that branch's code; dependabot/* branches go to ubuntu-latest). The windows-latest builds only by
+  # hand and on release tags. Changes to this file alone start nothing: dispatch to verify.
   push:
     branches: [main]
     paths:

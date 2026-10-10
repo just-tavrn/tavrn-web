@@ -50,11 +50,11 @@ desktop-dev: install
 desktop-build *args: install
     pnpm --filter @tavrn/desktop tauri build {{ if args == "" { if os() == "windows" { "--bundles msi,nsis" } else { "--no-bundle" } } else { args } }}
 
-# cargo fmt, clippy, tests and dependency licenses of the desktop shell and its key listener crate (needs web/dist: `just build` first)
+# cargo fmt, clippy, tests and cargo deny (licenses, advisories, bans, sources) of the desktop shell and its key listener crate (needs web/dist: `just build` first)
 desktop-check: install
     @[ -f web/dist/index.html ] || { echo "web/dist is missing: run just build first (the shell embeds it)" >&2; exit 1; }
     cd apps/desktop/crates/keywatch && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked
-    cd apps/desktop/src-tauri && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked && cargo deny check licenses
+    cd apps/desktop/src-tauri && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked && cargo deny check
 
 # Two native engines, end-to-end encrypted, against a local livekit-server (needs livekit-server on the PATH)
 # The native voice engine against LiveKit (docs/DESKTOP.md "Voice")
@@ -88,10 +88,10 @@ electron-check: install
 electron-native: install
     pnpm --filter @tavrn/keywatch-native build
 
-# The key listener module: cargo fmt, clippy and licenses (and the crate's tests), its node test (key presses under xvfb-run)
+# The key listener module: cargo fmt, clippy and cargo deny (and the crate's tests), its node test (key presses under xvfb-run)
 electron-native-check: electron-native
     cd apps/desktop/crates/keywatch && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked
-    cd apps/desktop-electron/native/keywatch && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo deny check licenses
+    cd apps/desktop-electron/native/keywatch && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo deny check
     cd apps/desktop-electron/native/keywatch && env -u WAYLAND_DISPLAY xvfb-run -a pnpm test
 
 # The Linux packages of the Electron shell (.AppImage and .deb in apps/desktop-electron/release/) from web/dist

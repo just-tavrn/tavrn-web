@@ -808,7 +808,7 @@ plain Node; the recipes and the launcher of the specs (`e2e/launch.ts`) remove i
 | `just electron-dev` | the client's Vite dev server (`E2E_WEB_PORT`, default 5173) and the app in development mode on it (`TAVRN_DESKTOP_DEV_URL`); restart it after changing the shell |
 | `just electron-check` | `tsc` (main process, preload against the client's bridge types, harness), `node --test` of the main-process modules, SPDX headers and dependency licenses; typecheck and tests also run in `just check` |
 | `just electron-native` | the key listener module (`napi build --release`, a Rust toolchain; Cargo builds in `CARGO_TARGET_DIR` when set) |
-| `just electron-native-check` | the crate's and the module's `cargo fmt`, `clippy`, the crate's tests, `cargo deny check licenses` of the module, its node test under `xvfb-run` |
+| `just electron-native-check` | the crate's and the module's `cargo fmt`, `clippy`, the crate's tests, `cargo deny check` of the module (licenses, advisories, bans, sources), its node test under `xvfb-run` |
 | `just electron-package` | `web/dist`, the module, then `Tavrn-<version>.AppImage`, `tavrn_<version>_amd64.deb` and `latest-linux.yml` (electron-builder's update feed) in `apps/desktop-electron/release/`; on Windows `pnpm --filter @tavrn/desktop-electron package:win` writes the fallback's `tavrn-electron_<version>_x64-setup.exe` and `latest.yml` |
 | `just electron-e2e` | the Playwright specs under `xvfb-run` against the development build (`E2E_NODE_BIN` or `E2E_NODE_URL`, ports `E2E_NODE_PORT` and `E2E_WEB_PORT`, default 8300 and 5300); the packaged-app test takes the package from `E2E_ELECTRON_APP`, `TAVRN_DESKTOP_APP` or `release/linux-unpacked/tavrn` and is skipped without one |
 | `just electron-e2e-packaged` | every Playwright spec as CI runs them: the full smoke test and the packaged-app test against a package (`E2E_ELECTRON_APP`, default the AppImage of `release/`), the specs that reach the main process against the development build |
@@ -902,10 +902,12 @@ has no counterpart: Chromium's fake devices (`--use-fake-device-for-media-stream
 **CI**: the job `Desktop (Linux, Electron)` of `.github/workflows/desktop.yml` on `tavrn-heavy` (`ubuntu-latest` for
 forks, Dependabot and release tags, which it builds from the tag) runs, in this order: `pnpm install`, the web bundle,
 the shell's checks, the key listener (the crate's and the module's checks, `napi build`, the node test under xvfb), the
-packages, every Playwright spec (the full smoke test and the packaged-app test against the AppImage, the others against
-the development build, the keychain spec with gnome-keyring in a D-Bus session of its own; the node binary copied out
-of the node image), and uploads `desktop-linux-electron` (the `.AppImage`, the `.deb`, `latest-linux.yml`) and
-`desktop-linux-electron-screenshots`.
+packages, which it uploads at once as `desktop-linux-electron` (the `.AppImage`, the `.deb`, `latest-linux.yml` and
+the `.sha256` of both packages), then the tools of the specs (Chromium, `just` from its release with a pinned checksum,
+livekit-server checked by `just livekit-install`) and every Playwright spec (the full smoke test and the packaged-app
+test against a copy of the AppImage, the others against the development build, the keychain spec with gnome-keyring in
+a D-Bus session of its own; the node binary copied out of the node image, for a release one pinned by digest), and
+uploads `desktop-linux-electron-screenshots`.
 
 **Downloads of a build** (the egress allowlist of a runner): the Electron runtime
 (`github.com/electron/electron/releases`) and electron-builder's AppImage runtime, fpm and 7-Zip
@@ -1006,7 +1008,7 @@ picker accepts `http://127.0.0.1:8080`).
 |---|---|
 | `just desktop-dev` | the app in Tauri's development mode, the client from the Vite dev server |
 | `just desktop-build [args]` | from `web/dist`: on Windows the `.msi` and NSIS installers, elsewhere the binary only (Linux ships the Electron shell); extra arguments go to `tauri build` |
-| `just desktop-check` | cargo fmt, clippy, tests and `cargo deny check licenses` of the shell (needs `web/dist`) |
+| `just desktop-check` | cargo fmt, clippy, tests and `cargo deny check` of the shell (licenses, advisories, bans, sources) (needs `web/dist`) |
 | `just desktop-voice-test` | the native engine's LiveKit test (`cargo test --test voice_livekit -- --ignored`, needs `livekit-server`) |
 | `just desktop-voice-e2e` | voice between Chromium and the built app (`desktop-voice.spec.ts`) under `xvfb-run`; the app from `TAVRN_DESKTOP_APP` or `<cargo target dir>/release/tavrn`, a release node from `E2E_NODE_BIN` |
 
@@ -1027,12 +1029,12 @@ like `just e2e`.
 
 | Job | Runner | When | What |
 |---|---|---|---|
-| `Tauri shell (Linux checks)` | self-hosted `tavrn-heavy` (`ubuntu-latest` for forks and Dependabot) | pushes to `main` that touch `apps/desktop`, `apps/desktop-electron`, `web`, the lockfile or the workspace; by hand (also for a pull request's branch); not for release tags | the Tauri shell's checks on Linux: cargo fmt, clippy, the tests of `src-tauri` and of the key listener crate, `cargo deny check licenses`, the real Secret Service, the release scripts' tests; no bundles and no artifact (Linux ships the Electron shell; `just desktop-check` is the local equivalent) |
+| `Tauri shell (Linux checks)` | self-hosted `tavrn-heavy` (`ubuntu-latest` for forks, Dependabot and `dependabot/*` branches) | pushes to `main` that touch `apps/desktop`, `apps/desktop-electron`, `web`, the lockfile or the workspace; by hand (also for a pull request's branch); not for release tags | the Tauri shell's checks on Linux: cargo fmt, clippy, the tests of `src-tauri` and of the key listener crate, `cargo deny check` (licenses, advisories, bans, sources), the real Secret Service, the release scripts' tests; no bundles and no artifact (Linux ships the Electron shell; `just desktop-check` is the local equivalent) |
 | `Desktop (Windows NSIS, cross-compiled)` | self-hosted `tavrn-heavy` | as above, never for forks, Dependabot or release tags | `tauri build --target x86_64-pc-windows-msvc --runner cargo-xwin --bundles nsis`; artifact `desktop-windows-nsis` (the current Tauri installer of `main` is always there) |
-| `Desktop (Linux, Electron)` | self-hosted `tavrn-heavy` (`ubuntu-latest` for forks, Dependabot and release tags) | as above; release tags | the Electron shell's checks, the key listener module, `.AppImage`, `.deb` and `latest-linux.yml`, every Playwright spec (the full smoke test against the AppImage); artifact `desktop-linux-electron` ([Builds and releases (Electron)](#builds-and-releases-electron)) |
-| `Desktop (Windows)` | GitHub-hosted `windows-latest` | release tags; by hand with `windows: true` | the Tauri `.msi` and NSIS installers, for a release with their updater signatures; artifact `desktop-windows` |
+| `Desktop (Linux, Electron)` | self-hosted `tavrn-heavy` (`ubuntu-latest` for forks, Dependabot and release tags) | as above; release tags | the Electron shell's checks, the key listener module, `.AppImage`, `.deb` and `latest-linux.yml` (uploaded with their sums before the specs run), every Playwright spec (the full smoke test against a copy of the AppImage); artifact `desktop-linux-electron` ([Builds and releases (Electron)](#builds-and-releases-electron)) |
+| `Desktop (Windows)` | GitHub-hosted `windows-latest` | release tags; by hand with `windows: true` | the Tauri `.msi` and NSIS installers, built without any secret; artifact `desktop-windows` |
 | `Desktop (Windows, Electron fallback)` | GitHub-hosted `windows-latest` | release tags; by hand with `electron-windows: true` | the Electron shell's NSIS installer `tavrn-electron_<version>_x64-setup.exe`, its block map and `latest.yml` (the key listener module built with the MSVC toolchain of the runner); artifact `desktop-windows-electron` |
-| `Release assets` | GitHub-hosted `ubuntu-latest` | release tags | signs the Electron feeds, writes the checksums and `latest.json`, checks the asset set and attaches it to the release ([The release procedure](#the-release-procedure)) |
+| `Release assets` | GitHub-hosted `ubuntu-latest`, environment `release` | release tags, once the owner approved | the only job with the updater key: signs the Tauri installers and the Electron feeds, writes the checksums and `latest.json`, verifies every signature, attests the build provenance, checks the asset set and attaches it to the release ([The release procedure](#the-release-procedure)) |
 
 All artifacts are kept for 7 days.
 
@@ -1045,9 +1047,18 @@ All artifacts are kept for 7 days.
 - **Pull requests** start no desktop build: they run the quick checks of `ci.yml` only. A pull request's branch is
   built by hand (`gh workflow run desktop.yml --ref <branch>`); changes to the workflow file alone start nothing either.
 - **Trusted events only:** a self-hosted runner executes the code it checks out, so the jobs keep the trust rule of the
-  organization's `rust-ci.yml`: code from forks and from Dependabot builds on `ubuntu-latest` and skips the
-  cross-compiled installer. **Release builds are GitHub-hosted throughout** (`ubuntu-latest`, `windows-latest`): they
-  carry the updater key, and no long-lived secret besides the read token belongs on the self-hosted runners.
+  organization's `rust-ci.yml`: code from forks, from Dependabot and from `dependabot/*` branches builds on
+  `ubuntu-latest` and skips the cross-compiled installer. A manual run executes the dispatched branch on the runner:
+  dispatch only branches you reviewed. **Release builds are GitHub-hosted throughout** (`ubuntu-latest`,
+  `windows-latest`), and **the build jobs hold no secret**: a compromised dependency in a build (a crate's build script,
+  an npm package) never sees the updater key. Only `Release assets` holds it, in the environment `release` (tags `v*`,
+  the owner's approval): it installs the Tauri CLI alone without lifecycle scripts, runs no build, no cargo and no
+  cache, and signs the finished files (`apps/desktop/scripts/release-workflow.test.mjs` fails when another job names
+  the key or `Release assets` starts building).
+- **The Linux packages are uploaded before the specs run**: `Desktop (Linux, Electron)` hashes the `.AppImage`, the
+  `.deb` and the feed and uploads them right after packaging, then downloads the node binary, Chromium and
+  livekit-server for the specs and tests a copy of the AppImage; `Release assets` checks the sums before it signs. A
+  release's specs run against a node image pinned by digest (`TAVRN_NODE_IMAGE`, GITHUB.md).
 - **Limits of the cross-compiled installer** (experimental upstream, [Tauri: build Windows apps on
   Linux](https://v2.tauri.app/distribute/windows-installer/#build-windows-apps-on-linux-and-macos)): NSIS only (the
   `.msi` needs WiX, which runs on Windows), x86_64 only, built but not started (no Windows on the runner), no updater
@@ -1091,15 +1102,20 @@ signatures are the only signatures.
 2. `release.yml` checks the tag against `web/package.json`, runs the checks, attaches the web bundle and creates the
    GitHub release with the table of downloads in front of the generated notes.
 3. It calls `desktop.yml` with `release-tag`: `Desktop (Linux, Electron)`, `Desktop (Windows)` and `Desktop (Windows,
-   Electron fallback)` build from the tag on GitHub-hosted runners. `Release assets` then
+   Electron fallback)` build from the tag on GitHub-hosted runners, without any secret. `Release assets` waits for the
+   owner's approval of the environment `release` (check that the run belongs to the tag you pushed), then
    - refuses to go on while `tauri.conf.json` carries the placeholder key or the secret `TAURI_SIGNING_PRIVATE_KEY` is
      missing ([Updates](#updates));
-   - signs `latest-linux.yml` and `latest.yml` with that key (`tauri signer sign --app-version <version>`, the Tauri CLI
-     pinned by the lockfile, the signer of the Tauri installers) and publishes the plain minisign files
-     `<feed>.minisig`, after checking them exactly as the apps will (`apps/desktop-electron/scripts/verify-feed.mjs`);
+   - checks the Linux packages against the sums written at packaging;
+   - signs each Tauri installer (`tauri signer sign`, the Tauri CLI pinned by the lockfile, installed alone with
+     `--ignore-scripts`: `<installer>.sig`, the same signature `createUpdaterArtifacts` would write during the build)
+     and `latest-linux.yml` and `latest.yml` (`tauri signer sign --app-version <version>`), publishing the plain
+     minisign files `<feed>.minisig`;
    - writes a `.sha256` per installer and `latest.json` (the Tauri installers only; the Electron Windows installer is
-     never a Tauri update), checks the directory against the expected set, uploads it (`--clobber`), and checks the whole
-     release including the web bundle.
+     never a Tauri update), verifies every signature exactly as the apps will (`apps/desktop-electron/scripts/
+     verify-feed.mjs`, `apps/desktop/scripts/verify-tauri.mjs`), records GitHub's build provenance for every installer
+     and feed (`actions/attest-build-provenance`), checks the directory against the expected set, uploads it
+     (`--clobber`), and checks the whole release including the web bundle.
 4. The website's download page reads the latest release through GitHub's API by itself (tavrn-website serves the
    release data from a cached server-side proxy), so nothing tells it: the new version appears within minutes.
 
@@ -1152,8 +1168,7 @@ download, `apps/desktop-electron/src/main/updater.ts`
 
 Otherwise nothing is downloaded: the reason is logged (`tavrn: refused the update to <version>: <reason>`) and Settings →
 App shows "The update was refused" (`update.signature_invalid`). A package whose key is missing or the placeholder offers
-no updates, like a development run. By hand: `minisign -V -m latest-linux.yml -x latest-linux.yml.minisig -P <key>`, the
-key being the second line of the base64-decoded `plugins.updater.pubkey`.
+no updates, like a development run. By hand: see [Checking a download](#checking-a-download).
 
 The key pair:
 
@@ -1164,11 +1179,12 @@ The key pair:
    and is committed; both shells take it from there. Until then the apps offer no updates (Settings → App says so) and
    the release workflow refuses to build the desktop assets. The repository carries the key of the project's own
    releases; a fork that ships its own builds replaces it with its own.
-3. The **private** key (the content of `tavrn-updater.key`) and its password become the repository secrets
-   `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Only tagged release builds use them (the Tauri
-   build on `windows-latest` and the `Release assets` job); pull requests build without them. Never commit the private
-   key; losing it means installed apps cannot update to releases signed with a new key (they need a manual install
-   once).
+3. The **private** key (the content of `tavrn-updater.key`) and its password become the secrets
+   `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` of the environment `release`
+   (`gh secret set TAURI_SIGNING_PRIVATE_KEY --env release < ~/.tauri/tavrn-updater.key`), never repository secrets.
+   Only the `Release assets` job of a tag's run, after the owner's approval, sees them; every build, including the
+   Tauri build on `windows-latest`, runs without them. Never commit the private key; losing it means installed apps
+   cannot update to releases signed with a new key (they need a manual install once).
 
 For a local signed build use a throwaway key: `TAURI_SIGNING_PRIVATE_KEY=$(cat throwaway.key)
 TAURI_SIGNING_PRIVATE_KEY_PASSWORD=… just desktop-build --bundles nsis --config
@@ -1176,3 +1192,48 @@ TAURI_SIGNING_PRIVATE_KEY_PASSWORD=… just desktop-build --bundles nsis --confi
 feed of the Electron shell is signed as the release does it:
 `pnpm --filter @tavrn/desktop exec tauri signer sign --app-version <version> "$PWD/apps/desktop-electron/release/latest-linux.yml"`
 with the same variables, then `base64 -d latest-linux.yml.sig > latest-linux.yml.minisig`.
+
+### Checking a download
+
+The `<asset>.sha256` next to every installer comes from the same release as the installer: it shows that a download
+is complete and unchanged on the way, not who made it. Whoever could replace a release asset could replace its sum
+too. Updates are protected by the signature (above); for the **first install**, check the download against the signed
+feed or GitHub's build provenance.
+
+The project's update key (`plugins.updater.pubkey` of `apps/desktop/src-tauri/tauri.conf.json`, base64-decoded), key
+id `0A228491B01D1644`:
+
+```
+untrusted comment: minisign public key: 0A228491B01D1644
+RWREFh2wkYQiCvEndPJNukS8PFRiauKz3KjZBnqNfeEHYgcg3DuNUUcn
+```
+
+Compare it with the one published on the project's website and in this repository's history before you trust it.
+
+**Linux (AppImage, .deb) and the Windows fallback**, against the signed feed, with
+[minisign](https://jedisct1.github.io/minisign/):
+
+```sh
+# in the folder with the download, latest-linux.yml and latest-linux.yml.minisig of the same release
+minisign -V -P RWREFh2wkYQiCvEndPJNukS8PFRiauKz3KjZBnqNfeEHYgcg3DuNUUcn -m latest-linux.yml -x latest-linux.yml.minisig
+# the trusted comment names the file and the version; then the SHA-512 of the download must be the feed's:
+openssl dgst -sha512 -binary tavrn_<version>_amd64.deb | base64 -w0; echo
+grep -A2 'url: tavrn_<version>_amd64.deb' latest-linux.yml      # its sha512: line must show the same value
+```
+
+(`latest.yml` and `latest.yml.minisig` the same way for `tavrn-electron_<version>_x64-setup.exe`.)
+
+**Windows (Tauri)**: the installer's own signature `<installer>.sig` is the minisign signature base64-encoded once
+more:
+
+```sh
+base64 -d Tavrn_<version>_x64-setup.exe.sig > setup.minisig
+minisign -V -P RWREFh2wkYQiCvEndPJNukS8PFRiauKz3KjZBnqNfeEHYgcg3DuNUUcn -m Tavrn_<version>_x64-setup.exe -x setup.minisig
+```
+
+**Build provenance** (every installer and feed of a release built by this workflow): GitHub's attestation names the
+repository, the workflow and the commit that built the file:
+
+```sh
+gh attestation verify tavrn_<version>_amd64.deb --repo just-tavrn/tavrn-web
+```

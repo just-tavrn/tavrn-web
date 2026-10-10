@@ -47,7 +47,9 @@ attaches the Tauri installers for Windows (`.exe`, `.msi`), the Linux packages (
 as the fallback for machines where WebView2 causes trouble, a Windows build of the Electron shell
 (`tavrn-electron_<version>_x64-setup.exe`), each with its SHA-256 sum; the Tauri installer stays the recommended one on
 Windows. The apps update themselves from the releases, every update signed with one key ([DESKTOP.md](docs/DESKTOP.md)
-"Builds and releases", "Updates").
+"Builds and releases", "Updates"). The SHA-256 sum only shows that a download is complete; to check that a first
+install really comes from the project, verify it against the signed update feed or GitHub's build provenance
+([DESKTOP.md](docs/DESKTOP.md) "Checking a download"; update key id `0A228491B01D1644`).
 
 **Other nodes** are reached from that client: rooms on other nodes open a federated session with a token of the home
 node, and the login page offers "Sign in with an account of another node". When a sign-in needs the home node itself
