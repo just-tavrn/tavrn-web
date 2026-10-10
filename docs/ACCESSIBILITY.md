@@ -103,6 +103,14 @@ Before: 3 critical + 325 serious + 241 moderate + 25 minor nodes. After: 0 criti
   check as a checkbox that enables "Approve" (no information by colour alone: partial coverage is spelled out). Warnings
   use the `warn` tokens on `warn/10`, like the other notices. `e2e/tests/history-restore.spec.ts` scans the banner and
   the page with axe.
+- **File types and the download warning** (`pages/settings/RolesTab.tsx`, `ChannelsTab.tsx`,
+  `components/DownloadWarningDialog.tsx`): the role's file types are labelled checkboxes in a fieldset ("Not set" is a
+  checkbox of its own; while it is on, the list shows the inherited value disabled); the override block uses the same
+  radio groups as the permission bits (named per type, the inherited value as accessible description, the symbols
+  ✓/–/✗ never the only cue) and announces the result for the subject in a polite live region. The download warning is
+  the shared modal `Dialog` (labelled by its title, focus trapped, Escape cancels) whose first button, Cancel, takes the
+  focus. `e2e/tests/upload-policy.spec.ts` scans the role section, the channel and category editors and the dialog
+  with axe on the desktop and the phone project.
 - **Tabs**: the sign-in/registration switch is a tab list with arrow keys and a tab panel (`lib/a11y.ts`
   `tabListKeyDown`); the settings and admin sections are navigation links with `aria-current="page"`.
 - **Pickers**: the emoji picker is a dialog with a menu grid (arrow keys, Escape, focus return) and one tab stop
