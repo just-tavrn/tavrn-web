@@ -2,8 +2,8 @@
 /**
  * The client as the desktop app sees it (docs/DESKTOP.md), in Chromium and the phone emulation: the Tauri runtime is
  * simulated with an init script that answers the shell's commands (`web/src/platform/tauri.ts`), so the node picker,
- * the explicit node base, Settings → App and the global hotkeys run against the real node. The built app itself is
- * covered by the WebDriver smoke test (apps/desktop/e2e/smoke.mjs).
+ * the explicit node base, Settings → App and the global hotkeys run against the real node. The built Linux app (Electron)
+ * is covered by its smoke test (apps/desktop-electron/e2e/electron-smoke.spec.ts).
  */
 import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
 import { NODE, addVirtualAuthenticator, confirmWithPassword, createRoomViaApi, loginAs, logoutViaUi, nextTotpCode, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, type Account } from "./helpers";

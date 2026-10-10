@@ -45,21 +45,16 @@ dist-tarball: build
 desktop-dev: install
     pnpm --filter @tavrn/desktop tauri dev
 
-# Installers of this platform (Linux: .deb and .AppImage; Windows: .msi and NSIS) from web/dist; extra args go to `tauri build`
+# Linux ships the Electron shell (just electron-package); there this builds the Tauri binary only (for desktop-voice-e2e)
+# The Tauri app from web/dist: Windows installers (.msi and NSIS), elsewhere the binary only; extra args go to `tauri build`
 desktop-build *args: install
-    pnpm --filter @tavrn/desktop tauri build {{ if args == "" { if os() == "windows" { "--bundles msi,nsis" } else { "--bundles deb,appimage" } } else { args } }}
+    pnpm --filter @tavrn/desktop tauri build {{ if args == "" { if os() == "windows" { "--bundles msi,nsis" } else { "--no-bundle" } } else { args } }}
 
 # cargo fmt, clippy, tests and dependency licenses of the desktop shell and its key listener crate (needs web/dist: `just build` first)
 desktop-check: install
     @[ -f web/dist/index.html ] || { echo "web/dist is missing: run just build first (the shell embeds it)" >&2; exit 1; }
     cd apps/desktop/crates/keywatch && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked
     cd apps/desktop/src-tauri && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked && cargo deny check licenses
-
-# The node must serve its web client (a release build or the image); the app always renders under xvfb-run with X11 forced
-# WebDriver smoke test of the built Linux app (tauri-driver, WebKitWebDriver; E2E_NODE_BIN like `just e2e`), never on the desktop
-desktop-e2e:
-    @[ -n "${E2E_NODE_BIN:-}${E2E_NODE_URL:-}" ] || { echo "set E2E_NODE_BIN to a tavrn-node binary (or E2E_NODE_URL to a running development node)" >&2; exit 1; }
-    env -u WAYLAND_DISPLAY GDK_BACKEND=x11 xvfb-run -a node apps/desktop/e2e/smoke.mjs
 
 # Two native engines, end-to-end encrypted, against a local livekit-server (needs livekit-server on the PATH)
 # The native voice engine against LiveKit (docs/DESKTOP.md "Voice")

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
  * The desktop app's keychain, native notifications and tray (docs/DESKTOP.md), with the simulated shell of
- * `desktop-helpers.ts` against the real node, in Chromium and the phone emulation. The built app is covered by the
- * WebDriver smoke test (apps/desktop/e2e/smoke.mjs).
+ * `desktop-helpers.ts` against the real node, in Chromium and the phone emulation. The built Linux app (Electron) is
+ * covered by its smoke test (apps/desktop-electron/e2e/electron-smoke.spec.ts).
  */
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { NODE, createRoomViaApi, inviteCode, loginAs, logoutViaUi, openNavIfMobile, registerViaApi, registerViaUi, tokenOf } from "./helpers";
