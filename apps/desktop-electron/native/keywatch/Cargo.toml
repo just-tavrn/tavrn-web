@@ -1,0 +1,36 @@
+# @tavrn/keywatch-native: the system-wide key listener of the Electron shell (docs/DESKTOP.md "Hotkeys"), a Node-API
+# module around the crate apps/desktop/crates/keywatch (X RECORD on Linux: observes, never grabs). Built with
+# `napi build --release` into a .node file; its own Cargo workspace, like src-tauri.
+[workspace]
+
+[package]
+name = "tavrn-keywatch-native"
+description = "tavrn desktop (Electron): the observe-never-grab key listener as a Node-API module"
+version = "0.0.0"
+license = "Apache-2.0"
+edition = "2024"
+rust-version = "1.90"
+repository = "https://github.com/just-tavrn/tavrn-web"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+keywatch = { package = "tavrn-keywatch", path = "../../../desktop/crates/keywatch" }
+napi = { version = "3", default-features = false, features = ["napi4"] }
+napi-derive = "3"
+
+[build-dependencies]
+napi-build = "2"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "warn"
+panic = "deny"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

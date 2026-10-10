@@ -1,0 +1,26 @@
+{
+  // Type-checks everything of the shell (no output): the main process, the preload (against the client's bridge
+  // types through the path alias), the tests and the Playwright harness. tsconfig.build.json emits the main process.
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "rewriteRelativeImportExtensions": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["node"],
+    "paths": {
+      "@tavrn/web/electronBridge": ["../../web/src/platform/electronBridge.ts"]
+    }
+  },
+  "include": ["src", "e2e", "*.ts"]
+}

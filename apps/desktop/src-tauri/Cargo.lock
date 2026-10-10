@@ -5606,12 +5606,19 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
+ "tavrn-keywatch",
  "tokio",
  "webkit2gtk",
  "windows-native-keyring-store",
+ "zbus-secret-service-keyring-store",
+]
+
+[[package]]
+name = "tavrn-keywatch"
+version = "0.0.0"
+dependencies = [
  "windows-sys 0.61.2",
  "x11rb",
- "zbus-secret-service-keyring-store",
 ]
 
 [[package]]

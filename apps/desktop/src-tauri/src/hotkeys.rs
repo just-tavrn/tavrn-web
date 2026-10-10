@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 use tauri::ipc::Channel;
 
-use crate::keywatch::{self, Key, KeyFilter, RawKey, Watcher};
+use keywatch::{Key, KeyFilter, RawKey, Watcher};
 
 /// What a binding does in the voice client.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
