@@ -40,6 +40,27 @@ describe("platform", () => {
     expect(load).not.toHaveBeenCalled();
   });
 
+  it("loads the Electron implementation when its bridge is detected, after Tauri", async () => {
+    const app = desktop("https://tavrn.example");
+    const tauri = vi.fn();
+    const electron = { detect: vi.fn(() => true), load: vi.fn(async () => ({ createElectronPlatform: async () => app })) };
+    await expect(initPlatform(() => false, tauri, electron)).resolves.toBe(app);
+    expect(platform()).toBe(app);
+    expect(tauri).not.toHaveBeenCalled();
+    // Tauri wins: the Electron shell is not even asked.
+    resetPlatform();
+    const other = desktop("https://other.example");
+    electron.detect.mockClear();
+    await expect(initPlatform(() => true, async () => ({ createTauriPlatform: async () => other }), electron)).resolves.toBe(other);
+    expect(electron.detect).not.toHaveBeenCalled();
+  });
+
+  it("stays the browser when neither shell is detected and never loads their modules", async () => {
+    const electron = { detect: () => false, load: vi.fn() };
+    await expect(initPlatform(() => false, vi.fn(), electron)).resolves.toBe(browserPlatform);
+    expect(electron.load).not.toHaveBeenCalled();
+  });
+
   it("loads the Tauri implementation when the runtime is detected", async () => {
     const app = desktop("https://tavrn.example");
     const load = vi.fn(async () => ({ createTauriPlatform: async () => app }));

@@ -5,12 +5,15 @@
  * is loaded only inside the app (platform/index.ts); nothing here runs in a browser.
  */
 import { Channel, invoke } from "@tauri-apps/api/core";
-import { externalUrl } from "./links";
+import { externalUrl, installLinkHandler } from "./links";
 import { runAppSession, runAppUnlock } from "./appSession";
 import { shellMembers } from "./tauriShell";
 import { createTauriSaveFile } from "./tauriFiles";
 import { voiceMember } from "./tauriVoice";
 import type { AppUpdater, HotkeyEvent, Platform, PlatformHotkeys, ResolvedNode } from "./types";
+
+/** Shared with the Electron shell (`links.ts`); kept here for the existing callers. */
+export { installLinkHandler };
 
 interface ShellConfig {
   node: string | null;
@@ -129,34 +132,4 @@ export async function createTauriPlatform(doc: Document = document): Promise<Pla
   };
   installLinkHandler(doc, openExternal, platform.webOrigin);
   return platform;
-}
-
-/**
- * Links in the app: other sites open in the system browser (the app never shows remote pages), the app's own
- * pages meant for a new tab (`target="_blank"`, e.g. the terms) open on the node's web client there. In-app
- * navigation, downloads and blob links stay untouched. Returns the uninstaller.
- */
-export function installLinkHandler(doc: Document, open: (url: string) => Promise<void>, web: () => string): () => void {
-  const onClick = (e: MouseEvent) => {
-    if (e.defaultPrevented || e.button !== 0) return;
-    const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
-    if (!a || a.hasAttribute("download")) return;
-    let url: URL;
-    try {
-      url = new URL(a.href, location.href);
-    } catch {
-      return;
-    }
-    if (url.protocol === "blob:" || url.protocol === "data:") return;
-    if (url.origin === location.origin) {
-      if (a.target !== "_blank") return;
-      e.preventDefault();
-      void open(`${web()}${url.pathname}${url.search}${url.hash}`).catch(() => {});
-      return;
-    }
-    e.preventDefault();
-    void open(url.href).catch(() => {});
-  };
-  doc.addEventListener("click", onClick);
-  return () => doc.removeEventListener("click", onClick);
 }
