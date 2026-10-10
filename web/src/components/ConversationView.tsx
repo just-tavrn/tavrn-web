@@ -21,9 +21,10 @@ import { archiveMessages, pageWithArchive } from "../history/local";
 import { rememberRoom } from "../search/sync";
 import { SearchButton } from "../search/SearchPanel";
 import { useDecrypted, useE2eeConversation, usePlainSignatures } from "../hooks/useE2eeConversation";
-import { encryptAttachment, encryptCommandArgs, grantsHistory, parseHistoryPolicy, qualify, signedAttachments, type ContentAttachment, type MessageContext } from "@tavrn/e2ee";
+import { encryptAttachment, encryptCommandArgs, qualify, signedAttachments, type ContentAttachment, type MessageContext } from "@tavrn/e2ee";
 import { withFreshEpoch } from "../lib/epochRetry";
-import { historyPending, historyReceive } from "../crypto/history";
+import { historyReceive } from "../crypto/history";
+import { useChannelHistory } from "../hooks/useChannelHistory";
 import { HistoryRestoreBanner } from "./HistoryRestoreBanner";
 import { useMyRestoreState } from "../history/restore";
 import { MessageList, type AuthorLook } from "./MessageList";
@@ -264,19 +265,17 @@ export function ConversationView(p: ConversationViewProps) {
   const usersById = useMemo(() => (p.roomMembers ? new Map(p.roomMembers.map((m) => [m.user.id, m.user])) : undefined), [p.roomMembers]);
   const verificationBlock = !!p.direct && broken.length > 0;
 
-  // History for new members (ENCRYPTION.md §7b): room channels whose policy gives members older messages.
-  const historyPolicy = useMemo(() => {
-    const channel = p.room?.channels.find((c) => c.id === conversationId);
-    return channel && p.encrypted ? parseHistoryPolicy(channel.history_for_new_members) : null;
-  }, [p.room, conversationId, p.encrypted]);
-  const historyActive = !!historyPolicy && grantsHistory(historyPolicy) && e2ee.phase === "ready";
-  const historyPendingList = useQuery({
-    queryKey: ["history-pending", domain, conversationId],
-    queryFn: () => api.history.pending(conversationId),
-    enabled: historyActive,
-    staleTime: 30_000,
+  // History for new members (ENCRYPTION.md §7b): every encrypted room channel, `since_join` included.
+  const historyChannel = p.room?.channels.find((c) => c.id === conversationId);
+  const { active: historyActive, locked: historyLocked } = useChannelHistory({
+    api,
+    domain,
+    q,
+    channelId: conversationId,
+    encrypted: !!historyChannel && p.encrypted,
+    policy: historyChannel?.history_for_new_members,
+    ready: e2ee.phase === "ready",
   });
-  const historyLocked = historyActive && !!historyPendingList.data?.items.some((i) => i.user === user?.address);
   // After a key reset an approved restore brings keys also where the policy gives new members nothing (§7b).
   const restoreState = useMyRestoreState(api, home ? null : domain, p.room && p.encrypted && !threadId ? p.room.id : null);
   const restored = !!restoreState.data?.restored_at && p.encrypted && e2ee.phase === "ready";
@@ -284,14 +283,6 @@ export function ConversationView(p: ConversationViewProps) {
     if (!restored || historyActive) return;
     void historyReceive(q);
   }, [restored, historyActive, q]);
-  useEffect(() => {
-    if (!historyActive || !historyPolicy) return;
-    // Keys shared while this device was away, then members who still wait for ours.
-    void historyReceive(q).then((n) => {
-      if (n > 0) void queryClient.invalidateQueries({ queryKey: ["history-pending", domain, conversationId] });
-    });
-    historyPending(q, historyPolicy);
-  }, [historyActive, historyPolicy, q, domain, conversationId, queryClient]);
 
   useEffect(() => {
     // The channel is the open conversation; a thread panel next to it marks only its thread.

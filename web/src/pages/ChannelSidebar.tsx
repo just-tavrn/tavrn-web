@@ -14,6 +14,8 @@ import { Button, Dialog, ErrorText, Field, Input } from "../components/ui";
 import { describeError, toastError, useToasts } from "../stores/toasts";
 import { useUnread } from "../stores/unread";
 import { syncInboxChannels } from "../stores/mls";
+import { useE2ee } from "../stores/e2ee";
+import { joinRoomGroups } from "../crypto/groupJoins";
 import { BotsAllowedIcon, LockMark, NoBotsIcon, UnreadBadges, useHasUnread } from "../components/Badges";
 import { botMarker } from "../lib/botAccess";
 import { channelPermissions } from "../lib/channelPermissions";
@@ -45,6 +47,12 @@ export function useRoom(roomId: string) {
   useEffect(() => {
     if (channels) void syncInboxChannels(domain, channels);
   }, [domain, channels]);
+  // Join the groups of the encrypted channels right away, not only when one is opened (ENCRYPTION.md §7b): messages
+  // posted after the user's join but before this device's first leaf need keys shared by others, so the gap stays small.
+  const e2eeStatus = useE2ee((s) => s.status);
+  useEffect(() => {
+    if (channels && e2eeStatus === "unlocked") joinRoomGroups(domain, channels);
+  }, [domain, channels, e2eeStatus]);
   return query;
 }
 

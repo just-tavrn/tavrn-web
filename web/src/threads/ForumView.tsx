@@ -16,6 +16,7 @@ import { channelName } from "../lib/names";
 import { describeError } from "../stores/toasts";
 import { relativeTime } from "./format";
 import { useThreadTitles } from "./titles";
+import { useChannelHistory } from "../hooks/useChannelHistory";
 import { createPost } from "./actions";
 import { useThreads } from "./store";
 import { formatCount } from "../stores/unread";
@@ -65,6 +66,8 @@ export function ForumView({ room, channel, perms, roomMembers, members, refreshM
   const titles = useThreadTitles(q, threads, e2ee.tick);
   const names = useMemo(() => new Map((roomMembers ?? []).map((m) => [m.user.address, memberName(m)])), [roomMembers]);
   const ready = !channel.encrypted || e2ee.phase === "ready";
+  // Keys shared for posts from before this device entered the group, and our keys for members who wait (ENCRYPTION.md §7b).
+  const history = useChannelHistory({ api, domain, q, channelId: channel.id, encrypted: channel.encrypted, policy: channel.history_for_new_members, ready: channel.encrypted && e2ee.phase === "ready" });
 
   const preview = (th: Thread): string => {
     const m = th.first_message;
@@ -97,6 +100,7 @@ export function ForumView({ room, channel, perms, roomMembers, members, refreshM
       {channel.encrypted && e2ee.phase === "locked" && <LockedNotice />}
       {channel.encrypted && e2ee.phase === "joining" && <E2eeStatusLine kind="joining" />}
       {channel.encrypted && e2ee.phase === "error" && <E2eeStatusLine kind="error" detail={e2ee.error ?? ""} />}
+      {history.locked && <E2eeStatusLine kind="history" />}
       <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2" data-testid="forum-filters">
         <TagChip active={tag === null} onClick={() => setTag(null)} label={t("forum.all_tags")} testId="forum-tag-all" />
         {channel.tags?.map((tg) => (
