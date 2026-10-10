@@ -341,7 +341,8 @@ which also tests the binding (in the background too).
 
 ### The key listener: observe, never grab, never log
 
-The shell's listener (`src-tauri/src/keywatch/`) **observes** keys: it never takes a key away from the program that has
+The shells' listener (the crate `apps/desktop/crates/keywatch`, used by the Tauri shell and by the Electron shell's
+native module) **observes** keys: it never takes a key away from the program that has
 the focus, so a game still receives the push-to-talk key it also uses (a grab, as `RegisterHotKey`/`XGrabKey` do, would
 take it away, and the system refuses grabs of a modifier alone).
 

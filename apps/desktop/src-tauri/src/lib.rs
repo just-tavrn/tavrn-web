@@ -13,7 +13,6 @@ pub mod events;
 pub mod guard;
 pub mod hotkeys;
 pub mod keychain;
-pub mod keywatch;
 pub mod media;
 pub mod node_url;
 pub mod notify;

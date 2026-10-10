@@ -27,6 +27,7 @@ on:
     branches: [main]
     paths:
       - apps/desktop/**
+      - apps/desktop-electron/**
       - web/**
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
@@ -148,6 +149,8 @@ jobs:
       - name: Checks (fmt, clippy, tests, licenses)
         working-directory: apps/desktop/src-tauri
         run: |
+          # The key listener crate shared with the Electron shell (its own Cargo workspace).
+          (cd ../crates/keywatch && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked)
           cargo fmt --check
           cargo clippy --all-targets --locked -- -D warnings
           cargo test --locked

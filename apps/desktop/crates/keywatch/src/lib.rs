@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The system-wide key listener behind the global hotkeys (docs/DESKTOP.md "Hotkeys"). It **observes** key presses and
-//! releases while any program has the focus and **never grabs** them: the other program (a game) still gets every
-//! key, so a plain key or a lone modifier can be push-to-talk. It reports nothing but the press and release of the
-//! keys in its [`KeyFilter`] (the keys of the current bindings); every other key is dropped where the platform hands
-//! it over, nothing is stored or logged.
+//! The system-wide key listener behind the global hotkeys of both desktop shells (docs/DESKTOP.md "Hotkeys"): the Tauri
+//! shell's `hotkeys.rs` and the Electron shell's native module (`apps/desktop-electron/native/keywatch`). It
+//! **observes** key presses and releases while any program has the focus and **never grabs** them: the other program
+//! (a game) still gets every key, so a plain key or a lone modifier can be push-to-talk. It reports nothing but the
+//! press and release of the keys in its [`KeyFilter`] (the keys of the current bindings); every other key is dropped
+//! where the platform hands it over, nothing is stored or logged.
 //!
 //! | Platform | How |
 //! |---|---|
@@ -11,8 +12,8 @@
 //! | Linux (X11, and X11 programs under XWayland) | the X RECORD extension on two connections of its own (x11rb, pure Rust); the keycode tells the physical key |
 //! | others | not available: the keys work while the window has focus |
 //!
-//! The listener runs only while it is needed (`hotkeys.rs`: bindings exist and the client is signed in) and stops
-//! with [`Watcher`]'s drop.
+//! The listener runs only while it is needed (the shell's hotkeys: bindings exist and the client is signed in) and
+//! stops with [`Watcher`]'s drop.
 
 pub mod keys;
 

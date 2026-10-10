@@ -49,9 +49,10 @@ desktop-dev: install
 desktop-build *args: install
     pnpm --filter @tavrn/desktop tauri build {{ if args == "" { if os() == "windows" { "--bundles msi,nsis" } else { "--bundles deb,appimage" } } else { args } }}
 
-# cargo fmt, clippy, tests and dependency licenses of the desktop shell (needs web/dist: `just build` first)
+# cargo fmt, clippy, tests and dependency licenses of the desktop shell and its key listener crate (needs web/dist: `just build` first)
 desktop-check: install
     @[ -f web/dist/index.html ] || { echo "web/dist is missing: run just build first (the shell embeds it)" >&2; exit 1; }
+    cd apps/desktop/crates/keywatch && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked
     cd apps/desktop/src-tauri && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked && cargo deny check licenses
 
 # The node must serve its web client (a release build or the image); the app always renders under xvfb-run with X11 forced
