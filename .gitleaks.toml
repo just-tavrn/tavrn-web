@@ -13,3 +13,9 @@ description = "Throwaway passwords of test accounts"
 paths = ['''^e2e/tests/[^/]+\.ts$''', '''^web/src/.+\.test\.tsx?$''']
 regexTarget = "line"
 regexes = ['''password: "[a-z-]+-?[0-9]+"''']
+
+[[allowlists]]
+description = "Debian package names of the Electron installer"
+paths = ['''^apps/desktop-electron/electron-builder\.config\.mjs$''']
+regexTarget = "line"
+regexes = ['''depends: \[''']
