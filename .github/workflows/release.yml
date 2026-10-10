@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# Release of the web client (docs/GITHUB.md "Releases"). Push a tag vX.Y.Z whose commit carries version X.Y.Z in
-# web/package.json: the workflow checks the tag, runs the checks, builds web/dist and attaches it as
-# tavrn-web-X.Y.Z.tar.gz (with its SHA-256 sum) to a GitHub release, so the node's image build can embed a pinned
-# bundle instead of building this repository. The job `desktop` then attaches the desktop installers, their SHA-256
-# sums (<asset>.sha256), their updater signatures and latest.json to the same release (desktop.yml, docs/DESKTOP.md). Gated by CI_ENABLED.
+# Release of the web client and the desktop apps (docs/GITHUB.md "Releases", docs/DESKTOP.md "Builds and releases").
+# Push a tag vX.Y.Z (or vX.Y.Z-rc.N, published as a pre-release) whose commit carries that version in web/package.json:
+# the workflow checks the tag, runs the checks, builds web/dist and attaches it as tavrn-web-X.Y.Z.tar.gz (with its
+# SHA-256 sum) to a GitHub release, so the node's image build can embed a pinned bundle instead of building this
+# repository; the release notes start with the table of the downloads. The job `desktop` then builds the desktop apps
+# from the tag and attaches the installers, their SHA-256 sums (<asset>.sha256), the updater signatures and feeds to
+# the same release (desktop.yml); `website` finally asks tavrn-website to rebuild its download page. Gated by CI_ENABLED.
 name: Release
 
 on:
@@ -31,11 +33,11 @@ jobs:
             git config --global --add url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "ssh://git@github.com/just-tavrn/"
             git config --global --add url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "git@github.com:just-tavrn/"
           fi
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           cache: pnpm
@@ -73,11 +75,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --generate-notes --verify-tag release/*
+          # The table of the downloads (apps/desktop/scripts/release-assets.mjs) in front of GitHub's generated notes.
+          node apps/desktop/scripts/release-assets.mjs notes "$TAG" "$GITHUB_REPOSITORY" > "$RUNNER_TEMP/notes.md"
+          # A tag with a hyphen (v1.2.3-rc.1) is a pre-release: never "latest" for the updaters and the download page.
+          prerelease=()
+          [[ "$TAG" == *-* ]] && prerelease=(--prerelease)
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" \
+            --generate-notes --verify-tag "${prerelease[@]}" release/*
 
-  # TODO(electron): the Linux packages move to the Electron shell (apps/desktop-electron, docs/DESKTOP.md "The Linux
-  # shell (Electron)"): build them with `pnpm --filter @tavrn/desktop-electron package` and attach the .AppImage, the
-  # .deb, their .sha256 files and electron-builder's latest-linux.yml (the feed of electron-updater) to this release.
+  # The desktop apps from the tag (desktop.yml): the Tauri installers for Windows, the Electron packages for Linux and
+  # the Electron fallback for Windows, with checksums, signatures and the updaters' feeds, attached to this release.
   desktop:
     name: Desktop installers ${{ github.ref_name }}
     needs: release
@@ -92,3 +99,27 @@ jobs:
       TAVRN_READ_PAT: ${{ secrets.TAVRN_READ_PAT }}
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+  # The website's download page reads the latest releases of tavrn-web and tavrn-node (tavrn-website
+  # docs/RELEASE-DISPATCH.md); it rebuilds on this event once the installers are attached. GITHUB_TOKEN cannot start
+  # workflows in another repository: WEBSITE_DISPATCH_TOKEN (docs/GITHUB.md) may, and without it the job only warns.
+  website:
+    name: Rebuild the download page
+    needs: desktop
+    if: ${{ vars.CI_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: repository_dispatch to tavrn-website
+        env:
+          GH_TOKEN: ${{ secrets.WEBSITE_DISPATCH_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::WEBSITE_DISPATCH_TOKEN is not set: the download page is not rebuilt automatically"
+            exit 0
+          fi
+          gh api --method POST repos/just-tavrn/tavrn-website/dispatches \
+            -f event_type=release-published \
+            -F "client_payload[repository]=$GITHUB_REPOSITORY" \
+            -F "client_payload[tag]=$TAG"

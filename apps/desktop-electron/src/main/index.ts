@@ -26,7 +26,7 @@ import { HttpFetcher, resolveNode, systemSrv } from "./resolve.ts";
 import { registerShellHandlers } from "./shell.ts";
 import { attachWindow, electronTrayHost, registerTrayHandlers, TrayController } from "./tray.ts";
 import { decodePng } from "./tray_icon.ts";
-import { registerUpdaterHandlers, updaterConfigured } from "./updater.ts";
+import { registerUpdaterHandlers, updaterSetup } from "./updater.ts";
 import { createMainWindow, showMain } from "./windows.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -46,6 +46,9 @@ function main(): void {
   // settings file and the single-instance lock).
   protocol.registerSchemesAsPrivileged([{ scheme: APP_SCHEME, privileges: APP_SCHEME_PRIVILEGES }]);
   app.setName("tavrn");
+  // Windows (the fallback build): the app id of its installer's start menu entry (electron-builder.config.mjs `win.appId`),
+  // which Windows needs for the app's notifications and taskbar entry.
+  if (process.platform === "win32") app.setAppUserModelId("org.tavrn.desktop.electron");
   app.setPath("userData", join(app.getPath("appData"), DIR_NAME));
   if (!app.requestSingleInstanceLock()) {
     app.quit();
@@ -81,7 +84,16 @@ function main(): void {
   };
   const version = appVersion();
   const connect = new ConnectWindow({ devUrl, icon, openExternal: (url) => void openExternal(url) });
-  const updates = updaterConfigured(app.isPackaged, process.resourcesPath);
+  // The signed feed (updater.ts): fetched through Chromium's network stack like the node resolver.
+  const feed = updaterSetup({
+    packaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    appPath: app.getAppPath(),
+    platform: process.platform,
+    arch: process.arch,
+    fetch: (url) => net.fetch(url, { signal: AbortSignal.timeout(30_000) }),
+  });
+  const updates = !!feed;
   // The keychain is chosen once the app is ready (safeStorage knows its keyring only then); no call comes earlier.
   let keychain: Keychain | null = null;
   const keychainNow = () =>
@@ -130,7 +142,7 @@ function main(): void {
         resolve: (domain) => resolveNode(domain, new HttpFetcher((url, init) => net.fetch(url, init), version), systemSrv),
         connect: { open: (url) => connect.open(url), close: () => connect.close() },
       }),
-    (ctx) => registerUpdaterHandlers(ctx.registry, updates),
+    (ctx) => registerUpdaterHandlers(ctx.registry, feed),
     (ctx) => registerKeychainHandlers(ctx.registry, { settings: ctx.settings, keychain: keychainNow }),
     // Notifications and the tray; their clicks come back to the client as shell events.
     (ctx) =>

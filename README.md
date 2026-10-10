@@ -22,8 +22,8 @@ single-page app that works on phones, tablets and desktops, in English and Germa
 |---|---|
 | [`web/`](web) | `@tavrn/web`: the client (`src/`), its static assets and generated icons (`public/`), translations (`src/i18n/`), Vitest tests next to the code |
 | [`e2e/`](e2e) | `@tavrn/e2e`: the Playwright suite (`tests/`), its fixtures (a fake OpenID provider, the example bot) and `playwright.config.ts` |
-| [`apps/desktop/`](apps/desktop) | `@tavrn/desktop`: the desktop app for Windows (and macOS later), a Tauri 2 shell around the client (Rust crate `tavrn-desktop` in `src-tauri/` with its own Cargo workspace, the WebDriver smoke test in `e2e/`) |
-| [`apps/desktop-electron/`](apps/desktop-electron) | `@tavrn/desktop-electron`: the desktop app for Linux, an Electron shell around the client (TypeScript main process and preload, the Playwright smoke test in `e2e/`) |
+| [`apps/desktop/`](apps/desktop) | `@tavrn/desktop`: the desktop app for Windows (and macOS later), a Tauri 2 shell around the client (Rust crate `tavrn-desktop` in `src-tauri/` with its own Cargo workspace, the release scripts in `scripts/`) |
+| [`apps/desktop-electron/`](apps/desktop-electron) | `@tavrn/desktop-electron`: the desktop app for Linux and the Windows fallback, an Electron shell around the client (TypeScript main process and preload, the Playwright smoke test in `e2e/`) |
 | [`docs/`](docs) | [CLIENT.md](docs/CLIENT.md) (what the client does), [DESKTOP.md](docs/DESKTOP.md) (the desktop app), [ACCESSIBILITY.md](docs/ACCESSIBILITY.md), [GITHUB.md](docs/GITHUB.md) (repository setup) |
 | `scripts/` | license and hygiene checks |
 
@@ -42,9 +42,12 @@ node offers (registration mode, captcha, voice, single sign-on, limits) comes fr
 layer (`web/src/platform/`) then gives that node's URL to the API client, the WebSocket and the link builders
 ([DESKTOP.md](docs/DESKTOP.md)). It has two shells around the same client: Tauri on Windows (WebView2) and macOS, and
 Electron on Linux, where the distributions' WebKitGTK has no WebRTC and Chromium brings voice, video and screen sharing
-as in the browser (the project may return to Tauri on Linux once it offers a WebRTC-capable webview). A Windows build
-of the Electron shell is planned as a fallback for machines where WebView2 causes trouble; the Tauri installer stays the
-recommended one ([DESKTOP.md](docs/DESKTOP.md) "Builds and releases").
+as in the browser (the project may return to Tauri on Linux once it offers a WebRTC-capable webview). Every release
+attaches the Tauri installers for Windows (`.exe`, `.msi`), the Linux packages (`.AppImage`, `.deb`) and, clearly marked
+as the fallback for machines where WebView2 causes trouble, a Windows build of the Electron shell
+(`tavrn-electron_<version>_x64-setup.exe`), each with its SHA-256 sum; the Tauri installer stays the recommended one on
+Windows. The apps update themselves from the releases, every update signed with one key ([DESKTOP.md](docs/DESKTOP.md)
+"Builds and releases", "Updates").
 
 **Other nodes** are reached from that client: rooms on other nodes open a federated session with a token of the home
 node, and the login page offers "Sign in with an account of another node". When a sign-in needs the home node itself
@@ -104,14 +107,13 @@ with `TAVRN_VOICE_ENABLED=false`.
 | `just publish-check` | pre-publication hygiene (`scripts/publish-check.sh`: no private files, domains or secrets) |
 | `just desktop-dev` | the Tauri app with the client from the Vite dev server ([DESKTOP.md](docs/DESKTOP.md); needs Rust and the WebKitGTK packages on Linux) |
 | `just desktop-check` | cargo fmt, clippy, tests and `cargo deny` (licenses) of the Tauri shell (needs `web/dist`); the CI runs it in `desktop.yml`, `just check` stays JavaScript-only |
-| `just desktop-build` | the Tauri installers of this platform (Linux `.deb` and `.AppImage`, Windows `.msi` and NSIS) |
-| `just desktop-e2e` | the WebDriver smoke test of the built Tauri app on Linux under `xvfb-run` (`E2E_NODE_BIN`; tauri-driver) |
+| `just desktop-build` | the Tauri installers on Windows (`.msi` and NSIS); on Linux the Tauri binary only (Linux ships the Electron shell) |
 | `just desktop-voice-test` | the native voice engine against a local `livekit-server` (two engines, end-to-end encrypted) |
 | `just desktop-voice-e2e` | voice between Chromium and the built Tauri app's native engine on Linux under `xvfb-run` (`E2E_NODE_BIN` of a release node) |
 | `just electron-dev` | the Linux app (Electron shell) on the Vite dev server ([DESKTOP.md](docs/DESKTOP.md) "The Linux shell (Electron)") |
 | `just electron-check` | `tsc`, `node --test`, SPDX headers and licenses of the Electron shell (typecheck and tests also run in `just check`) |
 | `just electron-native` | the Electron shell's system-wide key listener (a Node-API module; needs Rust) |
-| `just electron-package` | the Electron shell's `.AppImage`, `.deb` and update feed `latest-linux.yml` |
+| `just electron-package` | the Electron shell's `.AppImage`, `.deb` and update feed `latest-linux.yml` (on Windows: `pnpm --filter @tavrn/desktop-electron package:win` for the fallback installer) |
 | `just electron-e2e` | the Playwright specs of the Electron shell under `xvfb-run` (`E2E_NODE_BIN`) |
 | `just electron-e2e-packaged` | the same with the full smoke test against the AppImage, as CI runs them |
 | `just e2e-install`, `just e2e-clean`, `just livekit-install` | Chromium for Playwright; remove the end-to-end nodes' data (`data-dev/`); `livekit-server` into `~/.local/bin` |
