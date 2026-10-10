@@ -58,8 +58,8 @@ test("starts on the node picker and reaches the login page of a development node
         }),
     ),
   ).toBe("script-src-elem");
-  expect(await page.evaluate(() => (window as unknown as { tavrnShell: { keychain: { keychainStatus(): Promise<unknown> } } }).tavrnShell.keychain.keychainStatus().then(() => "resolved", (e: Error) => e.message))).toBe(
-    "not implemented: keychainStatus",
+  expect(await page.evaluate(() => (window as unknown as { tavrnShell: { updater: { checkUpdate(): Promise<unknown> } } }).tavrnShell.updater.checkUpdate().then(() => "resolved", (e: Error) => e.message))).toBe(
+    "not implemented: checkUpdate",
   );
   expect(await page.evaluate(() => (window as unknown as { tavrnShell: { shell: { setNode(u: string): Promise<unknown> } } }).tavrnShell.shell.setNode("http://evil").then(() => "resolved", (e: unknown) => e))).toBe("node_url.insecure");
 
