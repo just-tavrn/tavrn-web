@@ -14,6 +14,7 @@ const manager = {
   hasPendingBackups: () => false,
   dispose: vi.fn(),
   createKeyPackages: vi.fn(async (n: number) => Array.from({ length: n }, (_, i) => `kp${i}`)),
+  setInboxWanted: vi.fn(),
 };
 
 vi.mock("@tavrn/e2ee", async (importOriginal) => {
@@ -33,12 +34,13 @@ vi.mock("../crypto/e2ee", async (importOriginal) => ({ ...(await importOriginal<
 import { cryptoStore } from "../crypto/store";
 import { useAuth } from "./auth";
 import { useE2ee } from "./e2ee";
-import { getMls, mlsTabName, resetMls } from "./mls";
+import { getMls, mlsTabName, resetMls, syncInboxChannels } from "./mls";
 
 const user = (address: string) => ({ address, username: address.split("@")[0], domain: address.split("@")[1] }) as never;
 
 beforeEach(() => {
   opened.length = 0;
+  manager.setInboxWanted.mockClear();
   vi.spyOn(cryptoStore, "isUnlocked").mockReturnValue(true);
   useAuth.setState({ token: "t", user: user("alice@a.test"), deviceId: "DEV1", home: null });
 });
@@ -70,5 +72,46 @@ describe("MLS state shared by the tabs of this browser", () => {
     const ctx = flows.ensureDevice.mock.calls[0]![0] as { keyPackages?: (n: number) => Promise<string[] | null> };
     expect(await ctx.keyPackages?.(2)).toEqual(["kp0", "kp1"]);
     expect(manager.createKeyPackages).toHaveBeenCalledWith(2);
+  });
+});
+
+describe("inbox keys of channels with webhooks (APPLICATIONS.md §6.1a)", () => {
+  const channels = [
+    { id: "C1", encrypted: true, has_webhooks: true },
+    { id: "C2", encrypted: true, has_webhooks: false },
+  ];
+
+  it("hands the channels to the open manager", async () => {
+    await getMls();
+    await syncInboxChannels("a.test", channels);
+    expect(manager.setInboxWanted.mock.calls).toEqual([
+      ["a.test/C1", true],
+      ["a.test/C2", false],
+    ]);
+  });
+
+  it("keeps what a room showed before the device was unlocked and hands it to the manager once it opens", async () => {
+    // The room loads first (right after joining, while the device key is still being set up); the room query is not
+    // fetched again, so the manager would otherwise never learn the channel has webhooks and the join commit would
+    // publish no inbox key.
+    vi.mocked(cryptoStore.isUnlocked).mockReturnValue(false);
+    await syncInboxChannels("a.test", channels);
+    expect(manager.setInboxWanted).not.toHaveBeenCalled();
+    vi.mocked(cryptoStore.isUnlocked).mockReturnValue(true);
+    await getMls();
+    expect(manager.setInboxWanted.mock.calls).toEqual([
+      ["a.test/C1", true],
+      ["a.test/C2", false],
+    ]);
+  });
+
+  it("never hands one account's channels to another account's manager", async () => {
+    vi.mocked(cryptoStore.isUnlocked).mockReturnValue(false);
+    await syncInboxChannels("a.test", channels);
+    resetMls();
+    useAuth.setState({ user: user("bob@b.test"), deviceId: "DEV2" });
+    vi.mocked(cryptoStore.isUnlocked).mockReturnValue(true);
+    await getMls();
+    expect(manager.setInboxWanted).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { RoomIcon } from "../components/Avatar";
 import { NavLink } from "react-router";
@@ -30,15 +30,21 @@ import { badgeText, useCapabilities, useOpenRoomReports } from "../moderation/ho
 /** Room detail; its `read_states` seed the unread counts of the channels (design note 4.4). */
 export function useRoom(roomId: string) {
   const { api, domain } = useNode();
-  return useQuery({
+  const query = useQuery({
     queryKey: ["room", roomId],
     queryFn: async () => {
       const room = await api.rooms.get(roomId);
       useUnread.getState().seed(room.read_states ?? []);
-      void syncInboxChannels(domain, room.channels);
       return room;
     },
   });
+  // From the data, not from this query function: the room detail is also fetched with the rail's query function
+  // (same key) and by invalidations, and every copy must tell the session manager which channels have webhooks.
+  const channels = query.data?.channels;
+  useEffect(() => {
+    if (channels) void syncInboxChannels(domain, channels);
+  }, [domain, channels]);
+  return query;
 }
 
 /**
