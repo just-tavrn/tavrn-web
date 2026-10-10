@@ -48,7 +48,7 @@ describe("memberMenu", () => {
   it("offers the everyday items and, for a moderator above the target, moderation", () => {
     const entries = memberMenu(ctx(), memberActions(), t);
     expect(ids(entries)).toEqual(["profile", "message", "call", "add-friend", "mention", "copy-address", "roles", "timeout", "kick", "ban", "block"]);
-    expect(findEntry(entries, "call")).toMatchObject({ disabled: true, reason: "menu.reason.calls_soon" });
+    expect(findEntry(entries, "call")).toMatchObject({ disabled: true, reason: "menu.reason.calls_in_dm" });
     expect(findEntry(entries, "kick")?.disabled).toBeFalsy();
   });
 

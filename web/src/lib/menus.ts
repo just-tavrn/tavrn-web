@@ -34,7 +34,7 @@ export interface MemberMenuContext {
   voice?: { channelId: string; serverMuted: boolean; channels: { id: string; name: string }[]; inMyCall: boolean; volume: number; streaming?: boolean; streamVolume?: number };
   friend: boolean;
   friendPending: boolean;
-  /** DM/group calls exist (phase 4E track V); until then the item is disabled. */
+  /** A call can start from here; otherwise the item is disabled and points to the direct message, where calls start. */
   callsAvailable: boolean;
   /** Mentions only make sense where a composer is open. */
   canMention: boolean;
@@ -93,7 +93,7 @@ export function memberMenu(c: MemberMenuContext, a: MemberMenuActions, t: T): Me
   return normalizeMenu([
     menuItem("profile", t("menu.member.profile"), a.profile, { icon: "👤" }),
     !c.self && menuItem("message", t("menu.member.message"), a.message, { icon: "✉" }),
-    !c.self && menuItem("call", t("menu.member.call"), a.call, { icon: "📞", disabled: !c.callsAvailable, reason: c.callsAvailable ? undefined : t("menu.reason.calls_soon") }),
+    !c.self && menuItem("call", t("menu.member.call"), a.call, { icon: "📞", disabled: !c.callsAvailable, reason: c.callsAvailable ? undefined : t("menu.reason.calls_in_dm") }),
     !c.self && !c.friend && menuItem("add-friend", c.friendPending ? t("menu.member.friend_pending") : t("menu.member.add_friend"), a.addFriend, { icon: "＋", disabled: c.friendPending, reason: c.friendPending ? t("menu.member.friend_pending") : undefined }),
     c.canMention && menuItem("mention", t("menu.member.mention"), a.mention, { icon: "@" }),
     menuItem("copy-address", t("menu.copy_address"), a.copyAddress, { icon: "⧉" }),

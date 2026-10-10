@@ -113,9 +113,6 @@ export async function executeBuiltin(def: CommandDefinition, values: Record<stri
     case "whiteboard":
       ctx.openWhiteboard();
       return;
-    case "poll":
-      ctx.info(t("cmd.poll.coming"));
-      return;
     case "nick": {
       const name = str("name");
       await api.members.setMyProfile(roomId(), { nickname: name || null });

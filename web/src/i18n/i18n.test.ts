@@ -28,4 +28,12 @@ describe("i18n", () => {
     expect(errorMessage(undefined, "")).toBe("Etwas ist schiefgelaufen");
     useLocale.setState({ locale: "en" });
   });
+
+  it("user-visible strings carry no roadmap talk (phases, coming soon)", () => {
+    const roadmap = /\b(phase \d|coming (soon|in)|roadmap|todo)\b|\b(kommt|kommen) (bald|in phase)|demnächst/i;
+    for (const [code, { messages }] of Object.entries(LOCALES)) {
+      const hits = Object.entries(messages).filter(([, v]) => roadmap.test(v)).map(([k]) => k);
+      expect({ code, hits }).toEqual({ code, hits: [] });
+    }
+  });
 });
