@@ -302,4 +302,21 @@ describe("ContextMenu", () => {
     expect(screen.getByRole("menuitem", { name: "Mute" })).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByTestId("context-submenu")).toBeNull();
   });
+
+  it("an entry that replaces the chosen one under the pointer (a tap on unmute) does not open its submenu by hover", async () => {
+    const user = userEvent.setup();
+    const wait = (ms: number) => act(() => new Promise((r) => setTimeout(r, ms)));
+    render(<Stateful onSettings={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "More" }));
+    await user.keyboard("{ArrowDown}{ArrowRight}{Enter}");
+    await wait(400);
+    await user.click(screen.getByRole("menuitem", { name: "Unmute" }));
+    // The browser sends the pointer's hover to the new entry at the same place: no submenu pops up.
+    fireEvent.mouseEnter(screen.getByRole("menuitem", { name: "Mute" }));
+    expect(screen.queryByTestId("context-submenu")).toBeNull();
+    // A real hover a moment later still opens it.
+    await wait(400);
+    fireEvent.mouseEnter(screen.getByRole("menuitem", { name: "Mute" }));
+    expect(screen.getByTestId("context-submenu")).toBeInTheDocument();
+  });
 });

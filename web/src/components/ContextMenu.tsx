@@ -143,14 +143,21 @@ function MenuPanel({ entries, anchor, prefer, onClose, onCloseSub, label, depth,
   };
   // A menu opened by a long press sits under the finger: the compatibility mouse move of the release would hover
   // whatever item lies there (and open its submenu). Hover counts only once the panel has settled; clicks and the
-  // keyboard work right away.
+  // keyboard work right away. The same holds after a choice that keeps the menu open: the entry that replaces the
+  // chosen one (unmute → the mute submenu) lies under the pointer or finger and would open by hover.
   const settled = useRef(false);
-  useEffect(() => {
-    const timer = setTimeout(() => {
+  const settleTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const settle = useCallback(() => {
+    settled.current = false;
+    clearTimeout(settleTimer.current);
+    settleTimer.current = setTimeout(() => {
       settled.current = true;
     }, SETTLE_MS);
-    return () => clearTimeout(timer);
   }, []);
+  useEffect(() => {
+    settle();
+    return () => clearTimeout(settleTimer.current);
+  }, [settle]);
 
   const focused = useRef(false);
   useLayoutEffect(() => {
@@ -182,7 +189,8 @@ function MenuPanel({ entries, anchor, prefer, onClose, onCloseSub, label, depth,
     if (entry.disabled) return;
     if (entry.kind === "submenu") return openSub(entry);
     entry.onSelect?.();
-    if (!staysOpen(entry)) onClose();
+    if (staysOpen(entry)) settle();
+    else onClose();
   };
 
   // A choice that keeps the menu open may replace entries (mute → unmute, a submenu that vanishes): forget a
