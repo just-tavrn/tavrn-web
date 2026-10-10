@@ -14,6 +14,8 @@ import { BlockedUsersList } from "./settings/PrivacyTab";
 import { ContextMenu, MenuButton, menuItem, normalizeMenu, separator, useContextMenu } from "../components/ContextMenu";
 import { FriendVoiceLine, useFriendVoice } from "../components/FriendVoice";
 import { SpeakerIcon } from "../voice/ui/icons";
+import { inviteToRoomEntry } from "../lib/menus";
+import { sendRoomInvite, useInviteRooms } from "../components/menus/inviteToRoom";
 
 /** Friends, incoming and outgoing requests and blocked users (PROTOCOL.md §8a), live via `friend.*`. */
 export function FriendsPage() {
@@ -150,17 +152,20 @@ function ItemRow({ item }: { item: SectionItem }) {
 
 /**
  * A friend: where they are in voice (only channels the user can view) and a context menu (right-click, long press,
- * the ⋯ button) with "Join <channel>", message, remove and block.
+ * the ⋯ button) with "Join <channel>", message, "Invite to room" (the rooms where the user may invite), remove and block.
  */
 function FriendItem({ item, friend }: { item: SectionItem; friend: FriendActions }) {
   const t = useT();
   const voice = useFriendVoice(item.user.address);
   const menu = useContextMenu();
+  const inviteRooms = useInviteRooms(menu.open);
+  const name = item.user.display_name;
   const entries = menu.open
     ? normalizeMenu([
         voice && menuItem("join-voice", t("friends.join_voice", { channel: voice.channelName }), () => void voice.join(), { icon: <SpeakerIcon size={16} />, testId: "friend-join-voice" }),
         voice && separator("sep-voice"),
         menuItem("message", t("friends.message"), friend.message),
+        inviteToRoomEntry(inviteRooms, item.user.address, (room) => void sendRoomInvite(room, item.user.address, name), t),
         separator("sep-danger"),
         menuItem("remove", t("friends.remove"), friend.remove, { danger: true }),
         menuItem("block", t("friends.block"), friend.block, { danger: true }),

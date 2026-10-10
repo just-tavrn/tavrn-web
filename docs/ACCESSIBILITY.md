@@ -110,6 +110,11 @@ Before: 3 critical + 325 serious + 241 moderate + 25 minor nodes. After: 0 criti
   The friends list's voice line is text (`ok` on `bg-1`, 7.12:1) with a decorative speaker icon; every friend has a
   "⋯" menu button (`aria-haspopup="menu"`, 40 px) besides right-click and long press. `e2e/tests/social-voice.spec.ts`
   scans the card (desktop), the room menu with the card head (phone) and the friends list with axe.
+- **Invite to room** (`lib/menus.ts` `inviteToRoomEntry`, friend and member menus): a submenu like the others
+  (`aria-haspopup="menu"`, → or Enter opens it, ← closes it, the room names as menu items; rooms of other nodes carry
+  their domain as visible text in the item's name). The result is a toast (`status`, or `alert` for a refusal), so it
+  is announced. `e2e/tests/friend-invite.spec.ts` scans the friend menu with the open submenu with axe on the desktop
+  and the phone project.
 - **History restore after a key reset** (`components/HistoryRestoreBanner.tsx`, `pages/settings/HistoryRequestsTab.tsx`):
   the requester's banner is a labelled region with real buttons and a labelled message field; each request on the
   settings page is a labelled section with a definition list for the dates, the channels as a list and the identity

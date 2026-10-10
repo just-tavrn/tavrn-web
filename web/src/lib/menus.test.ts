@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ALL_PERMISSIONS, Permission } from "@tavrn/sdk";
 import { findEntry, staysOpen, type MenuEntry } from "../components/ContextMenu";
-import { channelMenu, dmMenu, memberMenu, messageMenu, notifyEntries, roomMenu, threadMenu, voiceParticipantMenu, type MemberMenuActions, type MemberMenuContext, type VoiceParticipantMenuActions } from "./menus";
+import { channelMenu, dmMenu, inviteRoomChoices, inviteToRoomEntry, memberMenu, messageMenu, notifyEntries, roomMenu, threadMenu, voiceParticipantMenu, type InviteRoomCandidate, type MemberMenuActions, type MemberMenuContext, type VoiceParticipantMenuActions } from "./menus";
 
 const t = (key: string, params?: Record<string, string | number>) => (params ? `${key}:${JSON.stringify(params)}` : key);
 const ids = (entries: MenuEntry[]) => entries.filter((e) => e.kind !== "separator").map((e) => e.id);
@@ -358,5 +358,59 @@ describe("which entries keep the menu open (state changes, like the voice quick 
     if (archive?.kind === "item") archive.onSelect?.();
     expect(actions.setArchived).toHaveBeenCalledWith(false);
     expect(threadMenu({ mayManage: false, archived: false, locked: false }, actions, t)).toEqual([]);
+  });
+});
+
+describe("invite to room (direct invites, FEDERATION.md §3.4)", () => {
+  const room = (id: string, name: string, over: Partial<InviteRoomCandidate> = {}): InviteRoomCandidate => ({ id, name, node: null, perms: Permission.CREATE_INVITES, isOwner: false, ...over });
+  const rooms = [
+    room("R1", "Gilde"),
+    room("R2", "Ohne Einladen", { perms: Permission.SEND_MESSAGES }),
+    room("R3", "Eigener Raum", { perms: 0n, isOwner: true }),
+    room("R4", "Admins", { perms: Permission.ADMINISTRATOR }),
+    room("R5", "Noch nicht geladen", { perms: null }),
+    room("R6", "Bob ist schon da", { members: ["bob@x"] }),
+    room("R7", "Anderer Knoten", { node: "other.example" }),
+  ];
+
+  it("lists the rooms where the user may create invites, without those the target is known to be in, sorted by name", () => {
+    expect(inviteRoomChoices(rooms, "bob@x").map((r) => r.id)).toEqual(["R4", "R7", "R3", "R1"]);
+    // Rooms named by the caller (the current room of a member menu) are left out too.
+    expect(inviteRoomChoices(rooms, "bob@x", ["R1", "R4"]).map((r) => r.id)).toEqual(["R7", "R3"]);
+    // Another target is not a member of R6.
+    expect(inviteRoomChoices(rooms, "carl@x").map((r) => r.id)).toContain("R6");
+  });
+
+  it("builds a submenu whose items invite into the room and close the menu; remote rooms show their node", () => {
+    const invite = vi.fn();
+    const entry = inviteToRoomEntry(rooms, "bob@x", invite, t);
+    expect(entry).toMatchObject({ kind: "submenu", id: "invite-room", label: "menu.invite_room" });
+    expect(entry?.kind === "submenu" && entry.items.map((i) => i.id)).toEqual(["invite-room-R4", "invite-room-R7", "invite-room-R3", "invite-room-R1"]);
+    const remote = findEntry([entry!], "invite-room-R7");
+    expect(remote).toMatchObject({ label: "Anderer Knoten", hint: "other.example" });
+    if (remote?.kind === "item") {
+      expect(staysOpen(remote)).toBe(false);
+      remote.onSelect?.();
+    }
+    expect(invite).toHaveBeenCalledWith(expect.objectContaining({ id: "R7", node: "other.example" }));
+  });
+
+  it("has no submenu when no room qualifies", () => {
+    expect(inviteToRoomEntry([room("R2", "x", { perms: 0n })], "bob@x", vi.fn(), t)).toBeNull();
+    expect(inviteToRoomEntry([], "bob@x", vi.fn(), t)).toBeNull();
+  });
+
+  it("the member menu offers it for others (not oneself, not bots) when rooms qualify", () => {
+    const inviteToRoom = vi.fn();
+    const actions = { ...memberActions(), inviteToRoom };
+    const entries = memberMenu(ctx({ inviteRooms: rooms }), actions, t);
+    expect(ids(entries)).toEqual(["profile", "message", "call", "add-friend", "invite-room", "mention", "copy-address", "roles", "timeout", "kick", "ban", "block"]);
+    const item = findEntry(entries, "invite-room-R1");
+    if (item?.kind === "item") item.onSelect?.();
+    expect(inviteToRoom).toHaveBeenCalledWith(expect.objectContaining({ id: "R1" }));
+    expect(ids(memberMenu(ctx({ self: true, inviteRooms: rooms }), actions, t))).not.toContain("invite-room");
+    expect(ids(memberMenu(ctx({ inviteRooms: rooms, target: { address: "bot@x", name: "Bot", isOwner: false, top: 0, roles: [], timedOut: false, bot: true } }), actions, t))).not.toContain("invite-room");
+    expect(ids(memberMenu(ctx({ inviteRooms: [room("R2", "x", { perms: 0n })] }), actions, t))).not.toContain("invite-room");
+    expect(ids(memberMenu(ctx(), actions, t))).not.toContain("invite-room");
   });
 });
