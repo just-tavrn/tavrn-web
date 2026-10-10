@@ -16,6 +16,9 @@ const PACKAGES = ["web", "e2e", "apps/desktop", "apps/desktop-electron"];
 const ALLOWED = new Set([
   "MIT", "MIT-0", "0BSD", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "MPL-2.0", "Zlib", "CC0-1.0",
   "Unlicense",
+  // Permissive licenses without copyleft, used by the Electron shell's updater (electron-updater): sax (XML of the
+  // release feed) is BlueOak-1.0.0, argparse (through js-yaml) is the Python Software Foundation License.
+  "BlueOak-1.0.0", "Python-2.0",
 ]);
 // Packages whose metadata carries no SPDX license, verified against their license file.
 const VERIFIED = { khroma: "MIT" };

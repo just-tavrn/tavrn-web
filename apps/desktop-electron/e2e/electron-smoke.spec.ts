@@ -32,7 +32,7 @@ import { chromium, expect, test, type Browser, type BrowserServer, type Page, ty
 import { createRoomViaApi, inviteCode, nextTotpCode, registerViaApi, registerViaUi, tokenOf, type Account } from "../../../e2e/tests/helpers.ts";
 import { FAKE_MEDIA } from "../../../e2e/tests/voice-helpers.ts";
 import { nodeUrl } from "./harness.ts";
-import { startSmokeApp, type SmokeApp } from "./launch.ts";
+import { packagedApp, smokePackaged, startApp, type ElectronApp } from "./launch.ts";
 
 const PARTIAL = process.env.E2E_ELECTRON_PARTIAL === "1";
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
@@ -40,7 +40,7 @@ const A11Y_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22a", "wcag2
 /** The app gets Chromium's fake devices but never the fake permission UI: the shell's own handlers decide. */
 const APP_MEDIA = FAKE_MEDIA.filter((a) => a !== "--use-fake-ui-for-media-stream");
 
-let app: SmokeApp | null = null;
+let app: ElectronApp | null = null;
 let server: BrowserServer | null = null;
 let other: Browser | null = null;
 
@@ -129,7 +129,7 @@ test("the Linux app end to end: picker, sign-in, encrypted chat, media, voice, c
   const account: Account = await registerViaApi(request, "electron");
   const appAddress = `${account.username}@localhost`;
 
-  app = await step("start the app", () => startSmokeApp(APP_MEDIA));
+  app = await step("start the app", () => startApp({ args: APP_MEDIA, ...(smokePackaged ? { packaged: packagedApp } : {}) }));
   const { page } = app;
   console.log(`electron smoke: ${app.mode} build`);
 
@@ -266,7 +266,8 @@ test("the Linux app end to end: picker, sign-in, encrypted chat, media, voice, c
     await picker.waitForLoadState();
     await shot(picker, info, "screen-picker");
     // The axe gate (WCAG 2.2 AA, serious and critical findings fail, as e2e/tests/a11y.spec.ts).
-    const scan = await new AxeBuilder({ page: picker }).withTags(A11Y_TAGS).analyze();
+    // Legacy mode: an Electron app opens no extra page for axe's results.
+    const scan = await new AxeBuilder({ page: picker }).setLegacyMode().withTags(A11Y_TAGS).analyze();
     const failing = scan.violations.filter((v) => v.impact === "serious" || v.impact === "critical");
     await info.attach("axe-screen-picker.json", { body: JSON.stringify(scan.violations, null, 2), contentType: "application/json" });
     expect(failing.map((v) => `${v.id}: ${v.help} (${v.nodes.map((n) => n.target.join(" ")).join(", ")})`)).toEqual([]);
@@ -381,21 +382,9 @@ async function otherBrowser() {
 let contextOf: Awaited<ReturnType<Browser["newContext"]>> | null = null;
 const otherPid = () => server!.process().pid!;
 
-/**
- * Picks the first source in the shell's screen-share picker: a source item (`data-testid="screen-source"`, else the first
- * option or radio), then its confirmation when the picker asks for one.
- */
+/** Picks the first screen in the shell's screen-share picker (`src/main/picker.ts`: one button per source, screens first). */
 async function chooseFirstSource(picker: Page): Promise<void> {
-  const candidates = [picker.getByTestId("screen-source"), picker.getByRole("option"), picker.getByRole("radio"), picker.getByRole("listitem").getByRole("button")];
-  let chosen = false;
-  for (const c of candidates) {
-    if ((await c.count()) > 0) {
-      await c.first().click();
-      chosen = true;
-      break;
-    }
-  }
-  if (!chosen) throw new Error("the picker shows no source (data-testid=screen-source, option, radio)");
-  const confirm = picker.getByTestId("screen-source-share");
-  if (!picker.isClosed() && (await confirm.count().catch(() => 0)) > 0) await confirm.click();
+  const screen = picker.locator('button.source[data-kind="screen"]').first();
+  await expect(screen).toBeVisible();
+  await screen.click();
 }

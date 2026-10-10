@@ -13,7 +13,8 @@ export default {
   productName: "Tavrn",
   executableName: "tavrn",
   copyright: "Copyright 2026 The tavrn authors",
-  extraMetadata: { name: "tavrn", version, main: "dist/main/index.js" },
+  // desktopName: the window's WM_CLASS / app id matches the menu entry (tavrn.desktop).
+  extraMetadata: { name: "tavrn", version, main: "dist/main/index.js", desktopName: "tavrn.desktop" },
   directories: { output: "release", buildResources: "build" },
   asar: true,
   asarUnpack: ["dist/native/*.node"],
@@ -21,11 +22,12 @@ export default {
     "package.json",
     "dist/main/**/*.js",
     "dist/shared/**/*.js",
-    "dist/preload/index.cjs",
-    // The key listener (native/keywatch, docs/DESKTOP.md "Hotkeys"): a native module is loaded from outside the archive.
+    "dist/preload/*.cjs",
+    // The key listener (native/keywatch, docs/DESKTOP.md "Hotkeys (Electron)"): a native module is loaded from outside the archive.
     "dist/native/keywatch.node",
+    "!**/*.map",
     { from: "../../web/dist", to: "web", filter: ["**/*", "!**/*.map"] },
-    { from: "../desktop/src-tauri/icons", to: "icons", filter: ["icon.png"] },
+    { from: "../desktop/src-tauri/icons", to: "icons", filter: ["icon.png", "128x128@2x.png"] },
   ],
   electronFuses: {
     runAsNode: false,
@@ -46,5 +48,16 @@ export default {
     maintainer: "tavrn",
     vendor: "tavrn",
   },
-  deb: { packageName: "tavrn" },
+  // The licence and terms the Tauri installers show (apps/desktop/LICENSE.txt, "Licence and terms in the installers"):
+  // next to the app in every package, and as /usr/share/doc/tavrn/LICENSE.txt in the .deb.
+  extraResources: [{ from: "../desktop/LICENSE.txt", to: "LICENSE.txt" }],
+  deb: {
+    packageName: "tavrn",
+    // electron-builder's list plus what Electron's binary links that minimal systems lack (ALSA, GBM).
+    depends: ["libgtk-3-0", "libnotify4", "libnss3", "libxss1", "libxtst6", "xdg-utils", "libatspi2.0-0", "libuuid1", "libsecret-1-0", "libasound2t64 | libasound2", "libgbm1"],
+    fpm: ["../desktop/LICENSE.txt=/usr/share/doc/tavrn/LICENSE.txt"],
+  },
+  // The update feed (electron-updater, src/main/updater.ts): written into the package as resources/app-update.yml;
+  // the release attaches latest-linux.yml. Packages are built with `--publish never`; release.yml uploads.
+  publish: [{ provider: "github", owner: "just-tavrn", repo: "tavrn-web", releaseType: "release" }],
 };

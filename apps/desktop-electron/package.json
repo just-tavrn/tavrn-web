@@ -15,7 +15,7 @@
     "build": "tsc -p tsconfig.build.json && vite build --config vite.preload.config.ts && node scripts/copy-native.mjs",
     "dev": "node scripts/dev.mjs",
     "start": "electron .",
-    "package": "pnpm run build && node scripts/copy-native.mjs --require && electron-builder --config electron-builder.config.mjs --linux",
+    "package": "pnpm run build && node scripts/copy-native.mjs --require && electron-builder --config electron-builder.config.mjs --linux --publish never",
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test \"src/**/*.test.ts\" \"scripts/*.test.mjs\"",
     "e2e": "playwright test --config e2e/playwright.config.ts",
@@ -29,5 +29,8 @@
     "electron-builder": "^26.15.3",
     "typescript": "^5.9.3",
     "vite": "^8.3.4"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }

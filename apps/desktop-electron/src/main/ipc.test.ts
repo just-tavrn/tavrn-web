@@ -2,7 +2,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { BRIDGE_METHODS, bridgeChannels, channelOf } from "../shared/bridge.ts";
-import { IpcRegistry, check, type IpcEventLike } from "./ipc.ts";
+import { IpcRegistry, check, fromMainPage, type IpcEventLike } from "./ipc.ts";
+import { isAppPage } from "./guard.ts";
 import { NodeUrlError } from "./node_url.ts";
 
 const trusted: IpcEventLike = { sender: "main", senderFrame: { url: "app://tavrn/" } };
@@ -98,4 +99,18 @@ test("argument checks", () => {
   assert.ok(!check.args([check.record({ title: check.string(10) })])([{ title: "t", extra: 1 }]), "unknown fields are refused");
   assert.ok(!check.args([check.record({ title: check.string(10) })])([null]));
   assert.ok(!check.args([check.record({ title: check.string(10) })])([["t"]]));
+});
+
+test("the sender: the main window's top frame showing the bundled client, nothing else", () => {
+  const top = { url: "app://tavrn/rooms/1" };
+  const embed = { url: "https://www.youtube-nocookie.com/embed/x" };
+  const main = { webContents: "main-contents", mainFrame: top };
+  const app = (url: string) => isAppPage(url, null);
+  assert.ok(fromMainPage({ sender: "main-contents", senderFrame: top }, main, app));
+  assert.ok(!fromMainPage({ sender: "main-contents", senderFrame: embed }, main, app), "an embed frame");
+  assert.ok(!fromMainPage({ sender: "connect-contents", senderFrame: top }, main, app), "another window");
+  assert.ok(!fromMainPage({ sender: "main-contents", senderFrame: null }, main, app), "a frame that is gone");
+  assert.ok(!fromMainPage({ sender: "main-contents", senderFrame: top }, null, app), "no main window");
+  const navigatedAway = { url: "https://evil.example/" };
+  assert.ok(!fromMainPage({ sender: "main-contents", senderFrame: navigatedAway }, { webContents: "main-contents", mainFrame: navigatedAway }, app), "a page that is not the app");
 });

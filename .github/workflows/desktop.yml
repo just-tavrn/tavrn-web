@@ -11,7 +11,8 @@
 #   - `windows-nsis`: the NSIS installer cross-compiled with cargo-xwin (artifact desktop-windows-nsis), so main
 #     always has a current Windows installer.
 #   - `linux-electron`: the Linux app's Electron shell: checks, the key listener's Node-API module, .AppImage and .deb,
-#     the full Playwright smoke test of the AppImage under xvfb; artifact desktop-linux-electron (not for release tags).
+#     the Playwright specs under xvfb (the full smoke test against the AppImage, the real keyring in a D-Bus session of
+#     its own); artifact desktop-linux-electron (not for release tags).
 # - GitHub-hosted runners: `linux` falls back to ubuntu-latest for pull requests from forks and Dependabot (and for
 #   release tags: the updater key never reaches a self-hosted runner); `windows-nsis` is skipped there. `windows` on
 #   windows-latest builds the .msi and NSIS installers on release tags and by hand (`windows: true`) only.
@@ -264,7 +265,7 @@ jobs:
         if: ${{ runner.environment == 'self-hosted' }}
         run: |
           missing=()
-          for t in cargo cargo-deny xvfb-run xdotool livekit-server docker; do
+          for t in cargo cargo-deny xvfb-run xdotool livekit-server docker dbus-run-session gnome-keyring-daemon; do
             command -v "$t" >/dev/null || missing+=("$t")
           done
           if [ "${#missing[@]}" -gt 0 ]; then
@@ -308,7 +309,7 @@ jobs:
           ls -l apps/desktop-electron/release
       # The node runs as a process of the job (the Playwright config starts it with E2E_NODE_BIN), copied out of the
       # node image as in the Tauri job; voice through the livekit-server of the runner image.
-      - name: Smoke test of the AppImage (sign-in, encrypted chat, media, voice, camera, screen share, global hotkey, tray)
+      - name: Playwright specs (the full smoke test of the AppImage; the shell's and the services' specs, the real keyring)
         env:
           GHCR_TOKEN: ${{ github.token }}
           NODE_IMAGE: ${{ vars.TAVRN_NODE_IMAGE || 'ghcr.io/just-tavrn/tavrn-node:edge' }}
@@ -324,8 +325,12 @@ jobs:
           "$bin/tavrn-node" --version
           app="$(ls "$PWD"/apps/desktop-electron/release/*.AppImage)"
           cd apps/desktop-electron
-          E2E_NODE_BIN="$bin/tavrn-node" E2E_ELECTRON_APP="$app" \
-            env -u WAYLAND_DISPLAY -u ELECTRON_RUN_AS_NODE xvfb-run -a pnpm exec playwright test --config e2e/playwright.config.ts electron-smoke.spec.ts
+          # The development build for the specs that reach the main process (the packages keep --inspect off).
+          node node_modules/electron/install.js
+          export E2E_NODE_BIN="$bin/tavrn-node" E2E_ELECTRON_APP="$app" XDG_DATA_HOME="$RUNNER_TEMP/xdg-data"
+          # A D-Bus session of its own with an unlocked gnome-keyring: the keychain spec uses the real Secret Service.
+          env -u WAYLAND_DISPLAY -u ELECTRON_RUN_AS_NODE xvfb-run -a -s "-screen 0 1280x800x24" dbus-run-session -- bash -c \
+            'echo ci-keyring | gnome-keyring-daemon --components=secrets --daemonize --unlock >/dev/null && pnpm exec playwright test --config e2e/playwright.config.ts'
       - name: Collect the packages
         run: |
           mkdir -p dist-electron

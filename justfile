@@ -108,17 +108,18 @@ electron-package: build electron-native
 electron-e2e: build electron-native
     @[ -n "${E2E_NODE_BIN:-}${E2E_NODE_URL:-}" ] || { echo "set E2E_NODE_BIN to a tavrn-node binary (or E2E_NODE_URL to a running development node)" >&2; exit 1; }
     pnpm --filter @tavrn/desktop-electron build
-    cd apps/desktop-electron && env -u WAYLAND_DISPLAY -u ELECTRON_RUN_AS_NODE xvfb-run -a pnpm exec playwright test --config e2e/playwright.config.ts
+    cd apps/desktop-electron && env -u WAYLAND_DISPLAY -u ELECTRON_RUN_AS_NODE xvfb-run -a -s "-screen 0 1280x800x24" pnpm exec playwright test --config e2e/playwright.config.ts
 
-# E2E_NODE_BIN like `just electron-e2e`; E2E_ELECTRON_PARTIAL=1 skips the steps of parts a branch lacks (docs/DESKTOP.md)
-# The full smoke test against a package, as CI runs it: E2E_ELECTRON_APP or the AppImage of `just electron-package`
-electron-e2e-packaged:
+# E2E_NODE_BIN like `just electron-e2e`; the specs that need the main process run on the development build (docs/DESKTOP.md)
+# The Playwright specs with the full smoke test against a package, as CI runs them: E2E_ELECTRON_APP or the AppImage of `just electron-package`
+electron-e2e-packaged: electron-native
     #!/usr/bin/env bash
     set -euo pipefail
     [ -n "${E2E_NODE_BIN:-}${E2E_NODE_URL:-}" ] || { echo "set E2E_NODE_BIN to a tavrn-node binary (or E2E_NODE_URL to a running development node)" >&2; exit 1; }
     app="${E2E_ELECTRON_APP:-$(ls "$PWD"/apps/desktop-electron/release/*.AppImage 2>/dev/null | head -n1)}"
     [ -n "$app" ] && [ -e "$app" ] || { echo "no package: run just electron-package (or set E2E_ELECTRON_APP)" >&2; exit 1; }
-    cd apps/desktop-electron && E2E_ELECTRON_APP="$(realpath "$app")" env -u WAYLAND_DISPLAY -u ELECTRON_RUN_AS_NODE xvfb-run -a pnpm exec playwright test --config e2e/playwright.config.ts electron-smoke.spec.ts
+    pnpm --filter @tavrn/desktop-electron build
+    cd apps/desktop-electron && E2E_ELECTRON_APP="$(realpath "$app")" env -u WAYLAND_DISPLAY -u ELECTRON_RUN_AS_NODE xvfb-run -a -s "-screen 0 1280x800x24" pnpm exec playwright test --config e2e/playwright.config.ts
 
 # Extra arguments go to `playwright test` (default: chromium and the phone emulation, two workers).
 # Playwright against real nodes: set E2E_NODE_BIN (a tavrn-node binary) or E2E_NODE_IMAGE (its container image)

@@ -123,7 +123,9 @@ storage key*, which is derived from the master secret and the device id. A brows
   the groups), and everything else of the store stays as in the browser. IndexedDB then holds ciphertext only.
 - **Where:** the Secret Service on Linux (GNOME Keyring, KWallet), the Credential Manager on Windows, the Keychain on
   macOS later; through the keyring crates (`keyring-core` with `zbus-secret-service-keyring-store`,
-  `windows-native-keyring-store`, `apple-native-keyring-store`), off the main thread.
+  `windows-native-keyring-store`, `apple-native-keyring-store`), off the main thread. The Linux app (Electron) keeps the
+  key with Electron's `safeStorage` under a secret in the same keyring: [Keys in the keychain
+  (Electron)](#keys-in-the-keychain-electron).
 - **Entries:** service `org.tavrn.desktop`, user `local-key/<home node origin>/<account address>`. The shell takes the
   node from its settings file, never from the page, and accepts only plain account addresses and 32-byte values.
 - **Migration:** on the first start of a store of the browser kind (a key in IndexedDB) the client writes the key into
@@ -156,7 +158,8 @@ messages show a fixed text, never their content. Settings → Notifications has 
 notifications while tavrn is in the background"); the web push section and the browser permission switch are not shown
 in the app, and the app never registers a service worker or a push subscription.
 
-The shell shows them with notify-rust (the backend of tauri-plugin-notification; the plugin itself offers no click
+The Linux app shows them with Electron's `Notification` ([Notifications (Electron)](#notifications-electron)); the Tauri
+shell (Windows, macOS) shows them with notify-rust (the backend of tauri-plugin-notification; the plugin itself offers no click
 events on desktop and would replace the webview's `Notification` with an IPC bridge that needs plugin permissions):
 
 | Platform | Shown by | Click |
@@ -170,7 +173,8 @@ events on desktop and would replace the webview's `Notification` with an IPC bri
 The webview of the app (WebView2, WebKitGTK) does nothing with the blob downloads a browser handles, so every download
 of the client (attachments, files channels, the data export, recovery keys and codes, whiteboard images) goes through
 one entry point, `saveFile({ name, data, mime })` in `web/src/platform/saveFile.ts`. In the browser it is the anchor
-download of before; in the app the shell shows the native save dialog and writes the file (`src-tauri/src/download.rs`):
+download of before; in the app the shell shows the native save dialog and writes the file (the Tauri shell's `src-tauri/src/download.rs`
+below; the Linux app's `downloads.ts` has the same methods, see [Downloads (Electron)](#downloads-electron)):
 
 | Command | What it does |
 |---|---|
@@ -212,7 +216,8 @@ Mute microphone, Deafen, Leave voice channel, Quit tavrn; a left click on Window
 keeps running (voice, notifications). The tray menu brings it back, and so does starting the app again (a second start
 shows the running app instead of opening another one; on Linux this needs the D-Bus session bus). Quit is in the tray
 menu and in Settings → App, where close to tray can be turned off. GNOME shows tray icons only with the AppIndicator
-extension; without it, start the app again to get the window back.
+extension; without it, start the app again to get the window back. The Linux app draws the same icons in its Electron
+shell ([Tray and close to tray (Electron)](#tray-and-close-to-tray-electron)).
 
 ## Icons
 
@@ -475,12 +480,6 @@ The Linux app is an Electron shell around the same bundled client ([`apps/deskto
 Electron pinned to an exact version of the newest stable major, packages by electron-builder). It behaves like the
 Tauri shell wherever this document describes a behaviour; this section names what is specific to it.
 
-**Not yet in the Electron shell** (the bridge has these methods, and they reject with `not implemented: <method>`
-until their part lands): the address-first node picker's resolver (`resolveNode`; the advanced node URL works), the
-sign-in window (`openConnect`, `closeConnect`), updates, the keychain, native notifications, the tray, downloads through
-the save dialog and the screen-share picker. The client copes: the keychain falls back to IndexedDB with the warning of
-Settings → App.
-
 ### Layout
 
 | Path | What |
@@ -493,8 +492,17 @@ Settings → App.
 | `src/main/config.ts`, `node_url.ts` | the settings file and the node URL rules (the Tauri shell's `config.rs` and `node_url.rs`, with their test cases) |
 | `src/main/ipc.ts` | the registry of the bridge's IPC channels: sender check, argument checks, handlers |
 | `src/main/events.ts` | the shell's events for the client (one channel) |
-| `src/main/shell.ts` | the `shell` namespace: settings, version, external links |
-| `src/preload/` | `window.tavrnShell` (`index.ts` composes the namespaces, `invoke.ts` the calls, `events.ts` the subscription) |
+| `src/main/shell.ts` | the `shell` namespace: settings, version, external links, node resolution, the sign-in window |
+| `src/main/resolve.ts` | address first: well-known, SRV, direct (the Tauri shell's `resolve.rs`, with its test cases) |
+| `src/main/connect.ts` | the sign-in window |
+| `src/main/capture.ts`, `picker.ts` | screen sharing through the shell's own picker |
+| `src/main/updater.ts` | updates (electron-updater) |
+| `src/main/keychain.ts` | the `keychain` namespace: the local storage keys over `safeStorage` ([Keys in the keychain](#keys-in-the-keychain-electron)) |
+| `src/main/notify.ts` | the `notify` namespace: native notifications and their clicks ([Notifications](#notifications-electron)) |
+| `src/main/tray.ts`, `tray_icon.ts` | the `tray` namespace, the tray icon and its menu, close to tray; the badged icons drawn from the logo ([Tray](#tray-and-close-to-tray-electron)) |
+| `src/main/downloads.ts` | the `files` namespace: the save dialog, chunked writes, the safety net ([Downloads](#downloads-electron)) |
+| `src/main/context.ts` | what every part of the shell gets from `index.ts` (registry, events, settings, main window) |
+| `src/preload/` | `window.tavrnShell` (`index.ts` composes the namespaces, `invoke.ts` the calls, `events.ts` the subscription); `picker.ts`, the picker's preload |
 | `src/shared/bridge.ts` | the bridge's methods and channels, used by the preload and the main process |
 | `e2e/` | the Playwright smoke test |
 | `electron-builder.config.mjs` | the `.AppImage` and `.deb` packages, Electron's fuses |
@@ -526,9 +534,12 @@ with `IpcRegistry.handle(namespace, method, argumentCheck, handler)`. The preloa
 | Content Security Policy: the Tauri shell's without its IPC origins (a unit test compares both), sent with every document of `app://tavrn`: scripts only from the bundle (`script-src 'self' 'wasm-unsafe-eval'`, no eval, no inline scripts, no third-party scripts), `connect-src` https and wss to any node plus plain http/ws to `localhost` and `127.0.0.1`, images and media from https, frames only for the embed providers. The Vite dev server runs without it (its hot reload needs inline scripts). | `src/main/csp.ts`, `protocol.ts` |
 | The renderer: `contextIsolation`, `sandbox`, no Node integration (also not in frames and workers), `webSecurity`, no insecure content, no `<webview>`, DevTools only in development; no application menu. The page never sees `ipcRenderer`, `require` or `process` (the smoke test checks). | `src/main/windows.ts`, `src/preload/` |
 | The bridge: only the main window's top frame showing the bundled client may call it (`event.sender` and `event.senderFrame` checked, its URL must be the app's), so the embeds cannot; every method's arguments are checked before its handler runs (hand-written guards: types, lengths, ranges, exact arity, no unknown fields; refused with `ipc.invalid_arguments`). Event subscribers get the payload only, never Electron's IPC event. | `src/main/ipc.ts`, `index.ts`, `src/preload/` |
-| Permissions: the microphone and the camera (`media`) are granted to the main window's own pages without a prompt, as are writing to the clipboard, fullscreen and choosing the speaker (the client's copy buttons, fullscreen video and output device; the Tauri shell's webviews allow them by default); everything else is denied, for every page, and so are device permissions (HID, USB, serial). | `src/main/guard.ts`, `index.ts` |
+| Permissions: exactly these are granted, without a prompt and only to the main window's own origin (`app://tavrn`): the microphone and the camera (`media` with the types `audio` and `video`), `clipboard-sanitized-write` (the client's copy buttons), `fullscreen` (video) and `speaker-selection` (the output device); the Tauri shell's webviews allow the last three by default. Screen capture goes through the shell's picker (next row). Everything else is denied, for every page, and so are device permissions (HID, USB, serial). | `src/main/guard.ts`, `index.ts` |
+| Screen capture: `getDisplayMedia` of the main window's own page only, through the shell's picker window (screens and windows of other programs from `desktopCapturer`); the picker's page is static HTML without any script (`script-src 'none'`), filled by its own preload, which answers only one of the offered sources; Escape, Cancel or closing it refuses. | `src/main/capture.ts`, `picker.ts`, `src/preload/picker.ts` |
+| The sign-in window shows only the chosen node's `/connect?session=…` page (`openConnect` checks origin, path and parameters, as `guard.rs` does) and follows https pages from there (identity providers redirect), plain http only on this computer; it never loads the bundled client or `app:`, `file:`, `data:`, `javascript:` or `blob:` URLs, new windows go to the system browser. It has no preload and no IPC; its session (`persist:tavrn-connect`, apart from the app's) denies every permission, download and screen capture. | `src/main/connect.ts`, `guard.ts` |
 | The node URL is validated twice: in the client and again in the shell before it is stored. | `web/src/platform/nodeUrl.ts`, `src/main/node_url.ts` |
-| Electron's fuses in the packages: no `ELECTRON_RUN_AS_NODE`, no `NODE_OPTIONS`, no `--inspect`, the app only from `app.asar`, embedded asar integrity validation (Electron enforces it on macOS and Windows; on Linux it has no effect yet), cookie encryption, no extra privileges for `file://`. | `electron-builder.config.mjs` |
+| Electron's fuses in the packages: no `ELECTRON_RUN_AS_NODE`, no `NODE_OPTIONS`, no `--inspect` (the smoke test starts the package with both and checks), the app only from `app.asar`, embedded asar integrity validation (Electron enforces it on macOS and Windows only; on Linux the fuse has no effect), cookie encryption, no extra privileges for `file://`. | `electron-builder.config.mjs` |
+| The renderer's Chromium sandbox is never switched off (no `--no-sandbox`, also not in tests): the `.deb` installs an AppArmor profile that lets the app use user namespaces (Ubuntu 24.04 and later restrict them), and makes `chrome-sandbox` setuid only where user namespaces do not work ("Packages and the Chromium sandbox"). | electron-builder's `.deb` scripts |
 
 ### Settings and profile
 
@@ -537,36 +548,235 @@ Tauri shell's `config.json` (`node`, `web`, `domain`, `close_to_tray`) and the s
 means "no node yet", a stored node that no longer passes the validation is dropped, writes are atomic. The same
 directory holds Chromium's profile of the app (the client's IndexedDB and local storage) and the single-instance lock.
 
+**Switching shells.** On its first start (no `settings.json` yet) the Electron shell takes over the home node of the
+Tauri app's settings (`~/.config/org.tavrn.desktop/config.json`) once: the node URL with its web origin and identity
+domain, validated like fresh input (an invalid node imports nothing; close to tray stays the default); the log says
+so. The local key store is not taken over (another engine, another profile): the app starts signed out, and the
+recovery key or a passkey unlocks the account as on any new device.
+
+### The node picker and signing in (Electron)
+
+The node picker works as in "The node picker": `resolveNode` runs in the shell (`resolve.ts`) with the rules, steps and
+errors of the Tauri shell. Its requests go through Chromium's network stack (`net.fetch`: TLS verified against the
+system's trust store, the system's proxy settings), at most 3 redirects to https on the same host, 5 s until the
+answer's headers and 10 s in total (Chromium has no separate connect timeout), the document capped at 64 KiB; SRV
+records come from the system's DNS configuration (`/etc/resolv.conf`).
+
+Signing in on the node's page works as in "Signing in", in the window of `connect.ts`. The page knows the sign-in window
+by the marker `TavrnDesktopSignIn/1` that the window's session adds to the user agent (`inSignInWindow`,
+`web/src/platform/tauriDetect.ts` and `electronDetect.ts`; the Tauri shell names its window `connect` instead) and signs
+its own session out after the handoff. The window's storage is persistent (`persist:tavrn-connect`), kept apart from the
+app's profile. Passkeys: Electron offers no WebAuthn dialog of its own on Linux, so the client keeps saying that passkeys
+work through the browser there ("Open in the browser instead").
+
+### Screen sharing
+
+`getDisplayMedia` of the client opens the shell's picker (`capture.ts`): a small modal window with the screens and the
+windows of other programs (thumbnails and names, the app's own windows left out), in English or German after the
+system's language, keyboard first (the first source has the focus, Escape cancels, a visible focus ring, 44 px targets,
+light and dark theme; axe finds no WCAG 2.2 AA violation). The chosen source goes to Chromium; a refusal reaches the page
+as `AbortError` (Electron's answer, which the client takes as a closed picker), and with nothing to share the picker says
+so. On X11 the sources come from the X server (its screen capturer can fail on its first use right after the start; the
+shell asks once more). On Wayland Chromium asks the desktop portal (PipeWire): the portal's own dialog picks
+the screen or window, and the shell takes that one source without a second picker. System audio is not offered: Electron
+captures it (`loopback`) on Windows only.
+
+### Updates (Electron)
+
+electron-updater checks the GitHub releases of tavrn-web: electron-builder writes the feed's settings into the package
+(`resources/app-update.yml`, from the `publish` entry of `electron-builder.config.mjs`) and generates `latest-linux.yml`
+next to the packages, with the SHA-512 and size of the `.AppImage` and the `.deb`; the release workflow is to attach it
+(not yet, a TODO in `release.yml`; the Tauri `latest.json` cannot serve electron-updater). Settings → App offers the
+update as for the Tauri app: the AppImage replaces itself and restarts, the `.deb` is installed with the system's package
+tools (the system asks for an administrator's password). A development run offers no updates (`updater: false`). While
+the repository is private the check fails (GitHub answers 404) and the client stays quiet. Unlike the Tauri updater's
+minisign signature there is no signature of its own: the download is checked against the SHA-512 of `latest-linux.yml`,
+fetched over https from the release.
+
+### Packages and the Chromium sandbox
+
+`just electron-package` writes `Tavrn-<version>.AppImage`, `tavrn_<version>_amd64.deb` and `latest-linux.yml` into
+`apps/desktop-electron/release/` (the app in `/opt/Tavrn`, the command `tavrn`, the menu entry `tavrn.desktop`, the
+licence and terms of "Licence and terms in the installers" as `resources/LICENSE.txt` and, in the `.deb`, as
+`/usr/share/doc/tavrn/LICENSE.txt`; Electron's and Chromium's licences ship next to the binary). The `.deb` depends on
+electron-builder's list plus ALSA and GBM (`libasound2t64 | libasound2`, `libgbm1`), which minimal systems lack.
+
+Chromium's renderer sandbox needs unprivileged user namespaces, or a setuid `chrome-sandbox`. Ubuntu 24.04 and later
+restrict user namespaces with AppArmor; the `.deb`'s `postinst` therefore installs an AppArmor profile for
+`/opt/Tavrn/tavrn` that allows them (`/etc/apparmor.d/tavrn`, on systems whose AppArmor supports it), and makes
+`chrome-sandbox` setuid root only where user namespaces do not work at all. So the `.deb` runs sandboxed out of the box
+and is the recommended package on Ubuntu. Checked in an `ubuntu:noble` container: the package installs with its
+dependencies (no library missing), the profile, the licence and the menu entry are in place; where user namespaces work
+(`--security-opt seccomp=unconfined`) `chrome-sandbox` stays 0755 and the app runs sandboxed; where they do not (Docker's
+default) `chrome-sandbox` becomes setuid root, but Docker also forbids the namespaces the setuid helper creates, so the
+app cannot start there (a limit of the container, not of a desktop). A container without AppArmor cannot show the
+profile at work.
+
+The AppImage cannot carry a setuid helper or install a profile. Where user namespaces work (most distributions) it runs
+sandboxed as it is. On Ubuntu 24.04 and later it does not start until the system allows it: install the `.deb` instead,
+or add a profile like the `.deb`'s by hand, as root:
+
+```sh
+cat > /etc/apparmor.d/tavrn-appimage <<'PROFILE'
+abi <abi/4.0>,
+include <tunables/global>
+profile tavrn-appimage /home/*/Applications/Tavrn-*.AppImage flags=(unconfined) {
+  userns,
+}
+PROFILE
+apparmor_parser -r /etc/apparmor.d/tavrn-appimage
+```
+
+(adjust the path to where the AppImage lives; the profile covers the processes the AppImage starts. Not verified on a
+real Ubuntu 24.04 desktop yet: the containers used for the checks have no AppArmor). The app is never started with
+`--no-sandbox`.
+
+Building the packages downloads from GitHub (the egress allowlist of a runner): `github.com`, `objects.githubusercontent.com`
+and `release-assets.githubusercontent.com` (Electron's release zip, and electron-builder's AppImage runtime, 7-Zip and fpm
+from `electron-userland/electron-builder-binaries`); the first `pnpm dev` or test run fetches the Electron binary from the
+same hosts.
+
+### Keys in the keychain (Electron)
+
+The same entries, rules and lifecycle as [Keys in the OS keychain](#keys-in-the-os-keychain): one 32-byte local storage
+key per account, named `local-key/<home node origin>/<account address>` with the node taken from the settings file,
+never from the page; `keychain.invalid`, `keychain.no_node`, `keychain.unavailable` and `keychain.corrupt` as refusals;
+Settings → App shows the backend (`secret-service`) or the fallback warning.
+
+**Backend: Electron's `safeStorage`.** Chromium keeps one random secret of the app in the desktop's keyring (the Secret
+Service through libsecret: GNOME Keyring, KeePassXC, KWallet's Secret Service; on KDE KWallet directly) and encrypts
+with it; the shell stores the encrypted keys in `keychain.json` of the profile directory (`~/.config/tavrn-desktop/`,
+mode 0600, written atomically). That keeps the property of the Tauri shell: the files of the profile alone open nothing
+(the IndexedDB holds ciphertext under the local storage key, `keychain.json` holds that key under the keyring's
+secret). It needs no native module (a direct Secret Service library for Node would be one, built per Electron version)
+and works headless with gnome-keyring in a D-Bus session. Two details make it as strict as the Tauri shell:
+
+- Chromium falls back to a fixed, built-in key when no keyring answers (ciphertext prefix `v10`; its asynchronous API
+  even reports itself available then). The shell writes only `v11` ciphertext, a key from the keyring, and treats
+  everything else as "no keychain", so the client keeps the key in IndexedDB with the warning, exactly the fallback of
+  the Tauri shell.
+- Chromium picks the keyring by the desktop and uses the fixed key on desktops it does not know (sway, Hyprland, i3,
+  a bare X session). The shell asks for the Secret Service on every desktop except KDE (`--password-store=gnome-libsecret`,
+  unless the user passed a `--password-store` of their own), as the Tauri shell does everywhere.
+
+Differences that are not user-visible: the keyring holds one entry for the app ("tavrn Safe Storage") instead of one per
+account; the entries of the Tauri shell (service `org.tavrn.desktop`) are not read, which does not matter because the two
+shells have separate web profiles anyway (a switch of shells signs in on a new device, like a new browser). A keyring
+secret that was deleted by hand makes the stored keys unreadable (`keychain.corrupt`): the store then locks until the
+recovery key or a passkey unlocks it, as with a deleted entry in the Tauri shell. `TAVRN_DESKTOP_KEYCHAIN=memory` and
+`=unavailable` work as in the Tauri shell.
+
+### Notifications (Electron)
+
+Electron's `Notification` (libnotify, the desktop's notification server over D-Bus) with the Tauri shell's fields and
+checks: title (at most 200 characters), body (at most 1000), an optional path of the client (at most 512 bytes, inside
+the client, no whitespace or control characters; otherwise `notify.invalid`), the app icon. The client decides when
+(the window is not focused), as before. A click on the notification (the server's default action) brings the main
+window to the front, also out of the tray, and the client opens the path. At most 16 notifications wait for their click
+at once (each is kept referenced until it is clicked or closed); later ones are shown without one. Without a
+notification server nothing is shown and the call still succeeds.
+
+### Tray and close to tray (Electron)
+
+The same icons, tooltip, menu and rules as [Tray and close to tray](#tray-and-close-to-tray): the five icons are drawn
+at start from the Tauri app's `icons/128x128@2x.png` by a port of its drawing code (`tray_icon.ts`, the same unit tests
+on the same logo), the menu has Show/Hide tavrn, Mute microphone, Deafen, Leave voice channel and Quit tavrn in the
+client's language, the voice items reach the client as tray actions, close to tray is on by default (only while there is
+a tray icon) and Quit ends the app. A left click on the icon shows the window, a right click opens the menu.
+
+Electron's tray speaks the StatusNotifierItem protocol on Linux, like the libayatana-appindicator of the Tauri shell:
+KDE, Xfce, Cinnamon, MATE, Budgie, Ubuntu's GNOME session and GNOME with the AppIndicator extension show it. Plain GNOME
+without the extension shows no icon (Electron then has nowhere to put it, the app keeps running); start the app again to
+get the window back. Under xvfb (the smoke test) the icon is created but nothing displays it, so the test reads the
+tray's state through `trayStatus`.
+
+### Downloads (Electron)
+
+The `files` namespace behaves like the Tauri commands of [Downloads](#downloads): `saveFileBegin(name, mime, size)`
+shows the native save dialog (the cleaned name as suggestion, a filter for its extension; it opens in the directory used
+last, at first in Downloads) and answers `{ status: "ready", id }` or `{ status: "cancelled" }`, at most 8 saves at once;
+`saveFileChunk(id, bytes)` appends at most 4 MiB (more than the announced size: `download.too_large`) to a temporary
+file next to the target, readable by the user only; `saveFileEnd(id)` checks the size, flushes and renames it into place
+and answers the path and its folder's name; `saveFileAbort(id)` removes it; `saveFileReveal(id)` shows the file in the
+file manager (`shell.showItemInFolder`). Temporary files of saves still running when the app quits are removed. The
+client's "Saved to \<folder>" toast with **Show in folder** works unchanged.
+
+The safety net: a download the main window starts itself (an `<a download>`, a navigation to a file) arrives at the
+session's `will-download` and gets the same save dialog (Electron's own, with the same options); downloads of any other
+web contents, and of schemes other than blob, data, http(s) and the app's own, are cancelled.
+`TAVRN_DESKTOP_TEST_SAVE_DIR=<dir>` saves into that directory without a dialog, never overwriting (`name (1).ext`), for
+both paths.
+
 ### Development and tests (Electron)
 
 Requirements: the web client's (Node.js 24, pnpm); for the smoke test `xvfb-run`. Electron's binary is not downloaded
 by `pnpm install`: the first start fetches the pinned version from Electron's GitHub releases into `~/.cache/electron`
 (`node apps/desktop-electron/node_modules/electron/install.js` does it ahead). An environment that exports
-`ELECTRON_RUN_AS_NODE` (some editors and tools do) makes the binary behave as plain Node; the recipes and the harness
-remove it.
+`ELECTRON_RUN_AS_NODE` (some editors and tools do) makes the binary behave as plain Node; the recipes and the launcher
+of the specs (`e2e/launch.ts`) remove it.
 
 | Recipe | What it does |
 |---|---|
 | `just electron-dev` | the client's Vite dev server (`E2E_WEB_PORT`, default 5173) and the app in development mode on it (`TAVRN_DESKTOP_DEV_URL`); restart it after changing the shell |
 | `just electron-check` | `tsc` (main process, preload against the client's bridge types, harness), `node --test` of the main-process modules, SPDX headers and dependency licenses; typecheck and tests also run in `just check` |
-| `just electron-package` | `web/dist`, then the `.AppImage` and `.deb` in `apps/desktop-electron/release/` |
-| `just electron-e2e` | the Playwright smoke test under `xvfb-run` (`E2E_NODE_BIN` or `E2E_NODE_URL`, port `E2E_NODE_PORT`, default 8300) |
+| `just electron-package` | `web/dist`, then the `.AppImage`, the `.deb` and `latest-linux.yml` in `apps/desktop-electron/release/` |
+| `just electron-e2e` | the Playwright specs under `xvfb-run` (`E2E_NODE_BIN` or `E2E_NODE_URL`, ports `E2E_NODE_PORT` and `E2E_WEB_PORT`, default 8300 and 5300; the packaged app from `E2E_ELECTRON_APP`, `TAVRN_DESKTOP_APP` or `release/linux-unpacked/tavrn`, skipped without one) |
 
 - `node --test` (`src/main/*.test.ts`, run as TypeScript by Node): node URL validation and node domains, the settings
-  file and `setNode` (the Tauri shell's cases), the CSP against `tauri.conf.json`, the `app://tavrn` handler (types,
-  caching, routes, 404s, no way out of the bundle, streaming), the navigation, new-window, external-link and
-  permission decisions, the dev server URL, the IPC registry (every channel registered, sender and argument checks,
-  refusals as values, not implemented), the events and the `shell` handlers.
-- Vitest (`web/src/platform/electron.test.ts`, `index.test.ts`): the detection, the detection order, and the binding
+  file and `setNode` (the Tauri shell's cases) and the one-time import of the Tauri app's node, the CSP against
+  `tauri.conf.json`, the `app://tavrn` handler (types, caching, routes, 404s, no way out of the bundle, streaming), the
+  navigation, new-window, external-link and permission decisions of both windows, the sign-in page URL (the Tauri shell's
+  cases), the dev server URL, the resolver with a fake fetcher and SRV lookup for every step and error plus the real
+  fetcher against a local server (user agent, redirects, size cap), the picker's page, sources and answers, the updater
+  (feed settings, notes, both commands), the IPC registry (every channel registered, the sender decision, argument
+  checks, refusals as values, not implemented), the events and the `shell` handlers; the keychain (the Tauri shell's cases,
+  the memory and unavailable modes, the `safeStorage` store with a fake cipher: only ciphertext in the file, a
+  foreign keyring secret opens nothing, the fixed fallback key counts as no keychain, the password-store switch),
+  notifications (validation, the click path, the limit), the tray (states, menu, labels, close to tray, the
+  handlers) and its icons (the Tauri shell's drawing tests on the same logo, the PNG codec), downloads (the chunk
+  writer, names that cannot leave the directory, the test hook, the safety net, 100 MB in 4 MiB pieces through the
+  handlers with a fake dialog).
+- Vitest (`web/src/platform/electron.test.ts`, `electronFiles.test.ts`, `index.test.ts`): the detection, the detection order, and the binding
   with a fake bridge (node choice, delegation, refusals, external links, updater, hotkeys, events, keychain, tray,
   downloads in 4 MiB pieces).
-- Playwright (`apps/desktop-electron/e2e/smoke.spec.ts`, Playwright's Electron driver, no WebDriver): the app starts on
-  `app://tavrn` in a secure context with the bridge and nothing of Node, the CSP blocks an inline script, a missing
-  part of the shell says "not implemented", the node picker refuses `http://evil`, takes the development node's URL,
-  the shell stores it and the app reaches the login page (screenshot in `apps/desktop-electron/test-results/`). The
-  node runs in development mode with a fresh database in `data-dev/electron-<port>`; the app gets its own
-  `XDG_CONFIG_HOME`, always on xvfb's X display (`WAYLAND_DISPLAY` removed, `--ozone-platform=x11`), so no window
-  appears on the desktop.
+- Vitest also checks the sign-in window's marker (`inSignInWindow` with and without it).
+- Every Playwright spec starts the app through `e2e/launch.ts`: sandboxed, driven over the DevTools protocol
+  (`--remote-debugging-port=0` on 127.0.0.1 and `connectOverCDP`), the development build's main process reached
+  through Node's inspector (`--inspect=0`; the packages keep it off). Playwright's own Electron driver is not used: it
+  switches Chromium's sandbox off.
+- Playwright (`apps/desktop-electron/e2e/smoke.spec.ts`, no WebDriver): the app starts on
+  `app://tavrn` in a secure context with the bridge and nothing of Node, the CSP blocks an inline script; the shell's
+  resolver reports a domain without a node, the advanced URL refuses `http://evil`, the address of an account
+  (registered over the API with TOTP) on the development node finds its login page with the username filled in; that
+  account signs in with password and TOTP in the app (the recovery key is set up there); another one signs in on the
+  node's page in the sign-in window (no bridge there, the marker in its user agent, password and TOTP, the
+  confirmation), the app takes over and the window closes, and the page signed its own session out (two devices, no
+  orphan); `getUserMedia` gets Chromium's fake microphone and camera without a prompt, notifications stay denied, and
+  `getDisplayMedia` opens the shell's picker (no bridge, focus on the first screen, axe WCAG 2.2 AA clean): a screen is
+  shared, Escape refuses. Last, the packaged app over CDP with `ELECTRON_RUN_AS_NODE=1` and `--inspect` (both ignored by the fuses)
+  shows the bundled client and reaches the login page. Screenshots in `apps/desktop-electron/test-results/`. The node
+  runs in development mode with a fresh database in `data-dev/electron-<port>` and names this checkout's client on a Vite
+  dev server as its web client (`TAVRN_WEBAUTHN_ORIGIN`), so the sign-in window shows the client under test; the app
+  gets its own `XDG_CONFIG_HOME`, always on xvfb's X display (24-bit, `WAYLAND_DISPLAY` removed,
+  `--ozone-platform=x11`), so no window appears on the desktop. The packaged app runs only when there is one
+  (`just electron-package` first).
+- Playwright, `e2e/electron-services.spec.ts`: a key survives a restart of the app in the real keyring
+  (skipped without a Secret Service in the session, see below), a notification's click brings the hidden window back
+  and the page receives its path (xvfb has no notification server: the test replaces `Notification` in the main
+  process by a recorder and clicks that, so the shell's real click path runs), the client's voice state and texts
+  reach the tray, close to tray hides the window, the setting is persisted and Quit ends the app, a save goes into
+  `TAVRN_DESKTOP_TEST_SAVE_DIR` byte for byte, "show in folder" names exactly that file (the file manager replaced by a
+  recorder) and the page's own `<a download>` lands there too.
+
+The keychain step with the real keyring runs the recipe in a D-Bus session of its own with an unlocked gnome-keyring
+(as the Tauri workflow's "The real Linux keychain" step), so nothing touches the keyring of the desktop session:
+
+```sh
+xvfb-run -a dbus-run-session -- bash -c 'echo e2e-keyring | gnome-keyring-daemon --components=secrets --daemonize --unlock >/dev/null &&
+  cd apps/desktop-electron && env -u WAYLAND_DISPLAY -u ELECTRON_RUN_AS_NODE E2E_NODE_BIN=/path/to/tavrn-node pnpm exec playwright test --config e2e/playwright.config.ts'
+```
+
+(set `XDG_DATA_HOME` to a scratch directory around it to keep the test keyring's files out of `~/.local/share/keyrings`).
 
 The app reads `TAVRN_DESKTOP_DEV_URL` (development runs only). The Tauri shell's test hooks keep their names where the
 feature exists in the Electron shell (`TAVRN_DESKTOP_KEYCHAIN`, `TAVRN_DESKTOP_TEST_SAVE_DIR`); `TAVRN_DESKTOP_FAKE_AUDIO`
@@ -614,14 +824,11 @@ fake listener, the bridge's handlers) and the smoke test's push-to-talk step bel
 | `just electron-native-check` | the crate's and the module's `cargo fmt`, `clippy`, the crate's tests, `cargo deny check licenses` of the module, its node test under `xvfb-run` |
 | `just electron-check` | the shell's typecheck, `node --test`, SPDX headers, licenses |
 | `just electron-package` | `web/dist`, the module, `apps/desktop-electron/release/Tavrn-<version>.AppImage`, `tavrn_<version>_amd64.deb` and `latest-linux.yml` (electron-builder's update feed) |
-| `just electron-e2e` | both Playwright specs against the development build (`E2E_NODE_BIN`, `E2E_NODE_PORT`) |
-| `just electron-e2e-packaged` | the full smoke test against a package (`E2E_ELECTRON_APP`, default the AppImage of `release/`), as CI runs it |
+| `just electron-e2e-packaged` | every Playwright spec as CI runs them: the full smoke test and the packaged-app test against a package (`E2E_ELECTRON_APP`, default the AppImage of `release/`), the specs that reach the main process against the development build |
 
-**The full smoke test** (`e2e/electron-smoke.spec.ts`) drives the app over the DevTools protocol (`e2e/launch.ts`): the
-app starts with `--remote-debugging-port=0` (a free port on 127.0.0.1) and Playwright attaches with `connectOverCDP`.
-Playwright's own Electron driver is not used: it switches Chromium's sandbox off, and the packages keep the fuse
-`enableNodeCliInspectArguments` off, so it could not attach to them. The app always runs sandboxed, and so does the
-second user's Chromium. Steps, each with its time in the report and a screenshot in `apps/desktop-electron/test-results/`:
+**The full smoke test** (`e2e/electron-smoke.spec.ts`) starts the app like every spec, through `e2e/launch.ts`
+(sandboxed, over the DevTools protocol; the development build by default, the package of `E2E_ELECTRON_APP` when set);
+the second user's Chromium is sandboxed too. Steps, each with its time in the report and a screenshot in `apps/desktop-electron/test-results/`:
 the node picker; sign-in with TOTP on the node's page in the sign-in window and the recovery key; an encrypted message
 in both directions with a second user (Chromium, the node's own web client), checked to be ciphertext on the node; an
 encrypted image in the media viewer; voice with Chromium's fake microphone (the other side sees the app speaking); the
@@ -635,8 +842,10 @@ tray) into notes instead of failures; CI never sets it. An AppImage runs with `A
 
 **CI**: the job `Desktop (Linux, Electron)` of `.github/workflows/desktop.yml` on `tavrn-heavy` (`ubuntu-latest` for
 forks and Dependabot; not for release tags yet) runs, in this order: `pnpm install`, the web bundle, the shell's checks,
-the key listener (the crate's and the module's checks, `napi build`, the node test under xvfb), the packages, the full
-smoke test against the AppImage (the node binary copied out of the node image, as in the Tauri job), and uploads
+the key listener (the crate's and the module's checks, `napi build`, the node test under xvfb), the packages, every
+Playwright spec (the full smoke test and the packaged-app test against the AppImage, the others against the development
+build, the keychain spec with gnome-keyring in a D-Bus session of its own; the node binary copied out of the node image,
+as in the Tauri job), and uploads
 `desktop-linux-electron` (the `.AppImage`, the `.deb`, `latest-linux.yml`) and `desktop-linux-electron-screenshots`. The
 downloads of a build: the Electron runtime (`github.com/electron/electron/releases`) and electron-builder's AppImage,
 fpm and 7-Zip tooling (`github.com/electron-userland/electron-builder-binaries/releases`), both redirected to
