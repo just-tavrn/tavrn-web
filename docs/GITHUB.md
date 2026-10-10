@@ -108,5 +108,6 @@ token read-only. Labels from `scripts/github-labels.sh` (idempotent; rerun it af
 - [ ] Team `@just-tavrn/maintainers` must exist for `CODEOWNERS`.
 - [ ] Once public: branch protection or a ruleset for `main` (require pull requests with one review from
       `@just-tavrn/maintainers`, the checks `JavaScript`, `Publication hygiene`, `gitleaks`, `Dependency review`,
-      `CLA`, and `End-to-end` once the runner serves this repository; linear history, no force pushes, no deletions)
+      `CLA` (not `End-to-end`: it never runs for pull requests, so a required check would wait forever; the
+      organization's `scripts/github-rulesets.sh` sets the list); linear history, no force pushes, no deletions)
       and tag protection for `v*`. Not available for private repositories on the free plan.
