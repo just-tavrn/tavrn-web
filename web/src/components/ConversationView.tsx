@@ -27,7 +27,7 @@ import { historyPending, historyReceive } from "../crypto/history";
 import { HistoryRestoreBanner } from "./HistoryRestoreBanner";
 import { useMyRestoreState } from "../history/restore";
 import { MessageList, type AuthorLook } from "./MessageList";
-import { memberColor, memberName } from "../lib/memberGroups";
+import { authorLooks } from "../lib/memberGroups";
 import { Composer, type ComposerCommands, type SendPayload } from "./Composer";
 import { availableCommands, builtinRegistry } from "../commands/registry";
 import { CommandError, executeBuiltin, invokeRequest, resolveAppArgs } from "../commands/execute";
@@ -91,6 +91,8 @@ export interface ConversationViewProps {
   /** Room channels: the room and its members (command arguments). */
   room?: RoomDetail;
   roomMembers?: Member[];
+  /** DMs and group DMs: the members with their display names (message authors are shown with them). */
+  people?: { address: string; display_name?: string | null }[];
   /**
    * Thread mode (PROTOCOL.md §7e): the view pages and writes this thread of the channel. Its root message (text
    * threads) is shown first once the thread's history is loaded; pins, search and the whiteboard stay with the channel.
@@ -255,12 +257,8 @@ export function ConversationView(p: ConversationViewProps) {
   const broken = useMemo(() => (p.members ?? []).filter((a) => a !== user?.address && verification[a] === "broken"), [p.members, user?.address, verification]);
   // Author names and role colours like the member list (design note 4.13 item 3): nickname, then display name.
   const roles = p.room?.roles;
-  const authors = useMemo(() => {
-    if (!p.roomMembers) return undefined;
-    const map = new Map<string, AuthorLook>();
-    for (const m of p.roomMembers) map.set(m.user.address, { name: memberName(m), color: roles ? memberColor(m, roles) : null });
-    return map;
-  }, [p.roomMembers, roles]);
+  // DMs and group DMs: the members' display names, the same source as the header and the member list.
+  const authors = useMemo<Map<string, AuthorLook> | undefined>(() => authorLooks({ roomMembers: p.roomMembers, roles, people: p.people }), [p.roomMembers, roles, p.people]);
   const usersById = useMemo(() => (p.roomMembers ? new Map(p.roomMembers.map((m) => [m.user.id, m.user])) : undefined), [p.roomMembers]);
   const verificationBlock = !!p.direct && broken.length > 0;
 
