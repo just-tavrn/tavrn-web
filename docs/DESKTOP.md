@@ -478,8 +478,8 @@ Tauri shell wherever this document describes a behaviour; this section names wha
 **Not yet in the Electron shell** (the bridge has these methods, and they reject with `not implemented: <method>`
 until their part lands): the address-first node picker's resolver (`resolveNode`; the advanced node URL works), the
 sign-in window (`openConnect`, `closeConnect`), updates, the keychain, native notifications, the tray, downloads through
-the save dialog, the system-wide hotkeys and the screen-share picker. The client copes: the keychain falls back to
-IndexedDB with the warning of Settings → App, the hotkeys say that they cannot be registered.
+the save dialog and the screen-share picker. The client copes: the keychain falls back to IndexedDB with the warning of
+Settings → App.
 
 ### Layout
 
@@ -571,6 +571,86 @@ remove it.
 The app reads `TAVRN_DESKTOP_DEV_URL` (development runs only). The Tauri shell's test hooks keep their names where the
 feature exists in the Electron shell (`TAVRN_DESKTOP_KEYCHAIN`, `TAVRN_DESKTOP_TEST_SAVE_DIR`); `TAVRN_DESKTOP_FAKE_AUDIO`
 has no counterpart: Chromium's fake devices (`--use-fake-device-for-media-stream`) replace it.
+
+### Hotkeys (Electron)
+
+The hotkeys behave as "Hotkeys" above describes (one binding per action, the matching, the conflicts, the window's own
+keys and the shell's listener counted once). Electron's `globalShortcut` is **not** used: it grabs the key (the game
+behind the app would no longer get its push-to-talk key), refuses a lone modifier and fails when another program
+grabbed the combination first. The Electron shell uses the Tauri shell's listener instead:
+
+| Part | What |
+|---|---|
+| `apps/desktop/crates/keywatch` | the listener of both shells (the crate `tavrn-keywatch`: X RECORD on Linux, the low-level hook on Windows, the key table `keys.rs`); the Tauri shell uses it as a path dependency |
+| `apps/desktop-electron/native/keywatch` | `@tavrn/keywatch-native`: the crate as a Node-API module (napi-rs, `napi build --release`, `keywatch.linux-x64-gnu.node`): `setKeys(codes)` (the filter), `start(callback(code, pressed))`, `stop()`, `isRunning()`; errors `keywatch.invalid`, `keywatch.running`, `keywatch.unavailable: <why>` |
+| `src/main/hotkeys.ts` | the Tauri shell's `hotkeys.rs` in TypeScript: the bindings and their canonical spelling, the matching (the most specific combination wins, key repeat changes nothing, a rebind or a stop releases what is held), the listener only while bindings exist and the client is signed in, the bridge's `hotkeys` namespace; presses and releases of actions go to the client on the `hotkeys` event channel with the Tauri payloads (`{ action, pressed }`) |
+
+The build copies the module to `dist/native/keywatch.node`; the packages keep it outside the asar archive
+(`app.asar.unpacked/dist/native/`, a native module cannot be loaded from inside it). A build without it runs, and
+registering a binding answers `hotkey.unavailable` (Settings says that the keys work while the window has focus).
+
+| Session | What the listener sees |
+|---|---|
+| X11 | every key of the bindings, whatever program has the focus |
+| Wayland with XWayland | the keys going to X11 programs (many games, Wine and Proton): the listener talks to XWayland (`DISPLAY`), whichever platform the app's own window uses; keys going to native Wayland windows are not seen (the app's own window reports its keys itself while it has the focus) |
+| Wayland without XWayland | nothing: `hotkey.unavailable`, and the log line says "a Wayland session without XWayland"; the keys work while the window has focus |
+
+The desktop portal's `GlobalShortcuts` interface is not used: it reserves shortcuts with the compositor instead of
+observing keys (a game would lose them), and it is not available everywhere; it remains an option for sessions without
+XWayland. **Privacy** is the Tauri shell's: the filter holds only the bound keys and their modifiers, every other key
+is dropped in the X callback of the module, the main process turns what passes into actions, and only actions reach
+the client; nothing is stored or logged.
+
+Tests: the crate's unit tests (and its X test, `xvfb-run -a cargo test -- --ignored`), a node test of the built module
+(`native/keywatch/test/`, unknown keys refused, no X display, real key presses through xdotool under `xvfb-run` only),
+`src/main/hotkeys.test.ts` (the cases of `hotkeys.rs`, the key table against `keys.rs`, the listener's life cycle with a
+fake listener, the bridge's handlers) and the smoke test's push-to-talk step below.
+
+### Builds and releases (Electron)
+
+| Recipe | What it does |
+|---|---|
+| `just electron-native` | the key listener module (`napi build --release`, a Rust toolchain; Cargo builds in `CARGO_TARGET_DIR` when set) |
+| `just electron-native-check` | the crate's and the module's `cargo fmt`, `clippy`, the crate's tests, `cargo deny check licenses` of the module, its node test under `xvfb-run` |
+| `just electron-check` | the shell's typecheck, `node --test`, SPDX headers, licenses |
+| `just electron-package` | `web/dist`, the module, `apps/desktop-electron/release/Tavrn-<version>.AppImage`, `tavrn_<version>_amd64.deb` and `latest-linux.yml` (electron-builder's update feed) |
+| `just electron-e2e` | both Playwright specs against the development build (`E2E_NODE_BIN`, `E2E_NODE_PORT`) |
+| `just electron-e2e-packaged` | the full smoke test against a package (`E2E_ELECTRON_APP`, default the AppImage of `release/`), as CI runs it |
+
+**The full smoke test** (`e2e/electron-smoke.spec.ts`) drives the app over the DevTools protocol (`e2e/launch.ts`): the
+app starts with `--remote-debugging-port=0` (a free port on 127.0.0.1) and Playwright attaches with `connectOverCDP`.
+Playwright's own Electron driver is not used: it switches Chromium's sandbox off, and the packages keep the fuse
+`enableNodeCliInspectArguments` off, so it could not attach to them. The app always runs sandboxed, and so does the
+second user's Chromium. Steps, each with its time in the report and a screenshot in `apps/desktop-electron/test-results/`:
+the node picker; sign-in with TOTP on the node's page in the sign-in window and the recovery key; an encrypted message
+in both directions with a second user (Chromium, the node's own web client), checked to be ciphertext on the node; an
+encrypted image in the media viewer; voice with Chromium's fake microphone (the other side sees the app speaking); the
+fake camera (the other side sees the video); a screen share through the shell's picker (the axe gate, WCAG 2.2 AA, on
+the picker window; the first source; the other side sees the share); push-to-talk on the left Ctrl alone, pressed
+through the X server with xdotool while the second user's Chromium window has the X focus (the app transmits, and its
+page itself receives no key event); close to tray (the call stays) and restore by starting the app again; quit through
+the shell. The node runs in development mode with voice (its livekit-server on ports derived from `E2E_NODE_PORT`).
+`E2E_ELECTRON_PARTIAL=1` turns the steps whose part of the shell a branch lacks (the sign-in window, the picker, the
+tray) into notes instead of failures; CI never sets it. An AppImage runs with `APPIMAGE_EXTRACT_AND_RUN=1` (no FUSE).
+
+**CI**: the job `Desktop (Linux, Electron)` of `.github/workflows/desktop.yml` on `tavrn-heavy` (`ubuntu-latest` for
+forks and Dependabot; not for release tags yet) runs, in this order: `pnpm install`, the web bundle, the shell's checks,
+the key listener (the crate's and the module's checks, `napi build`, the node test under xvfb), the packages, the full
+smoke test against the AppImage (the node binary copied out of the node image, as in the Tauri job), and uploads
+`desktop-linux-electron` (the `.AppImage`, the `.deb`, `latest-linux.yml`) and `desktop-linux-electron-screenshots`. The
+downloads of a build: the Electron runtime (`github.com/electron/electron/releases`) and electron-builder's AppImage,
+fpm and 7-Zip tooling (`github.com/electron-userland/electron-builder-binaries/releases`), both redirected to
+`release-assets.githubusercontent.com` or `objects.githubusercontent.com`; npm packages (`registry.npmjs.org`, with
+`@napi-rs/cli`) and crates (`crates.io`, `static.crates.io`, with `napi`). Electron and electron-builder cache them in
+`ELECTRON_CACHE` and `ELECTRON_BUILDER_CACHE` (default `~/.cache/electron`, `~/.cache/electron-builder`).
+
+**Releases (to do, wired into `release.yml` after this wave):** the release builds the Linux packages on
+`ubuntu-latest` with `just electron-package` and attaches `Tavrn-<version>.AppImage`, `tavrn_<version>_amd64.deb`,
+a `<asset>.sha256` for each (`node apps/desktop/scripts/checksums.mjs <dir>`, the `sha256sum` format of the Tauri
+assets) and `latest-linux.yml`, the feed electron-updater reads from the GitHub release (its `sha512` fields are the
+packages' integrity check; it is generated by electron-builder, never by `latest-json.mjs`). The Tauri Linux bundles
+(`Tavrn_<version>_amd64.deb`, `Tavrn_<version>_amd64.AppImage`) and the `linux-x86_64` entries of `latest.json` then
+retire; Windows keeps the Tauri installers and `latest.json`.
 
 ## Development
 
@@ -711,6 +791,7 @@ smoke test's node, default port 8300), `TAURI_DRIVER` and `WEBDRIVER_PORT` (defa
 | Linux, natively | self-hosted `tavrn-heavy` (`ubuntu-latest` for release tags) | pushes to `main` that touch `apps/desktop`, `web`, the lockfile or the workspace; by hand (also for a pull request's branch); release tags | the checks (fmt, clippy, tests, licenses, the real Secret Service), `.deb` and `.AppImage`, the WebDriver smoke test under xvfb against the node image's binary; artifact `desktop-linux` |
 | Windows NSIS, cross-compiled | self-hosted `tavrn-heavy` | as the Linux build, except release tags | `tauri build --target x86_64-pc-windows-msvc --runner cargo-xwin --bundles nsis`; artifact `desktop-windows-nsis` (the current installer of `main` is always there) |
 | Windows `.msi` and NSIS, natively | GitHub-hosted `windows-latest` | release tags; by hand with `windows: true` | the release installers with their updater signatures; artifact `desktop-windows` |
+| Linux, the Electron shell | self-hosted `tavrn-heavy` | as the Linux build, except release tags | the shell's checks, the key listener module, `.AppImage` and `.deb`, the full Playwright smoke test of the AppImage; artifact `desktop-linux-electron` ("Builds and releases (Electron)") |
 
 All artifacts are kept for 7 days.
 

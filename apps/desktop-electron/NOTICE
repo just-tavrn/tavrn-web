@@ -12,6 +12,10 @@ Third-party software:
   LICENSE and LICENSES.chromium.html next to the app's binary.
 - electron-builder (https://www.electron.build), Copyright (c) 2015 Loopline Systems, MIT License: builds the
   .AppImage and .deb packages (not part of the installed app).
+- The key listener module (native/keywatch, built from apps/desktop/crates/keywatch) links Rust crates under the
+  MIT License or the Apache License 2.0, among them napi and napi-derive (https://napi.rs, Copyright (c) LongYinan,
+  MIT License) and x11rb (https://github.com/psychon/x11rb, MIT License or Apache License 2.0); `cargo deny check
+  licenses` checks every crate of the module.
 
 The tavrn logo and icon images (taken from apps/desktop/src-tauri/icons/) are not licensed under the Apache License;
 see TRADEMARK.md in the root of this repository.

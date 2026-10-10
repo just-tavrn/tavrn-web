@@ -11,6 +11,7 @@ signing in, updates, development and tests) is in [docs/DESKTOP.md](../../docs/D
 | `src/preload/` | the preload: `window.tavrnShell`, typed by the client's `web/src/platform/electronBridge.ts` |
 | `src/shared/bridge.ts` | the bridge's methods and IPC channels, shared by the preload and the main process |
 | `e2e/` | the Playwright smoke test (Playwright's Electron driver, under `xvfb-run`) |
+| `native/keywatch/` | `@tavrn/keywatch-native`: the system-wide key listener (the crate `apps/desktop/crates/keywatch`) as a Node-API module, loaded by `src/main/hotkeys.ts` |
 | `scripts/` | `pnpm dev` |
 | `electron-builder.config.mjs` | the `.AppImage` and `.deb` packages |
 
@@ -18,7 +19,9 @@ signing in, updates, development and tests) is in [docs/DESKTOP.md](../../docs/D
 just electron-dev       # the app on the Vite dev server (hot reload of the client)
 just electron-check     # tsc, node --test, SPDX headers and licenses
 E2E_NODE_BIN=/path/to/tavrn-node just electron-e2e
+just electron-native    # the key listener module (napi build --release, needs Rust)
 just electron-package   # release/*.AppImage and release/*.deb
+E2E_NODE_BIN=/path/to/tavrn-node just electron-e2e-packaged   # the full smoke test against the AppImage
 ```
 
 Licensed under the Apache License 2.0 ([LICENSE](LICENSE), [NOTICE](NOTICE)); the logo and icons are not
