@@ -19,6 +19,8 @@ interface PresenceState {
   rooms: Record<string, string>;
   apply: (domain: string, state: VoiceChannelState) => void;
   seedRoom: (domain: string, roomId: string, items: VoiceChannelState[]) => void;
+  /** Replaces everything known of `domain` (`GET /users/me/voice`: rooms without participants are left out). */
+  seedAll: (domain: string, rooms: Array<{ room_id: string; channels: VoiceChannelState[] }>) => void;
   removeChannel: (domain: string, channelId: string) => void;
   clearRoom: (domain: string, roomId: string) => void;
   reset: () => void;
@@ -57,6 +59,25 @@ export const useVoicePresence = create<PresenceState>((set) => ({
         if (item.participants.length) channels[key] = item.participants;
         epochs[key] = item.epoch ?? null;
         rooms[key] = room;
+      }
+      return { channels, epochs, rooms };
+    }),
+  seedAll: (domain, list) =>
+    set((s) => {
+      const prefix = `${domain}/`;
+      const stale = Object.entries(s.rooms)
+        .filter(([, r]) => r.startsWith(prefix))
+        .map(([k]) => k);
+      const channels = without(s.channels, stale);
+      const epochs = { ...s.epochs };
+      const rooms = without(s.rooms, stale);
+      for (const room of list) {
+        for (const item of room.channels) {
+          const key = channelKey(domain, item.channel_id);
+          if (item.participants.length) channels[key] = item.participants;
+          epochs[key] = item.epoch ?? null;
+          rooms[key] = channelKey(domain, room.room_id);
+        }
       }
       return { channels, epochs, rooms };
     }),

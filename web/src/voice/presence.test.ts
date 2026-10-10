@@ -56,4 +56,23 @@ describe("voice presence store (VOICE.md §5)", () => {
     s.clearRoom("n.example", "R");
     expect(useVoicePresence.getState().channels).toEqual({});
   });
+
+  it("seeds every room of a node from GET /users/me/voice, replacing only that node's rooms", () => {
+    const s = useVoicePresence.getState();
+    s.apply("n.example", { room_id: "R", channel_id: "GONE", epoch: 1, participants: [p("ghost")] });
+    s.apply("b.example", { room_id: "R", channel_id: "C", epoch: 1, participants: [p("bob")] });
+    s.seedAll("n.example", [
+      { room_id: "R", channels: [{ room_id: "R", channel_id: "C1", epoch: 2, participants: [p("alice")] }] },
+      { room_id: "R2", channels: [{ room_id: "R2", channel_id: "C2", epoch: null, participants: [p("carol")] }] },
+    ]);
+    const st = useVoicePresence.getState();
+    expect(participantsOf(st, "n.example", "GONE")).toHaveLength(0);
+    expect(st.rooms[channelKey("n.example", "GONE")]).toBeUndefined();
+    expect(voiceChannelOfUser(st, "n.example", "R", "U-alice")).toBe("C1");
+    expect(voiceChannelOfUser(st, "n.example", "R2", "U-carol")).toBe("C2");
+    expect(st.epochs[channelKey("n.example", "C1")]).toBe(2);
+    expect(participantsOf(st, "b.example", "C")[0]!.user).toBe("bob@n.example");
+    s.seedAll("n.example", []);
+    expect(Object.keys(useVoicePresence.getState().channels)).toEqual([channelKey("b.example", "C")]);
+  });
 });
