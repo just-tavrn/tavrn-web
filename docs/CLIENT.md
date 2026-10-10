@@ -85,8 +85,11 @@ status ("Connected") and the quality, the second line the channel and room. The 
 with an SVG lock next to its kind icon: closed for end-to-end encrypted channels (all voice channels), open in the
 warning colour for plaintext channels; channel headers show the same lock. Moderators open a participant's menu (right click
 or ⋯) to server-mute, disconnect or move them, drag people onto another voice channel, or move everybody at
-once from a voice channel's menu (with a confirmation; the target's user limit holds); everybody can set a
-per-person volume there. A dropped connection rejoins by itself; others see an amber plug on your avatar
+once from a voice channel's menu (with a confirmation; the target's user limit holds); the target list offers every
+voice channel the moderator may move into, also channels the member may neither view nor join (VOICE.md §7 "Moved
+participations"). A member moved into such a channel follows the move as usual: the channel shows up in their
+channel list while they are in it (with the stage and the whiteboard), and
+disappears again when they leave; they cannot rejoin by themselves. Everybody can set a per-person volume there. A dropped connection rejoins by itself; others see an amber plug on your avatar
 meanwhile instead of you vanishing.
 
 **Quick menus on mute and deafen.** A right-click (the context-menu key, a long press on touch) on the microphone
@@ -417,7 +420,8 @@ text, voice, files and management; under every permission the value it inherits 
 allowed by the category" / "by the roles"), which is also the accessible description of its allow/neutral/deny
 choice. **Reset to category** removes a channel's own overrides after a confirmation. The sidebar lists only the
 channels the user may view, and a category only when one of its channels is visible (channel managers also see
-empty ones); `channelPermissions` (`web/src/lib/channelPermissions.ts`) computes exactly like the node. The node
+empty ones); `channelPermissions` (`web/src/lib/channelPermissions.ts`) computes exactly like the node, including
+the view, read and connect a moved participation grants in the voice channel the user's own session is in. The node
 sends a private channel's events only to the members it is listed to: a member who gains a channel gets
 `channel.create`, one who loses it `channel.delete` with `hidden: true` (PROTOCOL.md §6). The client then drops the
 channel from the sidebar like a deleted one, but an open channel says **You no longer have access to this channel**

@@ -7,7 +7,7 @@ import { useNode } from "../../components/NodeScope";
 import { channelName } from "../../lib/names";
 import { channelPermissions } from "../../pages/ChannelPage";
 import { participantsOf, useVoicePresence } from "../presence";
-import { useVoice } from "../store";
+import { ownVoiceChannel, useVoice } from "../store";
 import { joinVoice } from "../index";
 import { useRoomVoiceStates } from "../useVoiceRealtime";
 import { AvatarTile } from "./AvatarTile";
@@ -55,7 +55,8 @@ export function VoiceChannelRow({ room, channel, onNavigate }: { room: RoomDetai
     [unsorted, version, locale],
   );
   const connected = useVoice((s) => s.status !== "idle" && s.target?.domain === domain && s.target.channelId === channel.id);
-  const perms = channelPermissions(room, channel.id, me?.id ?? "");
+  const voiceChannelId = useVoice((s) => ownVoiceChannel(s, domain, room.id));
+  const perms = channelPermissions(room, channel.id, me?.id ?? "", voiceChannelId);
   const limit = channel.user_limit ?? 0;
   const count = limit > 0 ? `${participants.length}/${limit}` : participants.length > 0 ? String(participants.length) : "";
   const canMove = hasPermission(perms, Permission.MOVE_MEMBERS);

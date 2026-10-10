@@ -747,6 +747,45 @@ test.describe("Voice channels", () => {
     await expect(channel(raidId).getByTestId("voice-participant")).toHaveCount(0);
   });
 
+  test("Moved into a channel the member may neither view nor join: shown while connected, gone after leaving", async ({ browser, request }) => {
+    test.setTimeout(180_000);
+    const { owner, roomId, voiceId, code } = await setup(request);
+    const auth = { Authorization: `Bearer ${owner.token}` };
+    const created = await request.post(`${NODE}/api/v1/rooms/${roomId}/channels`, { headers: auth, data: { kind: "voice", name: "Bühne" } });
+    expect(created.ok(), await created.text()).toBeTruthy();
+    const stageId = (await created.json()).id as string;
+    const room = await (await request.get(`${NODE}/api/v1/rooms/${roomId}`, { headers: auth })).json();
+    const everyone = room.roles.find((r: { is_everyone: boolean }) => r.is_everyone).id as string;
+    // view_channel (bit 0) and connect (bit 16) denied for everybody: only a moderator's move brings someone in.
+    const deny = await request.put(`${NODE}/api/v1/rooms/${roomId}/overrides`, { headers: auth, data: { target_type: "channel", target_id: stageId, subject_type: "role", subject_id: everyone, allow: "0", deny: String(1 + 2 ** 16) } });
+    expect(deny.ok(), await deny.text()).toBeTruthy();
+    const bob = await voiceUser(browser, "vmoved");
+    await joinRoom(request, bob.page, code);
+    await joinFromSidebar(bob.page, roomId);
+    const stageLink = bob.page.getByRole("link", { name: "Sprachkanal Bühne" });
+    await openNavIfMobile(bob.page);
+    await expect(stageLink).toHaveCount(0);
+
+    // The owner moves him there (VOICE.md §7): his client follows into the channel it did not know.
+    const move = await request.post(`${NODE}/api/v1/rooms/${roomId}/channels/${voiceId}/voice/members/${bob.address}/move`, { headers: auth, data: { channel_id: stageId } });
+    expect(move.status(), await move.text()).toBe(204);
+    await expect(bob.page.getByTestId("voice-bar")).toHaveAttribute("data-status", "connected", { timeout: 30_000 });
+    await expect(bob.page.getByTestId("voice-bar-channel")).toContainText("Bühne");
+    await openNavIfMobile(bob.page);
+    await stageLink.click();
+    // The stage of the call, no "you may not join" panel.
+    await expect(bob.page.getByTestId("voice-stage")).toBeVisible({ timeout: 30_000 });
+    await expect(bob.page.getByTestId("voice-e2ee")).toBeVisible();
+    await expect(bob.page.getByTestId("voice-join-panel")).toHaveCount(0);
+    await expect(bob.page.getByText("Du darfst diesen Sprachkanal nicht betreten.")).toHaveCount(0);
+
+    // Leaving ends the participation: the channel disappears again and he cannot come back by himself.
+    await bob.page.getByTestId("voice-leave").click();
+    await expect(bob.page.getByTestId("voice-bar")).toHaveCount(0, { timeout: 20_000 });
+    await openNavIfMobile(bob.page);
+    await expect(stageLink).toHaveCount(0, { timeout: 20_000 });
+  });
+
   test("Connection test and background: every path to the media server, blur strength and quality", async ({ page, request }) => {
     test.setTimeout(180_000);
     const { owner } = await setup(request);
