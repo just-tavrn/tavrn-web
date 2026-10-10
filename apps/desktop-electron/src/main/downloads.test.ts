@@ -128,6 +128,7 @@ function setup(t: { after: (fn: () => void) => void }, over: Partial<DownloadsDe
     reveal: (p) => void revealed.push(p),
     ...over,
   });
+  t.after(() => downloads.abortAll());
   const registry = new IpcRegistry((e) => e === me);
   registerFilesHandlers(registry, { downloads });
   const call = (method: string, ...args: unknown[]) => registry.dispatch(`tavrn:files.${method}`, method, me, args);
