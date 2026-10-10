@@ -5,6 +5,7 @@
  * classifies the file and declares the category (`Tavrn-Upload-Category`). The composer also uses it to
  * filter the file picker and to refuse files the user may not upload before sending anything.
  */
+import { readBytes } from "./metadata";
 
 export const UPLOAD_CATEGORIES = ["images", "audio", "video", "documents", "archives", "other"] as const;
 export type UploadCategory = (typeof UPLOAD_CATEGORIES)[number];
@@ -138,8 +139,8 @@ export function isExecutable(name: string, type: string, head?: Uint8Array): boo
 
 /** The first {@link HEAD_BYTES} of a file's content, for {@link executableKind}. */
 export async function readHead(data: Blob | Uint8Array): Promise<Uint8Array> {
-  if (data instanceof Uint8Array) return data.subarray(0, HEAD_BYTES);
-  return new Uint8Array(await data.slice(0, HEAD_BYTES).arrayBuffer());
+  if (ArrayBuffer.isView(data)) return data.subarray(0, HEAD_BYTES);
+  return readBytes(data.slice(0, HEAD_BYTES));
 }
 
 /** Category by name and type (and, if given, the first bytes). */
