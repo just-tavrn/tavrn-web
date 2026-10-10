@@ -70,7 +70,7 @@ apple-native-keyring-store = { version = "1", features = ["keychain"] }
 [dev-dependencies]
 # The voice integration test (tests/voice_livekit.rs) signs LiveKit tokens itself (HS256).
 ring = "0.17"
-base64 = "0.22"
+base64 = "0.23"
 
 [lints.clippy]
 unwrap_used = "deny"

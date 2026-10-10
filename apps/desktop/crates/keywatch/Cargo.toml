@@ -18,7 +18,7 @@ name = "keywatch"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # The X RECORD extension, pure Rust: observes and never grabs.
-x11rb = { version = "0.13", default-features = false, features = ["record"] }
+x11rb = { version = "0.14", default-features = false, features = ["record"] }
 
 [target.'cfg(windows)'.dependencies]
 # A low-level keyboard hook that passes every key on.
