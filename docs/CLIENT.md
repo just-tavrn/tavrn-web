@@ -175,7 +175,9 @@ here ever reveals a hidden channel; rooms you are not in are never shown either.
   non-interactive head above the entries.
 - **Friends list**: a friend in a voice channel you can view shows "In voice: \<room> / \<channel>" under their name;
   their menu then has "Join \<channel>" (see "Friends, direct messages and invitations"). A friend in a channel you
-  cannot view, or in a room you are not in, shows nothing.
+  cannot view, or in a room you are not in, shows nothing. Neither does a friend whose presence is offline: someone
+  who chose "invisible" stays offline in the friends list while in voice (the channel's own list still shows them
+  to everybody who can view it).
 
 ## Friends, direct messages and invitations
 
