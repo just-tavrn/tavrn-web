@@ -27,6 +27,24 @@ every admin tab. `e2e/tests/files-e2ee.spec.ts` scans an end-to-end encrypted fi
 files" panel of a locked device (checkboxes named by kind, size and date; the delete buttons name their entry) and the
 channel deletion dialog with its file facts (the keep option is a labelled checkbox).
 
+The feature specs scan their own views with the same rule (WCAG 2.2 A/AA tags; serious and critical violations fail),
+on the desktop and the phone project unless noted:
+
+| Spec | Views scanned |
+|---|---|
+| `rail-folders.spec.ts` | the room rail with a folder collapsed and expanded |
+| `social-voice.spec.ts` | the room card on the rail (desktop), the room's long-press menu with the card head (phone), the friends list with a friend in voice |
+| `friend-invite.spec.ts` | the friend menu with the open "Invite to room" submenu |
+| `channel-access-marks.spec.ts` | the channel list with the private and restricted marks, the channel editor |
+| `permissions-layered.spec.ts` | the channel and category permission editors |
+| `upload-policy.spec.ts` | the role's file types, the channel and category editors with their file type blocks, the download warning dialog |
+| `files-e2ee.spec.ts` | an end-to-end encrypted files channel with entries and its breadcrumbs, "Your files" of a locked device, the deletion dialog |
+| `history-restore.spec.ts` | the requester's banner, Room settings → History requests |
+| `age.spec.ts` | the registration form, the room settings, the invite page, a locked channel, the date of birth dialog |
+| `threads.spec.ts` | a forum post open in the thread panel, the forum's post list |
+| `reports.spec.ts` | a report's detail with its action row |
+| `desktop-voice.spec.ts` | the desktop app's Settings → Voice & video and a joined voice channel with the native engine (axe-core inside the app's WebKitGTK webview) |
+
 Run it alone (with `E2E_NODE_BIN` or `E2E_NODE_IMAGE` set, README.md "End-to-end tests"): `cd e2e && npx playwright test tests/a11y.spec.ts --project chromium --project mobile-android
 --project tablet-chromium --workers=2`. `A11Y_REPORT_DIR=<dir>` writes every finding as JSON,
 `A11Y_REPORT_ONLY=1` turns the gate off (for a baseline).
@@ -74,6 +92,13 @@ Found during the fixes (screens not reached by the baseline scan) and fixed as w
 Before: 3 critical + 325 serious + 241 moderate + 25 minor nodes. After: 0 critical + 0 serious + 5 moderate +
 34 minor.
 
+### Found after the audit
+
+| Rule | Impact | Where | Fix |
+|---|---|---|---|
+| `target-size` | serious | Files: the text-only breadcrumb buttons rendered below 24 CSS px with the fonts of the CI runner (WCAG 2.5.8) | A minimum size of 24 × 24 px independent of the font (`min-h-6 min-w-6` in `files/FilesView.tsx`); `files-e2ee.spec.ts` scans the breadcrumbs |
+| (layout) | – | The emoji picker grew after its data had loaded and left the viewport above the composer (WCAG 1.4.10) | A fixed panel size bounded by the viewport (`components/EmojiPicker.tsx`); the grid scrolls inside |
+
 ## What was built (checklist of design note 4.14 item 4)
 
 - **Focus**: one `:focus-visible` ring (2 px accent, offset 2 px) for every control, never removed; drawers,
@@ -84,7 +109,9 @@ Before: 3 critical + 325 serious + 241 moderate + 25 minor nodes. After: 0 criti
   `aria-modal="true"`, labelled by their title, focus trap (`lib/focusTrap.ts`), Escape, focus return.
 - **Menus**: context menus and the "⋯" menus (`ContextMenu`) with `role="menu"`, roving tabindex, arrow keys,
   Home/End, submenus, Shift+F10 and the context menu key; the presence menu got the same keyboard model and
-  returns the focus to its button on Escape. The room header of the sidebar is one menu button inside the
+  returns the focus to its button on Escape. Items that show a state (notification level, mute, roles, folder colour,
+  a thread's archive and lock, …) are `menuitemcheckbox` with `aria-checked`; choosing one keeps the menu open, so
+  the new state is announced on the focused item, like the voice quick menus (`e2e/tests/context-menus.spec.ts`). The room header of the sidebar is one menu button inside the
   sidebar's `h2` (`aria-haspopup="menu"`, `aria-expanded`; Enter or Space opens the room menu with its first item
   focused); its accessible name is the room name, the node of a remote room and the number of open reports.
 - **Icons** in the sidebar bars are SVG (2 px stroke, `currentColor`, `components/icons.tsx`) on 40 px targets;
@@ -132,7 +159,8 @@ Before: 3 critical + 325 serious + 241 moderate + 25 minor nodes. After: 0 criti
 - **Tabs**: the sign-in/registration switch is a tab list with arrow keys and a tab panel (`lib/a11y.ts`
   `tabListKeyDown`); the settings and admin sections are navigation links with `aria-current="page"`.
 - **Pickers**: the emoji picker is a dialog with a menu grid (arrow keys, Escape, focus return) and one tab stop
-  for its section bar; the composer is a combobox for slash commands (`aria-activedescendant`); search results
+  for its section bar; it has a fixed size bounded by the viewport (at most 384 px high) and opens below or above its
+  button, so it never reaches outside the viewport; the composer is a combobox for slash commands (`aria-activedescendant`); search results
   are a list box driven from the search field.
 - **Message list**: `role="feed"` with `article` rows (`aria-posinset`, `aria-setsize`, `aria-busy` while a page
   loads); new messages of others in the open conversation are announced in a polite live region ("New message
@@ -153,6 +181,10 @@ Before: 3 critical + 325 serious + 241 moderate + 25 minor nodes. After: 0 criti
   and returns to `fg-0` as the open channel; the lock stays the encryption mark only. The channel editor's line uses a
   decorative glyph next to the text. `e2e/tests/channel-access-marks.spec.ts` scans the channel list and the channel
   editor with axe on the desktop and the phone project.
+- **Spoilers** (`lib/markdown.ts`): a hidden `||spoiler||` is a `role="button"` with a tab stop and the name
+  "Spoiler, press to reveal"; Enter, Space or a click reveals it, after which role, tab stop and name are removed and
+  the text reads as normal text. It has the focus ring, and the colour change is not animated under reduced motion.
+  Spoiler attachments are covered by a real button ("Spoiler, click to reveal").
 - **Time stamps**: `<time datetime>` with the full date and time as `title`.
 - **Motion**: a global `prefers-reduced-motion` rule ends every remaining animation and transition (drawers,
   pulses, the speaking glow, the composer growth, cue indicators); the speaking ring stays static.
@@ -237,6 +269,7 @@ the European standard EN 301 549 for web content.
 content listed below is not yet accessible.
 
 **Non-accessible content.**
+
 - The whiteboard is a drawing surface; drawings are not available as text beyond the written labels shown next
   to the board (WCAG 1.1.1).
 - Live voice and video conversations are not captioned (WCAG 1.2.4, live content).

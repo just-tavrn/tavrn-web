@@ -2,7 +2,7 @@
 
 The desktop app is a [Tauri 2](https://v2.tauri.app) shell around the web client: the same React client, bundled into
 an installable app for Linux (`.deb`, `.AppImage`) and Windows (`.msi`, NSIS `.exe`), that updates itself with signed
-releases. macOS follows later. It lives in [`apps/desktop`](../apps/desktop): the pnpm package `@tavrn/desktop` (the
+releases; macOS is not supported yet. It lives in [`apps/desktop`](../apps/desktop): the pnpm package `@tavrn/desktop` (the
 Tauri CLI) and the Rust crate `tavrn-desktop` in `apps/desktop/src-tauri` with a Cargo workspace of its own.
 
 ## What the app is
@@ -190,7 +190,7 @@ The tooltip names the channel and the state ("tavrn · Lounge (Gaming) · Speaki
 every 150 ms, so speaking does not make the icon flicker. The menu (right click; on Linux any click): Show/Hide tavrn,
 Mute microphone, Deafen, Leave voice channel, Quit tavrn; a left click on Windows shows the window.
 
-**Close to tray** is on by default on every platform (the owner's choice): closing the window hides it and the app
+**Close to tray** is on by default on every platform: closing the window hides it and the app
 keeps running (voice, notifications). The tray menu brings it back, and so does starting the app again (a second start
 shows the running app instead of opening another one; on Linux this needs the D-Bus session bus). Quit is in the tray
 menu and in Settings → App, where close to tray can be turned off. GNOME shows tray icons only with the AppIndicator
@@ -483,7 +483,6 @@ picker accepts `http://127.0.0.1:8080`).
   validation, the tray's states, icons and labels, the installer licence and the icons of the bundle; downloads: the
   chunk writer (temporary file, rename, size limit, abort and cleanup), the registry of running saves (no second begin
   with the same id, at most 8), file names from the webview that cannot leave the chosen directory).
-  validation, the tray's states, icons and labels, the installer licence and the icons of the bundle).
   The native voice engine: the gate and level meter (thresholds, hysteresis, hold, ramps, push-to-talk), the
   microphone path (any device rate and channel count to 10 ms frames at 48 kHz, processing before the volume, the
   push-to-talk release delay, nothing sent while muted), the mix (gains, deafen, start buffer, bounded delay,
@@ -524,7 +523,8 @@ picker accepts `http://127.0.0.1:8080`).
   test checks the tray state the client reported (`tray_status`), gives the shell a state, and shows a notification.
   The app then starts again with the keyring crates' in-memory mock store (`TAVRN_DESKTOP_KEYCHAIN=memory`, because
   xvfb has no Secret Service): the key moves into the keychain, the IndexedDB copy is gone, and a reload unlocks from
-  the keychain alone. Both values of `TAVRN_DESKTOP_KEYCHAIN` only ever store less (in memory, or nothing). Last, the
+  the keychain alone. Both values of `TAVRN_DESKTOP_KEYCHAIN` only ever store less (in memory, or nothing). Then voice
+  on Linux: the webview's media streams are on (and WebRTC wherever the system's WebKitGTK is built with it). Then the
   hotkeys: Settings → Voice binds Ctrl+Alt+M to mute and the left Ctrl alone to push-to-talk, the window is minimized
   and real key presses of the X server (`xdotool`) reach the client through the shell's key listener: Ctrl+Alt+M
   toggles mute and back, holding the left Ctrl holds push-to-talk until it is released. Last, signed
@@ -558,13 +558,35 @@ picker accepts `http://127.0.0.1:8080`).
   E2E_NODE_BIN=/path/to/release/tavrn-node E2E_NODE_PORT=8600 E2E_WEB_PORT=5600 just desktop-voice-e2e
   ```
 
+### Recipes and test hooks
+
+| Recipe | What it does |
+|---|---|
+| `just desktop-dev` | the app in Tauri's development mode, the client from the Vite dev server |
+| `just desktop-build [args]` | the installers of this platform from `web/dist` (Linux `.deb` and `.AppImage`, Windows `.msi` and NSIS); extra arguments go to `tauri build` |
+| `just desktop-check` | cargo fmt, clippy, tests and `cargo deny check licenses` of the shell (needs `web/dist`) |
+| `just desktop-e2e` | the WebDriver smoke test of the built Linux app under `xvfb-run` (`E2E_NODE_BIN` or `E2E_NODE_URL`) |
+| `just desktop-voice-test` | the native engine's LiveKit test (`cargo test --test voice_livekit -- --ignored`, needs `livekit-server`) |
+| `just desktop-voice-e2e` | voice between Chromium and the built app (`desktop-voice.spec.ts`) under `xvfb-run`; the app from `TAVRN_DESKTOP_APP` or `<cargo target dir>/release/tavrn`, a release node from `E2E_NODE_BIN` |
+
+The app reads three environment variables, all for tests only; each one only ever makes the app store or send less:
+
+| Variable | Effect |
+|---|---|
+| `TAVRN_DESKTOP_KEYCHAIN` | `memory`: the keyring crates' in-memory mock store instead of the OS keychain; `unavailable`: behave as if there were no keychain |
+| `TAVRN_DESKTOP_TEST_SAVE_DIR` | saves go into this directory without a dialog (never overwriting: `name (1).ext`) |
+| `TAVRN_DESKTOP_FAKE_AUDIO` | `1`: the native engine's fake audio backend (a tone in, a level meter out) for machines without sound hardware |
+
+The test drivers take `TAVRN_DESKTOP_APP` (the built binary), `E2E_NODE_BIN`, `E2E_NODE_URL` and `E2E_NODE_PORT` (the
+smoke test's node, default port 8300), `TAURI_DRIVER` and `WEBDRIVER_PORT` (default 4444).
+
 ## Builds and releases
 
 `.github/workflows/desktop.yml` ([GITHUB.md](GITHUB.md)) builds on two routes:
 
 | Route | Runner | When | What |
 |---|---|---|---|
-| Linux, natively | self-hosted `tavrn-heavy` (fallback `ubuntu-latest`) | pull requests that touch `apps/desktop`, `web`, the lockfile, the workspace or the workflow, once ready for review; pushes to `main`; by hand; release tags | the checks (fmt, clippy, tests, licenses, the real Secret Service), `.deb` and `.AppImage`, the WebDriver smoke test under xvfb against the node image's binary; artifact `desktop-linux` |
+| Linux, natively | self-hosted `tavrn-heavy` (`ubuntu-latest` for release tags) | pushes to `main` that touch `apps/desktop`, `web`, the lockfile or the workspace; by hand (also for a pull request's branch); release tags | the checks (fmt, clippy, tests, licenses, the real Secret Service), `.deb` and `.AppImage`, the WebDriver smoke test under xvfb against the node image's binary; artifact `desktop-linux` |
 | Windows NSIS, cross-compiled | self-hosted `tavrn-heavy` | as the Linux build, except release tags | `tauri build --target x86_64-pc-windows-msvc --runner cargo-xwin --bundles nsis`; artifact `desktop-windows-nsis` (the current installer of `main` is always there) |
 | Windows `.msi` and NSIS, natively | GitHub-hosted `windows-latest` | release tags; by hand with `windows: true` | the release installers with their updater signatures; artifact `desktop-windows` |
 
@@ -576,10 +598,12 @@ All artifacts are kept for 7 days.
   Microsoft CRT and Windows SDK that cargo-xwin links against come from the runner's cache (`XWIN_CACHE_DIR`, prepared
   when the runner starts); the job fails with a clear message when it is missing and never downloads it itself (the
   SDK's licence forbids publishing it, so it is never part of an artifact either).
-- **Trusted events only:** a self-hosted runner executes the code it checks out, so pull requests from forks and from
-  Dependabot build Linux on `ubuntu-latest` and skip the cross-compiled installer. Release builds also stay on
-  `ubuntu-latest` and `windows-latest`: they carry the updater key, and no long-lived secret besides the read token
-  belongs on the self-hosted runners.
+- **Pull requests** start no desktop build: they run the quick checks of `ci.yml` only. A pull request's branch is
+  built by hand (`gh workflow run desktop.yml --ref <branch>`); changes to the workflow file alone start nothing either.
+- **Trusted events only:** a self-hosted runner executes the code it checks out, so the jobs keep the trust rule of the
+  organization's `rust-ci.yml`: code from forks and from Dependabot would build Linux on `ubuntu-latest` and skip the
+  cross-compiled installer. Release builds also stay on `ubuntu-latest` and `windows-latest`: they carry the updater
+  key, and no long-lived secret besides the read token belongs on the self-hosted runners.
 - **Limits of the cross-compiled installer** (experimental upstream, [Tauri: build Windows apps on
   Linux](https://v2.tauri.app/distribute/windows-installer/#build-windows-apps-on-linux-and-macos)): NSIS only (the
   `.msi` needs WiX, which runs on Windows), x86_64 only, built but not started (no Windows on the runner), no updater
