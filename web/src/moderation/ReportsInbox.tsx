@@ -243,36 +243,36 @@ function ActionBar({ client, report, admin, onDone }: { client: TavrnApi; report
       <p className="text-xs font-semibold text-fg-1">{t("reports.actions")}</p>
       <div className="flex flex-wrap items-center gap-2">
         {canDelete && (
-          <Button variant="ghost" onClick={() => setPending({ action: "delete_message" })} data-testid="report-action-delete">
+          <Button variant="ghost" className="shrink-0 whitespace-nowrap" onClick={() => setPending({ action: "delete_message" })} data-testid="report-action-delete">
             🗑 {t("reports.action.delete_message")}
           </Button>
         )}
         {canRoomActions && (
-          <span className="flex items-center gap-1">
-            <Select value={String(minutes)} onChange={(e) => setMinutes(Number(e.target.value))} aria-label={t("reports.timeout_length")} data-testid="report-timeout-minutes" className="w-auto">
+          <span className="flex shrink-0 flex-nowrap items-center gap-1">
+            <Select value={String(minutes)} onChange={(e) => setMinutes(Number(e.target.value))} aria-label={t("reports.timeout_length")} data-testid="report-timeout-minutes" className="w-auto! shrink-0">
               {TIMEOUT_CHOICES.map((m) => (
                 <option key={m} value={m}>
                   {t(`menu.duration.${m}m`)}
                 </option>
               ))}
             </Select>
-            <Button variant="ghost" onClick={() => setPending({ action: "timeout", minutes })} data-testid="report-action-timeout">
+            <Button variant="ghost" className="shrink-0 whitespace-nowrap" onClick={() => setPending({ action: "timeout", minutes })} data-testid="report-action-timeout">
               ⏳ {t("reports.action.timeout")}
             </Button>
           </span>
         )}
         {canRoomActions && (
-          <Button variant="ghost" onClick={() => setPending({ action: "kick" })} data-testid="report-action-kick">
+          <Button variant="ghost" className="shrink-0 whitespace-nowrap" onClick={() => setPending({ action: "kick" })} data-testid="report-action-kick">
             🚪 {t("reports.action.kick")}
           </Button>
         )}
         {canBan && (
-          <Button variant="ghost" onClick={() => setPending({ action: "ban" })} data-testid="report-action-ban">
+          <Button variant="ghost" className="shrink-0 whitespace-nowrap" onClick={() => setPending({ action: "ban" })} data-testid="report-action-ban">
             ⛔ {inRoom ? t("reports.action.ban") : t("reports.action.node_ban")}
           </Button>
         )}
         {canPurge && (
-          <Button variant="ghost" onClick={() => void previewPurge()} data-testid="report-action-purge">
+          <Button variant="ghost" className="shrink-0 whitespace-nowrap" onClick={() => void previewPurge()} data-testid="report-action-purge">
             🧹 {t("reports.action.purge")}
           </Button>
         )}

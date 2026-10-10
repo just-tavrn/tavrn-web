@@ -112,6 +112,31 @@ test.describe("Reports", () => {
     expect(log.find((e) => e.action === "member.timeout")?.meta.report_id).toBeTruthy();
   });
 
+  test.describe("in English", () => {
+    test.use({ locale: "en-US" });
+    test("the action buttons of a report keep icon and label on one line", async ({ page, request }, info) => {
+      // At 1440 px the "Time out" button used to wrap (the icon above the label) next to its duration select.
+      test.skip(info.project.name !== "chromium", "the desktop width of the screenshot run");
+      const owner = await registerViaApi(request, "owner");
+      const member = await registerViaApi(request, "member");
+      const reporter = await registerViaApi(request, "reporter");
+      const room = await createRoomViaApi(request, owner.token, uniqueName("Actions"));
+      await joinRoom(request, owner, room.id, member);
+      await joinRoom(request, owner, room.id, reporter);
+      const created = await request.post(`${NODE}/api/v1/reports`, { ...auth(reporter.token), data: { kind: "user", user: `${member.username}@localhost`, room_id: room.id, category: "spam", detail: "" } });
+      expect(created.ok(), await created.text()).toBeTruthy();
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await loginAs(page, owner);
+      await page.goto(`/rooms/${room.id}/settings/reports`);
+      await page.getByTestId("report-row").click();
+      const bar = page.getByTestId("report-detail").getByTestId("report-action-bar");
+      await expect(bar.getByTestId("report-action-timeout")).toContainText("Time out");
+      const heights = await bar.locator("button[data-testid^=report-action-]").evaluateAll((buttons) => buttons.map((b) => [b.getAttribute("data-testid"), Math.round(b.getBoundingClientRect().height)]));
+      expect(heights.length).toBeGreaterThanOrEqual(3);
+      for (const [id, h] of heights) expect(h, String(id)).toBeLessThanOrEqual(44);
+    });
+  });
+
   test("a room reported from its header menu reaches the node admins, who dismiss it", async ({ browser, page, request }) => {
     test.setTimeout(120_000);
     const owner = await registerViaApi(request, "owner");
