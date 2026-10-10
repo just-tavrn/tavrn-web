@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { ContextMenu, LONG_PRESS_MS, MenuButton, findEntry, menuItem, normalizeMenu, separator, submenu, useContextMenu, type MenuEntry } from "./ContextMenu";
+import { ContextMenu, LONG_PRESS_MS, MenuButton, findEntry, menuItem, normalizeMenu, separator, staysOpen, submenu, useContextMenu, type MenuEntry } from "./ContextMenu";
 
 function Harness({ entries }: { entries: MenuEntry[] }) {
   const menu = useContextMenu();
@@ -222,5 +223,83 @@ describe("ContextMenu", () => {
     // Escape still closes from the control.
     await user.keyboard("{ArrowDown}{Escape}");
     expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("keeps the menu open after a checkbox item by default; plain items and an explicit keepOpen: false close it", async () => {
+    expect(staysOpen(menuItem("a", "A", undefined))).toBe(false);
+    expect(staysOpen(menuItem("a", "A", undefined, { checked: false }))).toBe(true);
+    expect(staysOpen(menuItem("a", "A", undefined, { checked: true, keepOpen: false }))).toBe(false);
+    expect(staysOpen(menuItem("a", "A", undefined, { keepOpen: true }))).toBe(true);
+    const user = userEvent.setup();
+    const toggle = vi.fn();
+    const plain = vi.fn();
+    const forced = vi.fn();
+    render(<Harness entries={[menuItem("c", "Check", toggle, { checked: false }), menuItem("f", "Forced", forced, { checked: true, keepOpen: false }), menuItem("p", "Plain", plain)]} />);
+    await user.click(screen.getByRole("button", { name: "More" }));
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "Check" }));
+    expect(toggle).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    await user.click(screen.getByRole("menuitem", { name: "Plain" }));
+    expect(plain).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("menu")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "More" }));
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "Forced" }));
+    expect(forced).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  /** A notification-like menu whose entries follow the state they change (like the room menu). */
+  function Stateful({ onSettings }: { onSettings: () => void }) {
+    const menu = useContextMenu();
+    const [mode, setMode] = useState("all");
+    const [muted, setMuted] = useState(false);
+    const entries = normalizeMenu([
+      submenu("notify", "Notifications", ["all", "mentions", "nothing"].map((m) => menuItem(`mode-${m}`, m, () => setMode(m), { checked: mode === m }))),
+      muted ? menuItem("unmute", "Unmute", () => setMuted(false), { keepOpen: true }) : submenu("mute", "Mute", [menuItem("mute-1", "For 1 hour", () => setMuted(true), { keepOpen: true })]),
+      menuItem("settings", "Settings", onSettings),
+    ]);
+    return (
+      <div>
+        <MenuButton menu={menu} label="More" />
+        {menu.open && menu.anchor && <ContextMenu entries={entries} anchor={menu.anchor} onClose={menu.close} label="Menu" />}
+      </div>
+    );
+  }
+
+  it("keeps an open submenu after a state change and shows the new state; navigation still closes", async () => {
+    const user = userEvent.setup();
+    const settings = vi.fn();
+    render(<Stateful onSettings={settings} />);
+    await user.click(screen.getByRole("button", { name: "More" }));
+    await user.click(screen.getByRole("menuitem", { name: "Notifications" }));
+    const sub = screen.getByTestId("context-submenu");
+    expect(within(sub).getByRole("menuitemcheckbox", { name: "all" })).toHaveAttribute("aria-checked", "true");
+    await user.click(within(sub).getByRole("menuitemcheckbox", { name: "mentions" }));
+    expect(screen.getByTestId("context-submenu")).toBeInTheDocument();
+    expect(within(screen.getByTestId("context-submenu")).getByRole("menuitemcheckbox", { name: "mentions" })).toHaveAttribute("aria-checked", "true");
+    expect(within(screen.getByTestId("context-submenu")).getByRole("menuitemcheckbox", { name: "all" })).toHaveAttribute("aria-checked", "false");
+    // Keyboard: Enter on another mode keeps the menu open as well.
+    await user.keyboard("{ArrowDown}{Enter}");
+    expect(within(screen.getByTestId("context-submenu")).getByRole("menuitemcheckbox", { name: "nothing" })).toHaveAttribute("aria-checked", "true");
+    await user.click(screen.getByRole("menuitem", { name: "Settings" }));
+    expect(settings).toHaveBeenCalled();
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("moves the focus to the entry that replaces a vanished submenu (mute → unmute) and does not reopen it later", async () => {
+    const user = userEvent.setup();
+    render(<Stateful onSettings={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "More" }));
+    await user.keyboard("{ArrowDown}{ArrowRight}");
+    expect(screen.getByRole("menuitem", { name: "For 1 hour" })).toHaveFocus();
+    await user.keyboard("{Enter}");
+    // The mute submenu is gone, the menu stays open with "Unmute" in its place, focused.
+    expect(screen.queryByTestId("context-submenu")).toBeNull();
+    expect(screen.getByRole("menuitem", { name: "Unmute" })).toHaveFocus();
+    await user.keyboard("{Enter}");
+    // The mute submenu is back as a closed entry; it does not pop open again by itself.
+    expect(screen.getByRole("menuitem", { name: "Mute" })).toHaveFocus();
+    expect(screen.getByRole("menuitem", { name: "Mute" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByTestId("context-submenu")).toBeNull();
   });
 });

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it, vi } from "vitest";
 import { ALL_PERMISSIONS, Permission } from "@tavrn/sdk";
-import { findEntry, type MenuEntry } from "../components/ContextMenu";
+import { findEntry, staysOpen, type MenuEntry } from "../components/ContextMenu";
 import { channelMenu, dmMenu, memberMenu, messageMenu, notifyEntries, roomMenu, voiceParticipantMenu, type MemberMenuActions, type MemberMenuContext, type VoiceParticipantMenuActions } from "./menus";
 
 const t = (key: string, params?: Record<string, string | number>) => (params ? `${key}:${JSON.stringify(params)}` : key);
@@ -289,5 +289,58 @@ describe("notification and list menus", () => {
     expect(ids(dm)).toEqual(["mark-read", "profile", "copy-address", "dm-notify", "dm-mute", "close", "block"]);
     const group = dmMenu({ unread: false, kind: "group", peer: null, notify }, { ...notifyActions, markRead: vi.fn(), profile: vi.fn(), close: vi.fn(), block: vi.fn(), copyAddress: vi.fn() }, t);
     expect(ids(group)).not.toContain("block");
+  });
+});
+
+describe("which entries keep the menu open (state changes, like the voice quick menus)", () => {
+  /** Ids of all items (submenus included) whose choice keeps the menu open, and of those that close it. */
+  const split = (entries: MenuEntry[]) => {
+    const open: string[] = [];
+    const close: string[] = [];
+    const walk = (list: MenuEntry[]) =>
+      list.forEach((e) => {
+        if (e.kind === "submenu") walk(e.items);
+        else if (e.kind === "item") (staysOpen(e) ? open : close).push(e.id);
+      });
+    walk(entries);
+    return { open, close };
+  };
+  const notify = { mode: null, inherited: "mentions" as const, mutedUntil: null, suppressEveryone: false };
+  const notifyActions = { setMode: vi.fn(), mute: vi.fn(), unmute: vi.fn(), setSuppressEveryone: vi.fn() };
+
+  it("notification modes, @everyone, the mute durations and unmute stay open; navigation and leave close", () => {
+    const actions = { ...notifyActions, markRead: vi.fn(), invite: vi.fn(), settings: vi.fn(), leave: vi.fn(), copyId: vi.fn(), report: vi.fn() };
+    const room = split(roomMenu({ unread: true, canInvite: true, isOwner: false, notify, canReport: true }, actions, t));
+    expect(room.open).toEqual(["room-mode-default", "room-mode-all", "room-mode-mentions", "room-mode-nothing", "room-suppress-everyone", "room-mute-1", "room-mute-8", "room-mute-24", "room-mute-0"]);
+    expect(room.close).toEqual(["invite", "settings", "mark-read", "copy-id", "report", "leave"]);
+    const muted = split(roomMenu({ unread: false, canInvite: false, isOwner: false, notify: { ...notify, mutedUntil: new Date(Date.now() + 3_600_000).toISOString() } }, actions, t));
+    expect(muted.open).toContain("room-unmute");
+  });
+
+  it("channels and DMs: the notification entries and the full-history toggle stay open, the rest closes", () => {
+    const actions = { ...notifyActions, markRead: vi.fn(), edit: vi.fn(), duplicate: vi.fn(), remove: vi.fn(), copyLink: vi.fn(), copyId: vi.fn(), moveEveryoneHere: vi.fn(), moveEveryoneTo: vi.fn(), toggleFullHistory: vi.fn() };
+    const voiceMove = { elsewhere: 1, here: 1, targets: [{ id: "v2", name: "Raid" }] };
+    const channel = split(channelMenu({ kind: "voice", unread: true, canManage: true, system: false, voiceMove, notify, fullHistory: false }, actions, t));
+    expect(channel.open).toEqual(["channel-mode-default", "channel-mode-all", "channel-mode-mentions", "channel-mode-nothing", "channel-mute-1", "channel-mute-8", "channel-mute-24", "channel-mute-0", "full-history"]);
+    expect(channel.close).toEqual(["mark-read", "move-here", "move-to-v2", "edit", "duplicate", "copy-link", "copy-id", "delete"]);
+    const dm = split(dmMenu({ unread: true, kind: "dm", peer: { address: "b@x", name: "B" }, notify, fullHistory: true }, { ...notifyActions, markRead: vi.fn(), profile: vi.fn(), close: vi.fn(), block: vi.fn(), copyAddress: vi.fn(), toggleFullHistory: vi.fn() }, t));
+    expect(dm.open).toEqual(["dm-mode-default", "dm-mode-all", "dm-mode-mentions", "dm-mode-nothing", "dm-mute-1", "dm-mute-8", "dm-mute-24", "dm-mute-0", "full-history"]);
+    expect(dm.close).toEqual(["mark-read", "profile", "copy-address", "close", "block"]);
+  });
+
+  it("members: role toggles and server mute stay open; profile, messages, moderation and block close", () => {
+    const voice = { channelId: "v1", serverMuted: false, channels: [{ id: "v2", name: "Raid" }], inMyCall: false, volume: 100 };
+    const perms = Permission.MANAGE_ROLES | Permission.MUTE_MEMBERS | Permission.MOVE_MEMBERS | Permission.MODERATE_MEMBERS | Permission.KICK_MEMBERS | Permission.BAN_MEMBERS;
+    const member = split(memberMenu(ctx({ voice, canReport: true, room: { perms, isOwner: true, myTop: 100, roles } }), { ...memberActions(), report: vi.fn() }, t));
+    expect(member.open).toEqual(["role-admin", "role-mod", "role-member", "server-mute"]);
+    expect(member.close).toEqual(["profile", "message", "call", "add-friend", "mention", "copy-address", "server-deafen", "disconnect", "move-v2", "timeout-1", "timeout-5", "timeout-10", "timeout-60", "timeout-1440", "timeout-10080", "kick", "ban", "report", "block"]);
+    const participant = split(voiceParticipantMenu({ self: false, perms: Permission.MUTE_MEMBERS | Permission.MOVE_MEMBERS, serverMuted: true, inMyCall: true, volume: 100, channels: [] }, { volume: (v) => ({ kind: "custom", id: "volume", render: () => String(v) }), serverMute: vi.fn(), disconnect: vi.fn(), moveTo: vi.fn(), copyAddress: vi.fn(), copyId: vi.fn() }, t));
+    expect(participant.open).toEqual(["server-mute"]);
+  });
+
+  it("messages: every entry closes (replies, reactions, copies, pin, edit and delete act on the message)", () => {
+    const actions = { reply: vi.fn(), react: vi.fn(), copyText: vi.fn(), copyLink: vi.fn(), copyId: vi.fn(), pin: vi.fn(), edit: vi.fn(), remove: vi.fn(), markUnread: vi.fn() };
+    const message = split(messageMenu({ own: true, text: "hi", pinned: false, canPin: true, canReact: true, canManage: false, canReply: true, canEdit: true, canDelete: true }, actions, t));
+    expect(message.open).toEqual([]);
   });
 });
