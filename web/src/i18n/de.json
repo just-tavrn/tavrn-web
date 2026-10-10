@@ -2288,6 +2288,7 @@
   "errors.connect.purpose_invalid": "Diese Anfrage der App ist ungültig.",
   "errors.connect.unlock_unsupported": "Dein Knoten kann die App noch nicht mit einem Passkey entsperren. Nutze deinen Wiederherstellungsschlüssel.",
   "errors.connect.unlock_failed": "Der Passkey hat die App nicht entsperrt. Versuche es erneut oder nutze deinen Wiederherstellungsschlüssel.",
+  "errors.update.signature_invalid": "Das Update wurde abgelehnt: Seine Update-Dateien sind nicht mit dem Update-Schlüssel dieser App signiert. Versuche es später erneut oder lade die App von den Releases des Projekts herunter.",
   "errors.federation.peer_unreachable": "Dieser Knoten ist nicht erreichbar.",
   "errors.federation.peer_invalid": "Dieser Knoten antwortet nicht wie ein tavrn-Knoten mit Föderation.",
   "errors.federation.peer_blocked": "Dein Knoten föderiert nicht mit diesem Knoten.",

@@ -2,7 +2,8 @@
 //! Voice and video in the webview (docs/DESKTOP.md "Voice": the webview's own WebRTC on Linux). The window shows only the bundled client
 //! (`guard.rs`), so its requests for the microphone and the camera are granted without a prompt of the webview;
 //! screen capture and everything else keep the webview's default. On Linux WebKitGTK keeps WebRTC and media streams
-//! off unless the app switches them on; the media itself runs through GStreamer (the `.deb` depends on its plugins).
+//! off unless the app switches them on; the media itself runs through the system's GStreamer plugins (Linux builds are for
+//! development and tests only: Linux ships the Electron shell).
 
 use tauri::webview::{PermissionKind, PermissionResponse};
 

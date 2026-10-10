@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
- * The full smoke test of the Electron shell (docs/DESKTOP.md "The Linux shell (Electron)", the Tauri shell's
- * `apps/desktop/e2e/smoke.mjs` for the Linux app): the development build through Playwright's Electron driver, or a
+ * The full smoke test of the Electron shell (docs/DESKTOP.md "The Linux shell (Electron)"; it took over from the
+ * Tauri shell's WebDriver smoke test, retired with the Tauri Linux bundles): the development build through Playwright's Electron driver, or a
  * package (`E2E_ELECTRON_APP`, the `.AppImage` in CI) over the DevTools protocol (`launch.ts`). One account signs in in
  * the app, a second one uses the web client in Chromium on the same node (voice on: livekit-server on the PATH):
  *
