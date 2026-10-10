@@ -67,13 +67,13 @@ impl Default for Labels {
     /// Until the client sends its texts.
     fn default() -> Self {
         Self {
-            tooltip: "Tavrn".into(),
-            show: "Show Tavrn".into(),
-            hide: "Hide Tavrn".into(),
+            tooltip: "tavrn".into(),
+            show: "Show tavrn".into(),
+            hide: "Hide tavrn".into(),
             mute: "Mute microphone".into(),
             deafen: "Deafen".into(),
             leave: "Leave voice channel".into(),
-            quit: "Quit Tavrn".into(),
+            quit: "Quit tavrn".into(),
         }
     }
 }
@@ -564,16 +564,16 @@ mod tests {
         assert_eq!(long.validate(), Err("tray.invalid"));
         let empty = Labels { quit: " ".into(), ..Labels::default() };
         assert_eq!(empty.validate(), Err("tray.invalid"));
-        let control = Labels { tooltip: "Tavrn\u{1b}[31m".into(), ..Labels::default() };
+        let control = Labels { tooltip: "tavrn\u{1b}[31m".into(), ..Labels::default() };
         assert_eq!(control.validate(), Err("tray.invalid"));
         let german = Labels {
-            tooltip: "Tavrn · Allgemein (Gaming) · Stummgeschaltet".into(),
-            show: "Tavrn anzeigen".into(),
-            hide: "Tavrn ausblenden".into(),
+            tooltip: "tavrn · Allgemein (Gaming) · Stummgeschaltet".into(),
+            show: "tavrn anzeigen".into(),
+            hide: "tavrn ausblenden".into(),
             mute: "Mikrofon stummschalten".into(),
             deafen: "Taub schalten".into(),
             leave: "Sprachkanal verlassen".into(),
-            quit: "Tavrn beenden".into(),
+            quit: "tavrn beenden".into(),
         };
         assert_eq!(german.validate(), Ok(()));
     }

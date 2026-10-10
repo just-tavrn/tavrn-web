@@ -21,6 +21,7 @@ import { shareImage, type ShareTarget } from "./share";
 import { stamp, type WbElement } from "./sync";
 import type { WhiteboardController } from "./controller";
 import { TIMING } from "./protocol";
+import { saveFile } from "../platform/saveFile";
 
 const WhiteboardCanvas = lazy(() => import("./WhiteboardCanvas"));
 
@@ -51,16 +52,6 @@ export interface WhiteboardSessionProps {
   headerStart?: ReactNode;
 }
 
-function download(blob: Blob, name: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
-}
 
 function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -597,7 +588,8 @@ function ExportPanel({ c, title, onClose }: { c: WhiteboardController; title: st
     setBusy(true);
     try {
       const scene = c.scene();
-      download(kind === "png" ? await exportPng(scene) : await exportSvg(scene), `${fileBase(title)}.${kind}`);
+      const image = kind === "png" ? await exportPng(scene) : await exportSvg(scene);
+      await saveFile({ name: `${fileBase(title)}.${kind}`, data: image, mime: image.type });
       onClose();
     } catch (e) {
       toastError(e);

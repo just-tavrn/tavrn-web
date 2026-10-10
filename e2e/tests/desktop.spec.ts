@@ -400,9 +400,9 @@ test.describe("Desktop app: passkeys on the node's page unlock the app (simulate
     expect(unlockUrl).toMatch(/&method=passkey#k=[A-Za-z0-9_-]{43}$/);
     expect(unlockUrl.startsWith(`${web}/connect?`)).toBe(true);
     await nodePage.goto(unlockUrl);
-    await expect(nodePage.getByTestId("connect-title")).toHaveText("Tavrn-App entsperren?", { timeout: 20_000 });
+    await expect(nodePage.getByTestId("connect-title")).toHaveText("tavrn-App entsperren?", { timeout: 20_000 });
     await nodePage.getByTestId("connect-unlock").click();
-    await expect(nodePage.getByTestId("connect-done")).toHaveText("Die App ist entsperrt. Kehre zur Tavrn-App zurück.");
+    await expect(nodePage.getByTestId("connect-done")).toHaveText("Die App ist entsperrt. Kehre zur tavrn-App zurück.");
     await expect(page.getByTestId("app-shell")).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId("e2ee-banner")).toHaveCount(0);
 
@@ -417,7 +417,7 @@ test.describe("Desktop app: passkeys on the node's page unlock the app (simulate
     const signInUrl = await nextConnectPage(page, unlockUrl);
     expect(signInUrl).toMatch(/&method=passkey#k=[A-Za-z0-9_-]{43}$/);
     await nodePage.goto(signInUrl);
-    await expect(nodePage.getByTestId("connect-title")).toHaveText("Bei der Tavrn-App anmelden?", { timeout: 20_000 });
+    await expect(nodePage.getByTestId("connect-title")).toHaveText("Bei der tavrn-App anmelden?", { timeout: 20_000 });
     await nodePage.getByTestId("connect-allow").click();
     await expect(nodePage.getByTestId("connect-done")).toContainText("dein Passkey entsperrt die App");
     await expect(page.getByTestId("app-shell")).toBeVisible({ timeout: 20_000 });

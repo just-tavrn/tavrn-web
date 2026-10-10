@@ -2,7 +2,7 @@
 
 The desktop app is a [Tauri 2](https://v2.tauri.app) shell around the web client: the same React client, bundled into
 an installable app for Linux (`.deb`, `.AppImage`) and Windows (`.msi`, NSIS `.exe`), that updates itself with signed
-releases. macOS follows later. It lives in [`apps/desktop`](../apps/desktop): the pnpm package `@tavrn/desktop` (the
+releases; macOS is not supported yet. It lives in [`apps/desktop`](../apps/desktop): the pnpm package `@tavrn/desktop` (the
 Tauri CLI) and the Rust crate `tavrn-desktop` in `apps/desktop/src-tauri` with a Cargo workspace of its own.
 
 ## What the app is
@@ -14,8 +14,10 @@ Tauri CLI) and the Rust crate `tavrn-desktop` in `apps/desktop/src-tauri` with a
 - **It talks to the home node you choose.** The first start shows the node picker; the client then uses that node's
   API, WebSocket and media over https and wss. Rooms and conversations of other nodes work as in the browser
   (federated sessions, [CLIENT.md](CLIENT.md) "Several nodes in one client").
-- **One version number.** The app's version is `web/package.json`'s (`tauri.conf.json` points at it); the product
-  name is "Tavrn", the identifier `org.tavrn.desktop` (the project domain tavrn.org).
+- **One version number.** The app's version is `web/package.json`'s (`tauri.conf.json` points at it); the bundle's
+  product name is "Tavrn" (installer file names such as `Tavrn_<version>_x64-setup.exe`, the Windows start menu and
+  the Linux menu entry follow platform conventions), the identifier `org.tavrn.desktop` (the project domain tavrn.org);
+  everything the app itself shows (window title, tray, notifications) writes the name in lowercase, "tavrn".
 
 ### Security of the shell
 
@@ -27,6 +29,7 @@ Tauri CLI) and the Rust crate `tavrn-desktop` in `apps/desktop/src-tauri` with a
 | The sign-in window (`connect`) shows only the chosen node's `/connect?session=…` page (`open_connect` checks origin, path and parameters) and follows https pages from there (identity providers redirect), plain http only on this computer; it never loads the bundled client or `tauri:`, `file:`, `data:`, `javascript:` or `blob:` URLs, and new windows go to the system browser. The node's web client there runs as a plain web client: only the main window counts as the app (`platform/tauriDetect.ts`). | `src-tauri/src/guard.rs`, `src/lib.rs` |
 | The microphone and the camera are granted to the main window without a prompt of the webview (it shows only the bundled client); screen capture and every other permission keep the webview's default. | `src-tauri/src/media.rs` |
 | The node URL is validated twice: in the client and again in the shell before it is stored. | `web/src/platform/nodeUrl.ts`, `src-tauri/src/node_url.rs` |
+| Downloads are written by the shell: the webview names only a file name to suggest and a save's id, never a path; the user picks the target in the native save dialog, the shell writes a temporary file next to it and renames it into place. The dialog, opener and fs plugins have no permission in the webview. | `src-tauri/src/download.rs` |
 
 Unit tests in `src-tauri/src/conf_tests.rs` keep these properties of `tauri.conf.json` and the capability from eroding.
 
@@ -50,6 +53,7 @@ runs Tauri code. Everything that imports Tauri APIs lives under `platform/tauri*
 | `keystore` | — | the OS keychain for the key of the local key store (commands `keychain_get`, `keychain_set`, `keychain_delete`, `keychain_status`) |
 | `notifications` | — | native notifications and their clicks (`notify`, `shell_events`) |
 | `tray` | — | the tray icon with the voice state, close to tray, quit (`tray_set`, `tray_status`, `set_close_to_tray`, `quit_app`) |
+| `saveFile(file)` | the browser's download (an anchor with `download` on an object URL) | the native save dialog, the shell writes the file ("Downloads"; `save_file_begin`, `save_file_chunk`, `save_file_end`, `save_file_abort`, `save_file_reveal`) |
 
 The helpers `apiBase()`, `originUrl()`, `originWsUrl()`, `webOrigin()`, `originHost()` and `allowsInsecureNodes()`
 of `platform/index.ts` are the single place the API client (`lib/api.ts`), the WebSocket, node discovery
@@ -69,8 +73,8 @@ DNS, and before the first sign-in there is no node to ask):
    targets, lowest priority first, then highest weight), whose document must name the domain;
 3. after a `404` only: `https://<domain>/api/v1`.
 
-Errors are distinct and name the step that failed: "no node found for <domain>", "the node's document is invalid",
-"cannot reach <domain>" (DNS or TLS failure, nothing listening). A development node on this computer is asked over
+Errors are distinct and name the step that failed: "no node found for \<domain>", "the node's document is invalid",
+"cannot reach \<domain>" (DNS or TLS failure, nothing listening). A development node on this computer is asked over
 plain http (`alice@localhost:8080`). The login page of the app takes an address as well and switches the node when the
 domain is another one.
 
@@ -131,7 +135,7 @@ read the client's memory), nor does it replace the recovery key. Who can reach t
 While the window is not focused, mentions, direct messages and incoming calls (whatever the notification settings let
 through) become native notifications; while it is focused, the client shows its toasts as in the browser. Encrypted
 messages show a fixed text, never their content. Settings → Notifications has a switch for this device ("System
-notifications while Tavrn is in the background"); the web push section and the browser permission switch are not shown
+notifications while tavrn is in the background"); the web push section and the browser permission switch are not shown
 in the app, and the app never registers a service worker or a push subscription.
 
 The shell shows them with notify-rust (the backend of tauri-plugin-notification; the plugin itself offers no click
@@ -142,6 +146,29 @@ events on desktop and would replace the webview's `Notification` with an IPC bri
 | Linux | the desktop's notification server (D-Bus) | focuses the window and opens the conversation (the server's default action; GNOME, KDE and most others support it) |
 | Windows | a toast under the app's id (the installer's Start menu entry; a development build shows the default id) | focuses the window and opens the conversation while the toast is on screen; a toast clicked later in the notification center starts the app, and the running one comes to the front (to be confirmed by hand on Windows) |
 | macOS | (later) | — |
+
+## Downloads
+
+The webview of the app (WebView2, WebKitGTK) does nothing with the blob downloads a browser handles, so every download
+of the client (attachments, files channels, the data export, recovery keys and codes, whiteboard images) goes through
+one entry point, `saveFile({ name, data, mime })` in `web/src/platform/saveFile.ts`. In the browser it is the anchor
+download of before; in the app the shell shows the native save dialog and writes the file (`src-tauri/src/download.rs`):
+
+| Command | What it does |
+|---|---|
+| `save_file_begin(name, size)` | shows the save dialog (the name, cleaned of path parts and characters Windows refuses, is its suggestion; a filter for its extension) and answers `{ status: "ready", id }`, or `{ status: "cancelled" }` when the user closes it; at most 8 saves at once |
+| `save_file_chunk` | appends a raw IPC body (header `x-tavrn-save: <id>`) to a temporary file next to the target; the client streams the blob in 4 MiB slices, so a large decrypted file never sits twice in memory; more bytes than `size` are refused |
+| `save_file_end(id)` | checks that `size` bytes arrived, flushes the file and renames it into place; answers the path and the name of its folder |
+| `save_file_abort(id)` | removes the temporary file (the client calls it when reading or writing fails) |
+| `save_file_reveal(id)` | shows a finished save in the file manager (by its id: the webview never names a path) |
+
+After a save the client shows "Saved to \<folder>" with a **Show in folder** button (in the live region of the toasts);
+a cancelled dialog shows nothing. Previews and playback keep their object URLs. A download the webview still starts by
+itself (an `<a download>` or a navigation to a file) is caught too: the webview writes it into the app's cache, then
+the same save dialog asks where it goes (cancelled: the file is removed).
+
+Test hook: when the app starts with `TAVRN_DESKTOP_TEST_SAVE_DIR=<dir>`, no dialog is shown and every save goes into
+that directory (never overwriting: `name (1).ext`). It exists for the WebDriver smoke test only; never set it otherwise.
 
 ## Tray and close to tray
 
@@ -159,11 +186,11 @@ teal logo:
 | microphone muted | amber badge with a bar |
 | deafened (speakers and microphone; wins over muted) | red badge with a cross |
 
-The tooltip names the channel and the state ("Tavrn · Lounge (Gaming) · Speaking"). The voice store drives it at most
-every 150 ms, so speaking does not make the icon flicker. The menu (right click; on Linux any click): Show/Hide Tavrn,
-Mute microphone, Deafen, Leave voice channel, Quit Tavrn; a left click on Windows shows the window.
+The tooltip names the channel and the state ("tavrn · Lounge (Gaming) · Speaking"). The voice store drives it at most
+every 150 ms, so speaking does not make the icon flicker. The menu (right click; on Linux any click): Show/Hide tavrn,
+Mute microphone, Deafen, Leave voice channel, Quit tavrn; a left click on Windows shows the window.
 
-**Close to tray** is on by default on every platform (the owner's choice): closing the window hides it and the app
+**Close to tray** is on by default on every platform: closing the window hides it and the app
 keeps running (voice, notifications). The tray menu brings it back, and so does starting the app again (a second start
 shows the running app instead of opening another one; on Linux this needs the D-Bus session bus). Quit is in the tray
 menu and in Settings → App, where close to tray can be turned off. GNOME shows tray icons only with the AppIndicator
@@ -208,7 +235,7 @@ Passkeys are bound to the node's domain, the captcha to its host names and singl
 them can run on the app's own origin. On nodes that announce `connect.app` (app sessions of the connect flow,
 FEDERATION.md §8 step 3) the app signs in on the **node's own page** instead:
 
-1. The login page offers "Sign in on <node>'s page" and takes it by itself for "Sign in with a passkey", the SSO button
+1. The login page offers "Sign in on \<node>'s page" and takes it by itself for "Sign in with a passkey", the SSO button
    and whenever the node asks for a captcha (login or registration: the registration then happens on the node's page).
 2. The app creates an app session with a PKCE challenge (`POST /auth/connect/session`) and a fresh X25519 key pair,
    and the shell opens `<web>/connect?session=…[&method=passkey|sso]#k=<public key>` in the sign-in window, which has
@@ -216,7 +243,7 @@ FEDERATION.md §8 step 3) the app signs in on the **node's own page** instead:
    "Signing in with a passkey…" with "Use another method". The key is in the URL fragment, which never reaches a
    server; the page keeps it for the window's session and removes it from the address bar.
 3. The user signs in there with any method (password and second factor, passkey, SSO, registration with captcha) and
-   confirms "Sign in to the Tavrn app?" with the app's device name; the page says "return to the app". The page never
+   confirms "Sign in to the tavrn app?" with the app's device name; the page says "return to the app". The page never
    creates device keys and skips the encryption step. After a passkey ceremony with the PRF extension (the passkey
    login, a passkey as second factor, or, when the app asked for the passkey and the page was already signed in, an
    assertion at the confirmation) the page seals the credential id and the PRF output to the app's key and sends the
@@ -232,7 +259,7 @@ FEDERATION.md §8 step 3) the app signs in on the **node's own page** instead:
 keychain entry, lock on close) offers "Unlock with a passkey" on its unlock screen when the account has a passkey
 entry and the node announces `connect.app`. The app creates an *unlock* session with its own session (`purpose:
 "unlock"`), checks with one poll that the node knows it (otherwise it says so and keeps the recovery key), and opens
-the sign-in window with `method=passkey`. The page asks only for the passkey ("Unlock the Tavrn app?"; after a passkey
+the sign-in window with `method=passkey`. The page asks only for the passkey ("Unlock the tavrn app?"; after a passkey
 sign-in there it needs no second ceremony) and returns the sealed box without a code; the node accepts it only from
 the account the app is signed in with. The app unlocks and stores the master secret in its (keychain-protected) local
 key store.
@@ -316,7 +343,79 @@ that reaches the client. Nothing is stored, logged or sent anywhere: no key code
 keyboard hooks are what voice chat programs commonly use for push-to-talk and are not known to be flagged by the
 common anti-cheat systems; if one ever objects, removing the bindings stops the hook (no binding, no listener).
 
-## Voice on Linux
+## Voice
+
+The client has two voice engines behind one interface (`web/src/voice/engine.ts`); both run the same session logic
+around the media (the channel's MLS group and the frame key of every epoch, the node's join, leave and state routes,
+mute and deafen, per-user volumes, notification sounds, push-to-talk tones, speaking rings, rejoin, moves):
+
+| Engine | Where | Media |
+|---|---|---|
+| Browser engine (`session.ts`) | browsers; the app on Windows (WebView2) by default; macOS | livekit-client in the webview, insertable streams |
+| Native engine (`nativeSession.ts` + `src-tauri/src/voice`) | the app on Linux, always; on Windows with Settings → Voice & video → **Native voice engine (experimental)** (default off, applies from the next call) | the shell joins the room with LiveKit's Rust SDK (`livekit` crate on a prebuilt libwebrtc) |
+
+A running call keeps its engine. A build without the Cargo feature `native-voice` answers `voice.native_unavailable`
+and the client keeps the browser engine.
+
+### The native engine
+
+The webview keeps everything but the media: it joins the MLS group, gets the LiveKit URL and token from the node
+(VOICE.md §3), derives the frame key of the current epoch (ENCRYPTION.md §5a) and hands it to the shell with
+`voice_join`; every newer epoch's key follows with `voice_set_key` (never an older one; the webview wipes its copy, the
+shell keeps keys in memory only and never logs them). The shell (`src-tauri/src/voice`):
+
+- **End-to-end encryption** with exactly the web client's key provider configuration (`e2ee.rs`): one shared key per
+  epoch at key index `epoch mod 256` in a ring of 256, HKDF with LiveKit's salt, AES-GCM, no ratcheting, no failure
+  tolerance limit. The microphone is published only once the frame cryptor of the own track is active (otherwise
+  `e2ee_failed`, nothing is sent); the sending key index follows every new epoch. `tests/voice_livekit.rs` proves
+  that a participant with another key hears nothing, and `desktop-voice.spec.ts` that the browser engine and the
+  native one decrypt each other.
+- **Microphone** (`uplink.rs`, in the order of the browser pipeline): the device through cpal (PulseAudio, also
+  PipeWire's PulseAudio server, else ALSA on Linux; WASAPI on Windows), mono at 48 kHz in 10 ms frames, WebRTC's audio
+  processing for echo cancellation, noise suppression and automatic gain (the browser's capture constraints; RNNoise
+  is the browser engine's, the native one uses WebRTC's noise suppression; music mode captures without processing),
+  the input volume, then the gate (`gate.rs`, the same DSP as `web/src/voice/gate.ts`: threshold, 6 dB hysteresis,
+  hold, 5 ms attack, 40 ms release) for voice activation, the noise gate and push-to-talk with its release delay.
+  Opus with DTX and without RED, the channel's bitrate, as in the browser.
+- **Playback** (`mix.rs`): every subscribed remote audio track is decoded (and decrypted) by libwebrtc and mixed with
+  the per-participant gain the client computes (`volume.ts`: per-user volume × output volume, 0 while deafened); the
+  mix is also the echo canceller's reference. The loudest 10 ms RMS of each participant goes to the webview every
+  50 ms, where the browser engine's `SpeakingDetector` turns it into speaking rings.
+- **Push-to-talk** follows the system-wide hotkey directly (a tap of `hotkeys.rs`, so it also works while the window
+  is in the background) and the webview's key and hold button.
+- **Devices** of its own (`voice_devices`; Settings → Voice & video and the quick menus list them, kept apart from the
+  browser's device ids as `nativeInputDeviceId` / `nativeOutputDeviceId`).
+- **Connection**: the SDK resumes and reconnects by itself (`reconnecting`/`reconnected`); a room that is gone ends
+  as `disconnected` with LiveKit's reason, and the webview rejoins or stops as the browser engine does. Server mutes
+  arrive as permission changes.
+
+**Not in this version:** camera, screen sharing, soundboard clips and the priority speaker (the buttons are shown as
+not available with the native engine, focusable and with the reason in their name), the microphone test of the
+settings (it runs in the webview, `getUserMedia` exists there), macOS. **Video, the path:** native capture is the easy
+part (the SDK has camera and desktop capturers and publishes video tracks with the same frame cryptor); showing remote
+and own frames inside the webview is the hard part. Options: (1) decode in the shell and push frames to the webview
+(I420 → RGBA over a custom protocol or shared memory into a `<canvas>`/WebGL; simple, costs a copy per frame and IPC
+bandwidth, fine for 720p30 thumbnails, heavy for 1080p60 streams), (2) a native child window or surface layered over
+the webview at the tile's rectangle (no copy, but window management per platform and no CSS for tiles), (3) WebCodecs in
+the webview fed with encoded frames from the shell after decryption (needs WebCodecs, which WebKitGTK only partly
+has). (1) is the likely first step for camera tiles.
+
+**Linux packages:** the app links ALSA (`libasound2`; the `.deb` depends on it; building needs `libasound2-dev`).
+PulseAudio is spoken in pure Rust. libwebrtc is linked statically (the `webrtc-sys` build downloads LiveKit's
+prebuilt `webrtc-<tag>` once per target into the Cargo target directory).
+
+**Windows:** the native engine cross-compiles with cargo-xwin (the NSIS installer builds). LiveKit's prebuilt
+libwebrtc uses the static C runtime, so the shell links with `+crt-static` (`src-tauri/.cargo/config.toml`) and Tauri's
+own hybrid runtime is switched off in `build.rs`; the installer needs no Visual C++ redistributable. With libwebrtc the
+app binary is about 40 MB and the NSIS installer about 22 MB. Not yet started on a Windows machine.
+
+**Measured** (release build, Linux under WSL2, fake audio backend, a two-person call with Chromium, 10 s each,
+`desktop-voice.spec.ts`; budgets of `tavrn-node/perf/budgets.json`): talking, the shell (with the engine) 7.4 % and
+the WebKit processes 2.1 % of one core, together 9.5 % (budget 15 %); muted, 2.8 % + 1.4 % = 4.2 % (budget 5 %).
+On Windows the same comparison (the shell plus the `msedgewebview2` renderer, browser engine against native engine,
+talking and muted, with real devices) decides whether the setting becomes the default there.
+
+### The webview's own WebRTC on Linux
 
 WebKitGTK runs WebRTC through GStreamer and keeps it off unless the app switches it on: the shell turns on
 `enable-webrtc` and `enable-media-stream` of the webview's settings (`src-tauri/src/media.rs`). At runtime these
@@ -329,11 +428,8 @@ sudo apt install gstreamer1.0-plugins-bad gstreamer1.0-plugins-good gstreamer1.0
 **The distributions' WebKitGTK is built without WebRTC.** WebKitGTK compiles WebRTC only with its experimental
 features (`ENABLE_WEB_RTC` follows `ENABLE_EXPERIMENTAL_FEATURES`, off in release builds); Ubuntu 24.04 and 26.04 ship
 `libwebkit2gtk-4.1` 2.52 that way (it does not link `libgstwebrtc-1.0`). There the switch has no effect:
-`getUserMedia` works, `RTCPeerConnection` does not exist, and the client refuses to join voice as in browsers without
-WebRTC. Check a system with `ldd /usr/lib/x86_64-linux-gnu/libwebkit2gtk-4.1.so.0 | grep gstwebrtc`; on a system whose
-WebKitGTK is built with WebRTC the switch makes it available (the smoke test asserts that there; not yet verified on
-such a build). End-to-end encrypted voice also needs encoded
-transforms (`RTCRtpScriptTransform`) in that build.
+`getUserMedia` works, `RTCPeerConnection` does not exist; that is why voice on Linux always runs in the native engine.
+Check a system with `ldd /usr/lib/x86_64-linux-gnu/libwebkit2gtk-4.1.so.0 | grep gstwebrtc`.
 
 ## Limitations
 
@@ -349,7 +445,7 @@ What the browser gets from "the client is served by the node" and what the app d
 | Captcha on login or registration | on the node's page in the sign-in window | the widget is a third-party script (CSP `script-src 'self'`) bound to the node's host name; the node's page loads it. Without `connect.app`: a notice, use the browser for that step. |
 | Web push | not offered | there is no service worker in the app (its pages are not served by the node). The app shows native notifications instead while it runs (also from the tray); nothing reaches a device where the app is not running. |
 | Desktop notifications of the browser | replaced | native notifications ("Notifications" above). |
-| Voice and video | Windows (WebView2, Chromium): expected to work as in Chromium (to be confirmed by hand); Linux: not available with the distributions' WebKitGTK | end-to-end encrypted media needs WebRTC with encoded transforms. The app switches WebRTC on, but the WebKitGTK of Ubuntu 24.04 and 26.04 is built without it (no `RTCPeerConnection`, checked in the built app; "Voice on Linux"), so the client refuses to join, as in browsers that lack it. Hotkeys work regardless. Screen and window sharing through the platform APIs is a later step. |
+| Voice and video | Linux: voice through the native engine, audio only; Windows (WebView2, Chromium): voice and video as in Chromium (to be confirmed by hand), or audio only with the native engine setting | the WebKitGTK of Ubuntu 24.04 and 26.04 has no WebRTC ("Voice"), so voice on Linux runs in the shell; camera and screen sharing through the native engine are a later step. |
 | Popping out the whiteboard, "open original" in the media viewer | not offered | the app opens no window for content (only the sign-in window); maximize and the download icon cover it. |
 | The terms and other pages that open in a new tab | open on the node's web client in the system browser | the app opens no window for content. |
 | Updates while the repository is private | do not download | the updater fetches `latest.json` and the installers from the public release URLs. |
@@ -358,8 +454,8 @@ What the browser gets from "the client is served by the node" and what the app d
 
 System packages on Linux (Debian/Ubuntu names): `libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev
 librsvg2-dev patchelf xdg-utils`, for the WebDriver test also the WebKit WebDriver (`webkit2gtk-driver`, on Ubuntu
-26.04 `webkitgtk-webdriver`: it provides `/usr/bin/WebKitWebDriver`), `xvfb` and `xdotool`; for voice the GStreamer
-plugins of "Voice on Linux". A Rust toolchain (stable, at least
+26.04 `webkitgtk-webdriver`: it provides `/usr/bin/WebKitWebDriver`), `xvfb` and `xdotool`; for the native voice
+engine `libasound2-dev`, for the webview's own media the GStreamer plugins of "Voice". A Rust toolchain (stable, at least
 1.90) and the requirements of the web client (README "Development"). On Windows: the Microsoft C++ build tools and
 WebView2 (preinstalled on Windows 10 and 11).
 
@@ -384,7 +480,17 @@ picker accepts `http://127.0.0.1:8080`).
   the key filter and the listener's lifecycle (only while signed in with bindings, holds released when it stops); the
   media permissions; the security properties of `tauri.conf.json` and the capabilities, the `.deb`
   dependencies, the keychain with the in-memory mock store of keyring-core and its entry names, notification
-  validation, the tray's states, icons and labels, the installer licence and the icons of the bundle).
+  validation, the tray's states, icons and labels, the installer licence and the icons of the bundle; downloads: the
+  chunk writer (temporary file, rename, size limit, abort and cleanup), the registry of running saves (no second begin
+  with the same id, at most 8), file names from the webview that cannot leave the chosen directory).
+  The native voice engine: the gate and level meter (thresholds, hysteresis, hold, ramps, push-to-talk), the
+  microphone path (any device rate and channel count to 10 ms frames at 48 kHz, processing before the volume, the
+  push-to-talk release delay, nothing sent while muted), the mix (gains, deafen, start buffer, bounded delay,
+  speaking levels), the resampler, the key index and key ring, the validation of every command argument (keys and
+  tokens never in the debug output) and the events as the client reads them.
+  `just desktop-voice-test` (`cargo test --test voice_livekit -- --ignored`, needs `livekit-server`): two native
+  engines with the fake audio backend join one room end-to-end encrypted with a fixed key and hear each other, a third
+  engine with another key hears nothing, the voice keeps flowing after a key change, mute and deafen stop it.
   `cargo test -- --ignored os_keychain` writes, reads and deletes an entry in the real keychain of the machine;
   desktop.yml runs it with gnome-keyring in a D-Bus session. `xvfb-run -a cargo test -- --ignored x11_` drives the X11
   key listener with `xdotool` (a lone modifier, an unwatched key, key repeat).
@@ -393,7 +499,8 @@ picker accepts `http://127.0.0.1:8080`).
   does not offer, the key store with the keychain (migration, fallback, lock on close, sign-out), the routing of
   notifications, the notification settings of the app, the tray wiring; the hotkeys (the settings and their migration,
   conflict check, recorder with lone modifiers, matching the window's keys, merging them with the shell's, the bridge to
-  the shell and its listener switch, the voice session's reaction to presses and releases).
+  the shell and its listener switch, the voice session's reaction to presses and releases); downloads (`saveFile` in the
+  browser and through the shell: 4 MiB chunks, cancel, abort on errors, the "saved to" toast).
 - `node --test` of the update manifest script and of the installer licence (`pnpm --filter @tavrn/desktop test`).
 - Playwright (`e2e/tests/desktop.spec.ts`, simulated shell): the node picker with address first and the advanced URL,
   Settings → App, the sign-in on the node's page with the page in a second browser context (as a browser tab, which
@@ -409,12 +516,15 @@ picker accepts `http://127.0.0.1:8080`).
   native command from that page is refused), the main window takes over the session (the page signed its own session
   out: the account has no extra device), sets up its recovery key (the
   encryption core runs in the webview) and sends a message in an end-to-end encrypted channel, which the node stores
-  as ciphertext only. The node needs the web client bundle (a node built with `web/dist`). That first start runs
+  as ciphertext only; a file attached there is downloaded with its button, decrypted in the app and written by the
+  shell (the test hook `TAVRN_DESKTOP_TEST_SAVE_DIR` instead of the dialog), byte for byte, with the "saved to" toast.
+  The node needs the web client bundle (a node built with `web/dist`). That first start runs
   without a keychain (`TAVRN_DESKTOP_KEYCHAIN=unavailable`): the key stays in IndexedDB and Settings → App warns; the
   test checks the tray state the client reported (`tray_status`), gives the shell a state, and shows a notification.
   The app then starts again with the keyring crates' in-memory mock store (`TAVRN_DESKTOP_KEYCHAIN=memory`, because
   xvfb has no Secret Service): the key moves into the keychain, the IndexedDB copy is gone, and a reload unlocks from
-  the keychain alone. Both values of `TAVRN_DESKTOP_KEYCHAIN` only ever store less (in memory, or nothing). Last, the
+  the keychain alone. Both values of `TAVRN_DESKTOP_KEYCHAIN` only ever store less (in memory, or nothing). Then voice
+  on Linux: the webview's media streams are on (and WebRTC wherever the system's WebKitGTK is built with it). Then the
   hotkeys: Settings → Voice binds Ctrl+Alt+M to mute and the left Ctrl alone to push-to-talk, the window is minimized
   and real key presses of the X server (`xdotool`) reach the client through the shell's key listener: Ctrl+Alt+M
   toggles mute and back, holding the left Ctrl holds push-to-talk until it is released. Last, signed
@@ -433,8 +543,42 @@ picker accepts `http://127.0.0.1:8080`).
   so no window appears on the desktop. The node must serve its web client: a release build or the container image (a
   debug tavrn-node reads `web/dist` from its build tree at run time; the test refuses a node that serves the
   placeholder instead). The app is a single instance: the test waits for a quit app to exit before starting it again
-  and refuses to start while the same binary runs; an installed Tavrn that is running takes over the test's start too,
+  and refuses to start while the same binary runs; an installed tavrn that is running takes over the test's start too,
   so quit it first.
+
+- Voice between a browser and the app (`e2e/tests/desktop-voice.spec.ts`, `just desktop-voice-e2e`, under xvfb-run):
+  a Chromium participant with the fake microphone and the built Linux app with its native engine
+  (`TAVRN_DESKTOP_FAKE_AUDIO=1`: a tone in, a level meter out, for machines without sound hardware) join one channel
+  of the test node; Chromium sees the app's microphone track encrypted and decodes its tone, the app shows the
+  browser user speaking (decrypted and measured by the engine), axe (WCAG A/AA) scans the app's Settings → Voice and
+  the joined channel, and the app's CPU is measured talking and muted (`test-results/desktop-voice-cpu.json`).
+
+  ```sh
+  pnpm --filter @tavrn/web build && pnpm --filter @tavrn/desktop tauri build --no-bundle
+  E2E_NODE_BIN=/path/to/release/tavrn-node E2E_NODE_PORT=8600 E2E_WEB_PORT=5600 just desktop-voice-e2e
+  ```
+
+### Recipes and test hooks
+
+| Recipe | What it does |
+|---|---|
+| `just desktop-dev` | the app in Tauri's development mode, the client from the Vite dev server |
+| `just desktop-build [args]` | the installers of this platform from `web/dist` (Linux `.deb` and `.AppImage`, Windows `.msi` and NSIS); extra arguments go to `tauri build` |
+| `just desktop-check` | cargo fmt, clippy, tests and `cargo deny check licenses` of the shell (needs `web/dist`) |
+| `just desktop-e2e` | the WebDriver smoke test of the built Linux app under `xvfb-run` (`E2E_NODE_BIN` or `E2E_NODE_URL`) |
+| `just desktop-voice-test` | the native engine's LiveKit test (`cargo test --test voice_livekit -- --ignored`, needs `livekit-server`) |
+| `just desktop-voice-e2e` | voice between Chromium and the built app (`desktop-voice.spec.ts`) under `xvfb-run`; the app from `TAVRN_DESKTOP_APP` or `<cargo target dir>/release/tavrn`, a release node from `E2E_NODE_BIN` |
+
+The app reads three environment variables, all for tests only; each one only ever makes the app store or send less:
+
+| Variable | Effect |
+|---|---|
+| `TAVRN_DESKTOP_KEYCHAIN` | `memory`: the keyring crates' in-memory mock store instead of the OS keychain; `unavailable`: behave as if there were no keychain |
+| `TAVRN_DESKTOP_TEST_SAVE_DIR` | saves go into this directory without a dialog (never overwriting: `name (1).ext`) |
+| `TAVRN_DESKTOP_FAKE_AUDIO` | `1`: the native engine's fake audio backend (a tone in, a level meter out) for machines without sound hardware |
+
+The test drivers take `TAVRN_DESKTOP_APP` (the built binary), `E2E_NODE_BIN`, `E2E_NODE_URL` and `E2E_NODE_PORT` (the
+smoke test's node, default port 8300), `TAURI_DRIVER` and `WEBDRIVER_PORT` (default 4444).
 
 ## Builds and releases
 
@@ -442,7 +586,7 @@ picker accepts `http://127.0.0.1:8080`).
 
 | Route | Runner | When | What |
 |---|---|---|---|
-| Linux, natively | self-hosted `tavrn-heavy` (fallback `ubuntu-latest`) | pull requests that touch `apps/desktop`, `web`, the lockfile, the workspace or the workflow, once ready for review; pushes to `main`; by hand; release tags | the checks (fmt, clippy, tests, licenses, the real Secret Service), `.deb` and `.AppImage`, the WebDriver smoke test under xvfb against the node image's binary; artifact `desktop-linux` |
+| Linux, natively | self-hosted `tavrn-heavy` (`ubuntu-latest` for release tags) | pushes to `main` that touch `apps/desktop`, `web`, the lockfile or the workspace; by hand (also for a pull request's branch); release tags | the checks (fmt, clippy, tests, licenses, the real Secret Service), `.deb` and `.AppImage`, the WebDriver smoke test under xvfb against the node image's binary; artifact `desktop-linux` |
 | Windows NSIS, cross-compiled | self-hosted `tavrn-heavy` | as the Linux build, except release tags | `tauri build --target x86_64-pc-windows-msvc --runner cargo-xwin --bundles nsis`; artifact `desktop-windows-nsis` (the current installer of `main` is always there) |
 | Windows `.msi` and NSIS, natively | GitHub-hosted `windows-latest` | release tags; by hand with `windows: true` | the release installers with their updater signatures; artifact `desktop-windows` |
 
@@ -454,10 +598,12 @@ All artifacts are kept for 7 days.
   Microsoft CRT and Windows SDK that cargo-xwin links against come from the runner's cache (`XWIN_CACHE_DIR`, prepared
   when the runner starts); the job fails with a clear message when it is missing and never downloads it itself (the
   SDK's licence forbids publishing it, so it is never part of an artifact either).
-- **Trusted events only:** a self-hosted runner executes the code it checks out, so pull requests from forks and from
-  Dependabot build Linux on `ubuntu-latest` and skip the cross-compiled installer. Release builds also stay on
-  `ubuntu-latest` and `windows-latest`: they carry the updater key, and no long-lived secret besides the read token
-  belongs on the self-hosted runners.
+- **Pull requests** start no desktop build: they run the quick checks of `ci.yml` only. A pull request's branch is
+  built by hand (`gh workflow run desktop.yml --ref <branch>`); changes to the workflow file alone start nothing either.
+- **Trusted events only:** a self-hosted runner executes the code it checks out, so the jobs keep the trust rule of the
+  organization's `rust-ci.yml`: code from forks and from Dependabot would build Linux on `ubuntu-latest` and skip the
+  cross-compiled installer. Release builds also stay on `ubuntu-latest` and `windows-latest`: they carry the updater
+  key, and no long-lived secret besides the read token belongs on the self-hosted runners.
 - **Limits of the cross-compiled installer** (experimental upstream, [Tauri: build Windows apps on
   Linux](https://v2.tauri.app/distribute/windows-installer/#build-windows-apps-on-linux-and-macos)): NSIS only (the
   `.msi` needs WiX, which runs on Windows), x86_64 only, built but not started (no Windows on the runner), no updater
@@ -465,7 +611,11 @@ All artifacts are kept for 7 days.
 - By hand for any branch: `gh workflow run desktop.yml --ref <branch> -f windows=true` adds the `windows-latest`
   installers.
 - Release tags: `release.yml` creates the GitHub release, then calls `desktop.yml`, which builds Linux and Windows
-  with the updater signatures and attaches the installers, their `.sig` files and `latest.json` to that release.
+  with the updater signatures and attaches the installers, their `.sig` files, a `<asset>.sha256` file per installer
+  (`.deb`, `.AppImage`, `.msi`, NSIS `-setup.exe`; written by `apps/desktop/scripts/checksums.mjs` in `sha256sum`
+  format) and `latest.json` to that release. Check a download with `sha256sum -c Tavrn_<version>_amd64.deb.sha256`
+  in the download folder. `latest.json` carries no checksums (the updater's format has no field for them; the app
+  checks the `.sig` signature instead). The web client tarball has its `.sha256` from `release.yml`.
 
 The installers are not signed by an OS code-signing certificate (Windows SmartScreen warns on the first start); the
 updater signature is the only signature.

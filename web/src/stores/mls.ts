@@ -13,6 +13,7 @@ import { apiFor, homeKeys, useNodes } from "./nodes";
 import { useAuth } from "./auth";
 import { cryptoStore } from "../crypto/store";
 import { historyAdded, resetHistory } from "../crypto/history";
+import { resetGroupJoins } from "../crypto/groupJoins";
 
 interface MlsUiState {
   /** Users whose security key changed (notice not acknowledged yet). */
@@ -94,6 +95,7 @@ export function getMls(): Promise<MlsManager | null> {
     });
     if (!m) return null;
     eventSource = m;
+    if (inboxChannels?.account === user.address) for (const [q, w] of inboxChannels.wanted) m.setInboxWanted(q, w);
     useMlsUi.setState({
       changedKeys: Object.fromEntries(m.changedKeys().map((a) => [a, true as const])),
       rotatedKeys: Object.fromEntries(m.rotatedKeys().map((a) => [a, true as const])),
@@ -115,12 +117,24 @@ export function getMls(): Promise<MlsManager | null> {
 }
 
 /**
+ * What the rooms of the signed-in account showed about webhooks, per qualified channel id. A room often loads before
+ * the manager exists (right after joining, while the device is still being set up or unlocked) and is not fetched
+ * again: the manager opened later takes these over, or its own commits would publish no inbox key.
+ */
+let inboxChannels: { account: string; wanted: Map<string, boolean> } | null = null;
+
+/**
  * Encrypted channels with webhooks (`has_webhooks`, APPLICATIONS.md §6.1a): the session manager publishes their inbox
  * keys after its own commits, and once right away so a webhook waiting for a key gets one. Others cost nothing.
  */
 export async function syncInboxChannels(domain: string, channels: Pick<Channel, "id" | "encrypted" | "has_webhooks">[]): Promise<void> {
+  const account = useAuth.getState().user?.address;
+  if (!account) return;
+  if (inboxChannels?.account !== account) inboxChannels = { account, wanted: new Map() };
+  const wanted = channels.map((c) => [qualify(domain, c.id), c.encrypted && !!c.has_webhooks] as const);
+  for (const [q, w] of wanted) inboxChannels.wanted.set(q, w);
   const m = await getMls();
-  for (const c of channels) m?.setInboxWanted(qualify(domain, c.id), c.encrypted && !!c.has_webhooks);
+  for (const [q, w] of wanted) m?.setInboxWanted(q, w);
 }
 
 /**
@@ -144,6 +158,7 @@ export async function ownIdentityRotated(): Promise<void> {
 /** Sign-out, lock or identity change: forget the manager (state stays in the encrypted store). */
 export function resetMls(): void {
   resetHistory();
+  resetGroupJoins();
   current?.manager.then((m) => m?.dispose()).catch(() => undefined);
   current = null;
   eventSource = null;

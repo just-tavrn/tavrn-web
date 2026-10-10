@@ -23,6 +23,7 @@ import { useE2eeConversation, type E2eeConversation } from "../hooks/useE2eeConv
 import { qualify } from "@tavrn/e2ee";
 import { LockedNotice } from "../components/E2eeNotices";
 import { WhiteboardSession, type Member, type WhiteboardSessionProps } from "./WhiteboardSession";
+import { ownVoiceChannel, useVoice } from "../voice/store";
 import type { ShareTarget } from "./share";
 
 export function WhiteboardPage() {
@@ -54,7 +55,8 @@ export function useChannelBoard(roomId: string, channelId: string): { props: Whi
   const members = useRoomMembers(roomId);
   const direct = useDirectTargets();
   const channel = room.data?.channels.find((c) => c.id === channelId);
-  const perms = room.data && channel ? channelPermissions(room.data, channelId, me?.id ?? "") : 0n;
+  const voiceChannelId = useVoice((s) => ownVoiceChannel(s, domain, roomId));
+  const perms = room.data && channel ? channelPermissions(room.data, channelId, me?.id ?? "", voiceChannelId) : 0n;
   const isVoice = channel?.kind === "voice";
   // Opening needs use_whiteboard (voice channels also connect), like the node (WHITEBOARD.md §2).
   const canOpen = hasPermission(perms, isVoice ? Permission.CONNECT | Permission.USE_WHITEBOARD : Permission.USE_WHITEBOARD);

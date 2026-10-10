@@ -60,6 +60,21 @@ desktop-e2e:
     @[ -n "${E2E_NODE_BIN:-}${E2E_NODE_URL:-}" ] || { echo "set E2E_NODE_BIN to a tavrn-node binary (or E2E_NODE_URL to a running development node)" >&2; exit 1; }
     env -u WAYLAND_DISPLAY GDK_BACKEND=x11 xvfb-run -a node apps/desktop/e2e/smoke.mjs
 
+# Two native engines, end-to-end encrypted, against a local livekit-server (needs livekit-server on the PATH)
+# The native voice engine against LiveKit (docs/DESKTOP.md "Voice")
+desktop-voice-test:
+    cd apps/desktop/src-tauri && cargo test --locked --test voice_livekit -- --ignored
+
+# The app from TAVRN_DESKTOP_APP or the release build; E2E_NODE_BIN like `just e2e` (a release node: the sign-in window shows its pages)
+# Voice between Chromium and the built Linux app's native engine (desktop-voice.spec.ts), always under xvfb-run with X11 forced
+desktop-voice-e2e: install
+    #!/usr/bin/env bash
+    set -euo pipefail
+    [ -n "${E2E_NODE_BIN:-}" ] || { echo "set E2E_NODE_BIN to a release tavrn-node binary" >&2; exit 1; }
+    app="$(realpath "${TAVRN_DESKTOP_APP:-${CARGO_TARGET_DIR:-apps/desktop/src-tauri/target}/release/tavrn}")"
+    [ -x "$app" ] || { echo "no built app at $app (pnpm --filter @tavrn/desktop tauri build --no-bundle, or set TAVRN_DESKTOP_APP)" >&2; exit 1; }
+    cd e2e && env -u WAYLAND_DISPLAY GDK_BACKEND=x11 E2E_DESKTOP_APP="$app" xvfb-run -a pnpm exec playwright test tests/desktop-voice.spec.ts --project chromium --workers=1
+
 # Extra arguments go to `playwright test` (default: chromium and the phone emulation, two workers).
 # Playwright against real nodes: set E2E_NODE_BIN (a tavrn-node binary) or E2E_NODE_IMAGE (its container image)
 # (each argument is passed on as it is, so a grep pattern like -g "a|b" stays one argument)

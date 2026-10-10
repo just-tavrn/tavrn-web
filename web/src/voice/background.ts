@@ -248,6 +248,40 @@ function smoothMasks(transformer: BackgroundTransformer, plan: QualityPlan): voi
   };
 }
 
+interface SegmenterLike {
+  segmentForVideo(...args: unknown[]): void;
+  close(): void;
+}
+
+const closedSegmenter: SegmenterLike = {
+  segmentForVideo: () => {
+    throw new Error("background segmenter closed");
+  },
+  close: () => undefined,
+};
+
+/**
+ * Takes the segmenter away from the transformer as soon as it is destroyed. The processor's first frame waits for its
+ * render before it segments; a frame resuming after the destroy would call MediaPipe's closed graph, which never
+ * returns (it spins in the WebAssembly module and freezes the page: no input, no navigation). With the guard such a
+ * frame fails fast instead (the processor logs it and drops the frame), and a second destroy closes nothing twice.
+ */
+export function guardSegmenter(transformer: BackgroundTransformer): void {
+  const t = transformer as unknown as { imageSegmenter?: SegmenterLike; destroy(...args: unknown[]): Promise<void> };
+  const destroy = t.destroy.bind(t);
+  t.destroy = async (...args) => {
+    const segmenter = t.imageSegmenter;
+    // From here on no frame reaches the real segmenter; the destroy still closes it, once.
+    t.imageSegmenter = segmenter && segmenter !== closedSegmenter ? { segmentForVideo: closedSegmenter.segmentForVideo, close: () => segmenter.close() } : closedSegmenter;
+    try {
+      return await destroy(...args);
+    } finally {
+      // A restart (`init` after the destroy) assigns a new segmenter.
+      t.imageSegmenter = closedSegmenter;
+    }
+  };
+}
+
 export interface BackgroundHandle {
   stop: () => Promise<void>;
   /** Changes the blur strength live (blur mode). */
@@ -286,6 +320,7 @@ export async function applyBackground(track: LocalVideoTrack, settings: VoiceSet
     onFrameProcessed,
   });
   smoothMasks(transformer, plan);
+  guardSegmenter(transformer);
   const processor = new ProcessorWrapper(transformer, "background-processor");
   await track.setProcessor(processor);
   return {

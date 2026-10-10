@@ -7,7 +7,8 @@
  * node and reaches its login page. The account signs in on the node's own page in the sign-in window (password and
  * TOTP, app sessions of the connect flow), the main window picks up the session, sets up its recovery key (the
  * encryption core in the webview) and sends a message in an end-to-end encrypted channel, which the node stores as
- * ciphertext only. Then voice on Linux: media streams are on, and WebRTC is on whenever the system's WebKitGTK is
+ * ciphertext only, and downloads a file attached there: the app decrypts it and the shell writes it (the test hook
+ * `TAVRN_DESKTOP_TEST_SAVE_DIR` instead of the save dialog), byte for byte, with the "saved to" toast. Then voice on Linux: media streams are on, and WebRTC is on whenever the system's WebKitGTK is
  * built with it; and the system-wide hotkeys: the recorders of Settings → Voice bind Ctrl+Alt+M to "mute" and the left
  * Ctrl alone to push-to-talk, the window is minimized and real key presses of the X server (xdotool) reach the client
  * through the shell's key listener (X RECORD, observed and never grabbed): Ctrl+Alt+M toggles mute and back, holding
@@ -74,6 +75,8 @@ if (!nodeBin && !process.env.E2E_NODE_URL) fail("set E2E_NODE_BIN to a tavrn-nod
 if (!existsSync(app)) fail(`no built app at ${app} (just desktop-build, or set TAVRN_DESKTOP_APP)`);
 
 const scratch = mkdtempSync(join(tmpdir(), "tavrn-desktop-smoke-"));
+/** Where the app saves downloads without a dialog (the shell's test hook). */
+const saveDir = join(scratch, "saved");
 const children = [];
 
 function fail(message) {
@@ -330,6 +333,10 @@ async function main() {
   if (!list.some((m) => m.encrypted === true && m.author === `${username}@localhost`)) throw new Error(`no encrypted message of the account: ${JSON.stringify(stored).slice(0, 300)}`);
   step("message sent in an encrypted channel; the node holds ciphertext only");
 
+  // Downloads (docs/DESKTOP.md "Downloads"): an attachment of the encrypted channel, downloaded with its button, is
+  // decrypted in the app and written by the shell (the test hook TAVRN_DESKTOP_TEST_SAVE_DIR stands in for the dialog).
+  await downloadAttachment(composer);
+
   // ---- the keychain ----
   const accountAddress = `${username}@localhost`;
   const fallback = await keyRecord(accountAddress);
@@ -341,10 +348,10 @@ async function main() {
   // The tray: the client reported its voice state; the shell maps a state to its icon and tooltip.
   const tray = await until("the client's tray state", async () => {
     const s = await shell("tray_status");
-    return s?.state === "disconnected" && s.tooltip === "Tavrn" ? s : null;
+    return s?.state === "disconnected" && s.tooltip === "tavrn" ? s : null;
   });
   if (tray.close_to_tray !== true) throw new Error(`close to tray is on by default: ${JSON.stringify(tray)}`);
-  const labels = { tooltip: "Tavrn · Lounge (Smoke) · Microphone muted", show: "Show Tavrn", hide: "Hide Tavrn", mute: "Mute microphone", deafen: "Deafen", leave: "Leave voice channel", quit: "Quit Tavrn" };
+  const labels = { tooltip: "tavrn · Lounge (Smoke) · Microphone muted", show: "Show tavrn", hide: "Hide tavrn", mute: "Mute microphone", deafen: "Deafen", leave: "Leave voice channel", quit: "Quit tavrn" };
   const set = await shell("tray_set", { state: "muted", labels });
   if (set?.error) throw new Error(`tray_set: ${set.error}`);
   const muted = await shell("tray_status");
@@ -437,6 +444,47 @@ async function main() {
   await passkeySignIn({ password, accountAddress, apiToken, recoveryWords });
 }
 
+/** Attaches a file in the open encrypted channel, sends it, downloads it again and compares the saved bytes. */
+async function downloadAttachment(composer) {
+  const name = `smoke-${randomBytes(3).toString("hex")}.txt`;
+  const original = Buffer.from(`${randomBytes(40_000).toString("hex")}\n`);
+  // The file goes in like a chosen file (no file chooser under xvfb).
+  await script(
+    `const input = document.querySelector("[data-testid=composer] [data-testid=file-input]");
+     const dt = new DataTransfer();
+     dt.items.add(new File([Uint8Array.from(atob(arguments[1]), (c) => c.charCodeAt(0))], arguments[0], { type: "text/plain" }));
+     input.files = dt.files;
+     input.dispatchEvent(new Event("change", { bubbles: true }));`,
+    [name, original.toString("base64")],
+  );
+  // The chip of the upload, read from the DOM (an error on it fails the test); Enter sends once the upload is done.
+  const pending = () => script("const ul = document.querySelector('[data-testid=pending-uploads]'); return ul ? ul.textContent : null;");
+  await until("the uploaded attachment", async () => {
+    const chip = await pending();
+    if (chip && /error|Fehler|reachable|erreichbar/i.test(chip)) throw new Error(`the upload failed: ${chip}`);
+    return chip?.includes(name) && (await script("return !!document.querySelector('[data-testid=pending-uploads] li:not(.text-danger) button');")) ? chip : null;
+  }, 60_000);
+  await sleep(300);
+  await script(`arguments[0].dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true }));`, [{ [ELEMENT]: composer }]);
+  // Found and clicked from the page itself (WebKitWebDriver's element queries miss freshly rendered rows under xvfb).
+  await until("the attachment's download button", () =>
+    script(
+      `const row = [...document.querySelectorAll("[data-testid=attachment-file]")].find((r) => r.textContent.includes(arguments[0]));
+       const button = row?.querySelector("[data-testid=attachment-download]");
+       if (!button) return false;
+       button.click();
+       return true;`,
+      [name],
+    ),
+  60_000);
+  const target = join(saveDir, name);
+  const saved = await until(`the saved file ${target}`, async () => (existsSync(target) ? readFileSync(target) : null), 30_000);
+  if (!saved.equals(original)) throw new Error(`the saved file differs from the original (${saved.length} of ${original.length} bytes)`);
+  const toast = await until("the saved toast", () => script("return document.querySelector('[data-testid=download-saved]')?.textContent ?? null;"), 15_000);
+  if (!toast.includes(name)) throw new Error(`the toast does not name the file: ${toast}`);
+  step(`download: the encrypted attachment was decrypted and saved by the shell, byte for byte (${saved.length} bytes); toast "${toast.replace(/\s+/g, " ").trim()}"`);
+}
+
 /** The encryption core in this process (the web client's @tavrn/crypto, its WebAssembly loaded synchronously). */
 async function loadCrypto() {
   const require = createRequire(join(repo, "web", "package.json"));
@@ -522,7 +570,8 @@ async function startApp(keychain) {
   // The app's settings and web storage go to the scratch directory (a clean first start, kept for restarts).
   const xdg = { XDG_CONFIG_HOME: join(scratch, "config"), XDG_DATA_HOME: join(scratch, "data"), XDG_CACHE_HOME: join(scratch, "cache") };
   for (const d of Object.values(xdg)) mkdirSync(d, { recursive: true });
-  driverProcess = start(driverBin, ["--port", String(driverPort), "--native-port", String(driverPort + 1)], { ...xdg, TAVRN_DESKTOP_KEYCHAIN: keychain });
+  mkdirSync(saveDir, { recursive: true });
+  driverProcess = start(driverBin, ["--port", String(driverPort), "--native-port", String(driverPort + 1)], { ...xdg, TAVRN_DESKTOP_KEYCHAIN: keychain, TAVRN_DESKTOP_TEST_SAVE_DIR: saveDir });
   await until("tauri-driver", async () => (await fetch(`${driver}/status`)).ok);
   const created = await wd("POST", "/session", { capabilities: { alwaysMatch: { browserName: "wry", "tauri:options": { application: app } } } }, 90_000);
   session = created.sessionId;

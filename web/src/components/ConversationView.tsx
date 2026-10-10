@@ -21,13 +21,14 @@ import { archiveMessages, pageWithArchive } from "../history/local";
 import { rememberRoom } from "../search/sync";
 import { SearchButton } from "../search/SearchPanel";
 import { useDecrypted, useE2eeConversation, usePlainSignatures } from "../hooks/useE2eeConversation";
-import { encryptAttachment, encryptCommandArgs, grantsHistory, parseHistoryPolicy, qualify, signedAttachments, type ContentAttachment, type MessageContext } from "@tavrn/e2ee";
+import { encryptAttachment, encryptCommandArgs, qualify, signedAttachments, type ContentAttachment, type MessageContext } from "@tavrn/e2ee";
 import { withFreshEpoch } from "../lib/epochRetry";
-import { historyPending, historyReceive } from "../crypto/history";
+import { historyReceive } from "../crypto/history";
+import { useChannelHistory } from "../hooks/useChannelHistory";
 import { HistoryRestoreBanner } from "./HistoryRestoreBanner";
 import { useMyRestoreState } from "../history/restore";
 import { MessageList, type AuthorLook } from "./MessageList";
-import { memberColor, memberName } from "../lib/memberGroups";
+import { authorLooks } from "../lib/memberGroups";
 import { Composer, type ComposerCommands, type SendPayload } from "./Composer";
 import { availableCommands, builtinRegistry } from "../commands/registry";
 import { CommandError, executeBuiltin, invokeRequest, resolveAppArgs } from "../commands/execute";
@@ -91,6 +92,8 @@ export interface ConversationViewProps {
   /** Room channels: the room and its members (command arguments). */
   room?: RoomDetail;
   roomMembers?: Member[];
+  /** DMs and group DMs: the members with their display names (message authors are shown with them). */
+  people?: { address: string; display_name?: string | null }[];
   /**
    * Thread mode (PROTOCOL.md §7e): the view pages and writes this thread of the channel. Its root message (text
    * threads) is shown first once the thread's history is loaded; pins, search and the whiteboard stay with the channel.
@@ -174,7 +177,12 @@ export function ConversationView(p: ConversationViewProps) {
   const canReport = !!reportCaps?.includes("reports.v1");
   const navigate = useNavigate();
   const location = useLocation();
-  const uploadPolicy = useQuery({ queryKey: ["upload-policy", domain, conversationId], queryFn: () => api.attachments.policy(conversationId), enabled: p.canAttach, staleTime: 60_000 });
+  const uploadPolicyQuery = { queryKey: ["upload-policy", domain, conversationId], queryFn: () => api.attachments.policy(conversationId), staleTime: 60_000 };
+  const uploadPolicy = useQuery({ ...uploadPolicyQuery, enabled: p.canAttach });
+  const toComposerPolicy = (d: { allowed_categories: string[]; executables_allowed: boolean }) => ({ allowed: d.allowed_categories, executablesAllowed: d.executables_allowed });
+  // A file picked before the policy has loaded waits for it (the in-flight request), so the composer refuses a
+  // forbidden type itself instead of uploading it for the node to refuse.
+  const resolveUploadPolicy = () => queryClient.fetchQuery(uploadPolicyQuery).then(toComposerPolicy);
 
   // Room channels with an effective "no bots" flag: bot leaves are ghosts (APPLICATIONS.md §3.5). The client also
   // applies the room's `bots_in_encrypted_channels` itself (design note 4.7).
@@ -255,28 +263,22 @@ export function ConversationView(p: ConversationViewProps) {
   const broken = useMemo(() => (p.members ?? []).filter((a) => a !== user?.address && verification[a] === "broken"), [p.members, user?.address, verification]);
   // Author names and role colours like the member list (design note 4.13 item 3): nickname, then display name.
   const roles = p.room?.roles;
-  const authors = useMemo(() => {
-    if (!p.roomMembers) return undefined;
-    const map = new Map<string, AuthorLook>();
-    for (const m of p.roomMembers) map.set(m.user.address, { name: memberName(m), color: roles ? memberColor(m, roles) : null });
-    return map;
-  }, [p.roomMembers, roles]);
+  // DMs and group DMs: the members' display names, the same source as the header and the member list.
+  const authors = useMemo<Map<string, AuthorLook> | undefined>(() => authorLooks({ roomMembers: p.roomMembers, roles, people: p.people }), [p.roomMembers, roles, p.people]);
   const usersById = useMemo(() => (p.roomMembers ? new Map(p.roomMembers.map((m) => [m.user.id, m.user])) : undefined), [p.roomMembers]);
   const verificationBlock = !!p.direct && broken.length > 0;
 
-  // History for new members (ENCRYPTION.md §7b): room channels whose policy gives members older messages.
-  const historyPolicy = useMemo(() => {
-    const channel = p.room?.channels.find((c) => c.id === conversationId);
-    return channel && p.encrypted ? parseHistoryPolicy(channel.history_for_new_members) : null;
-  }, [p.room, conversationId, p.encrypted]);
-  const historyActive = !!historyPolicy && grantsHistory(historyPolicy) && e2ee.phase === "ready";
-  const historyPendingList = useQuery({
-    queryKey: ["history-pending", domain, conversationId],
-    queryFn: () => api.history.pending(conversationId),
-    enabled: historyActive,
-    staleTime: 30_000,
+  // History for new members (ENCRYPTION.md §7b): every encrypted room channel, `since_join` included.
+  const historyChannel = p.room?.channels.find((c) => c.id === conversationId);
+  const { active: historyActive, locked: historyLocked } = useChannelHistory({
+    api,
+    domain,
+    q,
+    channelId: conversationId,
+    encrypted: !!historyChannel && p.encrypted,
+    policy: historyChannel?.history_for_new_members,
+    ready: e2ee.phase === "ready",
   });
-  const historyLocked = historyActive && !!historyPendingList.data?.items.some((i) => i.user === user?.address);
   // After a key reset an approved restore brings keys also where the policy gives new members nothing (§7b).
   const restoreState = useMyRestoreState(api, home ? null : domain, p.room && p.encrypted && !threadId ? p.room.id : null);
   const restored = !!restoreState.data?.restored_at && p.encrypted && e2ee.phase === "ready";
@@ -284,14 +286,6 @@ export function ConversationView(p: ConversationViewProps) {
     if (!restored || historyActive) return;
     void historyReceive(q);
   }, [restored, historyActive, q]);
-  useEffect(() => {
-    if (!historyActive || !historyPolicy) return;
-    // Keys shared while this device was away, then members who still wait for ours.
-    void historyReceive(q).then((n) => {
-      if (n > 0) void queryClient.invalidateQueries({ queryKey: ["history-pending", domain, conversationId] });
-    });
-    historyPending(q, historyPolicy);
-  }, [historyActive, historyPolicy, q, domain, conversationId, queryClient]);
 
   useEffect(() => {
     // The channel is the open conversation; a thread panel next to it marks only its thread.
@@ -678,7 +672,8 @@ export function ConversationView(p: ConversationViewProps) {
         gifsEnabled={!!nodeInfo.data?.gif_provider}
         customEmojis={customEmojis}
         commands={commands}
-        uploadPolicy={uploadPolicy.data ? { allowed: uploadPolicy.data.allowed_categories, executablesAllowed: uploadPolicy.data.executables_allowed } : undefined}
+        uploadPolicy={uploadPolicy.data ? toComposerPolicy(uploadPolicy.data) : undefined}
+        resolveUploadPolicy={p.canAttach ? resolveUploadPolicy : undefined}
         above={
           replyTo && (
             <div className="mx-4 flex items-center gap-2 rounded-t-md border border-b-0 border-line bg-bg-1 px-3 py-1 text-xs text-fg-1" data-testid="reply-bar">

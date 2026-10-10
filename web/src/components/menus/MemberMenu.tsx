@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
- * The context menu of a room member (design note 4.11): profile, message, call, friend request, mention, copy
+ * The context menu of a room member (design note 4.11): profile, message, call, friend request, invite to room, mention, copy
  * address; for moderators kick, ban (with reason), timeout, roles, and for members in voice server mute,
  * disconnect, move and the per-user voice volume (plus the stream volume while they stream); block. Gated by permissions and the role hierarchy
  * (`lib/menus.ts`); the node enforces the same rules. Voice list rows and stage tiles open the same menu
@@ -32,6 +32,7 @@ import { ConfirmAction, copyWithToast } from "./common";
 import type { AnchorRect } from "../../lib/position";
 import { useCapabilities } from "../../moderation/hooks";
 import { ReportDialog } from "../../moderation/ReportDialog";
+import { sendRoomInvite, useInviteRooms } from "./inviteToRoom";
 
 /** A voice participant the menu is opened on (voice list rows and stage tiles, design note 4.13 item 3). */
 export interface VoiceMenuTarget {
@@ -69,6 +70,8 @@ export function useMemberMenu(room: RoomDetail, member: Member | null, voiceTarg
   const streaming = !!(participant && "streaming" in participant && participant.streaming);
   const name = member ? member.nickname || member.user.display_name : localPart(address);
   const currentRoles = roles ?? member?.roles ?? [];
+  // "Invite to room": the user's other rooms (the target is in this one).
+  const inviteRooms = useInviteRooms(menu.open && !!member).filter((r) => r.id !== room.id);
   // Role toggles keep the menu open; once it closes the member list is the truth again.
   useEffect(() => {
     if (!menu.open) setRoles(null);
@@ -119,6 +122,7 @@ export function useMemberMenu(room: RoomDetail, member: Member | null, voiceTarg
         callsAvailable: false,
         canMention: true,
         canReport,
+        inviteRooms,
       },
       {
         ...voiceActions,
@@ -159,6 +163,7 @@ export function useMemberMenu(room: RoomDetail, member: Member | null, voiceTarg
         },
         block: () => setDialog("block"),
         report: () => setDialog("report"),
+        inviteToRoom: (target) => void sendRoomInvite(target, address, name),
         copyId,
       },
       t,

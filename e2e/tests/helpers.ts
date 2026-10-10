@@ -6,6 +6,14 @@ import { expect, type APIRequestContext, type Page } from "@playwright/test";
 
 export const NODE = `http://127.0.0.1:${process.env.E2E_NODE_PORT ?? "8080"}`;
 
+/**
+ * The accessible name of a room in the rail: its name, then its counts and voice activity when there are any
+ * ("Gilde, 1 ungelesen, 2 im Sprachkanal", docs/CLIENT.md "Room rail and folders").
+ */
+export function railName(name: string): RegExp {
+  return new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(, .+)?$`);
+}
+
 export function uniqueName(prefix: string): string {
   return `${prefix}${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`.toLowerCase();
 }

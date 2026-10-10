@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-voice-set-volumes"
+description = "Enables the voice_set_volumes command without any pre-configured scope."
+commands.allow = ["voice_set_volumes"]
+
+[[permission]]
+identifier = "deny-voice-set-volumes"
+description = "Denies the voice_set_volumes command without any pre-configured scope."
+commands.deny = ["voice_set_volumes"]

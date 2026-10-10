@@ -16,12 +16,21 @@ publish = false
 name = "tavrn_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+default = ["native-voice"]
+# The native voice engine (src/voice, docs/DESKTOP.md "Voice"): LiveKit's Rust SDK on its prebuilt libwebrtc (downloaded
+# by webrtc-sys at build time), the microphone and the speakers through cpal. Without it the commands answer
+# `voice.native_unavailable` and the client keeps the browser engine.
+native-voice = ["dep:livekit", "dep:cpal", "dep:tokio", "dep:futures-util"]
+
 [build-dependencies]
 tauri-build = { version = "2.7", features = [] }
 
 [dependencies]
 tauri = { version = "2.12", features = ["tray-icon", "image-png"] }
 tauri-plugin-opener = "2.7"
+# Downloads (src/download.rs): the native save dialog; the shell writes the file itself (no fs plugin for the webview).
+tauri-plugin-dialog = "2.7"
 tauri-plugin-updater = "2.13"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -33,6 +42,12 @@ hickory-resolver = { version = "0.26", default-features = false, features = ["to
 keyring-core = "1"
 # Native notifications (the backend of tauri-plugin-notification, used directly for the click on Linux).
 notify-rust = "4.11"
+# The native voice engine (feature native-voice): LiveKit's Rust SDK (signalling over rustls with ring, like the updater).
+livekit = { version = "0.9.4", default-features = false, features = ["native", "rustls-tls-webpki-roots"], optional = true }
+# Audio devices: PulseAudio (pure Rust client, also PipeWire's server) with ALSA as the fallback on Linux, WASAPI on Windows.
+cpal = { version = "0.18", features = ["pulseaudio"], optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"], optional = true }
+futures-util = { version = "0.3", default-features = false, optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] }
@@ -52,6 +67,11 @@ tauri-plugin-single-instance = "2.5"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 apple-native-keyring-store = { version = "1", features = ["keychain"] }
+
+[dev-dependencies]
+# The voice integration test (tests/voice_livekit.rs) signs LiveKit tokens itself (HS256).
+ring = "0.17"
+base64 = "0.22"
 
 [lints.clippy]
 unwrap_used = "deny"

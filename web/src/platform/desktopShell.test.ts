@@ -20,7 +20,7 @@ function fakeTray() {
       listeners.add(fn);
       return () => void listeners.delete(fn);
     },
-    status: async () => ({ state: "disconnected", tooltip: "Tavrn", available: true, closeToTray: true }),
+    status: async () => ({ state: "disconnected", tooltip: "tavrn", available: true, closeToTray: true }),
     setCloseToTray: async () => {},
     quit: async () => {},
   };
@@ -78,11 +78,11 @@ describe("startDesktopShell", () => {
     const stop = startDesktopShell({ tray, queryClient: cache(), self: "me@t.local", navigate: () => {} });
     await vi.advanceTimersByTimeAsync(0);
     expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatchObject({ state: "disconnected", labels: { tooltip: "Tavrn", show: "Show Tavrn", hide: "Hide Tavrn", mute: "Mute microphone", quit: "Quit Tavrn" } });
+    expect(sent[0]).toMatchObject({ state: "disconnected", labels: { tooltip: "tavrn", show: "Show tavrn", hide: "Hide tavrn", mute: "Mute microphone", quit: "Quit tavrn" } });
 
     useVoice.setState({ status: "connected", target: { domain: "t.local", roomId: "r1", channelId: "v1" } });
     await vi.advanceTimersByTimeAsync(150);
-    expect(sent.at(-1)).toMatchObject({ state: "connected", labels: { tooltip: "Tavrn · Lounge (Gaming) · In a voice channel" } });
+    expect(sent.at(-1)).toMatchObject({ state: "connected", labels: { tooltip: "tavrn · Lounge (Gaming) · In a voice channel" } });
 
     // Speaking flickers: the tray gets at most one update per 150 ms, and the last state wins.
     const before = sent.length;
@@ -97,9 +97,9 @@ describe("startDesktopShell", () => {
 
     useVoice.setState({ muted: true, deafened: true });
     await vi.advanceTimersByTimeAsync(150);
-    expect(sent.at(-1)).toMatchObject({ state: "deafened", labels: { tooltip: "Tavrn · Lounge (Gaming) · Voices muted" } });
+    expect(sent.at(-1)).toMatchObject({ state: "deafened", labels: { tooltip: "tavrn · Lounge (Gaming) · Voices muted" } });
     stop();
-    expect(sent.at(-1)).toMatchObject({ state: "disconnected", labels: { tooltip: "Tavrn" } });
+    expect(sent.at(-1)).toMatchObject({ state: "disconnected", labels: { tooltip: "tavrn" } });
   });
 
   it("names a call by the other members", async () => {
@@ -107,7 +107,7 @@ describe("startDesktopShell", () => {
     useVoice.setState({ status: "connected", target: { domain: "t.local", roomId: "", channelId: "dm1", call: true } });
     const stop = startDesktopShell({ tray, queryClient: cache(), self: "me@t.local", navigate: () => {} });
     await vi.advanceTimersByTimeAsync(0);
-    expect(sent.at(-1)?.labels.tooltip).toBe("Tavrn · Bob · In a voice channel");
+    expect(sent.at(-1)?.labels.tooltip).toBe("tavrn · Bob · In a voice channel");
     stop();
   });
 
@@ -151,7 +151,7 @@ describe("startDesktopShell", () => {
     await vi.advanceTimersByTimeAsync(0);
     useLocale.setState({ locale: "de" });
     await vi.advanceTimersByTimeAsync(150);
-    expect(sent.at(-1)?.labels.quit).toBe("Tavrn beenden");
+    expect(sent.at(-1)?.labels.quit).toBe("tavrn beenden");
     stop();
   });
 });

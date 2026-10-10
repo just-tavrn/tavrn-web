@@ -23,7 +23,7 @@ export function RecoveryCodesView({ codes, account, onDone, doneLabel }: { codes
         <Button variant="ghost" onClick={() => void copyText(codes.join("\n"))}>
           {t("common.copy")}
         </Button>
-        <Button variant="ghost" onClick={() => downloadText(`tavrn-recovery-codes-${account.split("@")[0]}.txt`, text)}>
+        <Button variant="ghost" onClick={() => void downloadText(`tavrn-recovery-codes-${account.split("@")[0]}.txt`, text)}>
           {t("common.download")}
         </Button>
       </div>

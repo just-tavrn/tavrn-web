@@ -96,8 +96,25 @@ fn the_capability_grants_only_the_app_commands_to_the_main_window() {
             "allow-unregister-hotkey",
             "allow-listen-hotkeys",
             "allow-set-hotkeys-enabled",
+            "allow-save-file-begin",
+            "allow-save-file-chunk",
+            "allow-save-file-end",
+            "allow-save-file-abort",
+            "allow-save-file-reveal",
+            "allow-voice-info",
+            "allow-voice-devices",
+            "allow-voice-join",
+            "allow-voice-leave",
+            "allow-voice-set-key",
+            "allow-voice-set-muted",
+            "allow-voice-set-deafened",
+            "allow-voice-set-ptt",
+            "allow-voice-configure",
+            "allow-voice-set-volumes",
         ]
     );
+    // Downloads: the shell opens the save dialog and writes the file itself; the dialog, opener and fs plugins stay
+    // out of the webview's reach.
     assert!(permissions.iter().all(|p| p.starts_with("allow-")), "no plugin or core permissions: the shell's own commands only");
     assert_eq!(conf()["app"]["security"]["capabilities"], serde_json::json!(["main"]));
 }
@@ -124,7 +141,10 @@ fn no_capability_reaches_the_sign_in_window() {
 fn version_and_identity() {
     let c = conf();
     assert_eq!(c["version"], "../../../web/package.json", "one version number: the web client's");
+    // The installers keep the capitalised product name (file names like Tavrn_<version>_x64-setup.exe, the Windows
+    // start menu); everything the app shows says "tavrn" in lowercase.
     assert_eq!(c["productName"], "Tavrn");
+    assert_eq!(c["app"]["windows"][0]["title"], "tavrn");
     assert_eq!(c["identifier"], "org.tavrn.desktop");
 }
 
@@ -149,7 +169,7 @@ fn the_installers_show_the_licence_and_terms() {
     assert_eq!(c["bundle"]["licenseFile"], "../LICENSE.txt", "NSIS shows it as the licence page to accept, the MSI as its licence dialog");
     let text = include_str!("../../LICENSE.txt");
     assert!(text.len() > 10_000, "the licence file is the Apache-2.0 text, the NOTICE and the terms");
-    for part in ["Apache License", "Version 2.0, January 2004", "Terms of use and privacy notice for the Tavrn desktop app", "https://tavrn.org", "github.com"]
+    for part in ["Apache License", "Version 2.0, January 2004", "Terms of use and privacy notice for the tavrn desktop app", "https://tavrn.org", "github.com"]
     {
         assert!(text.contains(part), "LICENSE.txt lacks {part:?}");
     }
@@ -178,4 +198,6 @@ fn the_deb_brings_the_gstreamer_plugins_of_webrtc() {
     for plugin in ["gstreamer1.0-plugins-bad", "gstreamer1.0-plugins-good", "gstreamer1.0-gl", "gstreamer1.0-pipewire | gstreamer1.0-pulseaudio"] {
         assert!(depends.contains(&plugin.to_string()), "the .deb lacks {plugin} (voice on Linux, docs/DESKTOP.md)");
     }
+    // The native voice engine's audio devices (cpal links ALSA; PulseAudio is spoken in pure Rust).
+    assert!(depends.contains(&"libasound2t64 | libasound2".to_string()), "the .deb lacks ALSA (the native voice engine, docs/DESKTOP.md)");
 }

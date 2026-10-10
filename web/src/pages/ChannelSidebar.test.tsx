@@ -160,3 +160,72 @@ describe("visible channels and categories (layered overrides)", () => {
     expect(screen.queryByText("intern")).toBeNull();
   });
 });
+
+describe("channel access marks (private and restricted, never the lock)", () => {
+  beforeEach(() => useUnread.setState({ states: {}, held: {} }));
+
+  const { VIEW_CHANNEL: V, READ_HISTORY: H, CONNECT: C, SEND_MESSAGES: M } = Permission;
+  // @everyone may view, read, write and connect; "stage" denies connect to it, "staff" view (the "mods" role may view
+  // it again), "news" denies @everyone writing.
+  const marked = (is_owner: boolean, my_roles: string[]): RoomDetail => ({
+    ...room(perms(V, H, M, C)),
+    roles: [
+      { id: "everyone", room_id: "r1", name: "@everyone", color: null, position: 0, permissions: perms(V, H, M, C), hoist: false, mentionable: false, is_everyone: true },
+      { id: "mods", room_id: "r1", name: "Mods", color: null, position: 1, permissions: "0", hoist: false, mentionable: false, is_everyone: false },
+    ],
+    channels: [{ ...channel("open", "text", "offen", 0), encrypted: true }, { ...channel("staff", "text", "intern", 1), encrypted: true }, channel("news", "text", "news", 2), channel("stage", "voice", "Bühne", 3)],
+    overrides: [
+      { id: "o1", target_type: "channel", target_id: "stage", subject_type: "role", subject_id: "everyone", allow: "0", deny: perms(C) },
+      { id: "o2", target_type: "channel", target_id: "staff", subject_type: "role", subject_id: "everyone", allow: "0", deny: perms(V) },
+      { id: "o3", target_type: "channel", target_id: "staff", subject_type: "role", subject_id: "mods", allow: perms(V), deny: "0" },
+      { id: "o4", target_type: "channel", target_id: "news", subject_type: "role", subject_id: "everyone", allow: "0", deny: perms(M) },
+    ],
+    my_roles, is_owner,
+  });
+  const row = (container: HTMLElement, id: string) => container.querySelector<HTMLElement>(`[data-channel='${id}']`)!;
+
+  it("a member sees the restricted marks on the channels they may not use and the private marks, in that order after the name", async () => {
+    mockFetch({ "/rooms/r1/reports": { body: { open: 0, reports: [] } }, "/rooms/r1": { body: marked(false, ["mods"]) }, "/node": { body: { capabilities: [] } } });
+    const { container } = renderSidebar();
+    await screen.findByText("Bühne");
+    // Open channel with the rights: no access mark, the lock stays the encryption mark.
+    expect(within(row(container, "open")).queryByTestId("channel-private")).toBeNull();
+    expect(within(row(container, "open")).queryByTestId("channel-restricted")).toBeNull();
+    expect(within(row(container, "open")).getByTestId("channel-lock")).toHaveAccessibleName("Verschlüsselt");
+    // Private text channel (visible through the role): the group-with-a-slash mark, named, with its tooltip.
+    const priv = within(row(container, "staff")).getByTestId("channel-private");
+    expect(priv).toHaveAccessibleName("Nur für bestimmte Rollen sichtbar");
+    expect(priv).toHaveAttribute("title", "Nur für bestimmte Rollen sichtbar");
+    expect(priv.querySelector("svg")).toHaveAttribute("width", "16");
+    expect(within(row(container, "staff")).queryByTestId("channel-restricted")).toBeNull();
+    // Read-only for this member: the no-entry mark and the name dimmed (fg-2 keeps 4.5:1), still a link.
+    const news = row(container, "news");
+    const ro = within(news).getByTestId("channel-restricted");
+    expect(ro).toHaveAccessibleName("Für dich nur lesbar");
+    expect(ro).toHaveAttribute("title", "Für dich nur lesbar");
+    expect(within(news).getByText("news")).toHaveClass("text-fg-2");
+    expect(within(news).getByRole("link")).toHaveAccessibleName(/news.*Für dich nur lesbar/);
+    expect(within(row(container, "open")).getByText("offen")).not.toHaveClass("text-fg-2");
+    // Voice: joining only for certain roles and not for this member; both marks, private first, named on the link.
+    const stage = row(container, "stage");
+    const marks = [...stage.querySelectorAll("[data-access]")].map((e) => e.getAttribute("data-access"));
+    expect(marks).toEqual(["join_private", "restricted_join"]);
+    expect(within(stage).getByTestId("channel-private")).toHaveAccessibleName("Beitreten nur für bestimmte Rollen");
+    expect(within(stage).getByTestId("channel-restricted")).toHaveAccessibleName("Du siehst diesen Channel, kannst ihm aber nicht beitreten");
+    expect(within(stage).getByRole("link")).toHaveAccessibleName("Sprachkanal Bühne, Beitreten nur für bestimmte Rollen, Du siehst diesen Channel, kannst ihm aber nicht beitreten");
+    expect(within(stage).getByText("Bühne")).toHaveClass("text-fg-2");
+    // The lock glyph is never reused for access.
+    for (const mark of container.querySelectorAll("[data-access]")) expect(mark.getAttribute("aria-label")).not.toMatch(/verschlüsselt/i);
+  });
+
+  it("the owner (all rights) sees only the private marks", async () => {
+    mockFetch({ "/rooms/r1/reports": { body: { open: 0, reports: [] } }, "/rooms/r1": { body: marked(true, []) }, "/node": { body: { capabilities: [] } } });
+    const { container } = renderSidebar();
+    await screen.findByText("Bühne");
+    expect(screen.queryAllByTestId("channel-restricted")).toHaveLength(0);
+    expect(within(row(container, "staff")).getByTestId("channel-private")).toBeInTheDocument();
+    expect(within(row(container, "stage")).getByTestId("channel-private")).toHaveAccessibleName("Beitreten nur für bestimmte Rollen");
+    expect(within(row(container, "news")).queryByTestId("channel-private")).toBeNull();
+    expect(within(row(container, "stage")).getByRole("link")).toHaveAccessibleName("Sprachkanal Bühne, Beitreten nur für bestimmte Rollen");
+  });
+});

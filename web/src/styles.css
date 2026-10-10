@@ -69,8 +69,10 @@ body { @apply bg-bg-2 text-fg-0 font-sans antialiased; }
 .markdown blockquote { border-left: 3px solid var(--color-fg-2); padding: 0.125rem 0 0.125rem 0.625rem; margin: 0.25rem 0; color: var(--color-fg-1); }
 .markdown blockquote blockquote { border-left-color: var(--color-line); }
 
-/* Spoilers (design note 4.13): hidden until clicked; the content keeps its layout. */
-.markdown .spoiler { background: var(--color-bg-3); color: transparent; border-radius: 0.25rem; padding: 0 0.125rem; cursor: pointer; transition: background-color 0.15s; }
+/* Spoilers (design note 4.13): hidden until clicked; the content keeps its layout. A spoiler that wraps keeps its
+   padding and corners on every line (clone), and the vertical padding closes the gap between the lines, so it reads
+   as one element instead of separate blocks. */
+.markdown .spoiler { background: var(--color-bg-3); color: transparent; border-radius: 0.25rem; padding: 0.15em 0.125rem; -webkit-box-decoration-break: clone; box-decoration-break: clone; cursor: pointer; transition: background-color 0.15s; }
 .markdown .spoiler * { color: transparent !important; background: transparent !important; }
 .markdown .spoiler img { visibility: hidden; }
 .markdown .spoiler:hover { background: var(--color-line); }

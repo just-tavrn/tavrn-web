@@ -155,7 +155,7 @@ function conversationHandlers(socket: TavrnSocket, queryClient: QueryClient, nav
  * group DM a friend started on another node is accepted right away (federated session, index entry, the
  * Welcome waiting there), everything else waits in the invite list on the home view.
  */
-async function onInvite(invite: PendingInvite, queryClient: QueryClient) {
+export async function onInvite(invite: PendingInvite, queryClient: QueryClient) {
   void queryClient.invalidateQueries({ queryKey: ["pending-invites"] });
   if (invite.kind === "conversation") {
     const friends = await queryClient.fetchQuery({ queryKey: ["friends"], queryFn: () => api.friends.list(), staleTime: 30_000 }).catch(() => null);
@@ -371,6 +371,8 @@ export function useRealtime() {
         // (Re)connected: Welcomes that arrived while the socket was down, and own leaves waiting for removal.
         const home = useAuth.getState().user?.domain;
         if (status === "ready" && home) {
+          // Who is in voice in every room (VOICE.md §5): events may have been missed while disconnected.
+          void queryClient.invalidateQueries({ queryKey: ["my-voice", home] });
           // Followed threads of every room, so their messages count and notify before a room is opened (§7e).
           void loadFollowedThreads({ key: home, client: api, queryClient });
           void getMls()
@@ -489,6 +491,7 @@ export function useNodeRealtime() {
         onStatus: (status) => {
           // Connected (again): DMs started on that node wait there as Welcomes (§6.1); own leaves to remove.
           if (status === "ready") {
+            void queryClient.invalidateQueries({ queryKey: ["my-voice", domain] });
             void loadFollowedThreads({ key: domain, client: apiFor(domain), queryClient });
             void getMls()
               .then(async (m) => {
@@ -501,6 +504,7 @@ export function useNodeRealtime() {
         onResync: () => {
           void queryClient.invalidateQueries({ queryKey: ["rooms", domain] });
           void queryClient.invalidateQueries({ queryKey: ["conversations", domain] });
+          void queryClient.invalidateQueries({ queryKey: ["my-voice", domain] });
         },
         // A refused token renews the federated session (refresh, else a new federated login).
         refreshToken: () => refreshNode(domain),

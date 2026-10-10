@@ -92,7 +92,7 @@ export async function asDesktopShell(page: Page, opts: { node: string; keychain?
               return null;
             case "tray_status": {
               const last = record.tray.at(-1) as { state: string; labels: { tooltip: string } } | undefined;
-              return { state: last?.state ?? "disconnected", tooltip: last?.labels.tooltip ?? "Tavrn", available: true, close_to_tray: record.closeToTray };
+              return { state: last?.state ?? "disconnected", tooltip: last?.labels.tooltip ?? "tavrn", available: true, close_to_tray: record.closeToTray };
             }
             case "set_close_to_tray":
               record.closeToTray = !!args.on;

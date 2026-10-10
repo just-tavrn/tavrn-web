@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Thread } from "@tavrn/sdk";
 import { THREAD_TITLE_MAX, type MlsManager } from "@tavrn/e2ee";
-import { getMls } from "../stores/mls";
+import { getMls, useMlsUi } from "../stores/mls";
 
 /** A decrypted title, or null when it cannot be read (missing key, bad signature, a title of another thread, …). */
 export type TitleResult = string | null;
@@ -29,9 +29,14 @@ export async function sealTitle(q: string, encrypted: boolean, title: string, ml
   return manager.encryptThreadTitle(q, title, threadId);
 }
 
-/** Titles of `threads` (thread id → title, null if unreadable); plaintext ones at once, encrypted ones decrypted. */
+/**
+ * Titles of `threads` (thread id → title, null if unreadable); plaintext ones at once, encrypted ones decrypted, again
+ * whenever the conversation's keys change.
+ */
 export function useThreadTitles(q: string, threads: Thread[] | undefined, tick = 0): Record<string, TitleResult> {
   const [map, setMap] = useState<Record<string, TitleResult>>({});
+  // Every epoch change and every import of shared history keys (ENCRYPTION.md §7b): unreadable titles may open now.
+  const epochs = useMlsUi((s) => s.epochs[q] ?? 0);
   const list = useMemo(() => threads ?? [], [threads]);
   const plain = useMemo(() => Object.fromEntries(list.filter((t) => !t.encrypted).map((t) => [t.id, t.title])), [list]);
   useEffect(() => {
@@ -58,6 +63,6 @@ export function useThreadTitles(q: string, threads: Thread[] | undefined, tick =
     return () => {
       cancelled = true;
     };
-  }, [q, list, tick]);
+  }, [q, list, tick, epochs]);
   return useMemo(() => ({ ...map, ...plain }), [map, plain]);
 }

@@ -10,13 +10,14 @@ import { activeArgIndex, currentToken, parseArgs, parseCommandLine, tokenize } f
 import { ArgumentHint, CommandHelp, CommandList, argLabel } from "../commands/CommandPalette";
 import { choiceSuggestions, resolveCommand } from "../commands/merge";
 import type { ArgValue, CommandArg, CommandDefinition } from "../commands/types";
-import { acceptFor, classifyFile, isAllowed } from "../lib/uploads";
+import { UPLOAD_CATEGORIES, acceptFor, classifyFile, isAllowed, type UploadCategory } from "../lib/uploads";
 import type { LinkPreview } from "../lib/linkPreview";
 import { useUploadPrivacy } from "./UploadPrivacy";
 import { useComposePreview } from "./ComposePreview";
 import { wrapSpoiler } from "../lib/markdown";
 import { composerGrowth, type Growth } from "../lib/composerGrowth";
 import { blockedText, isAutomodBlock } from "../moderation/blocked";
+import { EyeOffIcon } from "./icons";
 
 export interface PendingUpload {
   key: string;
@@ -58,9 +59,19 @@ export interface ComposerUploadPolicy {
 
 const ALL_CATEGORIES = 6;
 
-/** A failed upload in the user's language: the node's problem code when it has a translation, else the error's text. */
+/**
+ * A failed upload in the user's language: the node's problem code when it has a translation, else the error's text.
+ * `upload.type_forbidden` names the refused category in its meta and reads like the local pre-check.
+ */
 function uploadError(e: unknown): string {
-  const err = e as { problem?: { code?: string; detail?: string }; message?: string };
+  const err = e as { problem?: { code?: string; detail?: string; meta?: { category?: unknown; executable?: unknown } }; message?: string };
+  if (err.problem?.code === "upload.type_forbidden") {
+    const meta = err.problem.meta ?? {};
+    if (meta.executable === true) return translate("upload.executable_forbidden");
+    if (typeof meta.category === "string" && UPLOAD_CATEGORIES.includes(meta.category as UploadCategory)) {
+      return translate("upload.type_forbidden", { category: translate(`upload.category.${meta.category}`) });
+    }
+  }
   return errorMessage(err.problem?.code, err.problem?.detail || err.message || translate("composer.upload_failed"));
 }
 
@@ -77,6 +88,7 @@ export function Composer({
   customEmojis = [],
   commands,
   uploadPolicy,
+  resolveUploadPolicy,
   above,
 }: {
   placeholder: string;
@@ -91,6 +103,8 @@ export function Composer({
   customEmojis?: CustomEmoji[];
   commands?: ComposerCommands;
   uploadPolicy?: ComposerUploadPolicy;
+  /** The policy while `uploadPolicy` is still loading: a file picked meanwhile is checked once it is known. */
+  resolveUploadPolicy?: () => Promise<ComposerUploadPolicy | undefined>;
   /** Shown directly above the input and part of the expanded overlay (the reply bar). */
   above?: ReactNode;
 }) {
@@ -225,9 +239,10 @@ export function Composer({
         setUploads((u) => [...u, { key, name: file.name, size: file.size, progress: 0, error: t("composer.too_large", { limit: formatSize(uploadLimitBytes) }) }]);
         continue;
       }
-      if (uploadPolicy) {
+      const policy = uploadPolicy ?? (await resolveUploadPolicy?.().catch(() => undefined));
+      if (policy) {
         const c = await classifyFile(file);
-        if (!isAllowed(c, uploadPolicy.allowed, uploadPolicy.executablesAllowed)) {
+        if (!isAllowed(c, policy.allowed, policy.executablesAllowed)) {
           const error = c.executable ? t("upload.executable_forbidden") : t("upload.type_forbidden", { category: t(`upload.category.${c.category}`) });
           setUploads((u) => [...u, { key, name: file.name, size: file.size, progress: 0, error }]);
           continue;
@@ -539,8 +554,8 @@ export function Composer({
           className={`composer-text ${growth.expanded ? "" : "max-h-40"} min-h-6 flex-1 resize-none bg-transparent px-1 text-sm text-fg-0 outline-none placeholder:text-fg-2 disabled:opacity-50`}
         />
         {!disabled && (
-          <button type="button" aria-label={t("composer.spoiler")} title={t("composer.spoiler_hint")} onClick={spoiler} className="min-h-10 min-w-8 rounded-md text-xs font-semibold text-fg-2 hover:bg-bg-3 hover:text-fg-0" data-testid="composer-spoiler">
-            ▒
+          <button type="button" aria-label={t("composer.spoiler")} title={t("composer.spoiler_hint")} onClick={spoiler} className="flex min-h-10 min-w-10 items-center justify-center rounded-md text-fg-2 hover:bg-bg-3 hover:text-fg-0" data-testid="composer-spoiler">
+            <EyeOffIcon size={18} />
           </button>
         )}
         {!disabled && <EmojiPicker customEmojis={customEmojis} onPick={insertAtCursor} label={t("composer.emoji")} />}

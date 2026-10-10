@@ -9,7 +9,7 @@ import { browserPlatform } from "./browser";
 import { detectTauri } from "./tauriDetect";
 import type { Platform } from "./types";
 
-export type { AvailableUpdate, AppUpdater, HotkeyAction, HotkeyEvent, NodeChoice, NodeDetails, NodePageMethod, NodePageMode, NodePageResult, NodePageSignIn, NodePageUnlock, Platform, PlatformAuth, PlatformHotkeys, PlatformKind, ResolvedNode, ResolveFailure } from "./types";
+export type { AvailableUpdate, AppUpdater, HotkeyAction, HotkeyEvent, NodeChoice, NodeDetails, NodePageMethod, NodePageMode, NodePageResult, NodePageSignIn, NodePageUnlock, Platform, PlatformAuth, PlatformHotkeys, PlatformKind, PlatformVoice, NativeDevice, NativeParticipant, NativeVoiceConfig, NativeVoiceEvent, NativeVoiceJoin, ResolvedNode, ResolveFailure } from "./types";
 
 let current: Platform = browserPlatform;
 
