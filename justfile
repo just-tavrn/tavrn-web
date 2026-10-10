@@ -131,15 +131,24 @@ e2e-install: install
 # LiveKit version the node is tested with (the node image pins the same one)
 livekit_version := "1.13.7"
 
-# Install livekit-server into ~/.local/bin for the voice tests with a node binary (an image brings its own)
+# Install livekit-server into ~/.local/bin for the voice tests with a node binary (an image brings its own); the
+# download is checked against the SHA-256 sums below (update them with livekit_version: the release's checksums.txt)
 livekit-install:
     #!/usr/bin/env bash
     set -euo pipefail
-    case "$(uname -m)" in x86_64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; armv7l) arch=armv7 ;; *) echo "unsupported architecture $(uname -m)"; exit 1 ;; esac
+    case "$(uname -m)" in
+      x86_64) arch=amd64 sum=6634aeeb2fb1366b6723708ae4320b9d5408106a4c63457c5e845ae3979c90e2 ;;
+      aarch64|arm64) arch=arm64 sum=5d167fdf52cf43c0c72972f25325364479f41f854bfef651056eab2504da5de9 ;;
+      armv7l) arch=armv7 sum=48c0150f09fd0ab9baa5fa85af87af99f8f364ecc1256731efb5c62636269fd9 ;;
+      *) echo "unsupported architecture $(uname -m)"; exit 1 ;;
+    esac
     dir="${LIVEKIT_INSTALL_DIR:-$HOME/.local/bin}"
     mkdir -p "$dir"
     tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-    curl -fsSL "https://github.com/livekit/livekit/releases/download/v{{livekit_version}}/livekit_{{livekit_version}}_linux_${arch}.tar.gz" | tar -xz -C "$tmp" livekit-server
+    file="livekit_{{livekit_version}}_linux_${arch}.tar.gz"
+    curl -fsSLo "$tmp/$file" "https://github.com/livekit/livekit/releases/download/v{{livekit_version}}/$file"
+    echo "$sum  $tmp/$file" | sha256sum -c --quiet - || { echo "livekit-server download does not match its checksum"; exit 1; }
+    tar -xzf "$tmp/$file" -C "$tmp" livekit-server
     install -m 0755 "$tmp/livekit-server" "$dir/livekit-server"
     "$dir/livekit-server" --version
     case ":$PATH:" in *":$dir:"*) ;; *) echo "Add $dir to PATH (or set TAVRN_LIVEKIT_BINARY=$dir/livekit-server)" ;; esac
