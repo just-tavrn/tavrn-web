@@ -453,7 +453,7 @@ talking and muted, with real devices) decides whether the setting becomes the de
 
 ### Video in the native engine, a design note
 
-A prototype (the branch `feat/native-video-proto`, not merged) measured how remote video gets from the Tauri shell's
+A prototype (kept by the maintainers, not merged) measured how remote video gets from the Tauri shell's
 native engine into the webview's tiles on Linux and at what cost; its result led to the Electron shell. Native capture
 is the easy part (the SDK has camera and desktop capturers and publishes video tracks with the same frame cryptor);
 showing frames inside the webview is the hard part. The SDK yields decoded, decrypted I420 frames only (no
