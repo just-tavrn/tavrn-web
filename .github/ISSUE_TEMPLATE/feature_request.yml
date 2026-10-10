@@ -7,7 +7,7 @@ body:
       value: |
         Features that need new routes, events or wire formats start as a proposal in
         [tavrn-protocol](https://github.com/just-tavrn/tavrn-protocol). Bigger ideas are welcome in the
-        [Discussions](https://github.com/orgs/just-tavrn/discussions) first.
+        [Discussions](https://github.com/just-tavrn/tavrn/discussions) first.
   - type: textarea
     id: problem
     attributes:
