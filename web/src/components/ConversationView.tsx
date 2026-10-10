@@ -177,7 +177,12 @@ export function ConversationView(p: ConversationViewProps) {
   const canReport = !!reportCaps?.includes("reports.v1");
   const navigate = useNavigate();
   const location = useLocation();
-  const uploadPolicy = useQuery({ queryKey: ["upload-policy", domain, conversationId], queryFn: () => api.attachments.policy(conversationId), enabled: p.canAttach, staleTime: 60_000 });
+  const uploadPolicyQuery = { queryKey: ["upload-policy", domain, conversationId], queryFn: () => api.attachments.policy(conversationId), staleTime: 60_000 };
+  const uploadPolicy = useQuery({ ...uploadPolicyQuery, enabled: p.canAttach });
+  const toComposerPolicy = (d: { allowed_categories: string[]; executables_allowed: boolean }) => ({ allowed: d.allowed_categories, executablesAllowed: d.executables_allowed });
+  // A file picked before the policy has loaded waits for it (the in-flight request), so the composer refuses a
+  // forbidden type itself instead of uploading it for the node to refuse.
+  const resolveUploadPolicy = () => queryClient.fetchQuery(uploadPolicyQuery).then(toComposerPolicy);
 
   // Room channels with an effective "no bots" flag: bot leaves are ghosts (APPLICATIONS.md §3.5). The client also
   // applies the room's `bots_in_encrypted_channels` itself (design note 4.7).
@@ -667,7 +672,8 @@ export function ConversationView(p: ConversationViewProps) {
         gifsEnabled={!!nodeInfo.data?.gif_provider}
         customEmojis={customEmojis}
         commands={commands}
-        uploadPolicy={uploadPolicy.data ? { allowed: uploadPolicy.data.allowed_categories, executablesAllowed: uploadPolicy.data.executables_allowed } : undefined}
+        uploadPolicy={uploadPolicy.data ? toComposerPolicy(uploadPolicy.data) : undefined}
+        resolveUploadPolicy={p.canAttach ? resolveUploadPolicy : undefined}
         above={
           replyTo && (
             <div className="mx-4 flex items-center gap-2 rounded-t-md border border-b-0 border-line bg-bg-1 px-3 py-1 text-xs text-fg-1" data-testid="reply-bar">

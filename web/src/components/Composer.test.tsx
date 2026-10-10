@@ -211,4 +211,32 @@ describe("Composer: upload categories (PROTOCOL.md §7a)", () => {
     expect(await screen.findByText(/Programme und Skripte sind hier nicht erlaubt/)).toBeInTheDocument();
     expect(onUpload).not.toHaveBeenCalled();
   });
+
+  it("waits for a policy that is still loading before it uploads (a file picked right after opening the channel)", async () => {
+    const onUpload = vi.fn();
+    let resolve: (p: { allowed: string[]; executablesAllowed: boolean }) => void = () => {};
+    const resolveUploadPolicy = vi.fn(() => new Promise<{ allowed: string[]; executablesAllowed: boolean }>((r) => (resolve = r)));
+    render(<Composer placeholder="Nachricht" onSend={vi.fn()} canAttach onUpload={onUpload} resolveUploadPolicy={resolveUploadPolicy} />);
+    const input = screen.getByLabelText("Datei auswählen") as HTMLInputElement;
+    await userEvent.setup({ applyAccept: false }).upload(input, new File(["Hallo"], "notizen.txt", { type: "text/plain" }));
+    expect(resolveUploadPolicy).toHaveBeenCalled();
+    resolve({ allowed: ["images"], executablesAllowed: false });
+    expect(await screen.findByTestId("upload-error")).toHaveTextContent("Dokumente dürfen hier nicht hochgeladen werden");
+    expect(onUpload).not.toHaveBeenCalled();
+  });
+
+  it("shows the node's upload.type_forbidden refusal in the user's language", async () => {
+    const refusal = (meta: Record<string, unknown>) =>
+      Object.assign(new Error("Uploads of the category documents are not allowed here"), {
+        problem: { code: "upload.type_forbidden", detail: "Uploads of the category documents are not allowed here", meta },
+      });
+    const onUpload = vi.fn().mockRejectedValueOnce(refusal({ category: "documents", executable: false })).mockRejectedValueOnce(refusal({ category: "other", executable: true }));
+    render(<Composer placeholder="Nachricht" onSend={vi.fn()} canAttach onUpload={onUpload} />);
+    const input = screen.getByLabelText("Datei auswählen") as HTMLInputElement;
+    await userEvent.setup({ applyAccept: false }).upload(input, new File(["Hallo"], "notizen.txt", { type: "text/plain" }));
+    expect(await screen.findByTestId("upload-error")).toHaveTextContent("Dokumente dürfen hier nicht hochgeladen werden");
+    await userEvent.setup({ applyAccept: false }).upload(input, new File(["MZ"], "setup.exe"));
+    expect(await screen.findByText(/Programme und Skripte sind hier nicht erlaubt/)).toBeInTheDocument();
+    expect(screen.queryByText(/not allowed here/)).toBeNull();
+  });
 });
