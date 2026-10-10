@@ -138,8 +138,8 @@ storage key*, which is derived from the master secret and the device id. A brows
 - **Where:** the Secret Service on Linux (GNOME Keyring, KWallet), the Credential Manager on Windows, the Keychain on
   macOS later; through the keyring crates (`keyring-core` with `zbus-secret-service-keyring-store`,
   `windows-native-keyring-store`, `apple-native-keyring-store`), off the main thread. The Linux app (Electron) keeps the
-  key with Electron's `safeStorage` under a secret in the same keyring: [Keys in the keychain
-  (Electron)](#keys-in-the-keychain-electron).
+  key with Electron's `safeStorage` under a secret in the same keyring: [Keys in the OS keychain
+  (Electron)](#keys-in-the-os-keychain-electron).
 - **Entries:** service `org.tavrn.desktop`, user `local-key/<home node origin>/<account address>`. The shell takes the
   node from its settings file, never from the page, and accepts only plain account addresses and 32-byte values.
 - **Migration:** on the first start of a store of the browser kind (a key in IndexedDB) the client writes the key into
