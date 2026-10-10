@@ -286,7 +286,7 @@ channels keep the permanent "not end-to-end encrypted" banner.
 
 **Deleting** a files channel asks for the channel's name and says what happens to its files: counts and size, where they
 are ("stored on this node" / "stored on WebDAV at host"), and the consequence: "All files are deleted permanently", or
-for an external store "The objects under <prefix> are deleted from the external store" with **Keep the objects on the
+for an external store "The objects under \<prefix> are deleted from the external store" with **Keep the objects on the
 external store** (only for unencrypted external channels, sent as `keep_external`); for encrypted external channels the
 dialog explains that the objects are unreadable without the channel's keys and are deleted too. The room deletion
 dialog lists its files channels the same way (`files/DeleteChannel.tsx`).
@@ -416,7 +416,7 @@ a preview of unencrypted messages. A click opens or focuses the conversation; a 
 out removes the subscription; on iPhone and iPad push works only after adding tavrn to the home screen.
 "Push notifications for new reports" (on by default, stored on the home node as `global.reports`) lets room
 moderators and node admins turn off the pushes of new reports; such a push names only the room ("New report in
-<room>", or "A report for the node admins") and opens the room's Reports tab or Admin → Reports. A hint under the
+\<room>", or "A report for the node admins") and opens the room's Reports tab or Admin → Reports. A hint under the
 switches says what rooms on other nodes push: under "All messages" they do not push ordinary messages, only mentions,
 direct messages and calls (the home node receives no hints for the rest, PROTOCOL.md §6d).
 When the browser's subscription still belongs to another account (`409 push.endpoint_taken`), the client unsubscribes it and subscribes again, which gives this account a new endpoint.
@@ -514,7 +514,7 @@ node over https and wss. The client's platform layer (`src/platform/`) tells the
 builders where the node lives. The node picker and the login page take the account's address first
 (`alice@home.example`): the shell finds the node of that domain (well-known, SRV, direct) and the app switches to it.
 Flows that need the node's own origin (passkeys, single sign-on, the captcha) run on the node's own page in a window of
-the app without any native API ("Sign in on <node>'s page"), and the app takes over the session; a passkey used there
+the app without any native API ("Sign in on \<node>'s page"), and the app takes over the session; a passkey used there
 also unlocks the encrypted messages, and "Unlock with a passkey" on the app's unlock screen runs just the passkey on
 that page; on nodes without
 app sessions the password with TOTP or a recovery code is what works. Web push is not offered. Details in DESKTOP.md

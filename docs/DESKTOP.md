@@ -71,8 +71,8 @@ DNS, and before the first sign-in there is no node to ask):
    targets, lowest priority first, then highest weight), whose document must name the domain;
 3. after a `404` only: `https://<domain>/api/v1`.
 
-Errors are distinct and name the step that failed: "no node found for <domain>", "the node's document is invalid",
-"cannot reach <domain>" (DNS or TLS failure, nothing listening). A development node on this computer is asked over
+Errors are distinct and name the step that failed: "no node found for \<domain>", "the node's document is invalid",
+"cannot reach \<domain>" (DNS or TLS failure, nothing listening). A development node on this computer is asked over
 plain http (`alice@localhost:8080`). The login page of the app takes an address as well and switches the node when the
 domain is another one.
 
@@ -160,7 +160,7 @@ download of before; in the app the shell shows the native save dialog and writes
 | `save_file_abort(id)` | removes the temporary file (the client calls it when reading or writing fails) |
 | `save_file_reveal(id)` | shows a finished save in the file manager (by its id: the webview never names a path) |
 
-After a save the client shows "Saved to <folder>" with a **Show in folder** button (in the live region of the toasts);
+After a save the client shows "Saved to \<folder>" with a **Show in folder** button (in the live region of the toasts);
 a cancelled dialog shows nothing. Previews and playback keep their object URLs. A download the webview still starts by
 itself (an `<a download>` or a navigation to a file) is caught too: the webview writes it into the app's cache, then
 the same save dialog asks where it goes (cancelled: the file is removed).
@@ -233,7 +233,7 @@ Passkeys are bound to the node's domain, the captcha to its host names and singl
 them can run on the app's own origin. On nodes that announce `connect.app` (app sessions of the connect flow,
 FEDERATION.md §8 step 3) the app signs in on the **node's own page** instead:
 
-1. The login page offers "Sign in on <node>'s page" and takes it by itself for "Sign in with a passkey", the SSO button
+1. The login page offers "Sign in on \<node>'s page" and takes it by itself for "Sign in with a passkey", the SSO button
    and whenever the node asks for a captcha (login or registration: the registration then happens on the node's page).
 2. The app creates an app session with a PKCE challenge (`POST /auth/connect/session`) and a fresh X25519 key pair,
    and the shell opens `<web>/connect?session=…[&method=passkey|sso]#k=<public key>` in the sign-in window, which has
