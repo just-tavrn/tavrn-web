@@ -533,8 +533,8 @@ warning is always on (`web/src/lib/download.ts`).
 
 Media is end-to-end encrypted with keys from the channel's MLS group: the client never publishes before LiveKit
 confirmed encryption and refuses to join in browsers without insertable streams. LiveKit, RNNoise and the background
-effects are only loaded once voice is used. The desktop app on Linux runs voice through its own native engine
-("The desktop app" below).
+effects are only loaded once voice is used. The desktop app runs voice and video as the browser does, except where the
+Tauri app uses its native voice engine ("The desktop app" below).
 
 ### Voice channels
 
@@ -789,7 +789,8 @@ the text once), and a lock next to the WEBHOOK badge says which.
 ## The desktop app
 
 The same client also runs as the desktop app for Linux and Windows ([DESKTOP.md](DESKTOP.md)): it is bundled into a
-Tauri shell instead of being served by a node, asks for the home node on the first start (the node picker at `/node`,
+shell instead of being served by a node (Electron on Linux, Tauri on Windows and later macOS; the client does not care
+which), asks for the home node on the first start (the node picker at `/node`,
 changeable under Settings → App, where the app also shows its version and installs signed updates) and talks to that
 node over https and wss. The client's platform layer (`src/platform/`) tells the API client, the WebSocket and the link
 builders where the node lives. The node picker and the login page take the account's address first
@@ -812,15 +813,20 @@ closing the window quits the app).
 **Downloads** in the app open the system's save dialog; the app writes the file and says where it went ("Saved to
 Downloads", with **Show in folder**); DESKTOP.md "Downloads".
 
-**Voice engine:** the desktop app on Linux sends and plays voice through its own native engine (LiveKit's Rust SDK in
-the shell; the system's web view has no WebRTC), end-to-end encrypted exactly as in the browser and with the same
-settings: devices of its own (Settings → Voice & video lists the engine's microphones and speakers), input volume,
-echo cancellation, noise suppression (RNNoise becomes WebRTC's noise suppression there), automatic gain, the noise
-gate, voice activation or push-to-talk (also through the system-wide hotkey while the window is in the background),
-per-user volumes, mute and deafen, the speaking rings and the notification sounds. On Windows the setting **Native
-voice engine (experimental)** under Settings → Voice & video → Voice engine switches the next call to it (default
-off; only shown in the desktop app). Audio only: camera, screen sharing, soundboard clips and the priority speaker
-are not available with the native engine, and their buttons say so (DESKTOP.md "Voice").
+**Voice and video:** the Linux app (Electron) runs voice, video, screen sharing, the soundboard and the background
+effects in Chromium exactly as the browser does; sharing a screen opens the app's own picker of screens and windows (on
+Wayland the desktop's portal dialog), without system audio (DESKTOP.md "Voice, video and screen sharing (Electron)").
+
+**Native voice engine (Tauri app):** the Tauri app can send and play voice through its own native engine (LiveKit's
+Rust SDK in the shell), always in its Linux bundles, whose web view has no WebRTC, and on Windows with the setting
+**Native voice engine (experimental)** under Settings → Voice & video → Voice engine, which switches the next call to it
+(default off; only shown in the desktop app). It is end-to-end encrypted exactly as in the browser and has the same
+settings: devices of its own (Settings → Voice & video lists the engine's microphones and speakers), input volume, echo
+cancellation, noise suppression (RNNoise becomes WebRTC's noise suppression there), automatic gain, the noise gate,
+voice activation or push-to-talk (also through the system-wide hotkey while the window is in the background), per-user
+volumes, mute and deafen, the speaking rings and the notification sounds. Audio only: camera, screen sharing,
+soundboard clips and the priority speaker are not available with the native engine, and their buttons say so
+(DESKTOP.md "Voice").
 
 ## Translations
 

@@ -42,7 +42,9 @@ node offers (registration mode, captcha, voice, single sign-on, limits) comes fr
 layer (`web/src/platform/`) then gives that node's URL to the API client, the WebSocket and the link builders
 ([DESKTOP.md](docs/DESKTOP.md)). It has two shells around the same client: Tauri on Windows (WebView2) and macOS, and
 Electron on Linux, where the distributions' WebKitGTK has no WebRTC and Chromium brings voice, video and screen sharing
-as in the browser.
+as in the browser (the project may return to Tauri on Linux once it offers a WebRTC-capable webview). A Windows build
+of the Electron shell is planned as a fallback for machines where WebView2 causes trouble; the Tauri installer stays the
+recommended one ([DESKTOP.md](docs/DESKTOP.md) "Builds and releases").
 
 **Other nodes** are reached from that client: rooms on other nodes open a federated session with a token of the home
 node, and the login page offers "Sign in with an account of another node". When a sign-in needs the home node itself
@@ -100,16 +102,18 @@ with `TAVRN_VOICE_ENABLED=false`.
 | `just dist-tarball` | `release/tavrn-web-<version>.tar.gz` from `web/dist`, as the release attaches it |
 | `just e2e [args]` | the Playwright suite against real nodes (below) |
 | `just publish-check` | pre-publication hygiene (`scripts/publish-check.sh`: no private files, domains or secrets) |
-| `just desktop-dev` | the desktop app with the client from the Vite dev server ([DESKTOP.md](docs/DESKTOP.md); needs Rust and the WebKitGTK packages on Linux) |
-| `just desktop-check` | cargo fmt, clippy, tests and `cargo deny` (licenses) of the desktop shell (needs `web/dist`); the CI runs it in `desktop.yml`, `just check` stays JavaScript-only |
-| `just desktop-build` | the installers of this platform (Linux `.deb` and `.AppImage`, Windows `.msi` and NSIS) |
-| `just desktop-e2e` | the WebDriver smoke test of the built Linux app under `xvfb-run` (`E2E_NODE_BIN`; tauri-driver) |
+| `just desktop-dev` | the Tauri app with the client from the Vite dev server ([DESKTOP.md](docs/DESKTOP.md); needs Rust and the WebKitGTK packages on Linux) |
+| `just desktop-check` | cargo fmt, clippy, tests and `cargo deny` (licenses) of the Tauri shell (needs `web/dist`); the CI runs it in `desktop.yml`, `just check` stays JavaScript-only |
+| `just desktop-build` | the Tauri installers of this platform (Linux `.deb` and `.AppImage`, Windows `.msi` and NSIS) |
+| `just desktop-e2e` | the WebDriver smoke test of the built Tauri app on Linux under `xvfb-run` (`E2E_NODE_BIN`; tauri-driver) |
 | `just desktop-voice-test` | the native voice engine against a local `livekit-server` (two engines, end-to-end encrypted) |
-| `just desktop-voice-e2e` | voice between Chromium and the built Linux app's native engine under `xvfb-run` (`E2E_NODE_BIN` of a release node) |
+| `just desktop-voice-e2e` | voice between Chromium and the built Tauri app's native engine on Linux under `xvfb-run` (`E2E_NODE_BIN` of a release node) |
 | `just electron-dev` | the Linux app (Electron shell) on the Vite dev server ([DESKTOP.md](docs/DESKTOP.md) "The Linux shell (Electron)") |
 | `just electron-check` | `tsc`, `node --test`, SPDX headers and licenses of the Electron shell (typecheck and tests also run in `just check`) |
-| `just electron-package` | the Electron shell's `.AppImage` and `.deb` |
-| `just electron-e2e` | the Playwright smoke test of the Electron shell under `xvfb-run` (`E2E_NODE_BIN`) |
+| `just electron-native` | the Electron shell's system-wide key listener (a Node-API module; needs Rust) |
+| `just electron-package` | the Electron shell's `.AppImage`, `.deb` and update feed `latest-linux.yml` |
+| `just electron-e2e` | the Playwright specs of the Electron shell under `xvfb-run` (`E2E_NODE_BIN`) |
+| `just electron-e2e-packaged` | the same with the full smoke test against the AppImage, as CI runs them |
 | `just e2e-install`, `just e2e-clean`, `just livekit-install` | Chromium for Playwright; remove the end-to-end nodes' data (`data-dev/`); `livekit-server` into `~/.local/bin` |
 
 ### Translations
