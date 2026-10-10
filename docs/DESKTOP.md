@@ -771,7 +771,9 @@ dependencies (no library missing), the profile, the licence and the menu entry a
 (`--security-opt seccomp=unconfined`) `chrome-sandbox` stays 0755 and the app runs sandboxed; where they do not (Docker's
 default) `chrome-sandbox` becomes setuid root, but Docker also forbids the namespaces the setuid helper creates, so the
 app cannot start there (a limit of the container, not of a desktop). A container without AppArmor cannot show the
-profile at work.
+profile at work. The same holds for the tests: the Playwright specs start the app sandboxed, so the CI job runs them only on a runner that can create user
+namespaces (it checks with `unshare -U` and otherwise skips them with a warning while still building the packages); the
+self-hosted runner stack of the organization allows them for the runner containers.
 
 The AppImage cannot carry a setuid helper or install a profile. Where user namespaces work (most distributions) it runs
 sandboxed as it is. On Ubuntu 24.04 and later it does not start until the system allows it: install the `.deb` instead,

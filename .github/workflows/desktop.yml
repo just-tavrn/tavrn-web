@@ -328,6 +328,14 @@ jobs:
           # The development build for the specs that reach the main process (the packages keep --inspect off).
           node node_modules/electron/install.js
           export E2E_NODE_BIN="$bin/tavrn-node" E2E_ELECTRON_APP="$app" XDG_DATA_HOME="$RUNNER_TEMP/xdg-data"
+          # The app always runs with Chromium's sandbox, which needs unprivileged user namespaces (the setuid helper is
+          # out: the runner forbids new privileges). A runner that cannot create them (Docker's default seccomp
+          # profile; just-tavrn/.github runner/README.md "Security") skips the specs loudly instead of switching the
+          # sandbox off; the packages above are built either way.
+          if ! unshare -U true 2>/dev/null; then
+            echo "::warning title=Electron specs skipped::this runner cannot create user namespaces, so Chromium's sandbox cannot start; the runner stack needs seccomp=unconfined for the runner service (runner/README.md)"
+            exit 0
+          fi
           # A D-Bus session of its own with an unlocked gnome-keyring: the keychain spec uses the real Secret Service.
           env -u WAYLAND_DISPLAY -u ELECTRON_RUN_AS_NODE xvfb-run -a -s "-screen 0 1280x800x24" dbus-run-session -- bash -c \
             'echo ci-keyring | gnome-keyring-daemon --components=secrets --daemonize --unlock >/dev/null && pnpm exec playwright test --config e2e/playwright.config.ts'

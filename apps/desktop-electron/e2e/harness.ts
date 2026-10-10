@@ -10,10 +10,14 @@ import { fileURLToPath } from "node:url";
 
 export const appDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const repoDir = resolve(appDir, "../..");
-export const nodePort = Number(process.env.E2E_NODE_PORT ?? "8300");
+// The main suite's helpers (e2e/tests/helpers.ts) read the same variables with other defaults: pin ours for every
+// module that loads after this one (the config imports this file first, and the workers inherit the environment).
+process.env.E2E_NODE_PORT ??= "8300";
+process.env.E2E_WEB_PORT ??= "5300";
+export const nodePort = Number(process.env.E2E_NODE_PORT);
 export const nodeUrl = process.env.E2E_NODE_URL ?? `http://127.0.0.1:${nodePort}`;
 /** The client's Vite dev server: the node names it as its web client, so the sign-in window shows this checkout's client. */
-export const webPort = Number(process.env.E2E_WEB_PORT ?? "5300");
+export const webPort = Number(process.env.E2E_WEB_PORT);
 export const webOrigin = `http://localhost:${webPort}`;
 
 /** Chromium's fake camera and microphone (instead of the Tauri shell's TAVRN_DESKTOP_FAKE_AUDIO). */
