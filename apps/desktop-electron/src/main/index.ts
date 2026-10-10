@@ -9,8 +9,9 @@
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, Notification, protocol, safeStorage, session, shell, Tray } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, protocol, safeStorage, session, shell, Tray } from "electron";
 import { DIR_NAME, Settings, settingsPath } from "./config.ts";
+import { Downloads, handleWillDownload, registerFilesHandlers, saveDialogOptions, TEST_SAVE_DIR_ENV } from "./downloads.ts";
 import { ShellEvents } from "./events.ts";
 import { devServerUrl, isAppPage, permission } from "./guard.ts";
 import { IpcRegistry, type IpcEventLike } from "./ipc.ts";
@@ -72,6 +73,7 @@ function main(): void {
   let quitting = false;
   app.on("before-quit", () => {
     quitting = true;
+    downloads.abortAll();
   });
   const quit = () => app.quit();
   registerNotifyHandlers(registry, { notifier: new Notifier({ create: (o) => new Notification(o), supported: () => Notification.isSupported(), showMain: show, events, icon }) });
@@ -85,6 +87,24 @@ function main(): void {
     quit,
   });
   registerTrayHandlers(registry, { tray, settings, quit });
+  // Downloads through the save dialog (the test hook's directory instead when set).
+  const downloads = new Downloads({
+    testDir: process.env[TEST_SAVE_DIR_ENV] || null,
+    downloadsDir: () => {
+      try {
+        return app.getPath("downloads");
+      } catch {
+        return app.getPath("home");
+      }
+    },
+    chooseTarget: async (name, dir) => {
+      const options = saveDialogOptions(name, dir);
+      const chosen = mainWindow && !mainWindow.isDestroyed() ? await dialog.showSaveDialog(mainWindow, options) : await dialog.showSaveDialog(options);
+      return chosen.canceled || !chosen.filePath ? null : chosen.filePath;
+    },
+    reveal: (path) => shell.showItemInFolder(path),
+  });
+  registerFilesHandlers(registry, { downloads });
   registry.install(ipcMain);
 
   app.on("second-instance", () => showMain(mainWindow));
@@ -108,6 +128,7 @@ function main(): void {
     ses.setPermissionRequestHandler((contents, name, callback, details) => callback(permission(name, details.requestingUrl, fromMain(contents), devUrl)));
     ses.setPermissionCheckHandler((contents, name, origin, details) => permission(name, details.requestingUrl ?? origin, fromMain(contents), devUrl));
     ses.setDevicePermissionHandler(() => false);
+    ses.on("will-download", (_event, item, contents) => handleWillDownload(item, fromMain(contents), downloads));
     tray.create();
     mainWindow = createMainWindow({ preload: join(here, "../preload/index.cjs"), icon, devUrl, openExternal: (url) => void openExternal(url) });
     attachWindow(mainWindow, tray, () => quitting);
