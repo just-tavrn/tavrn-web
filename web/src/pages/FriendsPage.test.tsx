@@ -3,9 +3,10 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { VoiceParticipant } from "@tavrn/sdk";
+import { Permission, type VoiceParticipant } from "@tavrn/sdk";
 import { useVoicePresence } from "../voice/presence";
 import { useAuth } from "../stores/auth";
+import { useToasts } from "../stores/toasts";
 import { mockFetch, renderWithProviders } from "../test/render";
 import { FriendsPage } from "./FriendsPage";
 
@@ -120,6 +121,71 @@ describe("FriendsPage", () => {
       const again = screen.getByTestId("friend-menu");
       expect(within(again).queryByRole("menuitem", { name: /betreten/ })).toBeNull();
       expect(within(again).getByRole("menuitem", { name: "Nachricht" })).toBeInTheDocument();
+    });
+  });
+
+  describe("invite to room", () => {
+    const detail = (id: string, name: string, perms: bigint, isOwner = false) => ({ id, name, description: "", channels: [{ id: `${id}T`, kind: "text", name: "general" }], read_states: [], roles: [], overrides: [], my_permissions: perms.toString(), my_roles: [], is_owner: isOwner, member_count: 2 });
+    const setup = (direct: (init: RequestInit) => { status?: number; body: unknown }) => {
+      useVoicePresence.getState().reset();
+      useToasts.setState({ toasts: [] });
+      useAuth.setState({ token: "t", user: { ...user("u0", "me"), email: null, email_verified: false, has_identity_key: true } });
+      return mockFetch({
+        "/rooms/R1/invites/direct": direct,
+        "/rooms/R1": { body: detail("R1", "Gilde", Permission.CREATE_INVITES | Permission.SEND_MESSAGES) },
+        "/rooms/R2": { body: detail("R2", "Lesesaal", Permission.SEND_MESSAGES) },
+        "/rooms": { body: [{ id: "R1", name: "Gilde", description: "" }, { id: "R2", name: "Lesesaal", description: "" }] },
+        "/users/me/blocks": { body: [] },
+        "/users/me/friends": { body: { friends: [{ user: user("u1", "anna"), since: "" }], incoming: [], outgoing: [], blocked: [] } },
+      });
+    };
+    const openInviteMenu = async () => {
+      renderWithProviders(<FriendsPage />);
+      const item = (await screen.findByText("anna@t.local")).closest("li")!;
+      const u = userEvent.setup();
+      await u.click(within(item).getByRole("button", { name: "Optionen für ANNA" }));
+      const menu = screen.getByTestId("friend-menu");
+      const sub = await within(menu).findByRole("menuitem", { name: "Einladen in Raum" });
+      expect(sub).toHaveAttribute("aria-haspopup", "menu");
+      await u.click(sub);
+      return { u, submenu: screen.getByTestId("context-submenu") };
+    };
+
+    it("lists only the rooms where the user may create invites and sends a direct invite to the friend", async () => {
+      const calls = setup(() => ({ status: 202, body: { invite: { code: "c", room_id: "R1", uses: 0, max_uses: 1, expires_at: null, created_at: "", user: "anna@t.local" } } }));
+      const { u, submenu } = await openInviteMenu();
+      expect(within(submenu).queryByRole("menuitem", { name: "Lesesaal" })).toBeNull();
+      await u.click(within(submenu).getByRole("menuitem", { name: "Gilde" }));
+      await waitFor(() => expect(calls.some((c) => c.url.endsWith("/rooms/R1/invites/direct") && c.init.method === "POST")).toBe(true));
+      const sent = calls.find((c) => c.url.endsWith("/rooms/R1/invites/direct"))!;
+      expect(JSON.parse(String(sent.init.body))).toEqual({ user: "anna@t.local" });
+      // An action, not a state: the menu closes.
+      expect(screen.queryByTestId("friend-menu")).toBeNull();
+      await waitFor(() => expect(useToasts.getState().toasts.map((x) => [x.kind, x.title])).toContainEqual(["info", "Einladung in Gilde an ANNA gesendet"]));
+    });
+
+    it("shows the node's refusal (already a member) as an error toast", async () => {
+      setup(() => ({ status: 409, body: { type: "x", title: "Conflict", status: 409, code: "invite.already_member", detail: "Already a member of this room" } }));
+      const { u, submenu } = await openInviteMenu();
+      await u.click(within(submenu).getByRole("menuitem", { name: "Gilde" }));
+      await waitFor(() => expect(useToasts.getState().toasts.find((x) => x.kind === "error")).toMatchObject({ title: "Einladung nicht gesendet", detail: "Diese Person ist bereits Mitglied des Raums" }));
+    });
+
+    it("has no submenu when no room allows inviting", async () => {
+      setup(() => ({ status: 500, body: null }));
+      mockFetch({
+        "/rooms/R2": { body: detail("R2", "Lesesaal", Permission.SEND_MESSAGES) },
+        "/rooms": { body: [{ id: "R2", name: "Lesesaal", description: "" }] },
+        "/users/me/blocks": { body: [] },
+        "/users/me/friends": { body: { friends: [{ user: user("u1", "anna"), since: "" }], incoming: [], outgoing: [], blocked: [] } },
+      });
+      renderWithProviders(<FriendsPage />);
+      const item = (await screen.findByText("anna@t.local")).closest("li")!;
+      fireEvent.contextMenu(item, { clientX: 5, clientY: 5 });
+      const menu = screen.getByTestId("friend-menu");
+      await waitFor(() => expect(within(menu).getByRole("menuitem", { name: "Nachricht" })).toBeInTheDocument());
+      await new Promise((r) => setTimeout(r, 50));
+      expect(within(menu).queryByRole("menuitem", { name: "Einladen in Raum" })).toBeNull();
     });
   });
 });
