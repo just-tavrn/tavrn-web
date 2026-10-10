@@ -441,3 +441,31 @@ export function dmMenu(c: DmMenuContext, a: DmMenuActions, t: T): MenuEntry[] {
     c.peer && menuItem("block", t("menu.member.block"), a.block, { icon: "🚫", danger: true }),
   ]);
 }
+
+// ---- Threads --------------------------------------------------------------------------------
+
+export interface ThreadMenuContext {
+  /** The thread's creator or a member with MANAGE_THREADS (PROTOCOL.md §7e); otherwise the menu is empty. */
+  mayManage: boolean;
+  archived: boolean;
+  locked: boolean;
+}
+
+export interface ThreadMenuActions {
+  rename: () => void;
+  setArchived: (archived: boolean) => void;
+  setLocked: (locked: boolean) => void;
+  remove: () => void;
+}
+
+/** The thread header's menu: archive and lock are state toggles and keep the menu open (like the mute entries). */
+export function threadMenu(c: ThreadMenuContext, a: ThreadMenuActions, t: T): MenuEntry[] {
+  if (!c.mayManage) return [];
+  return normalizeMenu([
+    menuItem("rename", t("threads.rename"), a.rename, { icon: "✎" }),
+    menuItem("archive", c.archived ? t("threads.unarchive") : t("threads.archive"), () => a.setArchived(!c.archived), { icon: "🗄", keepOpen: true }),
+    menuItem("lock", c.locked ? t("threads.unlock") : t("threads.lock"), () => a.setLocked(!c.locked), { icon: "⛔", keepOpen: true }),
+    separator("sep-delete"),
+    menuItem("delete", t("threads.delete"), a.remove, { icon: "🗑", danger: true }),
+  ]);
+}

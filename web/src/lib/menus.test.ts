@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ALL_PERMISSIONS, Permission } from "@tavrn/sdk";
 import { findEntry, staysOpen, type MenuEntry } from "../components/ContextMenu";
-import { channelMenu, dmMenu, memberMenu, messageMenu, notifyEntries, roomMenu, voiceParticipantMenu, type MemberMenuActions, type MemberMenuContext, type VoiceParticipantMenuActions } from "./menus";
+import { channelMenu, dmMenu, memberMenu, messageMenu, notifyEntries, roomMenu, threadMenu, voiceParticipantMenu, type MemberMenuActions, type MemberMenuContext, type VoiceParticipantMenuActions } from "./menus";
 
 const t = (key: string, params?: Record<string, string | number>) => (params ? `${key}:${JSON.stringify(params)}` : key);
 const ids = (entries: MenuEntry[]) => entries.filter((e) => e.kind !== "separator").map((e) => e.id);
@@ -344,5 +344,19 @@ describe("which entries keep the menu open (state changes, like the voice quick 
     const actions = { reply: vi.fn(), react: vi.fn(), copyText: vi.fn(), copyLink: vi.fn(), copyId: vi.fn(), pin: vi.fn(), edit: vi.fn(), remove: vi.fn(), markUnread: vi.fn() };
     const message = split(messageMenu({ own: true, text: "hi", pinned: false, canPin: true, canReact: true, canManage: false, canReply: true, canEdit: true, canDelete: true }, actions, t));
     expect(message.open).toEqual([]);
+  });
+
+  it("the thread header: lock and archive are state toggles and stay open; rename and delete close", () => {
+    const actions = { rename: vi.fn(), setArchived: vi.fn(), setLocked: vi.fn(), remove: vi.fn() };
+    const thread = split(threadMenu({ mayManage: true, archived: false, locked: false }, actions, t));
+    expect(thread.open).toEqual(["archive", "lock"]);
+    expect(thread.close).toEqual(["rename", "delete"]);
+    const done = threadMenu({ mayManage: true, archived: true, locked: true }, actions, t);
+    expect(findEntry(done, "archive")).toMatchObject({ label: "threads.unarchive" });
+    expect(findEntry(done, "lock")).toMatchObject({ label: "threads.unlock" });
+    const archive = findEntry(done, "archive");
+    if (archive?.kind === "item") archive.onSelect?.();
+    expect(actions.setArchived).toHaveBeenCalledWith(false);
+    expect(threadMenu({ mayManage: false, archived: false, locked: false }, actions, t)).toEqual([]);
   });
 });
