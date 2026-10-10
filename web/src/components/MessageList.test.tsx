@@ -286,6 +286,8 @@ describe("Emoji picker", () => {
     // Narrow phones: the popup shrinks to the viewport.
     expect(pickerPosition({ top: 100, bottom: 132, right: 300 }, 120, { width: 320, height: 800 }).left).toBe(4);
     expect(pickerPosition({ top: 100, bottom: 132, right: 50 }, 120, viewport).left).toBe(4);
+    // Short viewports (a phone in landscape): fits neither below nor above the button, starts at the top edge.
+    expect(pickerPosition({ top: 250, bottom: 282, right: 380 }, 384, { width: 400, height: 392 }).top).toBe(4);
   });
 });
 
