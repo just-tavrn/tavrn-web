@@ -155,7 +155,7 @@ function conversationHandlers(socket: TavrnSocket, queryClient: QueryClient, nav
  * group DM a friend started on another node is accepted right away (federated session, index entry, the
  * Welcome waiting there), everything else waits in the invite list on the home view.
  */
-async function onInvite(invite: PendingInvite, queryClient: QueryClient) {
+export async function onInvite(invite: PendingInvite, queryClient: QueryClient) {
   void queryClient.invalidateQueries({ queryKey: ["pending-invites"] });
   if (invite.kind === "conversation") {
     const friends = await queryClient.fetchQuery({ queryKey: ["friends"], queryFn: () => api.friends.list(), staleTime: 30_000 }).catch(() => null);
