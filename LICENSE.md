@@ -10,6 +10,7 @@ client, the end-to-end suite, the scripts and the documentation. Each package ca
 | `web/` | `@tavrn/web`: the React web client, its assets, translations and tests | [web/LICENSE](web/LICENSE), [web/NOTICE](web/NOTICE) |
 | `e2e/` | `@tavrn/e2e`: the Playwright suite with its helpers and fixtures (fake OpenID provider, example bot) | [e2e/LICENSE](e2e/LICENSE), [e2e/NOTICE](e2e/NOTICE) |
 | `apps/desktop/` | `@tavrn/desktop`: the desktop app, a Tauri shell (Rust crate `tavrn-desktop`) around the web client | [apps/desktop/LICENSE](apps/desktop/LICENSE), [apps/desktop/NOTICE](apps/desktop/NOTICE) |
+| `apps/desktop-electron/` | `@tavrn/desktop-electron`: the desktop app for Linux, an Electron shell around the web client | [apps/desktop-electron/LICENSE](apps/desktop-electron/LICENSE), [apps/desktop-electron/NOTICE](apps/desktop-electron/NOTICE) |
 | everything else | workspace and build files, `scripts/`, `.github/`, `docs/` | [LICENSE](LICENSE), [NOTICE](NOTICE) |
 
 Why Apache-2.0: the client must be usable in app stores (GPL licenses are not) and by anyone who builds on it, while

@@ -1,0 +1,31 @@
+{
+  "name": "@tavrn/desktop-electron",
+  "version": "0.0.0",
+  "description": "The tavrn desktop app for Linux: the Electron shell around the web client (docs/DESKTOP.md \"The Linux shell (Electron)\")",
+  "private": true,
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/just-tavrn/tavrn-web.git",
+    "directory": "apps/desktop-electron"
+  },
+  "type": "module",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && vite build --config vite.preload.config.ts",
+    "dev": "node scripts/dev.mjs",
+    "start": "electron .",
+    "package": "pnpm run build && electron-builder --config electron-builder.config.mjs --linux",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test \"src/**/*.test.ts\" \"scripts/*.test.mjs\"",
+    "e2e": "playwright test --config e2e/playwright.config.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^26.6.4",
+    "electron": "44.7.0",
+    "electron-builder": "^26.15.3",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.4"
+  }
+}

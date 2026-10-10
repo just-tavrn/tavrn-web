@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Checks the licenses of the production dependencies of the web client (@tavrn/web, everything that ends up in the
-// bundle), of the end-to-end suite and of the desktop app's package against the allow-list (`pnpm licenses list
-// --prod` per package; the desktop shell's Rust crates: `cargo deny`, apps/desktop/src-tauri/deny.toml). (A)GPL/LGPL is
-// refused (the client must stay app-store compatible and Apache-2.0); an unknown license fails until it is verified by
-// hand and recorded in VERIFIED below. Development dependencies (Vite, Vitest, Playwright, TypeScript) are not shipped.
+// bundle), of the end-to-end suite and of the desktop apps' packages (the Tauri and the Electron shell) against the
+// allow-list (`pnpm licenses list --prod` per package; the Tauri shell's Rust crates: `cargo deny`,
+// apps/desktop/src-tauri/deny.toml). (A)GPL/LGPL is refused (the client must stay app-store compatible and
+// Apache-2.0); an unknown license fails until it is verified by hand and recorded in VERIFIED below. Development dependencies (Vite, Vitest, Playwright, TypeScript) are not shipped.
 // MPL-2.0 is allowed: @tavrn/crypto and @tavrn/e2ee are MPL-2.0 dependencies (file-level copyleft, LICENSE.md).
 // Usage: node scripts/check-js-licenses.mjs [--table]   (--table prints every direct dependency)
 import { execFileSync } from "node:child_process";
@@ -12,7 +12,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const PACKAGES = ["web", "e2e", "apps/desktop"];
+const PACKAGES = ["web", "e2e", "apps/desktop", "apps/desktop-electron"];
 const ALLOWED = new Set([
   "MIT", "MIT-0", "0BSD", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "MPL-2.0", "Zlib", "CC0-1.0",
   "Unlicense",
