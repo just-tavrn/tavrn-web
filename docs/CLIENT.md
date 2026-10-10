@@ -210,6 +210,19 @@ space set under Settings → Privacy → Local search index (default 50 MB; the 
 shows what it takes, the settings the total. Turning the setting off, clearing the index or signing out (which wipes the
 device) deletes the archive.
 
+**History for new members** (protocol ENCRYPTION.md §7b; `web/src/crypto/history.ts`, `web/src/crypto/groupJoins.ts`).
+The channel setting (channel settings → History for new members) decides what a member gets from before their room
+join: nothing (`since_join`, the default), the last days or everything. Everything posted since the join is always
+readable, also in channels the member opens only later: a device enters a channel's encryption group only once it is
+there, and the messages in between need keys from other members. The client therefore joins the groups of a room's
+encrypted channels (text, announcement, forum and files) as soon as the room is loaded on an unlocked device, one after
+the other with a short pause, so that gap is usually empty. Otherwise an online member's device shares the missing keys
+automatically (under every setting, also `since_join`); until they arrive the channel shows "Older messages are being
+unlocked…" at the top and the messages and forum post titles in question as not readable yet, and they open as soon as
+the keys are there. With no other member online the keys come when one is back. Nothing from before the join is ever
+shared under `since_join`: the node does not serve those messages to the member, and the client accepts a key only after
+checking it against a message it was served.
+
 **History after a key reset** (protocol ENCRYPTION.md §7b, capability `history.restore`; `web/src/history/restore.ts`).
 A member who reset their security key keeps their rooms but not the encrypted history from before the reset, and
 other members' devices never send those keys automatically: the sharing code (`HistorySync` in `@tavrn/e2ee`) shares
