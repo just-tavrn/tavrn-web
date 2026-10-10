@@ -152,6 +152,11 @@ function fedNode(domain: "a.test" | "b.test", port: string, web: string) {
     // `rate.limits` check skip its burst, so checks never throttle the federated logins of other specs.
     TAVRN_ADMIN_USERS: "fedadmin",
     TAVRN_FEDERATION_RATE_LOGINS: "1000",
+    // Executables (PROTOCOL.md §7a) are refused by default, as on the main node; b.test allows them (and their content
+    // type) so that upload-policy.spec.ts can upload one and check the warning before it is downloaded.
+    ...(domain === "b.test"
+      ? { TAVRN_UPLOAD_ALLOW_EXECUTABLES: "true", TAVRN_UPLOAD_ALLOWED_TYPES: "image/*,video/*,audio/*,application/pdf,text/plain,application/zip,application/x-msdownload" }
+      : {}),
     ...voiceEnv(port),
   });
 }
