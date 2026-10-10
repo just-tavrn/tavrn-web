@@ -13,7 +13,12 @@ import { Button, Dialog, ErrorText, Field, Input } from "../components/ui";
 import { describeError } from "../stores/toasts";
 import { validName } from "./model";
 
-export function NameDialog({ open, title, initial, action, onClose, onSubmit }: { open: boolean; title: string; initial: string; action: string; onClose: () => void; onSubmit: (name: string) => Promise<void> }) {
+/**
+ * Name prompt of "New folder" and "Rename". `pending` (a sentence) keeps the submit button disabled and shows why,
+ * e.g. while the encryption group of a files channel is still joining on this device: the name stays typed and the
+ * button opens as soon as the view is ready.
+ */
+export function NameDialog({ open, title, initial, action, onClose, onSubmit, pending }: { open: boolean; title: string; initial: string; action: string; onClose: () => void; onSubmit: (name: string) => Promise<void>; pending?: string }) {
   const t = useT();
   const [name, setName] = useState(initial);
   const [error, setError] = useState<string | null>(null);
@@ -26,7 +31,7 @@ export function NameDialog({ open, title, initial, action, onClose, onSubmit }: 
         data-testid="files-name-dialog"
         onSubmit={async (e) => {
           e.preventDefault();
-          if (!valid) return;
+          if (!valid || pending) return;
           setBusy(true);
           setError(null);
           try {
@@ -54,11 +59,16 @@ export function NameDialog({ open, title, initial, action, onClose, onSubmit }: 
           />
         </Field>
         <ErrorText>{error}</ErrorText>
+        {pending && (
+          <p role="status" className="text-sm text-fg-1" data-testid="files-name-pending">
+            {pending}
+          </p>
+        )}
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
             {t("common.cancel")}
           </Button>
-          <Button type="submit" disabled={!valid || busy} data-testid="files-name-submit">
+          <Button type="submit" disabled={!valid || busy || !!pending} data-testid="files-name-submit">
             {action}
           </Button>
         </div>

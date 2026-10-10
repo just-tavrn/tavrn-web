@@ -70,6 +70,13 @@ test.describe("Encrypted files channels", () => {
     await expect(row(page, "bauplan.png")).toBeVisible(CRYPTO);
     await row(page, "Projekte").getByTestId("file-open").click();
     await expect(page.getByTestId("files-breadcrumbs")).toContainText("Projekte");
+    // The toolbar never lies over the crumbs (it wraps below them on narrow screens and with wide fallback fonts).
+    const toolbar = (await page.getByTestId("files-toolbar").boundingBox())!;
+    for (const crumb of await page.getByTestId("files-crumb").all()) {
+      const box = (await crumb.boundingBox())!;
+      const overlaps = box.x < toolbar.x + toolbar.width && toolbar.x < box.x + box.width && box.y < toolbar.y + toolbar.height && toolbar.y < box.y + box.height;
+      expect(overlaps, "a breadcrumb lies under the toolbar").toBe(false);
+    }
     await page.getByTestId("files-upload-input").setInputFiles([{ name: "geheimplan.txt", mimeType: "text/plain", buffer: Buffer.from("Streng geheim: Lagerfeuer um acht") }]);
     await expect(row(page, "geheimplan.txt")).toBeVisible(CRYPTO);
     await axe(page, '[data-testid="files-view"]');
