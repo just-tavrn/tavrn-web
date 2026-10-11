@@ -21,7 +21,7 @@ import { joinVoice } from "../index";
 import { AvatarTile } from "./AvatarTile";
 import { ConnectionGlyph, LevelMeterBars, ParticipantFlags, SoundOverlay, levelStyle, useMemberLooks, useParticipantStatus, usePriority } from "./common";
 import { MegaphoneIcon, SpeakerIcon } from "./icons";
-import { FullscreenButton, FullscreenControls, exitFullscreen, useFullscreen, useFullscreenShortcut } from "./fullscreen";
+import { FullscreenButton, FullscreenControls, exitFullscreen, useFullscreen, useFullscreenShortcut, useHeldInFullscreen } from "./fullscreen";
 import { StageGrid } from "./StageGrid";
 import { ScreenTile, StreamingIndicator } from "./ScreenTile";
 import { VideoView } from "./VideoView";
@@ -184,7 +184,8 @@ export function VoiceStage({ room, channel }: { room: RoomDetail; channel: Chann
   const memberAddresses = useMemo(() => members.data?.map((m) => m.user.address) ?? null, [members.data]);
   const voiceChannelId = useVoice((s) => ownVoiceChannel(s, domain, room.id));
   const perms = channelPermissions(room, channel.id, me?.id ?? "", voiceChannelId);
-  const phone = useIsPhone();
+  // Held in fullscreen: a phone turned to landscape keeps the stage's layout, so the stream in fullscreen stays.
+  const phone = useHeldInFullscreen(useIsPhone());
   const [page, setPage] = useState(0);
   const q = qualify(domain, channel.id);
   const connected = status === "connected" || status === "reconnecting";

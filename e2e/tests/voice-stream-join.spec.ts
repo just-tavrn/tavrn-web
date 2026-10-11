@@ -183,19 +183,23 @@ test.describe("Screen shares are joined", () => {
     if (phone) {
       await expect.poll(() => locks(alice.page)).toEqual(["landscape"]);
       await expect(carols).toHaveAttribute("data-orientation", "portrait");
+      // The phone turns: the emulated screen rotates (a window in fullscreen cannot be resized directly).
       const portrait = alice.page.viewportSize()!;
-      await alice.page.setViewportSize({ width: portrait.height, height: portrait.width });
+      const view = { width: portrait.height, height: portrait.width };
+      const cdp = await alice.page.context().newCDPSession(alice.page);
+      await cdp.send("Emulation.setDeviceMetricsOverride", { ...view, deviceScaleFactor: 2.625, mobile: true, screenOrientation: { type: "landscapePrimary", angle: 90 } });
       await expect(carols).toHaveAttribute("data-orientation", "landscape");
-      const view = alice.page.viewportSize()!;
       for (const target of [carols, carols.getByTestId("video-screen")]) {
         const box = (await target.boundingBox())!;
         expect(Math.abs(box.width - view.width)).toBeLessThan(2);
         expect(Math.abs(box.height - view.height)).toBeLessThan(2);
       }
       expect(await carols.getByTestId("video-screen").evaluate((v) => getComputedStyle(v).objectFit)).toBe("contain");
-      const scroll = await alice.page.evaluate(() => ({ x: document.documentElement.scrollWidth - innerWidth, y: document.documentElement.scrollHeight - innerHeight }));
-      expect(scroll.x).toBeLessThanOrEqual(0);
-      expect(scroll.y).toBeLessThanOrEqual(0);
+      // The fullscreen view (the top layer, the page underneath is not shown) starts at the corner and does not scroll.
+      const tileBox = (await carols.boundingBox())!;
+      expect(Math.abs(tileBox.x) + Math.abs(tileBox.y)).toBeLessThan(2);
+      const scroll = await carols.evaluate((el) => ({ x: el.scrollWidth - el.clientWidth, y: el.scrollHeight - el.clientHeight }));
+      expect(scroll).toEqual({ x: 0, y: 0 });
     } else {
       expect(await locks(alice.page)).toEqual([]);
     }

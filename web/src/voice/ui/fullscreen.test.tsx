@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
-import { enterFullscreen, exitFullscreen, fullscreenElement, toggleFullscreen, useFullscreen, useFullscreenShortcut, FullscreenButton } from "./fullscreen";
+import { enterFullscreen, exitFullscreen, fullscreenElement, toggleFullscreen, useFullscreen, useFullscreenShortcut, useHeldInFullscreen, FullscreenButton } from "./fullscreen";
 
 const originalMatchMedia = window.matchMedia;
 
@@ -182,5 +182,24 @@ describe("fullscreen on phones follows the orientation", () => {
       window.dispatchEvent(new Event("orientationchange"));
     });
     expect(frame).toHaveAttribute("data-orientation", "portrait");
+  });
+
+  it("the layout is held while something is in fullscreen (turning a phone must not remount the stream)", async () => {
+    installFullscreenApi();
+    function Layout({ phone }: { phone: boolean }) {
+      const held = useHeldInFullscreen(phone);
+      return <p data-testid="layout">{held ? "phone" : "grid"}</p>;
+    }
+    const view = render(<Layout phone />);
+    view.rerender(<Layout phone={false} />);
+    expect(screen.getByTestId("layout")).toHaveTextContent("grid");
+    view.rerender(<Layout phone />);
+    await act(async () => void (await enterFullscreen(document.createElement("div"))));
+    // Turned to landscape: wider than the phone breakpoint, but the stage keeps its layout.
+    view.rerender(<Layout phone={false} />);
+    expect(screen.getByTestId("layout")).toHaveTextContent("phone");
+    // Fullscreen ends: the current layout applies.
+    await act(async () => exitFullscreen());
+    expect(screen.getByTestId("layout")).toHaveTextContent("grid");
   });
 });

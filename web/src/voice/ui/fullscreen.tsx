@@ -148,6 +148,27 @@ export function useFullscreen<T extends HTMLElement>() {
   return { ref, active, toggle, orientation };
 }
 
+/**
+ * `value` as it was when an element went fullscreen, held until fullscreen ends. For layout switches: a phone turned
+ * to landscape crosses the phone breakpoint, and a different stage layout would remount (and so drop) the stream in
+ * fullscreen.
+ */
+export function useHeldInFullscreen<T>(value: T): T {
+  const held = useRef(value);
+  const [, changed] = useState(0);
+  useEffect(() => {
+    const on = () => changed((n) => n + 1);
+    document.addEventListener("fullscreenchange", on);
+    document.addEventListener("webkitfullscreenchange", on);
+    return () => {
+      document.removeEventListener("fullscreenchange", on);
+      document.removeEventListener("webkitfullscreenchange", on);
+    };
+  }, []);
+  if (!fullscreenElement()) held.current = value;
+  return held.current;
+}
+
 /** Typing somewhere (or drawing on the whiteboard, which has its own `F` shortcut): no stage shortcut. */
 function typing(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;

@@ -587,7 +587,9 @@ bottom control bar. Joined streams, camera tiles, the whiteboard and the whole s
 Escape leaves) with mute, deafen, leave and exit at hand; iOS uses its native video full screen. On phones and
 tablets a stream wider than tall turns the screen to landscape in full screen (Screen Orientation API; browsers
 without it, like iOS Safari, simply rotate with the device) and the lock ends with full screen; the full screen view
-follows every rotation and fills the screen (the whole width and height, the video contained, no scrolling). The voice bar at the bottom of the sidebar keeps mute, deafen, leave and
+follows every rotation and fills the screen (the whole width and height, the video contained, no scrolling); the
+stage keeps its layout while something is in full screen, so turning a phone past the phone breakpoint does not
+drop the stream out of full screen. The voice bar at the bottom of the sidebar keeps mute, deafen, leave and
 the connection quality at hand while you read text channels: its first line is the signal bars with a small padlock
 (voice is always end-to-end encrypted; the tooltip names both, for example "Encrypted · connection good"), a short
 status ("Connected") and the quality, the second line the channel and room. Joining the same account's voice on
