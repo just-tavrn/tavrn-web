@@ -7,14 +7,18 @@
  *    https/wss without credentials, query or fragment, `api` ending in `/api/v1`. Delegation (endpoints on another
  *    host) is the normal case; the result keeps the identity domain and the endpoints.
  * 2. After a `404` or without an HTTPS server (refused, DNS, TLS, timeout): the `_tavrn._tcp.<domain>` SRV records
- *    (lowest priority first, then highest weight, at most 3, domain names only); the target's document must name
- *    `domain`.
+ *    (lowest priority first, then highest weight, at most 3, domain names only). The request goes to the target's host
+ *    and port but is made for the identity domain: SNI and `Host` name the domain and the target's certificate must be
+ *    valid for the domain (FEDERATION.md §1.4), so a forged DNS answer alone cannot hand the app another node. The
+ *    target's document must name `domain`.
  * 3. After a `404` only: `https://<domain>/api/v1`, the last attempt (it must answer `GET /node`).
  *
  * Any other status, an invalid document or a refused redirect is an error at its step. A development node on this
  * computer (`localhost:<port>`, `127.0.0.1:<port>`) is asked over plain http, without SRV.
  */
 import { resolveSrv } from "node:dns/promises";
+import { request as httpsRequest } from "node:https";
+import { getCACertificates, rootCertificates } from "node:tls";
 import { DEV_HOSTS, validDomain } from "./node_url.ts";
 
 /** SRV targets tried at most. */
@@ -61,6 +65,11 @@ export class FetchError extends Error {
 
 export interface Fetcher {
   get(url: string): Promise<Fetched>;
+  /**
+   * GET `url` (on the identity domain) over a connection to `connect` instead of the URL's host: SNI and `Host` are the
+   * URL's host and the certificate must be valid for it. No redirects.
+   */
+  getVia(url: string, connect: { host: string; port: number }): Promise<Fetched>;
 }
 
 export interface SrvRecord {
@@ -137,6 +146,14 @@ async function attempt(fetcher: Fetcher, url: string): Promise<Fetched | FetchEr
   }
 }
 
+async function attemptVia(fetcher: Fetcher, url: string, connect: { host: string; port: number }): Promise<Fetched | FetchError> {
+  try {
+    return await fetcher.getVia(url, connect);
+  } catch (e) {
+    return e instanceof FetchError ? e : new FetchError("transport");
+  }
+}
+
 /** Resolves `input` (an identity domain) to its node; rejects with a {@link Failure}. */
 export async function resolveNode(input: string, fetcher: Fetcher, srv: SrvLookup): Promise<Resolved> {
   const domain = input.trim().replace(/\.+$/, "").toLowerCase();
@@ -167,8 +184,8 @@ export async function resolveNode(input: string, fetcher: Fetcher, srv: SrvLooku
     for (const record of ordered.slice(0, MAX_SRV_TARGETS)) {
       const target = record.target.replace(/\.+$/, "").toLowerCase();
       if (!validDomain(target) || record.port === 0) continue;
-      const url = record.port === 443 ? `https://${target}/.well-known/tavrn` : `https://${target}:${record.port}/.well-known/tavrn`;
-      const r = await attempt(fetcher, url);
+      // A TLS failure (a certificate only for the target) skips the record like any transport failure.
+      const r = await attemptVia(fetcher, `https://${domain}/.well-known/tavrn`, { host: target, port: record.port });
       if (r instanceof FetchError || r.status !== 200) continue;
       const found = validateDocument(r.body, domain, false);
       if (!found) throw failure("resolve.invalid", "srv", domain);
@@ -196,18 +213,88 @@ export async function resolveNode(input: string, fetcher: Fetcher, srv: SrvLooku
 /** The part of `fetch` the real fetcher uses (Electron's `net.fetch` in the app: Chromium's network stack and TLS). */
 export type FetchLike = (url: string, init: { method: "GET"; headers: Record<string, string>; redirect: "manual"; signal: AbortSignal }) => Promise<Response>;
 
+/** Options of the SRV step's connection (tests: their own CA and where a target name connects). */
+export interface ViaOptions {
+  /** Trust anchors; default: Node's bundled Mozilla roots plus the system's store. */
+  ca?: string[];
+  /** The address a target name connects to; default: the name itself (the system's DNS). */
+  resolveTarget?: (target: string) => string;
+}
+
+/** Node's bundled roots plus the system's certificate store (when this Node can read it). */
+function defaultTrust(): string[] {
+  try {
+    return [...new Set([...getCACertificates("default"), ...getCACertificates("system")])];
+  } catch {
+    return [...rootCertificates];
+  }
+}
+
 /**
  * GET with verified TLS (the fetch it is given: Chromium's network stack with the system's trust store in the app), at
  * most {@link MAX_REDIRECTS} redirects to https on the same host, 5 s until the answer's headers, 10 s in total, the
- * body capped at {@link MAX_DOCUMENT}.
+ * body capped at {@link MAX_DOCUMENT}. The SRV step ({@link HttpFetcher.getVia}) uses Node's TLS instead, because
+ * Chromium's fetch cannot connect to one host while verifying the certificate for another; it trusts Node's bundled
+ * Mozilla roots and the system's store.
  */
 export class HttpFetcher implements Fetcher {
   readonly #fetch: FetchLike;
   readonly #userAgent: string;
+  readonly #via: ViaOptions;
 
-  constructor(fetchImpl: FetchLike, version: string) {
+  constructor(fetchImpl: FetchLike, version: string, via: ViaOptions = {}) {
     this.#fetch = fetchImpl;
     this.#userAgent = `tavrn-desktop/${version}`;
+    this.#via = via;
+  }
+
+  getVia(url: string, connect: { host: string; port: number }): Promise<Fetched> {
+    const target = new URL(url);
+    if (target.protocol !== "https:") return Promise.reject(new FetchError("refused"));
+    return new Promise<Fetched>((resolve, reject) => {
+      let settled = false;
+      const done = (e: FetchError | null, value?: Fetched) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(total);
+        if (e) {
+          req.destroy();
+          reject(e);
+        } else resolve(value!);
+      };
+      const req = httpsRequest(
+        {
+          host: this.#via.resolveTarget ? this.#via.resolveTarget(connect.host) : connect.host,
+          port: connect.port,
+          // The certificate is verified for the identity domain (SNI and the hostname check), never for the target.
+          servername: target.hostname,
+          path: `${target.pathname}${target.search}`,
+          method: "GET",
+          headers: { Host: target.host, Accept: "application/json", "User-Agent": this.#userAgent },
+          ca: this.#via.ca ?? defaultTrust(),
+          rejectUnauthorized: true,
+          agent: false,
+          timeout: HEADERS_TIMEOUT_MS,
+        },
+        (res) => {
+          const status = res.statusCode ?? 0;
+          if (status >= 300 && status < 400) return done(new FetchError("refused"));
+          const chunks: Buffer[] = [];
+          let size = 0;
+          res.on("data", (chunk: Buffer) => {
+            size += chunk.byteLength;
+            if (size > MAX_DOCUMENT) return done(new FetchError("refused"));
+            chunks.push(chunk);
+          });
+          res.on("end", () => done(null, { status, body: new Uint8Array(Buffer.concat(chunks)) }));
+          res.on("error", () => done(new FetchError("transport")));
+        },
+      );
+      const total = setTimeout(() => done(new FetchError("transport")), TOTAL_TIMEOUT_MS);
+      req.on("timeout", () => done(new FetchError("transport")));
+      req.on("error", () => done(new FetchError("transport")));
+      req.end();
+    });
   }
 
   async get(url: string): Promise<Fetched> {
