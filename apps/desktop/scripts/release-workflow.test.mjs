@@ -61,3 +61,34 @@ test("the Windows build makes no updater artifacts (release-assets signs the ins
 test("the parser sees the jobs of desktop.yml", () => {
   assert.deepEqual(Object.keys(desktop.jobs).sort(), ["linux-electron", "release-assets", "tauri-linux", "windows", "windows-electron", "windows-nsis"]);
 });
+
+test("no workflow passes the updater key through workflow-level env or `secrets: inherit`", () => {
+  for (const file of files) {
+    const text = readFileSync(new URL(file, WORKFLOWS), "utf8");
+    // The workflow-level env reaches every job (on.workflow_call.secrets may declare the key: actionlint wants it).
+    const env = /^env:\n((?: {2}.*\n?)*)/m.exec(jobsOf(text).head)?.[1] ?? "";
+    assert.doesNotMatch(code(env), KEY, `${file}: the workflow-level env names the updater key`);
+    assert.doesNotMatch(code(text), /secrets:\s*inherit/, `${file}: secrets: inherit hands every secret to a called workflow`);
+  }
+});
+
+test("release-assets installs exactly the signer package, without scripts, in one form", () => {
+  const installs = code(signer).split("\n").filter((l) => /\bpnpm\s+(install|i|add)\b/.test(l));
+  assert.ok(installs.length > 0, "release-assets installs the signer");
+  for (const line of installs) {
+    assert.equal(line.trim(), "- run: pnpm install --frozen-lockfile --ignore-scripts --filter @tavrn/desktop", `unexpected install: ${line.trim()}`);
+  }
+});
+
+test("linux-electron uploads the packages right after packaging, before the specs fetch or run anything", () => {
+  const steps = code(desktop.jobs["linux-electron"]).split(/\n(?= {6}- )/);
+  const at = (re) => steps.findIndex((s) => re.test(s));
+  const pack = at(/pnpm --filter @tavrn\/desktop-electron package/);
+  const upload = at(/name: desktop-linux-electron\n/);
+  assert.ok(pack >= 0 && upload > pack, "packaging, then the upload of desktop-linux-electron");
+  assert.equal(upload - pack, 2, "only the collect step between packaging and the upload");
+  for (const re of [/playwright install/, /livekit-install/, /NODE_IMAGE/, /playwright test/]) {
+    const i = at(re);
+    assert.ok(i > upload, `${re} must come after the upload`);
+  }
+});
