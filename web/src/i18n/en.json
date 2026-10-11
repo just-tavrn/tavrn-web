@@ -1540,6 +1540,7 @@
   "e2ee.error.no_passkey_entry": "This passkey is not set up to unlock your messages.",
   "e2ee.error.identity_mismatch": "The stored key does not match your account's published identity. It was not used.",
   "e2ee.error.locked": "Unlock this device first.",
+  "e2ee.error.already_set_up": "Encryption is already set up for this account. Unlock with your recovery key instead.",
   "security.factors": "Second factor",
   "security.factors_hint": "Needed at every sign-in with your password. Keep at least one; two are better.",
   "security.totp_on": "Active",

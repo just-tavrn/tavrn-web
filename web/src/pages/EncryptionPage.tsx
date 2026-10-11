@@ -65,7 +65,9 @@ export function EncryptionPage() {
       const status = await useE2ee.getState().refresh();
       // Back from the provider's confirmation of an identity reset (SSO accounts, APPLICATIONS.md §8.4).
       if (params.get("reset") === "sso" && hasReauthToken()) return setMode("reset");
-      if (!me.data.has_identity_key) return setMode("setup");
+      // A node that says "no identity key" while this device holds the account's master secret does not make it set up
+      // anew (that would replace its local data): it unlocks. An unlocked store is an interrupted setup to finish.
+      if (!me.data.has_identity_key) return setMode(status === "locked" ? "unlock" : "setup");
       // Opened from the security settings ("Reset security key", ENCRYPTION.md §9).
       if (params.get("reset") === "1") return setMode("reset");
       if (status === "unlocked") return done();
@@ -101,6 +103,8 @@ export function EncryptionPage() {
       done();
     } catch (e) {
       setError(describeError(e));
+      // The account is set up already (local master secret or recovery entry): unlock instead.
+      if ((e as { name?: string; code?: string }).name === "E2eeError" && (e as { code?: string }).code === "already_set_up") setMode("unlock");
     } finally {
       setBusy(false);
     }

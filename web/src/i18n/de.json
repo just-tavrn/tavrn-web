@@ -1540,6 +1540,7 @@
   "e2ee.error.no_passkey_entry": "Dieser Passkey ist nicht zum Entsperren deiner Nachrichten eingerichtet.",
   "e2ee.error.identity_mismatch": "Der gespeicherte Schlüssel passt nicht zur veröffentlichten Identität deines Kontos und wurde nicht verwendet.",
   "e2ee.error.locked": "Entsperre zuerst dieses Gerät.",
+  "e2ee.error.already_set_up": "Die Verschlüsselung ist für dieses Konto bereits eingerichtet. Entsperre stattdessen mit deinem Wiederherstellungsschlüssel.",
   "security.factors": "Zweiter Faktor",
   "security.factors_hint": "Wird bei jeder Anmeldung mit Passwort gebraucht. Mindestens einer muss bleiben, zwei sind besser.",
   "security.totp_on": "Aktiv",

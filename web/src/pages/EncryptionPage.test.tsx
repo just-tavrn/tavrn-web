@@ -50,6 +50,8 @@ describe("EncryptionPage", () => {
     const calls = mockFetch({
       "/users/me/identity": (init) => ((identity = (JSON.parse(init.body as string) as { identity_public_key: string }).identity_public_key), { body: {} }),
       "/users/me/secret-storage/recovery": { body: {} },
+      // No recovery entry yet: the account is not set up (setup refuses otherwise).
+      "/users/me/secret-storage": { body: { items: [] } },
       [`/users/me/devices/${DEV}/key-packages`]: (init) => ({ body: { count: init.method === "POST" ? 20 : 0 } }),
       [`/users/me/devices/${DEV}/key`]: { body: {} },
       [`/users/${user.username}/keys`]: () => ({ body: { user: user.address, identity_public_key: identity, devices: [] } }),
@@ -102,6 +104,19 @@ describe("EncryptionPage", () => {
     await u.click(screen.getByRole("button", { name: "Entsperren" }));
     expect(await screen.findByText("Raumseite")).toBeInTheDocument();
     expect(cryptoStore.masterSecret()).toEqual(master.toBytes());
+  });
+
+  it("a node that says \"no identity key\" to a device with locked local data gets the unlock screen, not a new setup", async () => {
+    const user = signIn(false);
+    const master = MasterSecret.generate();
+    await cryptoStore.saveMaster(user.address, DEV, master.toBytes(), { lockOnClose: true });
+    cryptoStore.lock();
+    mockFetch({ "/users/me/secret-storage": { body: { items: [] } }, "/api/v1/users/me": { body: user } });
+    renderPage();
+    expect(await screen.findByRole("heading", { name: "Verschlüsselte Nachrichten entsperren" })).toBeInTheDocument();
+    expect(screen.queryByTestId("recovery-key-words")).not.toBeInTheDocument();
+    // The local data is still there.
+    expect(await cryptoStore.status(user.address)).toBe("locked");
   });
 
   it("offers the degraded mode and the identity reset with a warning", async () => {
