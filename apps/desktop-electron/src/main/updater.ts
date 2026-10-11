@@ -12,7 +12,11 @@
  *   writes it into the package's package.json as `tavrn.updaterPubkey`; minisign.ts), its trusted comment names this
  *   feed file and the feed's version,
  * - the signed feed announces the version electron-updater found, and lists every file electron-updater would download
- *   with the same SHA-512.
+ *   with the same SHA-512;
+ * - everything else electron-updater parsed from its own (unsigned) copy of the feed equals the signed feed: every
+ *   top-level field (path, sha512, release date, administrator rights, staged rollout, …) and every field of every file
+ *   (size, block map size, …); only the release name and notes the GitHub provider adds are exempt (shown as text).
+ *   A feed with web-installer `packages` is refused outright, and electron-updater's web installer is switched off.
  *
  * That check runs before an update is offered and again right before the download, so electron-updater downloads and
  * installs only files whose SHA-512 the key vouches for. A refusal is logged with its reason and answers
@@ -56,8 +60,12 @@ export interface FeedCheck {
 export interface FoundUpdate {
   version: string;
   tag?: string;
-  files?: readonly { url: string; sha512: string }[];
+  files?: readonly ({ url: string; sha512: string } & Record<string, unknown>)[];
+  [field: string]: unknown;
 }
+
+/** Fields of `updateInfo` the GitHub provider adds from the release page (not from the feed); shown as text only. */
+const PROVIDER_FIELDS = new Set(["tag", "releaseName", "releaseNotes"]);
 
 const NAME = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,99})$/;
 const TAG = /^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
@@ -111,6 +119,63 @@ export function parseFeed(text: string): { version: string; files: { url: string
     if (sha && current) current.sha512 = scalar(sha[1]!);
   }
   return { version, files };
+}
+
+/**
+ * Every field of an electron-builder feed: the top-level scalars, the scalar fields of each `files` entry, and the names
+ * of all top-level keys (also those with nested values, like `packages`).
+ */
+export function parseFeedFields(text: string): { top: Record<string, string>; files: Record<string, string>[]; keys: Set<string> } {
+  const top: Record<string, string> = {};
+  const files: Record<string, string>[] = [];
+  const keys = new Set<string>();
+  let inFiles = false;
+  let current: Record<string, string> | null = null;
+  for (const line of text.split(/\r?\n/)) {
+    const key = /^([A-Za-z0-9]+):\s*(.*)$/.exec(line);
+    if (key) {
+      keys.add(key[1]!);
+      inFiles = key[1] === "files";
+      current = null;
+      if (key[2]!.trim() !== "") top[key[1]!] = scalar(key[2]!);
+      continue;
+    }
+    if (!inFiles) continue;
+    const item = /^\s+-\s+([A-Za-z0-9]+):\s*(.*)$/.exec(line);
+    if (item) {
+      current = { [item[1]!]: scalar(item[2]!) };
+      files.push(current);
+      continue;
+    }
+    const field = /^\s+([A-Za-z0-9]+):\s*(.*)$/.exec(line);
+    if (field && current) current[field[1]!] = scalar(field[2]!);
+  }
+  return { top, files, keys };
+}
+
+/** A parsed scalar as the feed's text has it (dates as electron-builder writes them). */
+function same(found: unknown, signed: string | undefined): boolean {
+  if (signed === undefined) return false;
+  if (found instanceof Date) return !Number.isNaN(Date.parse(signed)) && found.getTime() === Date.parse(signed);
+  if (typeof found === "string" || typeof found === "number" || typeof found === "boolean") return String(found) === signed;
+  return false;
+}
+
+/** Throws unless every field electron-updater parsed (apart from the provider's) equals the signed feed's. */
+function compareWholeInfo(found: FoundUpdate, signed: ReturnType<typeof parseFeedFields>): void {
+  if (signed.keys.has("packages") || found.packages !== undefined) throw new MinisignError("the feed lists web-installer packages, which this app never installs");
+  for (const [field, value] of Object.entries(found)) {
+    if (PROVIDER_FIELDS.has(field) || field === "files" || value === undefined || value === null) continue;
+    if (!same(value, signed.top[field])) throw new MinisignError(`${field} differs from the signed feed`);
+  }
+  for (const file of found.files ?? []) {
+    const match = signed.files.find((f) => f.url === file.url && f.sha512 === file.sha512);
+    if (!match) continue; // reported by the files check
+    for (const [field, value] of Object.entries(file)) {
+      if (value === undefined || value === null) continue;
+      if (!same(value, match[field])) throw new MinisignError(`${field} of ${file.url} differs from the signed feed`);
+    }
+  }
 }
 
 /** The feed's settings and the update key of a package, or null: no updates (development, no feed, no valid key). */
@@ -171,6 +236,7 @@ export async function verifyFeed(check: FeedCheck, found: FoundUpdate): Promise<
     for (const file of files) {
       if (!signedFeed.files.some((f) => f.url === file.url && f.sha512 === file.sha512)) throw new MinisignError(`${file.url} is not in the signed feed with this SHA-512`);
     }
+    compareWholeInfo(found, parseFeedFields(feed.toString("utf8")));
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
     (check.log ?? ((m: string) => console.error(m)))(`tavrn: refused the update to ${found.version}: ${reason}`);
@@ -198,6 +264,8 @@ export function notesText(notes: unknown): string | null {
 interface AutoUpdater {
   autoDownload: boolean;
   autoInstallOnAppQuit: boolean;
+  /** NSIS web installer packages (`packages` in the feed): never used by this app. */
+  disableWebInstaller?: boolean;
   checkForUpdates(): Promise<{ isUpdateAvailable?: boolean; updateInfo: FoundUpdate & { releaseNotes?: unknown } } | null>;
   downloadUpdate(): Promise<unknown>;
   quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): void;
@@ -208,8 +276,14 @@ async function autoUpdater(): Promise<AutoUpdater> {
   const mod = (await import("electron-updater")) as unknown as { autoUpdater?: AutoUpdater; default?: { autoUpdater: AutoUpdater } };
   const updater = mod.autoUpdater ?? mod.default?.autoUpdater;
   if (!updater) throw new Error("update.unavailable");
+  return updater;
+}
+
+/** Nothing happens on electron-updater's own initiative, and never through a web installer. */
+function configure(updater: AutoUpdater): AutoUpdater {
   updater.autoDownload = false;
   updater.autoInstallOnAppQuit = false;
+  updater.disableWebInstaller = true;
   return updater;
 }
 
@@ -217,7 +291,7 @@ async function autoUpdater(): Promise<AutoUpdater> {
 export function registerUpdaterHandlers(registry: IpcRegistry, feed: FeedCheck | null, load: () => Promise<AutoUpdater> = autoUpdater): void {
   const newer = async () => {
     if (!feed) throw "update.not_configured";
-    const updater = await load();
+    const updater = configure(await load());
     const found = await updater.checkForUpdates();
     const info = found?.isUpdateAvailable ? found.updateInfo : null;
     // Before anything is offered or downloaded: the feed must be signed with the app's key and match.
