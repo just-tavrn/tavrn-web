@@ -7,6 +7,7 @@ import { useEffect } from "react";
 import { useT } from "../i18n";
 import { answerDownloadWarning, useDownloadWarning } from "../stores/downloadWarning";
 import { Button, Dialog } from "./ui";
+import { stripBidi } from "../lib/untrusted";
 
 export function DownloadWarningDialog() {
   const t = useT();
@@ -23,7 +24,7 @@ export function DownloadWarningDialog() {
             <div className="flex gap-2">
               <dt className="shrink-0 text-fg-2">{t("download_warning.file")}</dt>
               <dd className="min-w-0 break-all font-medium text-fg-0" data-testid="download-warning-name">
-                {pending.name}
+                {stripBidi(pending.name)}
               </dd>
             </div>
             <div className="flex gap-2">

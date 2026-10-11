@@ -8,7 +8,7 @@ const member = (name: string, roles: string[] = [], nickname: string | null = nu
 const role = (id: string, position: number, hoist: boolean, color: string | null = null) => ({ id, name: id.toUpperCase(), position, hoist, color, is_everyone: false });
 
 describe("groupMembers", () => {
-  const roles = [role("admin", 10, true, "#f00"), role("mod", 5, true), role("vip", 7, false, "#0f0"), { ...role("everyone", 0, false), is_everyone: true }];
+  const roles = [role("admin", 10, true, "#ff0000"), role("mod", 5, true), role("vip", 7, false, "#00ff00"), { ...role("everyone", 0, false), is_everyone: true }];
   const online = new Set(["anna@x", "bert@x", "cleo@x", "dora@x", "emil@x"]);
 
   it("sections by hoisted roles (position order), then online, then offline", () => {
@@ -32,8 +32,8 @@ describe("groupMembers", () => {
   });
 
   it("colors names by the highest colored role", () => {
-    expect(memberColor({ roles: ["vip", "admin"] }, roles)).toBe("#f00");
-    expect(memberColor({ roles: ["vip", "mod"] }, roles)).toBe("#0f0");
+    expect(memberColor({ roles: ["vip", "admin"] }, roles)).toBe("#ff0000");
+    expect(memberColor({ roles: ["vip", "mod"] }, roles)).toBe("#00ff00");
     expect(memberColor({ roles: [] }, roles)).toBeNull();
   });
 });
@@ -50,6 +50,13 @@ describe("authorLooks: names of message authors like the member list (design not
     expect(looks?.get("mira@t.local")).toEqual({ name: "Mira Kowalski", color: null });
     // No display name: no entry, the row falls back to the address's local part.
     expect(looks?.has("lena@t.local")).toBe(false);
+  });
+
+  it("names lose bidi controls and colours other than #rrggbb are ignored", () => {
+    const roles = [{ id: "r1", name: "Mod", color: "url(https://tracker.example/x)", position: 2, is_everyone: false }];
+    const looks = authorLooks({ roomMembers: [{ nickname: "Eve\u202Enimda", roles: ["r1"], user: { address: "eve@t.local", display_name: "Eve" } }], roles });
+    expect(looks?.get("eve@t.local")).toEqual({ name: "Evenimda", color: null });
+    expect(authorLooks({ people: [{ address: "eve@t.local", display_name: "\u2067Eve" }] })?.get("eve@t.local")?.name).toBe("Eve");
   });
 
   it("nothing known: no map (the rows show the local part)", () => {
