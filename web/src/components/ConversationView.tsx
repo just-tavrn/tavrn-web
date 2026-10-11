@@ -609,6 +609,7 @@ export function ConversationView(p: ConversationViewProps) {
       {messages.isError && <p className="p-4 text-sm text-danger">{describeError(messages.error)}</p>}
       <AuthorProfiles messages={loaded}>
       <MessageList
+        encrypted={p.encrypted}
         messages={loaded}
         currentUserId={user?.id}
         canManage={p.canManage}

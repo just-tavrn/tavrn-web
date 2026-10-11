@@ -25,7 +25,7 @@ import { BotBadge, KeyChangedBadge, SealedMark } from "./Badges";
 import { recheckKey } from "../stores/mls";
 import { contentAttachments, plainMarker, type ContentAttachment, type Decrypted, type DecryptFailure, type PlainStatus } from "@tavrn/e2ee";
 import { UnverifiedMarker, VerifiedBadge } from "./Verification";
-import { showUnverified } from "../lib/unverified";
+import { plainInEncrypted, unverifiedStatus } from "../lib/unverified";
 import { MediaAvatar } from "./Avatar";
 import { useAuthorAvatar } from "./AuthorProfiles";
 import { LinkPreviews } from "./LinkPreviews";
@@ -102,6 +102,7 @@ export function MessageList({
   onJumpLatest,
   usersById,
   canStartThreads = false,
+  encrypted = false,
 }: {
   /** Newest first, as delivered by the API. */
   messages: Message[];
@@ -144,6 +145,11 @@ export function MessageList({
   usersById?: ReadonlyMap<string, User>;
   /** The user may start threads here (`create_threads`); existing threads open either way. */
   canStartThreads?: boolean;
+  /**
+   * The conversation is end-to-end encrypted (DMs always, channels with encryption on): a plaintext message in it is
+   * shown as a mismatch, never as content (ENCRYPTION.md §5.4).
+   */
+  encrypted?: boolean;
 }) {
   const t = useT();
   configureMarkdown({ spoiler: t("markdown.spoiler"), copy: t("markdown.copy_code"), wrap: t("markdown.wrap_code") });
@@ -320,7 +326,7 @@ export function MessageList({
     if (newest.encrypted && !newestDecrypted) return;
     announced.current = newest.id;
     if (!announceMessages || newest.author_id === currentUserId) return;
-    const text = snippet(newest, newestDecrypted) ?? t("messages.encrypted_short");
+    const text = plainInEncrypted(newest, encrypted) ? t("messages.not_e2ee_short") : (snippet(newest, newestDecrypted) ?? t("messages.encrypted_short"));
     setAnnouncement(t("a11y.new_message", { author: authors?.get(newest.author)?.name ?? localName(newest.author), text }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newest?.id, newestDecrypted]);
@@ -389,6 +395,7 @@ export function MessageList({
                   replyTo={m.reply_to_id ? (byId.get(m.reply_to_id) ?? (m.reply_deleted || (!!oldestId && m.reply_to_id >= oldestId) ? "deleted" : null)) : undefined}
                   replyAuthor={m.reply_to_id ? authors?.get(byId.get(m.reply_to_id)?.author ?? "") : undefined}
                   replyDecrypted={m.reply_to_id ? decrypted[m.reply_to_id] : undefined}
+                  conversationEncrypted={encrypted}
                   mentioned={mentionsMe(m, currentAddress) && m.author_id !== currentUserId}
                   botMentions={botMentionTokens(m.mentions, bots, currentAddress ? currentAddress.slice(currentAddress.lastIndexOf("@") + 1) : null).join(" ")}
                 />
@@ -441,9 +448,12 @@ type Shown =
   | { kind: "cipher" }
   | { kind: "undecryptable"; reason: DecryptFailure }
   | { kind: "forged" }
+  /** Plaintext in an end-to-end encrypted conversation: only the node can have put it there. */
+  | { kind: "unencrypted" }
   | { kind: "unknown"; type: string };
 
-function contentOf(m: Message, d: Decrypted | undefined, signature: PlainStatus | undefined, t: ReturnType<typeof useT>): Shown {
+function contentOf(m: Message, d: Decrypted | undefined, signature: PlainStatus | undefined, t: ReturnType<typeof useT>, conversationEncrypted = false): Shown {
+  if (plainInEncrypted(m, conversationEncrypted)) return { kind: "unencrypted" };
   let c = (m.content ?? {}) as AnyContent;
   let files: ContentAttachment[] | undefined;
   let raw: Record<string, unknown> | undefined;
@@ -539,6 +549,8 @@ function MessageAvatar({ address, name, small = false }: { address: string; name
 
 interface RowProps {
   m: Message;
+  /** The conversation is end-to-end encrypted (plaintext in it is a mismatch). */
+  conversationEncrypted?: boolean;
   grouped: boolean;
   own: boolean;
   bot: boolean;
@@ -588,12 +600,12 @@ function snippet(m: Message, d: Decrypted | undefined): string | null {
  * One message. Memoized: with stable props from the list, a new message (20/s under load) renders only
  * its own row instead of every loaded one (design note 9e).
  */
-const MessageRow = memo(function MessageRow({ m, grouped, own, bot, author, replyAuthor, decrypted, signature, editing, setEditingId, canManage, canReact, canPin, roomId, customEmojis, emojiUrls, onReact, onPin, onEdit, onDelete, onReply, onReport, onThread, usersById, canStartThreads, onMarkUnread, replyTo, replyDecrypted, mentioned, botMentions }: RowProps) {
+const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, grouped, own, bot, author, replyAuthor, decrypted, signature, editing, setEditingId, canManage, canReact, canPin, roomId, customEmojis, emojiUrls, onReact, onPin, onEdit, onDelete, onReply, onReport, onThread, usersById, canStartThreads, onMarkUnread, replyTo, replyDecrypted, mentioned, botMentions }: RowProps) {
   const t = useT();
   const locale = useLocale((s) => s.locale);
   const [draft, setDraft] = useState("");
   // `t` is a new function on every render; `locale` stands in for it.
-  const c = useMemo(() => contentOf(m, decrypted, signature, t), [m, decrypted, signature, locale]);
+  const c = useMemo(() => contentOf(m, decrypted, signature, t, conversationEncrypted), [m, decrypted, signature, locale, conversationEncrypted]);
   const body = c.kind === "text" ? c.body : "";
   const resolve = useEmojiResolver();
   // highlight.js arriving re-renders rows with code blocks.
@@ -787,7 +799,7 @@ const MessageRow = memo(function MessageRow({ m, grouped, own, bot, author, repl
               <span className="shrink-0 font-medium text-fg-1" style={replyAuthor?.color ? { color: replyAuthor.color } : undefined}>
                 {replyTo.author_deleted ? t("legal.deleted_user") : replyAuthor?.name || localName(replyTo.author)}
               </span>
-              <span className="min-w-0 truncate">{snippet(replyTo, replyDecrypted) ?? t("messages.encrypted_short")}</span>
+              <span className="min-w-0 truncate">{plainInEncrypted(replyTo, conversationEncrypted) ? t("messages.not_e2ee_short") : (snippet(replyTo, replyDecrypted) ?? t("messages.encrypted_short"))}</span>
             </>
           ) : (
             <span className="italic">{t("menu.message.reply_unloaded")}</span>
@@ -905,6 +917,11 @@ const MessageRow = memo(function MessageRow({ m, grouped, own, bot, author, repl
               ⚠ {t("messages.signature_invalid")} <span className="sr-only">({t("messages.signature_invalid_hint")})</span>
             </p>
           )}
+          {c.kind === "unencrypted" && (
+            <p className="text-sm italic text-danger" data-testid="message-unencrypted">
+              ⚠ {t("messages.not_e2ee")}
+            </p>
+          )}
           {c.kind === "unknown" && <p className="text-sm italic text-fg-2">{t("messages.unknown_type", { type: c.type })}</p>}
           {m.edited_at && c.kind === "text" && <span className="text-xs text-fg-2">{t("messages.edited")}</span>}
           {c.kind === "text" && c.retired && (
@@ -913,14 +930,14 @@ const MessageRow = memo(function MessageRow({ m, grouped, own, bot, author, repl
             </span>
           )}
           {/* Webhook and unsigned bot messages are authenticated by the node (badges), never marked "unverified". */}
-          {c.kind === "text" && showUnverified(m, signature, bot) && (
+          {c.kind === "text" && unverifiedStatus(m, signature, bot) && (
             <span className={m.edited_at ? "ml-1" : ""}>
-              <UnverifiedMarker status={signature!} />
+              <UnverifiedMarker status={unverifiedStatus(m, signature, bot)!} />
             </span>
           )}
           {m.encrypted
             ? c.kind === "text" && !!c.files?.length && <MessageAttachments items={c.files.map((f) => fromEncrypted(f, m.attachments))} author={m.author} own={own} inRoom={!!roomId} />
-            : c.kind !== "forged" && !!m.attachments?.length && <MessageAttachments items={m.attachments.map(fromPlain)} author={m.author} own={own} inRoom={!!roomId} />}
+            : c.kind !== "forged" && c.kind !== "unencrypted" && !!m.attachments?.length && <MessageAttachments items={m.attachments.map(fromPlain)} author={m.author} own={own} inRoom={!!roomId} />}
           <ReactionBar reactions={m.reactions ?? []} canReact={canReact} roomId={roomId} customEmojis={customEmojis} onToggle={onToggleReaction} />
           {m.thread && onThread && <ThreadIndicator summary={m.thread} usersById={usersById} onOpen={() => onThread(m, "reply", body)} />}
         </div>

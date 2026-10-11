@@ -2157,6 +2157,8 @@
   "messages.unverified_unsigned": "Nicht vom Gerät des Absenders signiert (ältere App, Bot oder API-Client). Der Knoten dieses Channels könnte sie geschrieben oder verändert haben.",
   "messages.unverified_unknown": "Das Gerät, das diese Nachricht signiert hat, konnte nicht geprüft werden (zum Beispiel jemand von einem anderen Knoten).",
   "messages.signature_invalid": "Diese Nachricht konnte nicht verifiziert werden",
+  "messages.not_e2ee": "Diese Nachricht war nicht Ende-zu-Ende-verschlüsselt und stammt möglicherweise nicht vom Absender. Sie wird nicht angezeigt.",
+  "messages.not_e2ee_short": "Nachricht nicht Ende-zu-Ende-verschlüsselt",
   "messages.signature_invalid_hint": "Ihre Gerätesignatur ist falsch oder wurde wiederverwendet: der Knoten oder jemand anderes hat sie womöglich verändert. Der Inhalt ist ausgeblendet.",
   "auth.remote_login": "Mit einem Konto eines anderen Knotens anmelden",
   "auth.remote_title": "Konto eines anderen Knotens",
