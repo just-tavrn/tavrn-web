@@ -309,7 +309,7 @@ export function renderMarkdown(src: string, emojiUrls: Record<string, string> = 
 // ---------------------------------------------------------------- documents (legal pages)
 
 const DOC_TAGS = ["p", "br", "strong", "em", "del", "code", "pre", "a", "ul", "ol", "li", "blockquote", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "table", "thead", "tbody", "tr", "th", "td"];
-/** Links a legal document may keep: http(s), mailto, same-site paths (not `//host` or `/\\host`) and fragments. */
+/** Links a legal document may keep: http(s), mailto, same-site paths (not `//host` or `/\host`) and fragments. */
 export const DOC_SAFE_URL = /^(?:https?:|mailto:|\/(?![/\\])|#)/i;
 
 /**
