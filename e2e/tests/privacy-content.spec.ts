@@ -69,7 +69,14 @@ test.describe("Privacy settings for content (design note 4.13)", () => {
     await embeds.getByLabel("Aus").check();
     await expect(page.getByTestId("create-previews")).toBeChecked();
     await expect(page.getByText("Dein Heimatknoten lädt die Seite für die Vorschau und sieht dabei den Link.")).toBeVisible();
+    // Previews while typing in encrypted conversations: off by default, explained, only with the general switch.
+    await expect(page.getByTestId("encrypted-previews")).not.toBeChecked();
+    await expect(page.getByText("Standardmäßig aus.")).toBeVisible();
+    await page.getByTestId("encrypted-previews").check();
+    await page.reload();
+    await expect(page.getByTestId("encrypted-previews")).toBeChecked();
     await page.getByTestId("create-previews").uncheck();
+    await expect(page.getByTestId("encrypted-previews")).toBeDisabled();
     await page.getByTestId("show-previews").uncheck();
     await page.reload();
     await expect(page.getByTestId("metadata-mode").getByLabel("Fragen, wenn welche gefunden werden")).toBeChecked();
@@ -177,9 +184,11 @@ test.describe("Embeds and link previews (design note 4.13 item 7)", () => {
     expect(sent!.content.preview).toMatchObject({ url: "https://news.example/zweiter", title: "Titel von /zweiter", site: "Nachrichten" });
   });
 
-  test("Encrypted channel: the preview travels encrypted inside the content", async ({ page }) => {
+  test("Encrypted channel: no preview while typing by default; when switched on it travels encrypted inside the content", async ({ page }) => {
     test.setTimeout(90_000);
+    let unfurls = 0;
     await page.route("**/api/v1/unfurl?**", (route) => {
+      unfurls++;
       const url = new URL(route.request().url()).searchParams.get("url")!;
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ url, title: "Geheime Schlagzeile", description: "", site: "Nachrichten" }) });
     });
@@ -190,6 +199,18 @@ test.describe("Embeds and link previews (design note 4.13 item 7)", () => {
     await page.getByRole("dialog").getByRole("button", { name: "Erstellen" }).click();
     await expect(page.getByTestId("encrypted-marker")).toBeVisible();
     const input = page.getByLabel("Nachricht", { exact: true });
+    // By default the link never reaches the home node while typing in an encrypted conversation.
+    await input.fill("Siehe https://news.example/geheim");
+    await page.waitForTimeout(2000);
+    await expect(page.getByTestId("compose-preview")).toHaveCount(0);
+    expect(unfurls).toBe(0);
+    // Switched on (Settings → Privacy & safety → "Fetch link previews in encrypted conversations").
+    await page.evaluate(() => {
+      const key = "tavrn.privacy.content";
+      localStorage.setItem(key, JSON.stringify({ ...JSON.parse(localStorage.getItem(key) ?? "{}"), encryptedPreviews: true }));
+    });
+    await page.reload();
+    await expect(page.getByTestId("encrypted-marker")).toBeVisible();
     await input.fill("Siehe https://news.example/geheim");
     await expect(page.getByTestId("compose-preview")).toContainText("Geheime Schlagzeile");
     await page.keyboard.press("Enter");

@@ -11,7 +11,7 @@
 import { create } from "zustand";
 import { TavrnApiError, type ConversationIndexState, type IndexEntry, type TavrnApi } from "@tavrn/sdk";
 import { api } from "../lib/api";
-import { useAuth } from "./auth";
+import { onAccountChange, useAuth } from "./auth";
 import { apiFor, connectNode, homeDomain, useNodes } from "./nodes";
 
 /** An entry; unknown fields written by other clients are kept. */
@@ -200,3 +200,7 @@ export async function syncIndex(): Promise<void> {
 function meAddress(): string | null {
   return useAuth.getState().user?.address ?? null;
 }
+
+// The index of an account that ended (sign-out, forced or in another tab, or another account) is forgotten: it decides
+// which nodes need no confirmation (NodeScope), so the next account must never see it.
+onAccountChange(() => useConversationIndex.getState().reset());

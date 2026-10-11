@@ -14,8 +14,9 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { Attachment } from "@tavrn/sdk";
 import { useNode } from "./NodeScope";
 import { useT } from "../i18n";
-import { decryptAttachment, type ContentAttachment } from "@tavrn/e2ee";
+import { AttachmentIntegrityError, decryptAttachment, verifyPlainAttachment, type ContentAttachment } from "@tavrn/e2ee";
 import { isSvg, safeBlobType, shouldAutoPreview } from "../lib/preview";
+import { stripBidi } from "../lib/untrusted";
 import { usePrivacy } from "../stores/privacy";
 import { toastError } from "../stores/toasts";
 import { saveDownload } from "../lib/download";
@@ -36,13 +37,19 @@ export interface ViewAttachment {
   spoiler?: boolean;
   /** Loads the content from elsewhere than `/blobs/{id}` (files channels, design note 4.13 item 9). */
   load?: () => Promise<Blob>;
+  /**
+   * SHA-256 (base64url) of a plaintext attachment, covered by the message's device signature (FEDERATION.md §10.3):
+   * downloaded bytes that do not match are never shown or saved.
+   */
+  sha256?: string | null;
 }
 
-export const fromPlain = (a: Attachment): ViewAttachment => ({ id: a.id, name: a.name, mime: a.mime, size: a.size, encrypted: null, expired: !!a.expired, spoiler: !!a.spoiler });
+export const fromPlain = (a: Attachment): ViewAttachment => ({ id: a.id, name: stripBidi(a.name), mime: a.mime, size: a.size, encrypted: null, expired: !!a.expired, spoiler: !!a.spoiler, sha256: a.sha256 || null });
 /** An attachment of an encrypted message; `listed` are the node's rows of the message (they carry `expired`). */
 export const fromEncrypted = (a: ContentAttachment, listed?: Attachment[] | null): ViewAttachment => ({
   id: a.id,
-  name: a.name,
+  // Shown and saved without bidi controls: the name the sender declared can otherwise display in another order.
+  name: stripBidi(a.name),
   mime: a.mime,
   size: a.size,
   encrypted: a,
@@ -84,16 +91,27 @@ export function loadAttachment(api: NodeApi, a: ViewAttachment): Promise<Blob> {
           .download(a.id)
           .then(async (blob) => decryptAttachment(new Uint8Array(await blob.arrayBuffer()), enc))
           .then((plain) => new Blob([plain as Uint8Array<ArrayBuffer>], { type: safeBlobType(enc.mime, enc.name) }))
-      : api.attachments.download(a.id).then((blob) => blob.slice(0, blob.size, safeBlobType(a.mime, a.name)));
+      : api.attachments.download(a.id).then(async (blob) => {
+          if (a.sha256) await verifyPlainAttachment(new Uint8Array(await blob.arrayBuffer()), a.sha256);
+          return blob.slice(0, blob.size, safeBlobType(a.mime, a.name));
+        });
     blobs.set(key, p);
     p.catch(() => blobs.delete(key));
   }
   return p;
 }
 
-/** Object URL of an attachment, cached per blob. */
-export function useAttachmentUrl(a: ViewAttachment, enabled: boolean): { url: string | null; failed: boolean; loading: boolean } {
-  const [state, setState] = useState<{ url: string | null; failed: boolean }>({ url: null, failed: false });
+/** Sign-out: drops the downloaded and decrypted attachments of this session and revokes their object URLs. */
+export function forgetAttachments(): void {
+  const urls = [...objectUrls.values()];
+  objectUrls.clear();
+  blobs.clear();
+  for (const p of urls) void p.then((url) => URL.revokeObjectURL(url)).catch(() => undefined);
+}
+
+/** Object URL of an attachment, cached per blob; `tampered`: the bytes do not match the attachment's hash. */
+export function useAttachmentUrl(a: ViewAttachment, enabled: boolean): { url: string | null; failed: boolean; loading: boolean; tampered: boolean } {
+  const [state, setState] = useState<{ url: string | null; failed: boolean; tampered?: boolean }>({ url: null, failed: false });
   // Blobs live on the node of the conversation.
   const { api } = useNode();
   const key = cacheKey(a);
@@ -106,14 +124,14 @@ export function useAttachmentUrl(a: ViewAttachment, enabled: boolean): { url: st
       objectUrls.set(key, p);
       p.catch(() => objectUrls.delete(key));
     }
-    p.then((url) => !cancelled && setState({ url, failed: false })).catch(() => !cancelled && setState({ url: null, failed: true }));
+    p.then((url) => !cancelled && setState({ url, failed: false })).catch((e: unknown) => !cancelled && setState({ url: null, failed: true, tampered: e instanceof AttachmentIntegrityError }));
     return () => {
       cancelled = true;
     };
     // `key` identifies the attachment.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, enabled]);
-  return { ...state, loading: enabled && !state.url && !state.failed };
+  return { url: state.url, failed: state.failed, tampered: !!state.tampered, loading: enabled && !state.url && !state.failed };
 }
 
 export function formatSize(bytes: number): string {
@@ -177,9 +195,11 @@ export function DownloadButton({ a, className = "" }: { a: ViewAttachment; class
 
 function Failed({ a }: { a: ViewAttachment }) {
   const t = useT();
+  // A plaintext file whose bytes do not match its signed hash, or an encrypted one that does not decrypt.
+  const key = a.encrypted ? "attachment.decrypt_failed" : "attachment.tampered";
   return (
-    <p className="mt-1 text-sm italic text-fg-2" data-testid="attachment-failed" title={t("attachment.decrypt_failed_hint")}>
-      ⚠ {t("attachment.decrypt_failed", { name: a.name })}
+    <p className="mt-1 text-sm italic text-fg-2" data-testid="attachment-failed" title={t(`${key}_hint`)}>
+      ⚠ {t(key, { name: a.name })} <span className="sr-only">({t(`${key}_hint`)})</span>
     </p>
   );
 }
@@ -198,8 +218,8 @@ function Caption({ a }: { a: ViewAttachment }) {
 
 function ImageThumb({ a, onOpen }: { a: ViewAttachment; onOpen: () => void }) {
   const t = useT();
-  const { url, failed } = useAttachmentUrl(a, true);
-  if (failed && a.encrypted) return <Failed a={a} />;
+  const { url, failed, tampered } = useAttachmentUrl(a, true);
+  if (failed && (a.encrypted || tampered)) return <Failed a={a} />;
   return (
     <figure className="mt-1 w-fit max-w-full" data-testid="attachment-image">
       {url ? (
@@ -217,12 +237,12 @@ function ImageThumb({ a, onOpen }: { a: ViewAttachment; onOpen: () => void }) {
 function VideoInline({ a, onEnlarge }: { a: ViewAttachment; onEnlarge: () => void }) {
   const t = useT();
   const [started, setStarted] = useState(false);
-  const { url, failed, loading } = useAttachmentUrl(a, started);
+  const { url, failed, loading, tampered } = useAttachmentUrl(a, started);
   const video = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     if (started && url) void video.current?.play().catch(() => undefined);
   }, [started, url]);
-  if (failed && a.encrypted) return <Failed a={a} />;
+  if (failed && (a.encrypted || tampered)) return <Failed a={a} />;
   return (
     <figure className="mt-1 w-fit max-w-full" data-testid="attachment-video">
       <div className="relative w-80 max-w-full overflow-hidden rounded-md border border-line bg-black">
@@ -249,7 +269,7 @@ function VideoInline({ a, onEnlarge }: { a: ViewAttachment; onEnlarge: () => voi
 export function AudioPlayer({ a }: { a: ViewAttachment }) {
   const t = useT();
   const [wanted, setWanted] = useState(false);
-  const { url, failed, loading } = useAttachmentUrl(a, wanted);
+  const { url, failed, loading, tampered } = useAttachmentUrl(a, wanted);
   const audio = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
@@ -264,7 +284,7 @@ export function AudioPlayer({ a }: { a: ViewAttachment }) {
     if (el.paused) void el.play().catch(() => undefined);
     else el.pause();
   };
-  if (failed && a.encrypted) return <Failed a={a} />;
+  if (failed && (a.encrypted || tampered)) return <Failed a={a} />;
   return (
     <div className="mt-1 flex w-80 max-w-full items-center gap-2 rounded-md border border-line bg-bg-0 px-2 py-1.5" data-testid="audio-player" data-playing={playing || undefined}>
       <button type="button" onClick={toggle} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-accent-text hover:bg-accent-hover" aria-label={playing ? t("media.pause") : t("media.play", { name: a.name })} data-testid="audio-play">

@@ -111,6 +111,24 @@ test("the node picker: the shell's resolver, the advanced URL and address first"
   await page.screenshot({ path: testInfo.outputPath("login.png") });
 });
 
+test("contacts no host but this computer at the first start (no dictionary downloads)", async ({}, testInfo) => {
+  // Chromium's own log of every request and host lookup of the app's browser process (the sandbox stays on).
+  const log = testInfo.outputPath("net-log.json");
+  run = await startApp({ args: [`--log-net-log=${log}`] });
+  await expect(run.page).toHaveURL(/^app:\/\/tavrn\//);
+  await expect(run.page.locator('input[name="address"]')).toBeVisible();
+  // The spellchecker would fetch its dictionaries within the first seconds.
+  await run.page.waitForTimeout(8000);
+  await run.close();
+  run = null;
+  const text = readFileSync(log, "utf8");
+  const hosts = new Set<string>();
+  for (const m of text.matchAll(/\b(?:https?|wss?):\/\/([^/"\\:]+)/gi)) hosts.add(m[1]!.toLowerCase());
+  for (const m of text.matchAll(/"host":"([^"\\:]+)/gi)) hosts.add(m[1]!.toLowerCase());
+  const foreign = [...hosts].filter((h) => !["localhost", "127.0.0.1", "[::1]", "::1"].includes(h));
+  expect(foreign).toEqual([]);
+});
+
 test("signs in with password and TOTP in the app, without a browser", async () => {
   const account = await registerAccount();
   run = await startApp({ settings: chosen });

@@ -14,7 +14,9 @@ import { useInteractions } from "../stores/interactions";
 import { api } from "../lib/api";
 import { getMls, ownIdentityRotated, resetMls, useMlsUi } from "../stores/mls";
 import { e2eeContext, useE2ee } from "../stores/e2ee";
-import { forgetIdentityKeepDevice, localIdentityKey, syncIdentity } from "../crypto/e2ee";
+import { forgetIdentityKeepDevice, syncIdentity } from "../crypto/e2ee";
+import { cryptoStore } from "../crypto/store";
+import { ownIdentityChange } from "../lib/ownIdentity";
 import { qualify, splitIdentity } from "@tavrn/e2ee";
 import { acceptInvite, autoAccepts } from "../lib/invites";
 import { mayManageRoom } from "../lib/rooms";
@@ -35,6 +37,7 @@ import { registerFilesChannel, useHistoryKeys } from "../files/registry";
 import { parseHistoryPolicy } from "@tavrn/e2ee";
 import { alertText, reportCreated, type ModerationAlert, type ReportCreated } from "../moderation/realtime";
 import { rememberDeleted } from "../moderation/deletedIds";
+import { viaOf } from "../components/ViaNode";
 
 /**
  * May this user commit removals of departed members in a conversation (`mls.remove_needed`)? DMs and group DMs:
@@ -172,7 +175,9 @@ export async function onInvite(invite: PendingInvite, queryClient: QueryClient) 
     }
   }
   const name = invite.room?.name ?? invite.conversation?.name ?? "";
-  useToasts.getState().push({ kind: "info", title: t(invite.kind === "room" ? "invites.toast_room" : "invites.toast_conversation", { name, inviter: invite.inviter }), detail: invite.node });
+  // A sender named by a node that is not their home node is not verified: the toast says "via <node>" too.
+  const via = viaOf(invite);
+  useToasts.getState().push({ kind: "info", title: t(invite.kind === "room" ? "invites.toast_room" : "invites.toast_conversation", { name, inviter: invite.inviter }), detail: via ? `${invite.node} · ${t("invites.via", { node: via })}` : invite.node });
 }
 
 interface RealtimeState {
@@ -387,7 +392,7 @@ export function useRealtime() {
       // 4001 (expired token): one refresh, shared with the API client and the other tabs (PROTOCOL.md §5b).
       refreshToken: refreshHome,
       // Only when the node refused the session itself: network errors keep the user signed in.
-      onAuthFailure: () => useAuth.getState().logout(),
+      onAuthFailure: () => useAuth.getState().sessionRefused(),
     });
     socketRef.current = socket;
     useRealtimeState.setState({ socket });
@@ -437,9 +442,14 @@ export function useRealtime() {
       const me = useAuth.getState().user;
       if (!me) return;
       if (address !== me.address) return contactIdentityChanged(address, queryClient);
-      const local = localIdentityKey();
-      const published = (await api.keys.get(me.username).catch(() => null))?.identity_public_key ?? null;
-      if (!local || !published || local === published) return; // this device did the reset
+      const doc = await api.keys.get(me.username).catch(() => null);
+      const change = await ownIdentityChange(cryptoStore, doc);
+      if (change === "same" || change === "unknown") return; // this device did it, or nothing to compare
+      if (change === "rotated") {
+        // A rotation with continuity on another device (§9a): follow it, nothing is wiped.
+        await onIdentityRotated(address);
+        return;
+      }
       resetMls();
       await forgetIdentityKeepDevice(me.address);
       useE2ee.getState().set("none");

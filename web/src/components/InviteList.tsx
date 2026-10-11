@@ -8,6 +8,7 @@ import { acceptInvite } from "../lib/invites";
 import { useT } from "../i18n";
 import { toastError } from "../stores/toasts";
 import { Avatar, Button } from "./ui";
+import { ViaNode, viaOf } from "./ViaNode";
 
 /** The invite list of the home node (null while the node has none: 404 before federation step 4). */
 export function usePendingInvites() {
@@ -72,7 +73,15 @@ export function InviteList() {
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium">{name}</p>
                 {/* Full addresses and the node domain at security-relevant spots (design note 9d). */}
-                <p className="truncate text-xs text-fg-2">{t("home.invite_from", { inviter: i.inviter, node: i.node })}</p>
+                <p className="truncate text-xs text-fg-2">
+                  {t("home.invite_from", { inviter: i.inviter, node: i.node })}
+                  {viaOf(i) && (
+                    <>
+                      {" "}
+                      <ViaNode node={viaOf(i)!} />
+                    </>
+                  )}
+                </p>
               </div>
               <div className="flex gap-2">
                 <Button disabled={busy === i.id} onClick={() => void accept(i)}>

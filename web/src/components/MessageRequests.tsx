@@ -20,6 +20,7 @@ import { usePendingInvites } from "./InviteList";
 import { useShell } from "./AppShell";
 import { NOTE_MAX } from "./FriendRequestForm";
 import { Button, Dialog, Field, Input } from "./ui";
+import { viaOf } from "./ViaNode";
 
 /** One request, wherever it is hosted. */
 export interface RequestItem {
@@ -35,6 +36,8 @@ export interface RequestItem {
   createdAt: string;
   /** Entry of the invite list on the home node (requests hosted elsewhere). */
   inviteId?: string;
+  /** The node that named a sender who is not its own user (not verified by the sender's home node). */
+  via?: string;
 }
 
 type ConversationSummary = { id?: string; kind?: string; requested?: boolean; shared_rooms?: Array<{ name?: string }> };
@@ -62,6 +65,7 @@ export function mergeRequests(local: Array<{ conversation: { id: string; kind: s
       sharedRooms: (c.shared_rooms ?? []).map((s) => s.name ?? "").filter(Boolean),
       createdAt: inv.received_at,
       inviteId: inv.id,
+      ...(viaOf(inv) ? { via: viaOf(inv)! } : {}),
     });
   }
   return out.sort((a, b) => b.createdAt.localeCompare(a.createdAt));

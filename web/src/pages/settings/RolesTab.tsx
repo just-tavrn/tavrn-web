@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router";
 import { EVERYONE_RESTRICTED, Permission, hasPermission, parsePermissions, type Role, type RoomDetail } from "@tavrn/sdk";
 import { canManageRole, planRoleReorder, sortRoles, topPosition } from "../../lib/hierarchy";
+import { safeColor } from "../../lib/untrusted";
 import { useNode } from "../../components/NodeScope";
 import { useT } from "../../i18n";
 import { toastError, useToasts } from "../../stores/toasts";
@@ -119,7 +120,7 @@ export function RolesTab({ room }: { room: RoomDetail }) {
                   </span>
                 )}
                 <button type="button" onClick={() => setSelectedId(r.id)} className={`flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-sm ${selected?.id === r.id ? "bg-bg-3 text-fg-0" : "text-fg-1 hover:bg-bg-3/60"}`}>
-                  <span className="inline-block h-3 w-3 shrink-0 rounded-full" style={{ background: r.color ?? "#7c8494" }} aria-hidden="true" />
+                  <span className="inline-block h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: safeColor(r.color) ?? "#7c8494" }} aria-hidden="true" />
                   <span className="truncate">{r.name}</span>
                   {r.application_id && (
                     <span role="img" className="shrink-0 text-[10px]" title={t("roles.managed_by", { name: managedBy(r) ?? "" })} aria-label={t("roles.managed_by", { name: managedBy(r) ?? "" })} data-testid="role-managed-icon">

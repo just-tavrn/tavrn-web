@@ -7,6 +7,7 @@
  */
 import type { Member, Role } from "@tavrn/sdk";
 import { sortRoles } from "./hierarchy";
+import { safeColor, stripBidi } from "./untrusted";
 
 export type MemberSection = { kind: "role"; id: string; role: Pick<Role, "id" | "name" | "color" | "position">; members: Member[] } | { kind: "online" | "offline"; id: string; members: Member[] };
 
@@ -40,7 +41,8 @@ export function groupMembers(members: Member[], roles: Pick<Role, "id" | "name" 
 
 /** The color of a member's name: their highest role with a color. */
 export function memberColor(member: Pick<Member, "roles">, roles: Pick<Role, "id" | "name" | "color" | "position" | "is_everyone">[]): string | null {
-  return sortRoles(roles.filter((r) => !r.is_everyone && r.color && member.roles.includes(r.id)))[0]?.color ?? null;
+  // Only `#rrggbb` (a node of another operator could send any CSS value).
+  return safeColor(sortRoles(roles.filter((r) => !r.is_everyone && safeColor(r.color) && member.roles.includes(r.id)))[0]?.color);
 }
 
 /** How a message author is shown: the name and its colour. */
@@ -61,12 +63,12 @@ export function authorLooks(src: {
 }): Map<string, AuthorName> | undefined {
   if (src.roomMembers) {
     const map = new Map<string, AuthorName>();
-    for (const m of src.roomMembers) map.set(m.user.address, { name: m.nickname || m.user.display_name, color: src.roles ? memberColor(m, src.roles) : null });
+    for (const m of src.roomMembers) map.set(m.user.address, { name: stripBidi(m.nickname || m.user.display_name), color: src.roles ? memberColor(m, src.roles) : null });
     return map;
   }
   if (src.people) {
     const map = new Map<string, AuthorName>();
-    for (const p of src.people) if (p.display_name) map.set(p.address, { name: p.display_name, color: null });
+    for (const p of src.people) if (p.display_name && stripBidi(p.display_name)) map.set(p.address, { name: stripBidi(p.display_name), color: null });
     return map;
   }
   return undefined;

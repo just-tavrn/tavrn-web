@@ -10,7 +10,8 @@ name: End-to-end
 on:
   # Development phase (2026-10-08): the full suite (about 40 minutes on the single e2e runner) runs every night
   # against the current node image and by hand (`gh workflow run e2e.yml --ref <branch>` for a pull request
-  # branch). Pushes and pull requests run the quick checks of ci.yml only; merges do not wait for this suite.
+  # branch whose diff you have read: the runner executes that branch's code; dependabot/* branches are refused).
+  # Pushes and pull requests run the quick checks of ci.yml only; merges do not wait for this suite.
   schedule:
     - cron: "17 3 * * *"
   workflow_dispatch:

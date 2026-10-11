@@ -151,6 +151,41 @@ test("refuses unsigned, foreign, changed or mismatched feeds with a logged reaso
   }
 });
 
+test("everything electron-updater acts on must match the signed feed", async () => {
+  const key = minisignKeyPair();
+  const files = { [`${BASE}/latest-linux.yml`]: LINUX_FEED, [`${BASE}/latest-linux.yml.minisig`]: signed(key, LINUX_FEED) };
+  // electron-updater's whole parsed info of the real feed, plus what the GitHub provider adds (tag, name, notes).
+  const full = {
+    version: "0.3.0",
+    tag: "v0.3.0",
+    releaseName: "v0.3.0",
+    releaseNotes: "<p>New</p>",
+    files: [
+      { url: "Tavrn-0.3.0.AppImage", sha512: "aGVsbG8=", size: 120000000, blockMapSize: 125000 },
+      { url: "tavrn_0.3.0_amd64.deb", sha512: "d29ybGQ=", size: 90000000 },
+    ],
+    path: "Tavrn-0.3.0.AppImage",
+    sha512: "aGVsbG8=",
+    releaseDate: "2026-10-10T12:00:00.000Z",
+  };
+  await verifyFeed(feedCheck(key, files), full);
+  const withPackages = LINUX_FEED + "packages:\n  x64:\n    path: evil.7z\n    sha512: ZXZpbA==\n";
+  const cases: [string, Record<string, string>, Record<string, unknown>, RegExp][] = [
+    ["a web-installer package electron-updater read", files, { ...full, packages: { x64: { path: "evil.7z", sha512: "ZXZpbA==" } } }, /packages/],
+    ["a signed feed with web-installer packages", { [`${BASE}/latest-linux.yml`]: withPackages, [`${BASE}/latest-linux.yml.minisig`]: signed(key, withPackages) }, full, /packages/],
+    ["administrator rights the signed feed does not ask for", files, { ...full, isAdminRightsRequired: true }, /isAdminRightsRequired/],
+    ["a staged rollout the signed feed does not name", files, { ...full, stagingPercentage: 1 }, /stagingPercentage/],
+    ["another path", files, { ...full, path: "evil.AppImage" }, /path/],
+    ["another size of a file", files, { ...full, files: [{ ...full.files[0]!, size: 1 }] }, /size/],
+    ["a field of a file the signed feed lacks", files, { ...full, files: [{ ...full.files[0]!, isAdminRightsRequired: true }] }, /isAdminRightsRequired/],
+  ];
+  for (const [what, release, info, reason] of cases) {
+    const logs: string[] = [];
+    await assert.rejects(verifyFeed(feedCheck(key, release, logs), info as Parameters<typeof verifyFeed>[1]), (e) => e === "update.signature_invalid", what);
+    assert.match(logs[0] ?? "", reason, what);
+  }
+});
+
 test("release notes become plain text", () => {
   assert.equal(notesText("<p>New <b>things</b> &amp; fixes</p><ul><li>One</li><li>Two</li></ul>"), "New things & fixes\nOne\nTwo");
   assert.equal(notesText([{ note: "<p>A</p>" }, { note: null }, { note: "B" }]), "A\n\nB");
@@ -160,16 +195,15 @@ test("release notes become plain text", () => {
 
 function fakeUpdater(available: boolean, info: Record<string, unknown> = { version: "0.3.0", releaseNotes: "<p>New</p>" }) {
   const calls: string[] = [];
-  return {
-    calls,
-    load: async () => ({
-      autoDownload: true,
-      autoInstallOnAppQuit: true,
-      checkForUpdates: async () => (calls.push("check"), { isUpdateAvailable: available, updateInfo: info as { version: string } }),
-      downloadUpdate: async () => void calls.push("download"),
-      quitAndInstall: () => void calls.push("install"),
-    }),
+  const updater = {
+    autoDownload: true,
+    autoInstallOnAppQuit: true,
+    disableWebInstaller: false,
+    checkForUpdates: async () => (calls.push("check"), { isUpdateAvailable: available, updateInfo: info as { version: string } }),
+    downloadUpdate: async () => void calls.push("download"),
+    quitAndInstall: () => void calls.push("install"),
   };
+  return { calls, updater, load: async () => updater };
 }
 
 test("checkUpdate and installUpdate as the Tauri commands answer, after the feed's signature", async () => {
@@ -188,6 +222,8 @@ test("checkUpdate and installUpdate as the Tauri commands answer, after the feed
   assert.deepEqual(await on.dispatch("tavrn:updater.checkUpdate", "checkUpdate", me, []), { ok: true, value: { version: "0.3.0", notes: "New" } });
   assert.deepEqual(await on.dispatch("tavrn:updater.installUpdate", "installUpdate", me, []), { ok: true, value: undefined });
   assert.deepEqual(u.calls, ["check", "check", "download", "install"]);
+  // electron-updater never installs a web-installer package, never on its own.
+  assert.deepEqual([u.updater.disableWebInstaller, u.updater.autoDownload, u.updater.autoInstallOnAppQuit], [true, false, false]);
   assert.equal(check.asked.length, 4, "the feed and its signature are checked for the offer and again before the download");
 
   const none = new IpcRegistry((e) => e === me);

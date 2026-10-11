@@ -2,7 +2,7 @@
 /** Encryption status of this device for the signed-in account (drives the unlock screen and banner). */
 import { create } from "zustand";
 import { api, quietApi } from "../lib/api";
-import { useAuth } from "./auth";
+import { beginSignOut, useAuth } from "./auth";
 import { ensureDevice, localStatus, syncIdentity, wipeLocal, type E2eeContext } from "../crypto/e2ee";
 import { cryptoStore, type CryptoStatus } from "../crypto/store";
 import { useAuthFlow } from "./authFlow";
@@ -12,6 +12,8 @@ import { useConversationIndex } from "./conversationIndex";
 import { rememberSsoLogout } from "../lib/sso";
 import { wipeLocalIndex } from "../search/local";
 import { usePush } from "./push";
+import { forgetAttachments } from "../components/AttachmentView";
+import { forgetThumbnails } from "../files/e2ee";
 
 interface E2eeState {
   /** null until checked. */
@@ -77,6 +79,9 @@ export async function e2eeContext(): Promise<E2eeContext> {
  */
 export async function signOut(): Promise<void> {
   const user = useAuth.getState().user;
+  // The logout revokes the session at once: the socket and requests in flight see that before the logout's answer
+  // arrives. The account stays signed in here until the provider's logout URL is kept and the local keys are gone.
+  const endSignOut = beginSignOut();
   try {
     // Epoch keys not uploaded yet would be lost with the local data.
     await flushMls();
@@ -88,15 +93,22 @@ export async function signOut(): Promise<void> {
     // SSO session: offer "also sign out at the provider" on the login page (APPLICATIONS.md §8.6).
     if (out?.end_session_url) rememberSsoLogout(out.end_session_url);
   } finally {
-    useConversationIndex.getState().reset();
-    resetMls();
-    // The local search index goes with the other local data (tavrn-protocol/SEARCH.md §3.5).
-    if (user) await wipeLocalIndex(user.address).catch(() => undefined);
-    if (user) await wipeLocal(user.address);
-    cryptoStore.lock();
-    useAuthFlow.getState().clearPreauth();
-    useAuthFlow.getState().setSetup(null);
-    useE2ee.setState({ status: null });
+    try {
+      useConversationIndex.getState().reset();
+      resetMls();
+      // Decrypted attachments and thumbnails of this session go with the keys (object URLs revoked).
+      forgetAttachments();
+      forgetThumbnails();
+      // The local search index goes with the other local data (tavrn-protocol/SEARCH.md §3.5).
+      if (user) await wipeLocalIndex(user.address).catch(() => undefined);
+      if (user) await wipeLocal(user.address);
+      cryptoStore.lock();
+      useAuthFlow.getState().clearPreauth();
+      useAuthFlow.getState().setSetup(null);
+      useE2ee.setState({ status: null });
+    } finally {
+      endSignOut();
+    }
     useAuth.getState().logout();
   }
 }

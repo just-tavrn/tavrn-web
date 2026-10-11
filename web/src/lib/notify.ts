@@ -6,6 +6,7 @@
  * native one while its window is not focused). Previews only show plaintext; the content of encrypted messages
  * is never put into a system notification.
  */
+import { plainInEncrypted } from "./unverified";
 import type { QueryClient } from "@tanstack/react-query";
 import type { Conversation, Message, RoomDetail } from "@tavrn/sdk";
 import { t } from "../i18n";
@@ -23,9 +24,12 @@ import { platform } from "../platform";
 /** Longest preview text. */
 const PREVIEW = 140;
 
-/** The text of a plaintext message for previews (null for encrypted or non-text content). */
-export function plainPreview(m: Pick<Message, "encrypted" | "content">): string | null {
-  if (m.encrypted) return null;
+/**
+ * The text of a plaintext message for previews (null for encrypted or non-text content, and for plaintext in an end-to-end
+ * encrypted conversation, which only the node can have put there: ENCRYPTION.md §5.4).
+ */
+export function plainPreview(m: Pick<Message, "encrypted" | "content">, conversationEncrypted = false): string | null {
+  if (m.encrypted || plainInEncrypted(m, conversationEncrypted)) return null;
   const c = m.content as { type?: unknown; body?: unknown } | null;
   if (!c || c.type !== "text" || typeof c.body !== "string") return null;
   const body = c.body.replace(/\s+/g, " ").trim();
@@ -80,7 +84,9 @@ export async function notifyMessage(m: Message, ctx: NotifyContext): Promise<voi
   if (!d.notify) return;
   const author = where.conversation?.members.find((u) => u.address === m.author)?.display_name ?? m.author.split("@")[0] ?? m.author;
   const title = where.room && channel ? t("notify.in_channel", { author, channel: channelName(channel), room: where.room.name }) : where.conversation?.kind === "group" ? t("notify.in_group", { author, group: where.conversation.name || t("notify.group") }) : author;
-  const body = plainPreview(m) ?? (m.encrypted ? t("notify.encrypted") : t("notify.attachment"));
+  // DMs and group DMs are always end-to-end encrypted.
+  const conversationEncrypted = !!where.conversation || !!channel?.encrypted;
+  const body = plainInEncrypted(m, conversationEncrypted) ? t("messages.not_e2ee_short") : (plainPreview(m, conversationEncrypted) ?? (m.encrypted ? t("notify.encrypted") : t("notify.attachment")));
   const channelPath = where.room ? roomPath(ctx.node, where.room.id, m.conversation_id) : conversationPath(ctx.node, m.conversation_id);
   const path = m.thread_id && where.room ? `${channelPath}/threads/${m.thread_id}` : channelPath;
   if (d.important) useNotifications.getState().push({ kind: where.room ? "mention" : "dm", title, body, path });

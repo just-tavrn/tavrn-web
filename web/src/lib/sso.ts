@@ -44,9 +44,23 @@ export async function startSso(api: TavrnApi, purpose: SsoPurpose, next: string,
   const { verifier, challenge } = await createPkce();
   const pending: PendingSso = { state: randomUrlSafe(), verifier, purpose, next: safeNext(next), startedAt: Date.now() };
   const resp = await api.oidc.start({ purpose, code_challenge: challenge, client_state: pending.state, device_name: "Browser" });
+  const target = authorizationUrl(resp.authorization_url);
   sessionStorage.setItem(PENDING_KEY, JSON.stringify(pending));
   forgetSsoLogout();
-  navigate(resp.authorization_url);
+  navigate(target);
+}
+
+/** The provider's authorization URL as the node names it: https only (plain http only to this machine, for development). */
+function authorizationUrl(raw: string): string {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    throw new Error("invalid authorization URL");
+  }
+  const local = u.hostname === "localhost" || u.hostname === "127.0.0.1" || u.hostname === "[::1]";
+  if (u.protocol !== "https:" && !(u.protocol === "http:" && local)) throw new Error("the authorization URL must use https");
+  return u.href;
 }
 
 /** Takes the pending flow of this tab (single use). */

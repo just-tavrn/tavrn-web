@@ -11,7 +11,8 @@ import { resetNodeCaches, useNodes } from "../stores/nodes";
 import { checkCallback, safeNext, startConnect, takePendingConnect, type PendingConnect } from "../lib/remoteSignIn";
 import { renderWithProviders } from "../test/render";
 import { deviceProofFor, rememberPrf, takePrf } from "../crypto/e2ee";
-import { evaluatePrf, passkeyLogin } from "../lib/passkeys";
+import { evaluatePrf, passkeyLogin, passkeyReauth } from "../lib/passkeys";
+import { clearReauth, setReauth } from "../stores/reauth";
 import { sealForApp } from "../crypto/sealedUnlock";
 import { inSignInWindow } from "../platform/tauriDetect";
 import { signOutAfterHandoff } from "../lib/handoffSignOut";
@@ -24,6 +25,7 @@ vi.mock("../lib/passkeys", async (original) => ({
   passkeysSupported: () => true,
   passkeyLogin: vi.fn(),
   evaluatePrf: vi.fn(),
+  passkeyReauth: vi.fn(),
 }));
 // The page in the desktop app's sign-in window signs itself out after the handoff (#24; the waiting: lib/handoffSignOut.test.ts).
 vi.mock("../platform/tauriDetect", async (original) => ({ ...(await original<typeof import("../platform/tauriDetect")>()), inSignInWindow: vi.fn(() => false) }));
@@ -45,6 +47,7 @@ interface Call {
   method: string;
   body: Record<string, unknown> | null;
   auth?: string;
+  reauth?: string;
 }
 
 /** Fake network: the home node home.example and the node this client was loaded from (visit.example). */
@@ -53,7 +56,7 @@ function network(overrides: Record<string, (body: Record<string, unknown> | null
   globalThis.fetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const url = new URL(String(input), location.origin);
     const body = init.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : null;
-    calls.push({ url: url.toString(), method: init.method ?? "GET", body, auth: (init.headers as Record<string, string> | undefined)?.Authorization });
+    calls.push({ url: url.toString(), method: init.method ?? "GET", body, auth: (init.headers as Record<string, string> | undefined)?.Authorization, reauth: (init.headers as Record<string, string> | undefined)?.["Tavrn-Reauth"] });
     const key = `${url.host === location.host ? "origin" : url.host}${url.pathname}`;
     const json = (status: number, b: unknown) => (status === 204 ? new Response(null, { status }) : new Response(JSON.stringify(b), { status, headers: { "Content-Type": "application/json" } }));
     if (overrides[key]) {
@@ -105,6 +108,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(inSignInWindow).mockReturnValue(false);
   useAuth.getState().logout();
+  clearReauth();
   useNodes.getState().clear();
   resetNodeCaches();
   sessionStorage.clear();
@@ -374,7 +378,46 @@ describe("connect flow: app sessions of the desktop app (FEDERATION.md §8 step 
     expect(calls.find((c) => c.url.endsWith("/auth/connect/code"))).toMatchObject({ body: { session_id: SESSION, sealed_unlock: "sealed-box" }, auth: "Bearer local-acc" });
   });
 
-  it("method=passkey on a page that is already signed in: confirming runs the passkey for the unlock", async () => {
+  it("method=passkey on a page that is already signed in: one passkey touch confirms the code and unlocks the app", async () => {
+    // The code needs a fresh confirmation (PROTOCOL.md §5c): the passkey's re-authentication evaluates the PRF too.
+    vi.mocked(passkeyReauth).mockResolvedValue({ reauth: { reauth_token: "fresh", expires_in: 300 }, credentialId: "Y3JlZA", prf: new Uint8Array(32).fill(6) });
+    const calls = network({
+      [`origin/api/v1/auth/connect/session/${SESSION}`]: pendingSession,
+      "origin/api/v1/auth/connect/code": () => ({ body: { code: "c", expires_in: 120 } }),
+      "origin/api/v1/users/me/secret-storage": () => ({ body: { items: [{ method: "recovery" }, { method: "passkey:Y3JlZA" }] } }),
+    });
+    useAuth.setState({ token: "local", refresh: "r", user: localUser, deviceId: "D", home: null });
+    renderAt(`${sessionUrl("&method=passkey")}#k=${KEY}`);
+    await userEvent.setup().click(await screen.findByRole("button", { name: "In der App anmelden" }));
+    expect(await screen.findByTestId("connect-done")).toHaveTextContent("dein Passkey entsperrt die App");
+    expect(passkeyReauth).toHaveBeenCalledTimes(1);
+    expect(evaluatePrf).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("reauth-dialog")).toBeNull();
+    const code = calls.find((c) => c.url.endsWith("/auth/connect/code"))!;
+    expect(code.body).toMatchObject({ sealed_unlock: "sealed-box" });
+    expect(code.reauth).toBe("fresh");
+  });
+
+  it("method=passkey: a passkey without an unlock entry confirms the code but seals nothing", async () => {
+    const prf = new Uint8Array(32).fill(6);
+    vi.mocked(passkeyReauth).mockResolvedValue({ reauth: { reauth_token: "fresh", expires_in: 300 }, credentialId: "b3RoZXI", prf });
+    const calls = network({
+      [`origin/api/v1/auth/connect/session/${SESSION}`]: pendingSession,
+      "origin/api/v1/auth/connect/code": () => ({ body: { code: "c", expires_in: 120 } }),
+      "origin/api/v1/users/me/secret-storage": () => ({ body: { items: [{ method: "passkey:Y3JlZA" }] } }),
+    });
+    useAuth.setState({ token: "local", refresh: "r", user: localUser, deviceId: "D", home: null });
+    renderAt(`${sessionUrl("&method=passkey")}#k=${KEY}`);
+    await userEvent.setup().click(await screen.findByRole("button", { name: "In der App anmelden" }));
+    await screen.findByTestId("connect-done");
+    const code = calls.find((c) => c.url.endsWith("/auth/connect/code"))!;
+    expect(code.body).not.toHaveProperty("sealed_unlock");
+    expect(code.reauth).toBe("fresh");
+    expect(prf.every((b) => b === 0)).toBe(true);
+  });
+
+  it("method=passkey right after a sign-in on this page (fresh confirmation): the passkey runs only for the unlock", async () => {
+    setReauth("from-login", 300);
     vi.mocked(evaluatePrf).mockResolvedValue({ credentialId: "Y3JlZA", prf: new Uint8Array(32).fill(6) });
     const calls = network({
       [`origin/api/v1/auth/connect/session/${SESSION}`]: pendingSession,
@@ -386,7 +429,10 @@ describe("connect flow: app sessions of the desktop app (FEDERATION.md §8 step 
     await userEvent.setup().click(await screen.findByRole("button", { name: "In der App anmelden" }));
     await screen.findByTestId("connect-done");
     expect(evaluatePrf).toHaveBeenCalledWith(["Y3JlZA"]);
-    expect(calls.find((c) => c.url.endsWith("/auth/connect/code"))!.body).toMatchObject({ sealed_unlock: "sealed-box" });
+    expect(passkeyReauth).not.toHaveBeenCalled();
+    const code = calls.find((c) => c.url.endsWith("/auth/connect/code"))!;
+    expect(code.body).toMatchObject({ sealed_unlock: "sealed-box" });
+    expect(code.reauth).toBe("from-login");
   });
 
   it("method=passkey: another method shows the whole form", async () => {

@@ -64,6 +64,59 @@ function save(p: Persisted) {
   }
 }
 
+/** Browser storage of an account (`<prefix>:<address>`), removed when that account signs out of this browser. */
+const ACCOUNT_KEYS = ["tavrn.rail", "tavrn.legal.seen", "tavrn.terms.dismissed", "tavrn.push", "tavrn.notify.entries"];
+/** Unscoped per-account storage (conversation ids), removed on every sign-out. */
+const SIGNED_IN_KEYS = ["tavrn.closed-dms"];
+
+type AccountListener = (previous: string | null) => void;
+const accountListeners = new Set<AccountListener>();
+
+/**
+ * Runs `fn` whenever the account signed in on this tab ends (sign-out, forced sign-out, another tab signing out or
+ * in with another account), with the previous address: caches and sessions of that account must go. Returns the
+ * unsubscribe function.
+ */
+export function onAccountChange(fn: AccountListener): () => void {
+  accountListeners.add(fn);
+  return () => accountListeners.delete(fn);
+}
+
+function accountEnded(previous: string | null) {
+  if (previous) {
+    try {
+      for (const k of ACCOUNT_KEYS) localStorage.removeItem(`${k}:${previous}`);
+      for (const k of SIGNED_IN_KEYS) localStorage.removeItem(k);
+    } catch {
+      /* storage unavailable */
+    }
+  }
+  for (const fn of accountListeners) {
+    try {
+      fn(previous);
+    } catch (e) {
+      console.error("sign-out cleanup failed", e);
+    }
+  }
+}
+
+let explicitSignOuts = 0;
+
+/**
+ * Marks an explicit sign-out (stores/e2ee `signOut`) until the returned function runs. Meanwhile a refused session
+ * ({@link AuthState.sessionRefused}) leaves the account signed in: the node revokes the session while the sign-out
+ * still waits for its answer and deletes the local data, and the sign-out ends the account itself afterwards.
+ */
+export function beginSignOut(): () => void {
+  explicitSignOuts++;
+  let ended = false;
+  return () => {
+    if (ended) return;
+    ended = true;
+    explicitSignOuts--;
+  };
+}
+
 const persisted = (s: Persisted): Persisted => ({ token: s.token, refresh: s.refresh, user: s.user, deviceId: s.deviceId ?? null, home: s.home ?? null });
 
 export interface AuthState extends Persisted {
@@ -75,11 +128,17 @@ export interface AuthState extends Persisted {
   /** Takes over what another tab stored (rotated tokens, sign-out, another account). */
   adoptStored: () => void;
   logout: () => void;
+  /**
+   * The home node refused the session (refused refresh token, socket closed for authentication): signs out, unless an
+   * explicit sign-out is running ({@link beginSignOut}), which signs out once the local data is gone.
+   */
+  sessionRefused: () => void;
 }
 
 export const useAuth = create<AuthState>((set, get) => ({
   ...load(),
   setSession: (resp, home = null) => {
+    const previous = get().user?.address ?? null;
     const next = { token: resp.access_token, refresh: resp.refresh_token, user: resp.user, deviceId: resp.device_id, home };
     save(next);
     set(next);
@@ -91,6 +150,7 @@ export const useAuth = create<AuthState>((set, get) => ({
     } catch {
       /* ignorieren */
     }
+    if (previous && previous !== resp.user.address) accountEnded(previous);
   },
   setTokens: (t) => {
     const next = { ...persisted(get()), token: t.access_token, refresh: t.refresh_token, deviceId: t.device_id ?? get().deviceId };
@@ -111,12 +171,19 @@ export const useAuth = create<AuthState>((set, get) => ({
     const cur = get();
     if (stored.token === cur.token && stored.refresh === cur.refresh && stored.user?.address === cur.user?.address && stored.deviceId === cur.deviceId) return;
     set(persisted(stored));
+    const previous = cur.user?.address ?? null;
+    if (previous && previous !== stored.user?.address) accountEnded(previous);
   },
   logout: () => {
+    const previous = get().user?.address ?? null;
     clearReauth();
     const next = { token: null, refresh: null, user: null, deviceId: null, home: null };
     save(next);
     set(next);
+    accountEnded(previous);
+  },
+  sessionRefused: () => {
+    if (explicitSignOuts === 0) get().logout();
   },
 }));
 

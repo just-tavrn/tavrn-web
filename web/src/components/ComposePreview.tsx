@@ -3,7 +3,8 @@
  * The link preview while composing (design note 4.13 item 7): the first link that is not an embed is unfurled
  * by the user's home node (debounced; a newer text discards older answers), shown as a card with an X, and
  * sent with the message. Only with the "Create link previews when sending" setting and a home node that
- * offers `unfurl`.
+ * offers `unfurl`; in end-to-end encrypted conversations only with "Fetch link previews in encrypted conversations"
+ * too (off by default: the home node learns every link it unfurls).
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "../lib/api";
@@ -27,8 +28,8 @@ function unfurlOffered(): Promise<boolean> {
   return offered;
 }
 
-export function useComposePreview(text: string, enabled: boolean): { preview: LinkPreview | null; card: ReactNode; reset: () => void } {
-  const create = useContentPrivacy((s) => s.createPreviews);
+export function useComposePreview(text: string, enabled: boolean, encrypted = false): { preview: LinkPreview | null; card: ReactNode; reset: () => void } {
+  const create = useContentPrivacy((s) => s.createPreviews && (!encrypted || s.encryptedPreviews));
   const candidate = enabled && create ? unfurlCandidate(text, new URL(originUrl()).hostname) : null;
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
   const [result, setResult] = useState<{ url: string; preview: LinkPreview | null } | null>(null);

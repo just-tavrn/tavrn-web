@@ -13,6 +13,7 @@ import { useT } from "../../i18n";
 import { api as homeApi } from "../../lib/api";
 import { dmMenu } from "../../lib/menus";
 import { apiFor, isHome } from "../../stores/nodes";
+import { onAccountChange } from "../../stores/auth";
 import { isUnread, markConversationRead, useUnread } from "../../stores/unread";
 import { toastError, useToasts } from "../../stores/toasts";
 import { ContextMenu, useContextMenu, type ContextMenuTrigger } from "../ContextMenu";
@@ -58,6 +59,9 @@ export const useClosedDms = create<{ closed: Record<string, string>; close: (id:
     }
   },
 }));
+// Closed DMs belong to the signed-in account: forget them when it signs out (the stored copy is removed by useAuth).
+onAccountChange(() => useClosedDms.setState({ closed: {} }));
+
 
 /** Is the DM hidden (closed, nothing newer since)? */
 export function isClosed(closed: Record<string, string>, c: Pick<Conversation, "id" | "last_message_id">, newest: string | null = null): boolean {

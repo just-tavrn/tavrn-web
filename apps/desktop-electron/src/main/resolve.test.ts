@@ -3,8 +3,13 @@
 // against a local server.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer as createTlsServer } from "node:https";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { FetchError, HttpFetcher, MAX_DOCUMENT, devHost, resolveNode, type FetchLike, type Fetched, type Fetcher, type SrvLookup, type SrvRecord } from "./resolve.ts";
 
 class Fake implements Fetcher, SrvLookup {
@@ -27,6 +32,14 @@ class Fake implements Fetcher, SrvLookup {
   async get(url: string): Promise<Fetched> {
     this.fetched.push(url);
     const r = this.answers.get(url) ?? new FetchError("transport");
+    if (r instanceof FetchError) throw r;
+    return r;
+  }
+  /** SRV step: the request names the identity domain, the connection goes to `host:port` (answers keyed by that). */
+  async getVia(url: string, connect: { host: string; port: number }): Promise<Fetched> {
+    const key = `${url} via ${connect.host}:${connect.port}`;
+    this.fetched.push(key);
+    const r = this.answers.get(key) ?? new FetchError("transport");
     if (r instanceof FetchError) throw r;
     return r;
   }
@@ -82,15 +95,16 @@ test("after a 404 the SRV records in order", async () => {
       [10, 9, 8443, "heavy.example."],
       [5, 0, 443, "10.0.0.1"],
     ])
-    .answer("https://light.example:8443/.well-known/tavrn", 200, doc("home.example", "light.example"));
+    .answer(`${WK} via light.example:8443`, 200, doc("home.example", "light.example"));
   const found = await run("home.example", fake);
   assert.deepEqual([found.source, found.api], ["srv", "https://light.example/api/v1"]);
-  // The IP literal is skipped; heavy (priority 10, weight 9) before light (weight 1); late is never reached.
-  assert.deepEqual(fake.fetched, [WK, "https://heavy.example:8443/.well-known/tavrn", "https://light.example:8443/.well-known/tavrn"]);
+  // The IP literal is skipped; heavy (priority 10, weight 9) before light (weight 1); late is never reached. Every SRV
+  // request is made for the identity domain (its certificate must be valid for it), connected to the target.
+  assert.deepEqual(fake.fetched, [WK, `${WK} via heavy.example:8443`, `${WK} via light.example:8443`]);
 });
 
 test("an SRV target must name the requested domain", async () => {
-  const fake = new Fake().answer(WK, 404, {}).srvRecords("_tavrn._tcp.home.example", [[10, 0, 443, "host.example"]]).answer("https://host.example/.well-known/tavrn", 200, doc("host.example", "host.example"));
+  const fake = new Fake().answer(WK, 404, {}).srvRecords("_tavrn._tcp.home.example", [[10, 0, 443, "host.example"]]).answer(`${WK} via host.example:443`, 200, doc("host.example", "host.example"));
   await assert.rejects(run("home.example", fake), fail("resolve.invalid", "srv", "home.example"));
 });
 
@@ -103,7 +117,7 @@ test("after a 404 without SRV the API on the domain is the last attempt", async 
 });
 
 test("without an HTTPS server: SRV, then unreachable, never the direct attempt", async () => {
-  const fake = new Fake().fail(WK, "transport").srvRecords("_tavrn._tcp.home.example", [[10, 0, 443, "host.example"]]).answer("https://host.example/.well-known/tavrn", 200, doc("home.example", "host.example"));
+  const fake = new Fake().fail(WK, "transport").srvRecords("_tavrn._tcp.home.example", [[10, 0, 443, "host.example"]]).answer(`${WK} via host.example:443`, 200, doc("home.example", "host.example"));
   assert.equal((await run("home.example", fake)).source, "srv");
   const down = new Fake().fail(WK, "transport");
   await assert.rejects(run("home.example", down), fail("resolve.unreachable", "srv", "home.example"));
@@ -196,4 +210,51 @@ test("the real fetcher follows a few redirects on the same https host", async ()
   assert.equal(n, 4);
   const loop: FetchLike = async () => new Response(null, { status: 302, headers: { Location: "/again" } });
   await assert.rejects(new HttpFetcher(loop, "t").get("https://home.example/"), { kind: "refused" }, "at most 3 redirects");
+});
+
+/** A test CA and two server certificates (one for the identity domain, one for the SRV target only), made with openssl. */
+function certificates(dir: string): { ca: string; domain: { key: string; cert: string }; target: { key: string; cert: string } } {
+  execFileSync("openssl", ["req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256", "-nodes", "-keyout", "ca.key", "-out", "ca.pem", "-days", "2", "-subj", "/CN=tavrn test CA", "-addext", "basicConstraints=critical,CA:TRUE", "-addext", "keyUsage=critical,keyCertSign"], { cwd: dir, stdio: "pipe" });
+  return { ca: readFileSync(join(dir, "ca.pem"), "utf8"), domain: leafWithSan(dir, "home.test"), target: leafWithSan(dir, "target.test") };
+}
+
+function leafWithSan(dir: string, name: string): { key: string; cert: string } {
+  const ossl = (...args: string[]) => execFileSync("openssl", args, { cwd: dir, stdio: "pipe" });
+  ossl("req", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256", "-nodes", "-keyout", `${name}.key`, "-out", `${name}.csr`, "-subj", `/CN=${name}`, "-addext", `subjectAltName=DNS:${name}`);
+  ossl("x509", "-req", "-in", `${name}.csr`, "-CA", "ca.pem", "-CAkey", "ca.key", "-CAcreateserial", "-out", `${name}.pem`, "-days", "2", "-copy_extensions", "copy");
+  return { key: readFileSync(join(dir, `${name}.key`), "utf8"), cert: readFileSync(join(dir, `${name}.pem`), "utf8") };
+}
+
+test("the SRV step: the target's certificate must be valid for the identity domain", async (t) => {
+  try {
+    execFileSync("openssl", ["version"], { stdio: "pipe" });
+  } catch {
+    return t.skip("openssl is not installed");
+  }
+  const dir = mkdtempSync(join(tmpdir(), "tavrn-resolve-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const certs = certificates(dir);
+  const serve = async (pair: { key: string; cert: string }) => {
+    const hosts: string[] = [];
+    const s = createTlsServer(pair, (req, res) => {
+      hosts.push(String(req.headers.host));
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify(doc("home.test", "node.home.test")));
+    });
+    await new Promise<void>((r) => s.listen(0, "127.0.0.1", r));
+    t.after(() => s.close());
+    return { port: (s.address() as AddressInfo).port, hosts };
+  };
+  const good = await serve(certs.domain);
+  const impostor = await serve(certs.target);
+  // The direct well-known fails (no HTTPS server for home.test here); the SRV record names 127.0.0.1's servers.
+  const fetcher = new HttpFetcher(async () => Promise.reject(new TypeError("unreachable")), "test", { ca: [certs.ca], resolveTarget: () => "127.0.0.1" });
+  const srvTo = (port: number): SrvLookup => ({ srv: async () => [{ priority: 0, weight: 0, port, target: "target.test" }] });
+  // A certificate valid only for the SRV target (what a DNS spoofer can get): unreachable.
+  await assert.rejects(resolveNode("home.test", fetcher, srvTo(impostor.port)), fail("resolve.unreachable", "srv", "home.test"));
+  assert.deepEqual(impostor.hosts, [], "no request reaches a server without a certificate for the domain");
+  // A certificate valid for the identity domain: found, asked with Host = the domain.
+  const found = await resolveNode("home.test", fetcher, srvTo(good.port));
+  assert.deepEqual([found.source, found.api], ["srv", "https://node.home.test/api/v1"]);
+  assert.deepEqual(good.hosts, ["home.test"]);
 });

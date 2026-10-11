@@ -47,6 +47,11 @@ export function applyPresence(users: Record<string, Presence>, p: Presence): Rec
   return { ...users, [p.user]: p };
 }
 
+/** Whether typing indicators may be sent: not while the user appears offline (`invisible`). */
+export function sendsTyping(mine: MyPresence | null): boolean {
+  return mine?.status !== "invisible" && mine?.effective !== "invisible";
+}
+
 /** The effective status of `address` (the own account shows the true status, incl. `invisible`). */
 export function statusOf(users: Record<string, Presence>, address: string | undefined, mine?: { address: string; presence: MyPresence | null }): PresenceStatus {
   if (!address) return "offline";

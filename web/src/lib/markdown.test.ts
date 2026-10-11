@@ -229,4 +229,12 @@ describe("renderDocument (legal pages)", () => {
     expect(html).toContain('href="https://a.example"');
     expect(html).toContain('href="/legal/terms"');
   });
+
+  it("keeps only links that stay on the site or name an explicit scheme", async () => {
+    const { DOC_SAFE_URL, renderDocument } = await import("./markdown");
+    for (const bad of ["/\\evil.example/x", "//evil.example/x", "javascript:x", "blob:https://a/x"]) expect(DOC_SAFE_URL.test(bad)).toBe(false);
+    for (const ok of ["/legal/privacy", "#top", "https://a.example", "mailto:a@b.example"]) expect(DOC_SAFE_URL.test(ok)).toBe(true);
+    const root = dom(renderDocument("[a](/\\evil.example/x) [b](//evil.example/x) [c](/legal/privacy#top)"));
+    for (const a of root.querySelectorAll("a[href]")) expect(new URL(a.getAttribute("href")!, "https://node.example").host).toBe("node.example");
+  });
 });
