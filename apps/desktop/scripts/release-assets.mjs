@@ -4,11 +4,14 @@
  * The assets of a tavrn-web release (docs/DESKTOP.md "Builds and releases"): the exact file names, the release notes'
  * table of them, and the check that a release carries exactly these files, named as the download page of the website
  * reads them (its classifier in tavrn-website src/lib/releases.ts, re-implemented minimally below).
+ *   node release-assets.mjs collect <tag> <out> <source>=<dir>...   copies exactly the files each build job may deliver
+ *                                                 (SOURCES) from its own artifact directory into <out>; anything else fails
  *   node release-assets.mjs check <tag> <dir>     the desktop assets in <dir> before the upload (exactly the expected set)
  *   node release-assets.mjs check-release <tag>   the asset names of the whole release on stdin, one per line
  *   node release-assets.mjs notes <tag> <owner/repo>   the asset table of the release notes (Markdown)
  */
-import { readdirSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 /** The version of a release tag (`v1.2.3`, `v1.2.3-rc.1`). */
@@ -43,6 +46,55 @@ export function expectedAssets(version) {
     ...(a.installer ? [{ name: `${a.name}.sha256`, from: a.from }] : []),
     ...(a.signed ? [{ name: `${a.name}.sig`, from: a.from }] : []),
   ]);
+}
+
+/**
+ * What each build job of desktop.yml may deliver to release-assets, by artifact: exactly these names, nothing else.
+ * Signatures (`.sig`, `.minisig`), the remaining `.sha256` and latest.json are written by release-assets itself, so no
+ * build job can hand in a signature or overwrite another job's file.
+ */
+export function sourceAssets(version) {
+  const v = version;
+  return {
+    // desktop-windows (the Tauri installers)
+    tauri: [`Tavrn_${v}_x64-setup.exe`, `Tavrn_${v}_x64_en-US.msi`],
+    // desktop-linux-electron (the packages, their sums from packaging, the Linux feed)
+    linux: [`Tavrn-${v}.AppImage`, `Tavrn-${v}.AppImage.sha256`, `tavrn_${v}_amd64.deb`, `tavrn_${v}_amd64.deb.sha256`, "latest-linux.yml"],
+    // desktop-windows-electron (the fallback installer, its block map, the Windows feed)
+    "electron-windows": [`tavrn-electron_${v}_x64-setup.exe`, `tavrn-electron_${v}_x64-setup.exe.blockmap`, "latest.yml"],
+  };
+}
+
+/**
+ * Copies the files of every source directory into `out`: each source must hold exactly its allowed names as regular
+ * files (no symlinks, no extras, nothing missing), and every source must be given. Returns the copied names; throws
+ * with every problem otherwise, before anything is copied.
+ */
+export function collectAssets(version, dirs, out) {
+  const allowed = sourceAssets(version);
+  const problems = [];
+  for (const source of Object.keys(dirs)) if (!(source in allowed)) problems.push(`unknown source ${source}`);
+  for (const [source, names] of Object.entries(allowed)) {
+    const dir = dirs[source];
+    if (!dir) { problems.push(`source ${source} not given`); continue; }
+    const present = existsSync(dir) ? readdirSync(dir) : [];
+    for (const name of present) {
+      if (!names.includes(name)) problems.push(`${source}: unexpected ${name}`);
+      else if (!lstatSync(join(dir, name)).isFile()) problems.push(`${source}: ${name} is not a regular file`);
+    }
+    for (const name of names) if (!present.includes(name)) problems.push(`${source}: missing ${name}`);
+  }
+  if (problems.length) throw new Error(`the build artifacts are not as expected:\n  ${problems.join("\n  ")}`);
+  mkdirSync(out, { recursive: true });
+  const copied = [];
+  for (const [source, names] of Object.entries(allowed)) {
+    for (const name of names) {
+      if (existsSync(join(out, name))) throw new Error(`${name} exists twice`);
+      copyFileSync(join(dirs[source], name), join(out, name));
+      copied.push(name);
+    }
+  }
+  return copied.sort();
 }
 
 // The download page's rules (tavrn-website src/lib/releases.ts: FORMATS, shellOf, archFromName), kept as small as the
@@ -127,6 +179,9 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   try {
     if (command === "notes" && tag && arg) {
       process.stdout.write(releaseNotes(tag, arg));
+    } else if (command === "collect" && tag && arg) {
+      const dirs = Object.fromEntries(process.argv.slice(5).map((a) => [a.slice(0, a.indexOf("=")), a.slice(a.indexOf("=") + 1)]));
+      for (const name of collectAssets(versionOf(tag), dirs, arg)) console.log(name);
     } else if ((command === "check" && tag && arg) || (command === "check-release" && tag)) {
       const version = versionOf(tag);
       const names = command === "check" ? readdirSync(arg) : readFileSync(0, "utf8").split(/\r?\n/).filter(Boolean);
@@ -137,7 +192,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
       }
       console.log(`${names.length} release assets of ${tag} as expected`);
     } else {
-      console.error("usage: release-assets.mjs check <tag> <dir> | check-release <tag> < names | notes <tag> <owner/repo>");
+      console.error("usage: release-assets.mjs collect <tag> <out> <source>=<dir>... | check <tag> <dir> | check-release <tag> < names | notes <tag> <owner/repo>");
       process.exit(2);
     }
   } catch (e) {

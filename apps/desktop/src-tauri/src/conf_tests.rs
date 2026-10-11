@@ -138,6 +138,27 @@ fn no_capability_reaches_the_sign_in_window() {
 }
 
 #[test]
+fn the_sign_in_window_denies_downloads_and_permissions() {
+    let url = tauri::Url::parse("https://node.example/file.exe").unwrap_or_else(|e| unreachable!("{e}"));
+    assert!(!crate::connect_download(&url));
+    for kind in [
+        tauri::webview::PermissionKind::Microphone,
+        tauri::webview::PermissionKind::Camera,
+        tauri::webview::PermissionKind::Geolocation,
+        tauri::webview::PermissionKind::Notifications,
+    ] {
+        assert!(matches!(crate::connect_permission(kind), tauri::webview::PermissionResponse::Deny));
+    }
+    // Both handlers are installed on the sign-in window.
+    let lib = include_str!("lib.rs");
+    let window = &lib[lib.find("pub fn open_connect_window").unwrap_or_else(|| unreachable!("open_connect_window"))..];
+    let window = &window[..window.find("\n}\n").unwrap_or(window.len())];
+    for handler in [".on_download(", ".on_permission_request(", "connect_download(", "connect_permission("] {
+        assert!(window.contains(handler), "open_connect_window lacks {handler}");
+    }
+}
+
+#[test]
 fn version_and_identity() {
     let c = conf();
     assert_eq!(c["version"], "../../../web/package.json", "one version number: the web client's");

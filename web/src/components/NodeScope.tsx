@@ -8,8 +8,10 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { TavrnApiError, type TavrnApi, type UserPrivate } from "@tavrn/sdk";
 import { api } from "../lib/api";
+import { useNavigate } from "react-router";
 import { useAuth } from "../stores/auth";
-import { apiFor, connectNode, isHome, useNodes } from "../stores/nodes";
+import { useConversationIndex } from "../stores/conversationIndex";
+import { apiFor, confirmNode, connectNode, isHome, nodeNeedsNoConfirmation, useNodes } from "../stores/nodes";
 import { useReach } from "../stores/reach";
 import { describeError, toastError } from "../stores/toasts";
 import { useT } from "../i18n";
@@ -93,10 +95,47 @@ export function NodeSessionBanner({ domain, code }: { domain: string; code: stri
 }
 
 /**
+ * Whether the account may sign in on `domain` without asking: a known session, a confirmation in this tab, this client's
+ * own node, or an entry of the conversation index (the account has rooms or conversations there).
+ */
+async function knownNode(domain: string): Promise<boolean> {
+  if (await nodeNeedsNoConfirmation(domain)) return true;
+  const index = useConversationIndex.getState();
+  const state = index.state ?? (await index.load().catch(() => null));
+  return !!state?.items.some((e) => e.node === domain);
+}
+
+/**
+ * Asked before the first sign-in on a node the account has nothing on (a link to `/n/<domain>/…`): signing in tells
+ * that node the account's address, IP address and online times. Nothing is stored before the user agrees.
+ */
+function ConnectConfirm({ domain, onConfirm }: { domain: string; onConfirm: () => void }) {
+  const t = useT();
+  const navigate = useNavigate();
+  const address = useAuth((s) => s.user?.address ?? "");
+  return (
+    <div className="flex min-h-0 flex-1 items-start justify-center overflow-y-auto p-4 sm:items-center">
+      <section aria-labelledby="node-connect-title" className="w-full max-w-md rounded-lg border border-line bg-bg-1 p-4" data-testid="node-connect-confirm" data-node={domain}>
+        <h2 id="node-connect-title" className="break-words text-base font-semibold text-fg-0">
+          {t("node.connect_confirm_title", { domain, address })}
+        </h2>
+        <p className="mt-2 break-words text-sm text-fg-1">{t("node.connect_confirm_body", { domain })}</p>
+        <div className="mt-4 flex flex-wrap justify-end gap-2">
+          <Button variant="ghost" onClick={() => navigate("/")}>
+            {t("common.cancel")}
+          </Button>
+          <Button onClick={onConfirm}>{t("node.connect_confirm")}</Button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/**
  * Scope of a node other than the home node: makes sure a federated session exists (federation token of
  * the home node, `POST /auth/federated` there) before rendering, and shows the unreachable state with a
- * retry instead of the content when the node is down. `quiet` scopes (side panels) render nothing
- * until the session exists.
+ * retry instead of the content when the node is down. A first sign-in on a node the account has nothing on asks
+ * first ({@link ConnectConfirm}). `quiet` scopes (side panels) render nothing until the session exists and never ask.
  */
 export function NodeScope({ domain, children, quiet = false }: { domain: string; children: ReactNode; quiet?: boolean }) {
   const t = useT();
@@ -104,10 +143,16 @@ export function NodeScope({ domain, children, quiet = false }: { domain: string;
   const unreachable = useReach((s) => s.nodes[domain] === "unreachable");
   const [error, setError] = useState<unknown>(null);
   const [attempt, setAttempt] = useState(0);
+  const [ask, setAsk] = useState(false);
   useEffect(() => {
     let cancelled = false;
     setError(null);
-    connectNode(domain).catch((e: unknown) => !cancelled && setError(e));
+    setAsk(false);
+    void knownNode(domain).then((known) => {
+      if (cancelled) return;
+      if (!known) return setAsk(true);
+      connectNode(domain).catch((e: unknown) => !cancelled && setError(e));
+    });
     return () => {
       cancelled = true;
     };
@@ -119,6 +164,17 @@ export function NodeScope({ domain, children, quiet = false }: { domain: string;
   };
   if (!session) {
     if (quiet) return null;
+    if (ask) {
+      return (
+        <ConnectConfirm
+          domain={domain}
+          onConfirm={() => {
+            confirmNode(domain);
+            setAttempt((n) => n + 1);
+          }}
+        />
+      );
+    }
     // The home node refuses federation tokens for a node it blocks (FEDERATION.md §1.5, §9.4).
     if (!unreachable && error instanceof TavrnApiError && error.code === "federation.peer_blocked") return <PeerBlocked domain={domain} />;
     if (unreachable || error) {

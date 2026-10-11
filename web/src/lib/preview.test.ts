@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PREVIEW_MAX_BYTES, isAutoPreview, isSvg, safeBlobType, shouldAutoPreview, type PreviewInput } from "./preview";
+import { DEFAULT_PREVIEW_MAX_BYTES, isAutoPreview, isSvg, opensInline, safeBlobType, shouldAutoPreview, type PreviewInput } from "./preview";
 
 const base: PreviewInput = { setting: "friends_and_shared", size: 1000, maxBytes: DEFAULT_PREVIEW_MAX_BYTES, own: false, inRoom: false, friend: false };
 
@@ -53,5 +53,12 @@ describe("SVG and object URL types", () => {
     expect(safeBlobType("text/html")).toBe("application/octet-stream");
     expect(safeBlobType("application/xhtml+xml")).toBe("application/octet-stream");
     expect(safeBlobType("")).toBe("application/octet-stream");
+  });
+
+  it("keeps only concrete raster, audio and video types, never an XML-based one", () => {
+    for (const t of ["image/jpeg", "image/gif", "image/webp", "image/avif", "audio/mpeg", "audio/webm", "video/webm", "video/quicktime"]) expect(safeBlobType(t)).toBe(t);
+    for (const t of ["image/x+xml", "image/foo+xml", "video/x+xml", "audio/x-anything", "image/x-unknown", "image/vnd.microsoft.icon+xml"]) expect(safeBlobType(t)).toBe("application/octet-stream");
+    expect(opensInline("image/png")).toBe(true);
+    expect(opensInline("image/x+xml")).toBe(false);
   });
 });

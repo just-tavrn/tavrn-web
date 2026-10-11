@@ -7,8 +7,10 @@
 //!    https/wss without credentials, query or fragment, `api` ending in `/api/v1`. Delegation (endpoints on another
 //!    host) is the normal case; the result keeps the identity domain and the endpoints.
 //! 2. After a `404` or without an HTTPS server (refused, DNS, TLS, timeout): the `_tavrn._tcp.<domain>` SRV records
-//!    (lowest priority first, then highest weight, at most 3, domain names only); the target's document must name
-//!    `domain`.
+//!    (lowest priority first, then highest weight, at most 3, domain names only). The request goes to the target's host
+//!    and port but is made for the identity domain: SNI and `Host` name the domain and the target's certificate must be
+//!    valid for the domain (FEDERATION.md §1.4), so a forged DNS answer alone cannot hand the app another node. The
+//!    target's document must name `domain`.
 //! 3. After a `404` only: `https://<domain>/api/v1`, the last attempt (it must answer `GET /node`).
 //!
 //! Any other status, an invalid document or a refused redirect is an error at its step. A development node on this
@@ -93,6 +95,9 @@ pub enum FetchError {
 
 pub trait Fetcher {
     fn get(&self, url: &str) -> impl Future<Output = Result<Fetched, FetchError>> + Send;
+    /// GET `url` (on the identity domain) over a connection to `host:port` instead of the URL's host: SNI and `Host` are
+    /// the URL's host and the certificate must be valid for it. No redirects.
+    fn get_via(&self, url: &str, host: &str, port: u16) -> impl Future<Output = Result<Fetched, FetchError>> + Send;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -193,9 +198,8 @@ pub async fn resolve(input: &str, fetcher: &impl Fetcher, srv: &impl SrvLookup) 
             if !valid_domain(&target) || record.port == 0 {
                 continue;
             }
-            let url =
-                if record.port == 443 { format!("https://{target}/.well-known/tavrn") } else { format!("https://{target}:{}/.well-known/tavrn", record.port) };
-            match fetcher.get(&url).await {
+            // A TLS failure (a certificate only for the target) skips the record like any transport failure.
+            match fetcher.get_via(&format!("https://{domain}/.well-known/tavrn"), &target, record.port).await {
                 Ok(f) if f.status == 200 => {
                     let found = validate(&f.body, &domain, false).ok_or_else(|| Failure::new(INVALID, Step::Srv, &domain))?;
                     return Ok(Resolved { source: Source::Srv, ..found });
@@ -226,12 +230,24 @@ pub async fn resolve(input: &str, fetcher: &impl Fetcher, srv: &impl SrvLookup) 
 // ---- The real fetcher and SRV lookup ------------------------------------------------------------------------------
 
 /// HTTPS with verified TLS (rustls), at most 3 redirects to https on the same host, 5 s to connect, 10 s in total, the
-/// body capped at [`MAX_DOCUMENT`].
+/// body capped at [`MAX_DOCUMENT`]. The SRV step ([`Fetcher::get_via`]) connects to the target's addresses with the URL
+/// still on the identity domain (`resolve_to_addrs`), so rustls verifies the certificate for the domain.
 pub struct HttpFetcher {
     client: reqwest::Client,
+    user_agent: String,
+    /// Trust anchors instead of the platform's (tests).
+    roots: Option<Vec<Vec<u8>>>,
+    /// The address every SRV target connects to (tests).
+    target_override: Option<std::net::IpAddr>,
 }
 
 impl HttpFetcher {
+    /// With a test CA and every SRV target on `target`.
+    #[cfg(test)]
+    pub fn for_tests(version: &str, ca_der: Vec<u8>, target: std::net::IpAddr) -> Result<Self, String> {
+        Ok(Self { roots: Some(vec![ca_der]), target_override: Some(target), ..Self::new(version)? })
+    }
+
     pub fn new(version: &str) -> Result<Self, String> {
         if rustls::crypto::CryptoProvider::get_default().is_none() {
             let _ = rustls::crypto::ring::default_provider().install_default();
@@ -247,24 +263,66 @@ impl HttpFetcher {
             .user_agent(format!("tavrn-desktop/{version}"))
             .build()
             .map_err(|e| e.to_string())?;
-        Ok(Self { client })
+        Ok(Self { client, user_agent: format!("tavrn-desktop/{version}"), roots: None, target_override: None })
     }
+}
+
+async fn read_capped(mut resp: reqwest::Response) -> Result<Fetched, FetchError> {
+    let status = resp.status().as_u16();
+    let mut body = Vec::new();
+    while let Some(chunk) = resp.chunk().await.map_err(|_| FetchError::Transport)? {
+        if body.len() + chunk.len() > MAX_DOCUMENT {
+            return Err(FetchError::Refused);
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(Fetched { status, body })
 }
 
 impl Fetcher for HttpFetcher {
     fn get(&self, url: &str) -> impl Future<Output = Result<Fetched, FetchError>> + Send {
         let request = self.client.get(url).header("Accept", "application/json");
         async move {
-            let mut resp = request.send().await.map_err(|e| if e.is_redirect() { FetchError::Refused } else { FetchError::Transport })?;
-            let status = resp.status().as_u16();
-            let mut body = Vec::new();
-            while let Some(chunk) = resp.chunk().await.map_err(|_| FetchError::Transport)? {
-                if body.len() + chunk.len() > MAX_DOCUMENT {
-                    return Err(FetchError::Refused);
-                }
-                body.extend_from_slice(&chunk);
+            let resp = request.send().await.map_err(|e| if e.is_redirect() { FetchError::Refused } else { FetchError::Transport })?;
+            read_capped(resp).await
+        }
+    }
+
+    fn get_via(&self, url: &str, host: &str, port: u16) -> impl Future<Output = Result<Fetched, FetchError>> + Send {
+        let (url, host, user_agent, roots, target_override) =
+            (url.to_string(), host.to_string(), self.user_agent.clone(), self.roots.clone(), self.target_override);
+        async move {
+            let parsed = Url::parse(&url).map_err(|_| FetchError::Refused)?;
+            let domain = parsed.host_str().filter(|_| parsed.scheme() == "https" && parsed.port().is_none()).ok_or(FetchError::Refused)?.to_string();
+            // The target's addresses (the system's resolver), with the record's port: the URL has none, so it is used.
+            let addrs: Vec<std::net::SocketAddr> = match target_override {
+                Some(ip) => vec![std::net::SocketAddr::new(ip, port)],
+                None => tauri::async_runtime::spawn_blocking(move || {
+                    std::net::ToSocketAddrs::to_socket_addrs(&(host.as_str(), port)).map(|a| a.collect::<Vec<_>>())
+                })
+                .await
+                .map_err(|_| FetchError::Transport)?
+                .map_err(|_| FetchError::Transport)?,
+            };
+            if addrs.is_empty() {
+                return Err(FetchError::Transport);
             }
-            Ok(Fetched { status, body })
+            let mut builder = reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .connect_timeout(Duration::from_secs(5))
+                .timeout(Duration::from_secs(10))
+                .user_agent(user_agent)
+                .resolve_to_addrs(&domain, &addrs);
+            if let Some(roots) = roots {
+                let certs = roots.iter().filter_map(|der| reqwest::Certificate::from_der(der).ok()).collect::<Vec<_>>();
+                builder = builder.tls_certs_only(certs);
+            }
+            let client = builder.build().map_err(|_| FetchError::Transport)?;
+            let resp = client.get(parsed).header("Accept", "application/json").send().await.map_err(|_| FetchError::Transport)?;
+            if resp.status().is_redirection() {
+                return Err(FetchError::Refused);
+            }
+            read_capped(resp).await
         }
     }
 }
@@ -340,6 +398,15 @@ mod tests {
             let r = self.answers.get(url).cloned().unwrap_or(Err(FetchError::Transport));
             async move { r }
         }
+        /// SRV step: the request names the identity domain, the connection goes to `host:port` (answers keyed by that).
+        fn get_via(&self, url: &str, host: &str, port: u16) -> impl Future<Output = Result<Fetched, FetchError>> + Send {
+            let key = format!("{url} via {host}:{port}");
+            if let Ok(mut f) = self.fetched.lock() {
+                f.push(key.clone());
+            }
+            let r = self.answers.get(&key).cloned().unwrap_or(Err(FetchError::Transport));
+            async move { r }
+        }
     }
 
     impl SrvLookup for Fake {
@@ -411,17 +478,18 @@ mod tests {
                 "_tavrn._tcp.home.example",
                 &[(20, 0, 443, "late.example"), (10, 1, 8443, "light.example"), (10, 9, 8443, "heavy.example."), (5, 0, 443, "10.0.0.1")],
             )
-            .answer("https://light.example:8443/.well-known/tavrn", 200, doc("home.example", "light.example"));
+            .answer(&format!("{WK} via light.example:8443"), 200, doc("home.example", "light.example"));
         let found = run("home.example", &fake).unwrap_or_else(|e| unreachable!("{e:?}"));
         assert_eq!((found.source, found.api.as_str()), (Source::Srv, "https://light.example/api/v1"));
-        // The IP literal is skipped; heavy (priority 10, weight 9) before light (weight 1); late is never reached.
-        assert_eq!(fake.fetched(), [WK, "https://heavy.example:8443/.well-known/tavrn", "https://light.example:8443/.well-known/tavrn"]);
+        // The IP literal is skipped; heavy (priority 10, weight 9) before light (weight 1); late is never reached. Every SRV
+        // request is made for the identity domain (its certificate must be valid for it), connected to the target.
+        assert_eq!(fake.fetched(), [WK.to_string(), format!("{WK} via heavy.example:8443"), format!("{WK} via light.example:8443")]);
     }
 
     #[test]
     fn an_srv_target_must_name_the_requested_domain() {
         let fake = Fake::default().answer(WK, 404, serde_json::json!({})).srv("_tavrn._tcp.home.example", &[(10, 0, 443, "host.example")]).answer(
-            "https://host.example/.well-known/tavrn",
+            &format!("{WK} via host.example:443"),
             200,
             doc("host.example", "host.example"),
         );
@@ -444,7 +512,7 @@ mod tests {
     #[test]
     fn without_an_https_server_srv_then_unreachable_never_the_direct_attempt() {
         let fake = Fake::default().fail(WK, FetchError::Transport).srv("_tavrn._tcp.home.example", &[(10, 0, 443, "host.example")]).answer(
-            "https://host.example/.well-known/tavrn",
+            &format!("{WK} via host.example:443"),
             200,
             doc("home.example", "host.example"),
         );
@@ -523,5 +591,141 @@ mod tests {
         let request = server.join().unwrap_or_default();
         assert!(request.starts_with("GET /.well-known/tavrn HTTP/1.1"), "{request}");
         assert!(request.to_lowercase().contains("user-agent: tavrn-desktop/0.0.0-test"), "{request}");
+    }
+
+    /// A certificate and its PKCS#8 key (DER).
+    type KeyPair = (Vec<u8>, Vec<u8>);
+
+    /// A test CA and server certificates (DER), made with openssl in `dir`; None when a step fails.
+    fn certificates(dir: &std::path::Path) -> Option<(Vec<u8>, [KeyPair; 2])> {
+        let ossl = |args: &[&str]| std::process::Command::new("openssl").args(args).current_dir(dir).output().ok().filter(|o| o.status.success());
+        ossl(&[
+            "req",
+            "-x509",
+            "-newkey",
+            "ec",
+            "-pkeyopt",
+            "ec_paramgen_curve:P-256",
+            "-nodes",
+            "-keyout",
+            "ca.key",
+            "-out",
+            "ca.pem",
+            "-days",
+            "2",
+            "-subj",
+            "/CN=tavrn test CA",
+            "-addext",
+            "basicConstraints=critical,CA:TRUE",
+            "-addext",
+            "keyUsage=critical,keyCertSign",
+        ])?;
+        ossl(&["x509", "-in", "ca.pem", "-outform", "DER", "-out", "ca.der"])?;
+        let mut leaves = Vec::new();
+        for name in ["home.test", "target.test"] {
+            ossl(&[
+                "req",
+                "-newkey",
+                "ec",
+                "-pkeyopt",
+                "ec_paramgen_curve:P-256",
+                "-nodes",
+                "-keyout",
+                &format!("{name}.key"),
+                "-out",
+                &format!("{name}.csr"),
+                "-subj",
+                &format!("/CN={name}"),
+                "-addext",
+                &format!("subjectAltName=DNS:{name}"),
+            ])?;
+            ossl(&[
+                "x509",
+                "-req",
+                "-in",
+                &format!("{name}.csr"),
+                "-CA",
+                "ca.pem",
+                "-CAkey",
+                "ca.key",
+                "-CAcreateserial",
+                "-out",
+                &format!("{name}.pem"),
+                "-days",
+                "2",
+                "-copy_extensions",
+                "copy",
+            ])?;
+            ossl(&["x509", "-in", &format!("{name}.pem"), "-outform", "DER", "-out", &format!("{name}.der")])?;
+            ossl(&["pkcs8", "-topk8", "-nocrypt", "-in", &format!("{name}.key"), "-outform", "DER", "-out", &format!("{name}.key.der")])?;
+            leaves.push((std::fs::read(dir.join(format!("{name}.der"))).ok()?, std::fs::read(dir.join(format!("{name}.key.der"))).ok()?));
+        }
+        let target = leaves.pop()?;
+        let home = leaves.pop()?;
+        Some((std::fs::read(dir.join("ca.der")).ok()?, [home, target]))
+    }
+
+    /// A TLS server on 127.0.0.1 with `cert`; answers every request with a discovery document of home.test and reports
+    /// the `Host` header of each request it got.
+    fn tls_server(cert: Vec<u8>, key: Vec<u8>) -> (u16, std::sync::mpsc::Receiver<String>) {
+        use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+        use std::io::{Read, Write};
+        let provider = std::sync::Arc::new(rustls::crypto::ring::default_provider());
+        let key = PrivateKeyDer::try_from(key).unwrap_or_else(|e| unreachable!("{e}"));
+        let config = rustls::ServerConfig::builder_with_provider(provider)
+            .with_safe_default_protocol_versions()
+            .and_then(|b| b.with_no_client_auth().with_single_cert(vec![CertificateDer::from(cert)], key))
+            .unwrap_or_else(|e| unreachable!("{e}"));
+        let config = std::sync::Arc::new(config);
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap_or_else(|e| unreachable!("{e}"));
+        let port = listener.local_addr().map(|a| a.port()).unwrap_or_default();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                let Ok(conn) = rustls::ServerConnection::new(config.clone()) else { continue };
+                let mut tls = rustls::StreamOwned::new(conn, stream);
+                let mut buf = [0u8; 4096];
+                let Ok(n) = tls.read(&mut buf) else { continue };
+                let request = String::from_utf8_lossy(&buf[..n]).to_lowercase();
+                let host = request.lines().find_map(|l| l.strip_prefix("host: ")).unwrap_or_default().trim().to_string();
+                let _ = tx.send(host);
+                let body = doc("home.test", "node.home.test").to_string();
+                let _ = write!(tls, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+                let _ = tls.flush();
+                tls.conn.send_close_notify();
+                let _ = tls.flush();
+            }
+        });
+        (port, rx)
+    }
+
+    struct SrvTo(u16);
+    impl SrvLookup for SrvTo {
+        fn srv(&self, _name: &str) -> impl Future<Output = Result<Vec<SrvRecord>, ()>> + Send {
+            let port = self.0;
+            async move { Ok(vec![SrvRecord { priority: 0, weight: 0, port, target: "target.test".into() }]) }
+        }
+    }
+
+    /// The SRV step with real TLS: the target's certificate must be valid for the identity domain.
+    #[test]
+    fn the_srv_target_needs_a_certificate_for_the_identity_domain() {
+        let dir = std::env::temp_dir().join(format!("tavrn-resolve-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        if std::process::Command::new("openssl").arg("version").output().is_err() {
+            return; // no openssl here
+        }
+        let (ca, [home, target]) = certificates(&dir).unwrap_or_else(|| unreachable!("openssl could not make the test certificates"));
+        let _ = std::fs::remove_dir_all(&dir);
+        let (good, good_hosts) = tls_server(home.0, home.1);
+        let (impostor, impostor_hosts) = tls_server(target.0, target.1);
+        let fetcher = HttpFetcher::for_tests("0.0.0-test", ca, std::net::Ipv4Addr::LOCALHOST.into()).unwrap_or_else(|e| unreachable!("{e}"));
+        // home.test has no HTTPS server here: the direct well-known fails, the SRV record names the local servers.
+        let spoofed = tauri::async_runtime::block_on(resolve("home.test", &fetcher, &SrvTo(impostor)));
+        assert_eq!(spoofed, Err(Failure::new(UNREACHABLE, Step::Srv, "home.test")), "a certificate only for the target is refused");
+        assert!(impostor_hosts.try_recv().is_err(), "no request reaches a server without a certificate for the domain");
+        let found = tauri::async_runtime::block_on(resolve("home.test", &fetcher, &SrvTo(good))).unwrap_or_else(|e| unreachable!("{e:?}"));
+        assert_eq!((found.source, found.api.as_str()), (Source::Srv, "https://node.home.test/api/v1"));
+        assert_eq!(good_hosts.recv_timeout(Duration::from_secs(5)).ok().as_deref(), Some("home.test"));
     }
 }

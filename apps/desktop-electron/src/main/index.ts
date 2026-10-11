@@ -12,11 +12,12 @@ import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, net, Notification, protocol, safeStorage, session, shell, Tray } from "electron";
 import { installDisplayMediaHandler } from "./capture.ts";
 import { DIR_NAME, Settings, importTauriSettings, settingsPath, tauriSettingsPath } from "./config.ts";
-import { ConnectWindow } from "./connect.ts";
+import { CONNECT_PARTITION, ConnectWindow } from "./connect.ts";
 import type { ShellContext, ShellPart } from "./context.ts";
 import { Downloads, handleWillDownload, registerFilesHandlers, saveDialogOptions, TEST_SAVE_DIR_ENV } from "./downloads.ts";
 import { ShellEvents } from "./events.ts";
 import { devServerUrl, isAppPage, permission } from "./guard.ts";
+import { disableSpellChecker, refusedDebugSwitch, seedNoSpellcheck } from "./hardening.ts";
 import { Hotkeys, nativeKeyListener, registerHotkeyHandlers } from "./hotkeys.ts";
 import { IpcRegistry, fromMainPage, type IpcEventLike } from "./ipc.ts";
 import { BACKEND_ENV, Keychain, passwordStoreSwitch, registerKeychainHandlers, safeStorageCipher } from "./keychain.ts";
@@ -42,6 +43,13 @@ function appVersion(): string {
 }
 
 function main(): void {
+  // A package never opens its pages to the DevTools protocol (hardening.ts).
+  const debugSwitch = refusedDebugSwitch(app.isPackaged, (name) => app.commandLine.hasSwitch(name), process.env);
+  if (debugSwitch) {
+    console.error(`tavrn: --${debugSwitch} is not supported by the packaged app`);
+    app.exit(1);
+    return;
+  }
   // Before the app is ready: the scheme of the bundled client, the name and the profile directory (which also holds the
   // settings file and the single-instance lock).
   protocol.registerSchemesAsPrivileged([{ scheme: APP_SCHEME, privileges: APP_SCHEME_PRIVILEGES }]);
@@ -54,6 +62,8 @@ function main(): void {
     app.quit();
     return;
   }
+  // Chromium starts the spellchecker when it creates the profiles (before ready): they start with it off (hardening.ts).
+  seedNoSpellcheck([app.getPath("userData"), join(app.getPath("userData"), "Partitions", CONNECT_PARTITION.slice("persist:".length))]);
   // The keychain's safeStorage asks the desktop's Secret Service, also on desktops Chromium does not know (keychain.ts).
   const passwordStore = passwordStoreSwitch(process.env, app.commandLine.hasSwitch("password-store"));
   if (passwordStore) app.commandLine.appendSwitch("password-store", passwordStore);
@@ -177,6 +187,8 @@ function main(): void {
     }
     Menu.setApplicationMenu(null);
     const ses = session.defaultSession;
+    // Before any page loads: no spellchecker, so Chromium downloads no dictionaries (hardening.ts).
+    disableSpellChecker([ses, session.fromPartition(CONNECT_PARTITION)]);
     installAppProtocol(ses.protocol, webRoot);
     const fromMain = (contents: Electron.WebContents | null) => !!mainWindow && !mainWindow.isDestroyed() && contents === mainWindow.webContents;
     ses.setPermissionRequestHandler((contents, name, callback, details) =>

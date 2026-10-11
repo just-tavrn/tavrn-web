@@ -256,7 +256,8 @@ test.describe("Encryption across nodes", () => {
     await expect(page.getByTestId("encrypted-marker")).toBeVisible(CRYPTO);
     await send(page, "Im Raum auf b.test");
     // Let the debounced backup upload run.
-    await expect.poll(async () => (await api(page, NODE_A, "get", "/users/me/backups")).items.map((b: { conversation: string }) => b.conversation.split("/")[0]).sort(), CRYPTO).toEqual([A, B]);
+    // (The account's trust record lives next to them under the ULID of time 0, ENCRYPTION.md §7.)
+    await expect.poll(async () => (await api(page, NODE_A, "get", "/users/me/backups")).items.filter((b: { conversation: string }) => !b.conversation.endsWith("/00000000000000000000000000")).map((b: { conversation: string }) => b.conversation.split("/")[0]).sort(), CRYPTO).toEqual([A, B]);
 
     // A new browser of Alice on a.test: recovery key, then the index brings back the room on b.test and
     // the backups the history of the room and the DM.

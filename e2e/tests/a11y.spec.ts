@@ -234,6 +234,11 @@ test.describe("Accessibility (axe, WCAG 2.2 AA)", () => {
     await page.goto("/");
     await page.waitForLoadState("networkidle");
     await scan(page, "home");
+
+    // A link to a node the account has nothing on asks before signing in there.
+    await page.goto("/n/unknown.example/rooms/01ARZ3NDEKTSV4RRFFQ69G5FAV");
+    await expect(page.getByTestId("node-connect-confirm")).toBeVisible();
+    await scan(page, "first sign-in on another node (confirmation)");
   });
 
   test("friends, direct messages and the voice channel", async ({ page, request }) => {

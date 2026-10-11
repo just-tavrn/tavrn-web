@@ -27,16 +27,28 @@ export function isSvg(mime: string, name = ""): boolean {
   return baseMime(mime) === "image/svg+xml" || /\.svgz?\s*$/i.test(name);
 }
 
+/** Concrete raster image, audio and video types an object URL may keep (no XML-based or unknown subtypes). */
+const INLINE_TYPES = new Set([
+  ...["png", "jpeg", "gif", "webp", "avif", "bmp", "apng"].map((s) => `image/${s}`),
+  ...["mpeg", "mp4", "aac", "ogg", "opus", "wav", "x-wav", "wave", "webm", "flac", "x-flac"].map((s) => `audio/${s}`),
+  ...["mp4", "webm", "ogg", "quicktime"].map((s) => `video/${s}`),
+]);
+
 /**
- * The type an object URL of a downloaded attachment gets: raster images, audio and video keep theirs;
- * everything else (SVG, HTML, XML, unknown types) becomes `application/octet-stream`, so that opening the
- * URL can never render active content in the client's origin.
+ * The type an object URL of a downloaded attachment gets: the concrete raster image, audio and video types of
+ * {@link INLINE_TYPES} keep theirs; everything else (SVG, HTML, any `+xml` type, unknown subtypes) becomes
+ * `application/octet-stream`, so that opening the URL can never render active content in the client's origin.
  */
 export function safeBlobType(mime: string, name = ""): string {
   const m = baseMime(mime);
   if (isSvg(m, name)) return "application/octet-stream";
-  if (/^(image|audio|video)\/[a-z0-9.+-]+$/.test(m)) return m;
+  if (INLINE_TYPES.has(m)) return m;
   return "application/octet-stream";
+}
+
+/** Whether an attachment's object URL may be opened as a page of its own ("open original"): only the types above. */
+export function opensInline(mime: string, name = ""): boolean {
+  return safeBlobType(mime, name) !== "application/octet-stream";
 }
 
 export interface PreviewInput {

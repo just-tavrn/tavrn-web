@@ -9,6 +9,7 @@ import { useLocale, useT } from "../../i18n";
 import { useNode } from "../../components/NodeScope";
 import { Button } from "../../components/ui";
 import { GhostWarning } from "../../components/E2eeNotices";
+import { acknowledgeGhosts, ghostAckId } from "../../components/GhostGate";
 import { channelName } from "../../lib/names";
 import { channelPermissions, useRoomMembers } from "../../pages/ChannelPage";
 import { getMls, useMlsUi } from "../../stores/mls";
@@ -293,7 +294,8 @@ export function VoiceStage({ room, channel }: { room: RoomDetail; channel: Chann
   const connected = status === "connected" || status === "reconnecting";
   const online = useMemo(() => participants.map((p) => p.identity), [participants]);
   const ghosts = useGhosts(q, memberAddresses, connected, online, ghostNoBots(channel, room));
-  const ghostAck = useMlsUi((s) => !!s.ghostAck[q]);
+  const acked = useMlsUi((s) => s.ghostAck[q]);
+  const ghostAck = ghosts.every((g) => acked?.includes(ghostAckId(g)));
 
   const tiles = useMemo(() => {
     const out: Tile[] = [];
@@ -447,7 +449,7 @@ export function VoiceStage({ room, channel }: { room: RoomDetail; channel: Chann
     <div className="flex min-h-0 flex-1 flex-col" data-testid="voice-stage">
       {header}
       {status === "reconnecting" && <div className="border-b border-warn/40 bg-warn/10 px-4 py-1.5 text-xs text-fg-1">{t("voice.status.reconnecting")}</div>}
-      <GhostWarning ghosts={ghosts} acknowledged={ghostAck} onAcknowledge={() => useMlsUi.setState((s) => ({ ghostAck: { ...s.ghostAck, [q]: true } }))} />
+      <GhostWarning ghosts={ghosts} acknowledged={ghostAck} onAcknowledge={() => void getMls().then((m) => acknowledgeGhosts(q, m, ghosts))} />
       <div ref={stageFs.ref} className="relative flex min-h-0 flex-1 flex-col gap-2 bg-bg-0 p-2 md:p-3" data-testid="stage-body">
         {board.visible && (
           <div ref={boardFs.ref} className={`relative min-h-0 bg-bg-0 ${boardFocus || boardFs.active ? "flex-1" : "flex-[3]"}`} data-testid="whiteboard-frame">

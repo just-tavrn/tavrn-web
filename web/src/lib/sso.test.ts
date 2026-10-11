@@ -28,6 +28,20 @@ describe("SSO flow helpers", () => {
     expect(peekSsoLogout()).toBeNull();
   });
 
+  it("startSso follows only an https authorization URL (plain http only to this machine)", async () => {
+    for (const bad of ["javascript:alert(1)", "http://idp.example/authorize", "data:text/html,x", "//idp.example/a"]) {
+      mockFetch({ "/api/v1/auth/oidc/start": { body: { authorization_url: bad, expires_in: 600 } } });
+      let went = "";
+      await expect(startSso(new TavrnApi({ baseUrl: "" }), "login", "/", (u) => (went = u))).rejects.toThrow();
+      expect(went).toBe("");
+      expect(takePendingSso()).toBeNull();
+    }
+    mockFetch({ "/api/v1/auth/oidc/start": { body: { authorization_url: "http://127.0.0.1:9000/authorize", expires_in: 600 } } });
+    let went = "";
+    await startSso(new TavrnApi({ baseUrl: "" }), "login", "/", (u) => (went = u));
+    expect(went).toBe("http://127.0.0.1:9000/authorize");
+  });
+
   it("checks state, age and errors of the callback", () => {
     expect(checkSsoCallback(params(`code=c1&state=${pending.state}`), pending, 1_000_001)).toEqual({ ok: true, code: "c1" });
     expect(checkSsoCallback(params("code=c1&state=other"), pending, 1_000_001)).toEqual({ ok: false, reason: "state", error: undefined });

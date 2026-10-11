@@ -26,7 +26,8 @@ import { AuthCard } from "../components/auth/AuthCard";
 import { Button, ErrorText } from "../components/ui";
 import { deviceProofFor, forgetPrf, hasPendingPrf, passkeyEntryIds, takePrf } from "../crypto/e2ee";
 import { parseUnlockKey, sealForApp } from "../crypto/sealedUnlock";
-import { evaluatePrf, passkeysSupported } from "../lib/passkeys";
+import { evaluatePrf, passkeyReauth, passkeysSupported } from "../lib/passkeys";
+import { currentReauth, setReauth } from "../stores/reauth";
 import { checkCallback, completeRemoteSignIn, homeClient, hostOf, takePendingConnect, type PendingConnect } from "../lib/remoteSignIn";
 import { signOutAfterHandoff } from "../lib/handoffSignOut";
 import { inSignInWindow } from "../platform/tauriDetect";
@@ -237,7 +238,18 @@ function AppSessionConnect() {
       let passkey = takePrf();
       if (!passkey && appKey && method === "passkey" && passkeysSupported()) {
         const ids = await passkeyEntryIds(api).catch(() => [] as string[]);
-        if (ids.length) passkey = await evaluatePrf(ids).catch(() => null);
+        if (currentReauth()) {
+          if (ids.length) passkey = await evaluatePrf(ids).catch(() => null);
+        } else {
+          // The code needs a fresh confirmation (PROTOCOL.md §5c): the passkey confirms it and, in the same touch,
+          // yields the PRF output for the unlock. Without it the code request asks for a confirmation itself.
+          const r = await passkeyReauth(api).catch(() => null);
+          if (r) {
+            setReauth(r.reauth.reauth_token, r.reauth.expires_in);
+            if (r.prf && ids.includes(r.credentialId)) passkey = { credentialId: r.credentialId, prf: r.prf };
+            else r.prf?.fill(0);
+          }
+        }
       }
       const sealed = passkey && appKey ? await sealForApp(appKey, { sessionId: id, credentialId: passkey.credentialId, prf: passkey.prf }) : null;
       passkey?.prf.fill(0);

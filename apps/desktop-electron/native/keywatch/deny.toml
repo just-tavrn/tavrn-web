@@ -11,3 +11,11 @@ unused-allowed-license = "allow"
 
 [advisories]
 yanked = "deny"
+
+[bans]
+multiple-versions = "allow"
+
+# Crates only from crates.io: no other registry and no git repository.
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

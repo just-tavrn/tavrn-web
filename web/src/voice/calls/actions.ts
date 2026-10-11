@@ -17,6 +17,7 @@ import { joinVoice, leaveVoice } from "../index";
 import { useVoicePresence } from "../presence";
 import { useVoice, type VoiceTarget } from "../store";
 import { callKey, onEnd, onRing, onUpdate, useCalls } from "./state";
+import { viaOf } from "../../components/ViaNode";
 
 const me = () => useAuth.getState().user?.address ?? null;
 
@@ -65,18 +66,20 @@ export function applyCall(domain: string, call: CallState): void {
   presence(domain, call);
 }
 
-export function onRingEvent(socketDomain: string, d: { conversation_id: string; node?: string; from: string; started_at: string; group?: boolean }): void {
+export function onRingEvent(socketDomain: string, d: { conversation_id: string; node?: string; from: string; started_at: string; group?: boolean; via?: string }): void {
   const domain = d.node || socketDomain;
   const key = callKey(domain, d.conversation_id);
   const declined = !!useCalls.getState().declined[key];
+  const via = viaOf(d);
   const before = useCalls.getState().ringing[key];
   useCalls.getState().set((s) =>
-    onRing(s, { domain, conversationId: d.conversation_id, from: d.from, startedAt: d.started_at, group: !!d.group, receivedAt: Date.now() }, { inCall: inCall(domain, d.conversation_id), now: Date.now(), declined }),
+    onRing(s, { domain, conversationId: d.conversation_id, from: d.from, startedAt: d.started_at, group: !!d.group, receivedAt: Date.now(), ...(via ? { via } : {}) }, { inCall: inCall(domain, d.conversation_id), now: Date.now(), declined }),
   );
   // A new ring (not the same call announced again by another node) goes into the notification center.
   if (!before && useCalls.getState().ringing[key]) {
     const name = d.from.split("@")[0] ?? d.from;
-    const entry = { title: t("calls.incoming_from", { name }), body: d.group ? t("calls.notify_group") : d.from, path: conversationPath(domain, d.conversation_id) };
+    const caller = via ? `${d.from} ${t("invites.via", { node: via })}` : d.from;
+    const entry = { title: t("calls.incoming_from", { name }), body: d.group ? t("calls.notify_group") : caller, path: conversationPath(domain, d.conversation_id) };
     useNotifications.getState().push({ kind: "call", ...entry });
     // The desktop app in the background: a native notification (the browser's calls reach it through web push).
     systemNotify({ ...entry, tag: key }, { browser: false });

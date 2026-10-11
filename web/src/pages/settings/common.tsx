@@ -187,13 +187,19 @@ export function ConfirmDialog({ open, title, text, confirmWord, actionLabel, onC
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const ready = !confirmWord || typed === confirmWord;
+  // The word is rendered as text (never as HTML), so a name with `&` or entities shows exactly what must be typed.
+  const [before, after = ""] = t("common.confirm_type", { word: "\u0000" }).split("\u0000");
   return (
     <Dialog title={title} open={open} onClose={onClose}>
       <div className="space-y-3 text-sm text-fg-1">
         <div>{text}</div>
         {confirmWord && (
           <label className="block space-y-1">
-            <span className="text-xs text-fg-2" dangerouslySetInnerHTML={{ __html: t("common.confirm_type", { word: `<strong class="text-fg-0">${confirmWord.replace(/</g, "&lt;")}</strong>` }) }} />
+            <span className="text-xs text-fg-2">
+              {before}
+              <strong className="text-fg-0">{confirmWord}</strong>
+              {after}
+            </span>
             <Input value={typed} onChange={(e) => setTyped(e.target.value)} aria-label={t("common.confirmation")} autoFocus />
           </label>
         )}

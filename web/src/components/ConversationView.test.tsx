@@ -8,7 +8,7 @@ import { mockFetch, renderWithProviders } from "../test/render";
 import { ConversationView } from "./ConversationView";
 import { GhostWarning } from "./E2eeNotices";
 
-const ghost = { identity: "mallory@t.local/01J9ZK3G5M8Q2W4E6R8T0Y2VD1", reason: "not_member" as const };
+const ghost = { identity: "mallory@t.local/01J9ZK3G5M8Q2W4E6R8T0Y2VD1", reason: "not_member" as const, key: "K859" };
 let e2ee: { phase: string; mls: unknown; waiting: string[]; ghosts: unknown[]; error: null; rejoined: boolean; tick: number } = { phase: "ready", mls: null, waiting: [] as string[], ghosts: [ghost], error: null, rejoined: false, tick: 0 };
 
 let e2eeOpts: { noBots?: boolean } | null = null;
@@ -34,6 +34,8 @@ function view() {
 describe("ConversationView: ghost check (ENCRYPTION.md §4.6)", () => {
   it("names the unknown device and blocks sending until the user acknowledged it", async () => {
     useAuth.setState({ token: "t", user: me });
+    const acknowledgeGhosts = vi.fn(async () => undefined);
+    e2ee = { ...e2ee, mls: { acknowledgeGhosts } };
     view();
     const warning = screen.getByTestId("ghost-warning");
     expect(warning).toHaveTextContent("Ein unbekanntes Gerät ist Teil dieser Unterhaltung");
@@ -43,6 +45,8 @@ describe("ConversationView: ghost check (ENCRYPTION.md §4.6)", () => {
     expect(screen.getByText("Bestätige zuerst die Warnung zum unbekannten Gerät.")).toBeInTheDocument();
     await userEvent.setup().click(screen.getByRole("button", { name: "Ich verstehe" }));
     await waitFor(() => expect(screen.getByLabelText("Nachricht")).toBeEnabled());
+    // The session manager is told: it refuses content to an unacknowledged ghost on its own (fail closed).
+    expect(acknowledgeGhosts).toHaveBeenCalledWith("t.local/c1", [{ identity: ghost.identity, key: ghost.key }]);
     // The warning itself stays visible.
     expect(screen.getByTestId("ghost-warning")).toBeInTheDocument();
   });
@@ -139,7 +143,7 @@ describe("GhostWarning", () => {
   it("renders nothing without violations and lists every reason", () => {
     const { container, rerender } = renderWithProviders(<GhostWarning ghosts={[]} acknowledged={false} onAcknowledge={() => {}} />);
     expect(container).toBeEmptyDOMElement();
-    rerender(<GhostWarning ghosts={[ghost, { identity: "a@t.local/X", reason: "unattested" }, { identity: "b@t.local/Y", reason: "duplicate" }]} acknowledged onAcknowledge={() => {}} />);
+    rerender(<GhostWarning ghosts={[ghost, { identity: "a@t.local/X", reason: "unattested", key: "K794" }, { identity: "b@t.local/Y", reason: "duplicate", key: "K643" }]} acknowledged onAcknowledge={() => {}} />);
     expect(screen.getByTestId("ghost-warning")).toHaveTextContent("nicht mit dem Sicherheitsschlüssel des Nutzers bestätigt");
     expect(screen.getByTestId("ghost-warning")).toHaveTextContent("kommt mehrfach vor");
     expect(screen.queryByRole("button", { name: "Ich verstehe" })).not.toBeInTheDocument();
@@ -147,7 +151,7 @@ describe("GhostWarning", () => {
   });
 
   it("explains a bot in a \"no bots\" channel (APPLICATIONS.md §3.5)", () => {
-    renderWithProviders(<GhostWarning ghosts={[{ identity: "weatherbot@t.local/01J9ZK3G5M8Q2W4E6R8T0Y2VC1", reason: "bot" }]} acknowledged={false} onAcknowledge={() => {}} />);
+    renderWithProviders(<GhostWarning ghosts={[{ identity: "weatherbot@t.local/01J9ZK3G5M8Q2W4E6R8T0Y2VC1", reason: "bot", key: "K360" }]} acknowledged={false} onAcknowledge={() => {}} />);
     const warning = screen.getByTestId("ghost-warning");
     expect(warning).toHaveTextContent("weatherbot@t.local/01J9ZK3G5M8Q2W4E6R8T0Y2VC1");
     expect(warning).toHaveTextContent("ein Bot in einem Channel, in dem Bots nicht erlaubt sind");
@@ -187,8 +191,8 @@ describe("ConversationView: slash commands use the composer's send path", () => 
     await u.type(screen.getByLabelText("Nachricht"), "/me waves");
     await u.keyboard("{Enter}");
     await waitFor(() => expect(posted).toHaveLength(1));
-    // The thread and reply are signed inside; the members and shown ghosts go along for the re-check (ENCRYPTION.md §5.2, §4.6).
-    expect(encrypt).toHaveBeenCalledWith("t.local/c1", { type: "action", body: "waves" }, { ctx: { thread_id: null, reply_to: null }, members: ["bob@t.local"], noBots: false, knownGhosts: [] });
+    // The thread and reply are signed inside; the members go along for the re-check (ENCRYPTION.md §5.2, §4.6).
+    expect(encrypt).toHaveBeenCalledWith("t.local/c1", { type: "action", body: "waves" }, { ctx: { thread_id: null, reply_to: null }, members: ["bob@t.local"], noBots: false });
     expect(signPlaintext).not.toHaveBeenCalled();
     expect(posted[0]).toMatchObject({ content: { ciphertext: "CIPHERTEXT" }, epoch: 7, mentions: [], mentions_everyone: false, reply_to_id: null });
     expect(JSON.stringify(posted[0])).not.toContain("waves");

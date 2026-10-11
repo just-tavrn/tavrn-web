@@ -36,7 +36,11 @@ extension can do the same (the client's own PRF assertions name the relying part
 in IndexedDB, encrypted under a device key derived from the master secret; the security settings manage factors,
 recovery codes, the recovery key and the optional lock **Require the recovery key or a passkey every time**. Without
 the recovery key the client offers a degraded mode (plaintext channels only, encrypted conversations stay locked) or
-an identity reset (old encrypted history is lost). Details:
+an identity reset (old encrypted history is lost). **Signing out** (by choice, or because the home node refused the
+session, for example after the device was removed elsewhere, or because another tab signed in with another account)
+ends the account's sessions on other nodes and forgets them, empties the client's cache of rooms, DMs and contacts and
+removes the account's per-browser data (room rail folders, notification entries, push record, terms state, closed
+DMs); a new session never uses federated sessions of another account or device. Details:
 [PROTOCOL.md](https://github.com/just-tavrn/tavrn-protocol/blob/main/PROTOCOL.md) §5a,
 [ENCRYPTION.md](https://github.com/just-tavrn/tavrn-protocol/blob/main/ENCRYPTION.md) §2.4.
 
@@ -76,9 +80,15 @@ for passkeys and captchas); on that origin the recovery key unlocks the encrypte
 Encryption works across nodes: the MLS group of a conversation lives on the node that hosts it, while every user's
 keys are checked against that user's own home node. Friends and DMs work by full address (`bob@other.example`); a DM
 lives on the home node of the person who starts it and shows its node's domain in the DM list; DMs started by a friend
-on another node appear by themselves, room invitations by address wait in the invite list on the home view. A node
+on another node appear by themselves, room invitations by address wait in the invite list on the home view. An
+invitation or call that a node forwards for a person of a third node (the invitation's or ring's `via`) shows "via
+\<node>" next to the name, with the explanation that the person's home node did not confirm it; such an invitation is
+always a message request. A node
 that is down only marks its own rooms and conversations as unreachable; a node that refuses to renew the session asks
-to sign in there again. Details:
+to sign in there again. **The first sign-in on a node the account has nothing on** (a link to `/n/<domain>/…` of a node
+without a room or conversation of the account in its index) asks first: "Connect to \<node> as \<address>?", because
+signing in tells that node the address, the IP address and the online times; nothing is stored before the user agrees,
+and side panels never ask. Details:
 [FEDERATION.md](https://github.com/just-tavrn/tavrn-protocol/blob/main/FEDERATION.md) §4, §6, §8 and §13.2.
 
 **The connect page for the apps.** The same `/connect` page also confirms the sign-in of the desktop app
@@ -86,7 +96,10 @@ to sign in there again. Details:
 app's device and, after "Sign in to the app", says "return to the app" instead of redirecting; a sign-in on the page
 for such a confirmation skips the encryption step, because the app creates its own device keys. `method=passkey` (or
 `sso`) starts that method at once with only "Signing in with a passkey…" and "Use another method"; `method=register`
-opens the registration. After a passkey ceremony with the PRF extension the page seals the passkey's unlock secret to
+opens the registration. The confirmation of a sign-in needs a fresh proof of the account (PROTOCOL.md §5c): a sign-in
+on the page a moment ago counts; a page that was already signed in asks for it, with `method=passkey` through the
+passkey itself (one touch confirms and unlocks), otherwise in the usual confirmation dialog. After a passkey ceremony
+with the PRF extension the page seals the passkey's unlock secret to
 the app's key from the URL fragment (`#k=`, never sent to a server) and sends it with the confirmation, so the passkey
 unlocks the app's encrypted messages as it does in the browser; an *unlock* request of a signed-in app ("Unlock the
 tavrn app?") asks only for the passkey ([DESKTOP.md](DESKTOP.md) "Signing in").
@@ -255,7 +268,10 @@ line under the channel name (and the mark in its channel list), so admins see wh
 ## Messages and the composer
 
 **Formatting** is Markdown with line breaks (`lib/markdown.ts`): bold, italic, strikethrough, inline code, links (they
-open in a new tab), lists, quotes and headings up to level three; raw HTML is never rendered. Code blocks show their
+open in a new tab; http, https and mailto only), lists, quotes and headings up to level three; raw HTML is never
+rendered, and nothing edits the sanitized HTML as a string afterwards (emojis and mention badges are applied to its
+text nodes). Names and file names are shown without Unicode bidi controls and isolated from the surrounding text, so
+they cannot display in a misleading order. Code blocks show their
 language, are highlighted and have "Copy code" and "Wrap long lines" buttons. Custom emojis (`:name:` of the room,
 `<:name:ID>` from other rooms and nodes) render as images. **Spoilers** `||text||` (inline, also in quotes and lists)
 stay hidden until clicked or activated with Enter or Space; the composer's spoiler button and Ctrl+Shift+S wrap the
@@ -274,7 +290,10 @@ location, camera and time metadata on the device before the upload (Settings →
 always, the default, ask or never; HEIC/AVIF images and videos cannot be cleaned, and videos with a location ask
 before uploading). **Link previews** are made when sending (Settings → Privacy & safety → "Create link previews when
 sending"): the home node loads the page, the preview travels with the message (encrypted with it in encrypted chats),
-and readers never load anything.
+and readers never load anything. Because the home node learns every link it loads, end-to-end encrypted conversations
+make previews while typing only with **"Fetch link previews in encrypted conversations"** switched on (off by default;
+the device-local setting `encryptedPreviews` in `tavrn.privacy.content`); plaintext channels keep the default above.
+Typing indicators are not sent while the status is "invisible".
 
 **Messages** get reactions, replies, inline edits (marked "(edited)"), pins (the channel's "Pinned messages" panel) and
 threads. Links to YouTube, Twitch, Vimeo and Spotify become click-to-play embeds (Settings → Privacy & safety →
@@ -284,13 +303,20 @@ nickname or display name with the role colour, in DMs and group DMs the members'
 otherwise the address. A message from a device its user retired carries a small "retired device" note.
 
 **The "unverified" marker.** Plaintext messages carry the author device's signature (FEDERATION.md §10.3). A plaintext
-text message from a device (it names a `device_id`) whose signature is missing or cannot be checked gets a small
-"unverified" marker, because the hosting node could have written it; the tooltip says which of the two. A wrong or
-reused signature hides the content. Messages the node itself vouches for as application content get no marker:
-webhook messages (WEBHOOK badge) and unsigned messages of bots, which post with an app token the node authenticated
-and carry the BOT badge (many bots use the REST API without a device key). A bot signature that cannot be checked is
-marked like anyone's. System messages without a device get no marker, and encrypted messages are checked by the
-encryption instead.
+text message of a person whose signature is missing or cannot be checked gets a small "unverified" marker, because the
+hosting node could have written it; the tooltip says which of the two. A message without any `device_id` counts as
+unsigned. A wrong or reused signature hides the content, and the bytes of a plaintext attachment are checked against
+the SHA-256 the message carries (and its signature covers): a file that does not match is not shown or saved. Messages
+the node itself vouches for as application content get no marker: webhook messages (WEBHOOK badge) and unsigned
+messages of bots, which post with an app token the node authenticated and carry the BOT badge (many bots use the REST
+API without a device key). A bot signature that cannot be checked is marked like anyone's. System messages get no
+marker, and encrypted messages are checked by the encryption instead.
+
+**Plaintext in encrypted conversations.** In a DM, a group DM or an encrypted channel every message is encrypted by its
+sender, so a plaintext message there (except the node's own system entries) can only come from the node. It is never
+shown as content: the row reads "This message was not end-to-end encrypted and may not come from the sender", its
+attachments are hidden, and reply references, screen reader announcements, notifications and push notifications say
+"Message not end-to-end encrypted" instead of its text. A plaintext edit of an encrypted message is treated the same.
 
 ### Media and image previews
 
@@ -300,7 +326,9 @@ the download icon. SVG files are never shown inline or opened, only downloaded (
 Privacy & safety → Image previews** decides which images load by themselves: always, only from friends and members of
 shared rooms (default; in rooms every member counts) or never; images larger than the node's
 `TAVRN_PREVIEW_AUTO_MAX_BYTES` (default 5 MiB) always wait. The others show a placeholder with name, size and a
-**Load** button (and "Load all" for several in one message); nothing is fetched before.
+**Load** button (and "Load all" for several in one message); nothing is fetched before. GIFs in messages come from the
+GIF provider's servers and follow the same setting (a placeholder with **Load** otherwise); they load without a
+referrer. "Open original" is offered only for concrete image and video types; anything else is only downloaded.
 
 ### Threads
 
@@ -346,7 +374,20 @@ Welcome. Message content and attachments are encrypted and signed in the browser
 Every device the client meets is checked against the user's identity key (pinned on first use); a changed key shows
 "Security key changed", and a device in a conversation that is not a member or not confirmed by its user's key shows a
 warning and blocks sending until acknowledged. Content keys are backed up encrypted on the home node so that a new
-device unlocked with the recovery key reads the history.
+device unlocked with the recovery key reads the history. The pinned keys, the verified contacts and the account's own
+devices travel with them as an encrypted trust record (ENCRYPTION.md §7): after signing out and in again (a new
+device) a contact whose key changed meanwhile still shows "Security key changed", and verifications stay.
+
+**Unknown devices** (ENCRYPTION.md §4.6). Every encrypted write path checks the roster first: messages and their edits,
+thread titles and renames, forum posts, file and folder records of files channels and whiteboard scenes. Conversations,
+forums, files channels and whiteboards show the unknown-device warning with an "I understand" button, and nothing is
+encrypted in that conversation until the user pressed it; the session manager itself refuses to encrypt while a
+device in the roster is not acknowledged, so a view that missed the warning cannot send to the device either. An
+acknowledgement covers that device's key: a device that appears later blocks again, also one under an acknowledged
+device id with another key. Devices are added to DMs only from KeyPackages whose key is exactly the device's
+confirmed key, and the cleanup of the user's own stale devices confirms a device as retired only when the account
+recorded that device key itself (anything else is removed without a confirmation; messages of a lost device the
+record does not know then stay unverifiable).
 
 **Changed security keys** (ENCRYPTION.md §3.3). Until the user acknowledges the "Security key changed" badge (in the
 member list or next to the author; acknowledging asks for confirmation) or verifies the new key, the contact's devices
@@ -357,7 +398,8 @@ by the previous key (§9a) are not held back.
 
 **Sending** (ENCRYPTION.md §5.2, §5.3). Before encrypting, the client processes the commits it has not seen yet; if
 that fails, nothing is sent and the composer keeps the text with an error to try again. If the commits brought a
-device nobody was shown yet, sending stops as well and the unknown-device warning has to be acknowledged again. A
+device nobody was shown yet, sending stops as well and the unknown-device warning has to be acknowledged again (for
+that device). A
 message's thread and reply are signed inside its encrypted content, so a message the node moved to another thread or
 another reply target shows as "Moved message (signature does not match)" instead of its content. When the node
 answers that the epoch is stale (`mls.epoch_stale`), the client catches up and encrypts once more.

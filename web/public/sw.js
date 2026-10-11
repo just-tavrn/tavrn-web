@@ -72,7 +72,8 @@
     else if (p.conversation) place = p.conversation;
     var title = app;
     var body = s("generic");
-    var text = typeof p.text === "string" && p.text ? p.text : null;
+    // Never a text for an encrypted message, nor in a DM (always end-to-end encrypted): only the node could have written it.
+    var text = typeof p.text === "string" && p.text && p.encrypted !== true && p.type !== "dm" ? p.text : null;
     if (p.local === false && p.type !== "call") {
       title = p.node || app;
       body = fill(s(p.type === "mention" ? "remote_mention" : p.type === "dm" ? "remote_dm" : "remote_message"), { node: p.node });

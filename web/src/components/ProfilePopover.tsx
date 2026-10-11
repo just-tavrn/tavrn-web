@@ -13,6 +13,7 @@ import { TavrnApiError, isBotKind, type Activity, type Profile, type User } from
 import { useT } from "../i18n";
 import { renderMarkdown } from "../lib/markdown";
 import { hueFor } from "../lib/format";
+import { safeLinkUrl } from "../lib/untrusted";
 import { useFloating, type AnchorRect } from "../lib/position";
 import { useAuth } from "../stores/auth";
 import { apiFor } from "../stores/nodes";
@@ -125,11 +126,14 @@ export function ProfileView({ profile, node, onDone, large = false }: { profile:
         {bio && <div className="markdown mt-3 border-t border-line pt-3 text-sm text-fg-1" data-testid="profile-bio" dangerouslySetInnerHTML={{ __html: bio }} />}
         {profile.links.length > 0 && (
           <ul className="mt-3 space-y-1 border-t border-line pt-3 text-sm" data-testid="profile-links">
-            {profile.links.map((l, i) => (
+            {profile.links.map((l, i) => {
+              // Another node's profile can name any URL: only http(s)/mailto links, with the real target on hover.
+              const url = safeLinkUrl(l.url);
+              return (
               <li key={`${l.service}-${i}`} className="flex min-w-0 items-center gap-2" data-service={l.service}>
                 <span className="w-20 shrink-0 text-xs text-fg-2">{t(`profile.service.${l.service}`)}</span>
-                {l.url ? (
-                  <a href={l.url} target="_blank" rel="noopener noreferrer nofollow ugc" className="min-w-0 truncate text-accent hover:underline">
+                {url ? (
+                  <a href={url} title={url} target="_blank" rel="noopener noreferrer nofollow ugc" className="min-w-0 truncate text-accent hover:underline">
                     {l.value}
                   </a>
                 ) : (
@@ -139,7 +143,8 @@ export function ProfileView({ profile, node, onDone, large = false }: { profile:
                   {t("profile.not_verified")}
                 </span>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
         <div className="mt-4 flex flex-wrap gap-2">
