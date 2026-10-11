@@ -300,12 +300,12 @@ jobs:
       # The node runs as a process of the job (the Playwright config starts it with E2E_NODE_BIN), copied out of the
       # node image (the self-hosted runners reach Docker only through the stack's DinD, whose network is not the job's);
       # voice through the livekit-server of the runner image.
-      # The node image: for a release, a release image pinned by digest (vars.TAVRN_RELEASE_NODE_IMAGE, default the
-      # latest node release's digest, docs/GITHUB.md "Variables"); otherwise the edge image of tavrn-node's main.
+      # The node image: for a release, a release image pinned by digest (vars.TAVRN_RELEASE_NODE_IMAGE, no default:
+      # the check below fails without it, docs/GITHUB.md "Variables"); otherwise the edge image of tavrn-node's main.
       - name: Playwright specs (the full smoke test of the AppImage; the shell's and the services' specs, the real keyring)
         env:
           GHCR_TOKEN: ${{ github.token }}
-          NODE_IMAGE: ${{ inputs.release-tag && (vars.TAVRN_RELEASE_NODE_IMAGE || 'ghcr.io/just-tavrn/tavrn-node@sha256:6de0debeafff5ee546d29bb408eed4218dd6e2d81acc567aea2cd83427b2e30e') || 'ghcr.io/just-tavrn/tavrn-node:edge' }}
+          NODE_IMAGE: ${{ inputs.release-tag && vars.TAVRN_RELEASE_NODE_IMAGE || 'ghcr.io/just-tavrn/tavrn-node:edge' }}
         run: |
           if [ -n "$RELEASE_TAG" ] && [[ "$NODE_IMAGE" != *@sha256:* ]]; then
             echo "::error::a release tests against a node image pinned by digest (vars.TAVRN_RELEASE_NODE_IMAGE = <image>@sha256:…), not $NODE_IMAGE"; exit 1
