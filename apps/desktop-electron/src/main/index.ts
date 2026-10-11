@@ -17,7 +17,7 @@ import type { ShellContext, ShellPart } from "./context.ts";
 import { Downloads, handleWillDownload, registerFilesHandlers, saveDialogOptions, TEST_SAVE_DIR_ENV } from "./downloads.ts";
 import { ShellEvents } from "./events.ts";
 import { devServerUrl, isAppPage, permission } from "./guard.ts";
-import { disableSpellChecker, refusedDebugSwitch } from "./hardening.ts";
+import { disableSpellChecker, refusedDebugSwitch, seedNoSpellcheck } from "./hardening.ts";
 import { Hotkeys, nativeKeyListener, registerHotkeyHandlers } from "./hotkeys.ts";
 import { IpcRegistry, fromMainPage, type IpcEventLike } from "./ipc.ts";
 import { BACKEND_ENV, Keychain, passwordStoreSwitch, registerKeychainHandlers, safeStorageCipher } from "./keychain.ts";
@@ -62,6 +62,8 @@ function main(): void {
     app.quit();
     return;
   }
+  // Chromium starts the spellchecker when it creates the profiles (before ready): they start with it off (hardening.ts).
+  seedNoSpellcheck([app.getPath("userData"), join(app.getPath("userData"), "Partitions", CONNECT_PARTITION.slice("persist:".length))]);
   // The keychain's safeStorage asks the desktop's Secret Service, also on desktops Chromium does not know (keychain.ts).
   const passwordStore = passwordStoreSwitch(process.env, app.commandLine.hasSwitch("password-store"));
   if (passwordStore) app.commandLine.appendSwitch("password-store", passwordStore);
