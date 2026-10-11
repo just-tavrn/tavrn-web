@@ -63,6 +63,7 @@ import { playCue, type Cue } from "./cues";
 import { setIcePolicy } from "./ice";
 import { hotkeyHeld } from "./hotkeys";
 import { PttCues } from "./pttCues";
+import { CaptureRelease } from "./capture";
 import type { BackgroundHandle } from "./background";
 import { endpoints, followOthers as followOthersOf, type Endpoints, type JoinInfo } from "./sessionShared";
 import { StreamSubscriptions } from "./streams";
@@ -81,6 +82,8 @@ interface Session {
   mls: MlsManager;
   room: Room;
   pipeline: MicPipeline;
+  /** Releases the microphone capture while muted (`capture.ts`). */
+  capture: CaptureRelease;
   keyProvider: TavrnKeyProvider;
   info: JoinInfo;
   offs: Array<() => void>;
@@ -407,6 +410,7 @@ async function publishMic(s: Session) {
   if (useVoice.getState().muted) {
     await pub.mute();
     await s.pipeline.setPaused(true);
+    await s.capture.setMuted(true);
   }
 }
 
@@ -415,6 +419,7 @@ function onPermissions(s: Session) {
   // self mute stays the user's (a server mute leaves the user muted).
   const canSpeak = canPublish(s.room, Track.Source.Microphone);
   set(canSpeak ? { canSpeak, serverMuted: false } : { canSpeak, serverMuted: true, muted: true });
+  if (!canSpeak) void s.capture.setMuted(true);
   emitSpeakers(s);
   if (canSpeak) void publishMic(s).catch(() => undefined);
 }
@@ -556,6 +561,7 @@ async function applySettings(s: Session, next: VoiceSettings, prev: VoiceSetting
 
 async function cleanup(s: Session) {
   s.leaving = true;
+  s.capture.close();
   s.offs.forEach((off) => off());
   s.offs = [];
   if (current === s) {
@@ -696,6 +702,7 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
       mls,
       room,
       pipeline,
+      capture: new CaptureRelease(pipeline),
       keyProvider,
       info,
       offs: [],
@@ -857,11 +864,33 @@ export async function setMuted(muted: boolean): Promise<void> {
   if (!s) return;
   // The own ring goes dark at once (the paused gate reports nothing any more).
   emitSpeakers(s);
+  if (!(await applyMute(s, muted))) return;
+  if (deafened !== state.deafened) applyVolumes(s);
+  await reportState(s, { muted, ...(deafened !== state.deafened ? { deafened } : {}) });
+}
+
+/**
+ * Mutes or unmutes the microphone publication, the pipeline and the capture (`capture.ts`: released a moment after a
+ * mute, re-acquired before an unmute takes effect). An unmute whose microphone cannot be opened again (unplugged,
+ * permission withdrawn) stays muted with a warning; returns false then.
+ */
+async function applyMute(s: Session, muted: boolean): Promise<boolean> {
+  if (!muted) {
+    try {
+      await s.capture.setMuted(false);
+    } catch (e) {
+      if (current !== s) return false;
+      set({ muted: true, transmitting: false });
+      useToasts.getState().push({ kind: "warning", title: voiceErrorMessage(e) });
+      await reportState(s, { muted: true });
+      return false;
+    }
+  }
   const pub = s.room.localParticipant.getTrackPublication(Track.Source.Microphone);
   if (pub) await (muted ? pub.mute() : pub.unmute());
   await s.pipeline.setPaused(muted);
-  if (deafened !== state.deafened) applyVolumes(s);
-  await reportState(s, { muted, ...(deafened !== state.deafened ? { deafened } : {}) });
+  if (muted) await s.capture.setMuted(true);
+  return true;
 }
 
 export async function setDeafened(deafened: boolean): Promise<void> {
@@ -878,9 +907,10 @@ export async function setDeafened(deafened: boolean): Promise<void> {
   if (!s) return;
   emitSpeakers(s);
   applyVolumes(s);
-  const pub = s.room.localParticipant.getTrackPublication(Track.Source.Microphone);
-  if (pub) await (muted ? pub.mute() : pub.unmute());
-  await s.pipeline.setPaused(muted);
+  if (!(await applyMute(s, muted))) {
+    await reportState(s, { deafened });
+    return;
+  }
   await reportState(s, { deafened, muted });
 }
 
@@ -1126,6 +1156,8 @@ function exposeForTests(s: Session) {
       epoch: s.mls.epoch(s.q),
       local: { identity: s.room.localParticipant.identity, isSpeaking: s.room.localParticipant.isSpeaking, tracks: [...s.room.localParticipant.trackPublications.values()].map((p) => ({ source: p.source, encrypted: p.isEncrypted })) },
       speaking: analysing(s) ? "analyser" : "livekit",
+      // The microphone capture is open (released while muted, `capture.ts`).
+      capturing: s.pipeline.capturing,
       priority: [...s.priority.active],
       ducking: Object.fromEntries([...s.taps.values()].map((t) => [t.identity, t.duck.gain.value])),
       // Volumes as applied (`volume.ts`) and the gains LiveKit's Web Audio mix plays them with.

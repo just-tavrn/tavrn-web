@@ -645,6 +645,17 @@ the sliders. While the browser hides the device names the menu offers **Show dev
 device selection (`setSinkId`, missing in some Firefox builds and WebKitGTK) say so instead of listing speakers. A
 click keeps muting and deafening.
 
+### Mute and the microphone capture
+
+A mute (also through deafen or a server mute) releases the microphone capture two seconds later: the browser's
+recording indicator goes off, and on Android the phone leaves the call audio mode that an open capture with echo
+cancellation keeps (Chromium plays remote voices as call audio then, often far quieter than media). A quick mute and
+unmute keeps the capture; an unmute opens it again with the same device and settings before the microphone is
+unmuted (if that fails, for example the device was unplugged, the microphone stays muted with a warning). Push-to-talk
+closes only the gate between key presses, never the capture: a new `getUserMedia` per press would take hundreds of
+milliseconds and cut off the first syllable. While unmuted (voice activation or push-to-talk) with echo cancellation
+on, Android stays in the call audio mode: the volume keys set the call volume during a call.
+
 ### Voice and stream audio
 
 A participant's voice (microphone) and their screen share's audio each have their own volume (0–200 %, kept per
@@ -664,6 +675,14 @@ devices, also across nodes; direct calls and group calls have different ringtone
 accepting opens the call view with the same tiles and controls as voice channels, end-to-end encrypted with the
 conversation's keys. Nobody answering within 45 seconds or a declined DM call leaves a "missed call" entry, a finished
 call one with its duration. Calls in DMs use 64 kbps.
+
+Phones and other browsers that start audio only after a user gesture: the first tap or key press after signing in
+unlocks the sound (a silent one-sample buffer in the gesture), so a call can ring later without one. While the
+browser still blocks it, the banner says "tap the page to hear the ringtone", and the ring shows a system
+notification through the service worker (also when the tab is hidden) if push or browser notifications are on for
+this device; the notification closes when the ring ends. Phones vibrate while it rings (browsers allow it after the
+first tap). The node also pushes call rings while a tab is connected, because a phone may keep a frozen background
+tab's connection open; the service worker shows them only while no page of the client is visible.
 
 ### Screen sharing, the priority speaker and the soundboard
 
@@ -788,7 +807,8 @@ text). The settings are stored on the home node and fall back to this browser on
 **Push notifications on this device** turns on web push for this browser or installed app (PROTOCOL.md §6d): the
 client registers a service worker (`public/sw.js`, push and notification clicks only: it caches nothing and there is
 no offline mode), subscribes with the home node's VAPID key and registers the subscription with the home node, which
-pushes while no tab of the client is connected and follows the notification settings (rooms on other nodes push
+pushes while no tab of the client is connected (call rings also while one is: the service worker shows them only
+while no page of the client is visible) and follows the notification settings (rooms on other nodes push
 through the home node for DMs, mentions and calls). Pushes of encrypted conversations only name the conversation and
 the sender; "Show message text in push notifications" adds a preview of unencrypted messages. A click opens or focuses
 the conversation; a test button sends a push. Signing out removes the subscription; on iPhone and iPad push works only

@@ -831,8 +831,9 @@ test.describe("Voice channels", () => {
       await page.waitForTimeout(3000);
       expect(warnings.filter((w) => w.includes("mask smoothing off"))).toEqual([]);
       await expect(page.getByText("background effects are not supported")).toHaveCount(0);
-      // The processor replaced the camera track with its own canvas output.
-      expect(await page.getByTestId("camera-preview").evaluate((v) => ((v as HTMLVideoElement).srcObject as MediaStream | null)?.getVideoTracks()[0]?.label ?? "")).not.toMatch(/fake/i);
+      // The processor replaced the camera track with its own canvas output (its model may still be loading on a busy
+      // machine: the raw camera shows until then).
+      await expect.poll(() => page.getByTestId("camera-preview").evaluate((v) => ((v as HTMLVideoElement).srcObject as MediaStream | null)?.getVideoTracks()[0]?.label ?? ""), { timeout: 15_000 }).not.toMatch(/fake/i);
     }
     await page.getByTestId("blur-strength").fill("20");
     await page.getByTestId("bg-quality").selectOption("fast");

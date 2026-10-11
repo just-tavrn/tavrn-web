@@ -34,6 +34,14 @@ First public release of the web client and the desktop apps.
 
 - The registration form follows the node's e-mail policy: "Email" and required when the node requires an address,
   "Email (optional)" when it is optional, no field when the node accepts none.
+- Voice on phones: a mute now releases the microphone capture after two seconds and an unmute opens it again with the
+  same device and settings (push-to-talk keeps it between key presses). On Android an open capture with echo
+  cancellation keeps the phone in its call audio mode, in which remote voices played very quietly.
+- Incoming calls on phones: the first tap after signing in unlocks the sound, so a later call can ring; while the
+  browser still blocks the sound the banner says to tap the page, phones vibrate while it rings, and a hidden tab or a
+  blocked sound shows a system notification through the service worker (with push or browser notifications on).
+  Call rings are now also pushed while a tab is connected (the node change of the same release): the service worker
+  stays silent while a page of the client is visible and replaces the page's own notification without a second alert.
 
 ### Security
 

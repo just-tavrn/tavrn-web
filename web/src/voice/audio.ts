@@ -12,6 +12,8 @@
  * The worklet reports the level about ten times per second; nothing runs per frame on the main thread.
  * Music mode (VOICE.md §4a) captures without the microphone processing and RNNoise and keeps two channels
  * when the device delivers them (`quality.ts`); the gate then also guards against a one-sided capture.
+ * While muted the session releases the capture (`capture.ts`, `releaseCapture`): the graph and the published track
+ * stay, only the microphone in front of them is closed until the unmute re-acquires it.
  * Loaded lazily (voice session and settings tab only).
  */
 import gateWorkletUrl from "./gate.worklet.ts?worker&url";
@@ -57,6 +59,10 @@ export class MicPipeline {
   /** The microphone test of the settings: the gate ignores push-to-talk (`gateModeFor`). */
   private readonly test: boolean;
   private stereoCapture = false;
+  /** The capture is released while muted (`releaseCapture`). */
+  private released = false;
+  /** Counts `getUserMedia` calls and releases: only the latest one may install its capture. */
+  private captureSeq = 0;
 
   private constructor(ctx: AudioContext, gate: AudioWorkletNode, settings: VoiceSettings, onLevel: (r: LevelReport) => void, music: boolean, test: boolean) {
     this.ctx = ctx;
@@ -114,19 +120,9 @@ export class MicPipeline {
   async apply(settings: VoiceSettings): Promise<void> {
     this.settings = settings;
     const constraints = captureFor(settings, this.music);
-    if (!this.constraints || !sameConstraints(constraints, this.constraints)) {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: constraints, video: false });
-      if (this.closed) {
-        stream.getTracks().forEach((t) => t.stop());
-        return;
-      }
-      this.source?.disconnect();
-      this.stream?.getTracks().forEach((t) => t.stop());
-      this.stream = stream;
-      this.source = this.ctx.createMediaStreamSource(stream);
-      this.constraints = constraints;
-      this.stereoCapture = stereoCapture(this.music, stream.getAudioTracks()[0]?.getSettings());
-      this.gate.port.postMessage({ stereo: this.stereoCapture });
+    // A released capture (muted, `capture.ts`) stays closed: the next re-acquire opens it with these settings.
+    if (!this.released && (!this.constraints || !sameConstraints(constraints, this.constraints))) {
+      if (!(await this.open(constraints))) return;
       this.rnnoise?.disconnect();
       this.rnnoise?.destroy();
       this.rnnoise = null;
@@ -136,6 +132,55 @@ export class MicPipeline {
     this.gate.port.postMessage({ threshold: gateThreshold(settings), holdMs: settings.inputMode === "ptt" ? 0 : 300 });
     if (settings.inputMode !== "ptt") this.setPttOpen(false);
     this.gate.port.postMessage({ mode: gateModeFor(settings.inputMode, this.pttOpen, this.test) });
+  }
+
+  /**
+   * Opens the microphone with `constraints` and puts it in front of the graph (replacing an earlier capture).
+   * Returns false when the pipeline closed or a later open or a release overtook this one (its track is stopped).
+   */
+  private async open(constraints: MediaTrackConstraints): Promise<boolean> {
+    const seq = ++this.captureSeq;
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: constraints, video: false });
+    if (this.closed || seq !== this.captureSeq) {
+      stream.getTracks().forEach((t) => t.stop());
+      return false;
+    }
+    this.source?.disconnect();
+    this.stream?.getTracks().forEach((t) => t.stop());
+    this.stream = stream;
+    this.source = this.ctx.createMediaStreamSource(stream);
+    this.constraints = constraints;
+    this.stereoCapture = stereoCapture(this.music, stream.getAudioTracks()[0]?.getSettings());
+    this.gate.port.postMessage({ stereo: this.stereoCapture });
+    return true;
+  }
+
+  /** The microphone is captured (not released while muted). */
+  get capturing(): boolean {
+    return !this.released && !!this.stream;
+  }
+
+  /**
+   * Stops the microphone capture while muted (`capture.ts`): the browser's recording indicator goes off and Android
+   * leaves its call audio mode. The published track stays (it carries silence; the publication is muted anyway).
+   */
+  releaseCapture(): void {
+    if (this.closed || this.released) return;
+    this.released = true;
+    // A capture still being opened is dropped when it arrives.
+    this.captureSeq += 1;
+    this.source?.disconnect();
+    this.source = null;
+    this.stream?.getTracks().forEach((t) => t.stop());
+    this.stream = null;
+  }
+
+  /** Opens the microphone again after `releaseCapture`, with the current settings (same device and constraints). */
+  async reacquireCapture(): Promise<void> {
+    if (this.closed || !this.released) return;
+    this.released = false;
+    if (!(await this.open(captureFor(this.settings, this.music)))) return;
+    await this.wire(!this.music && this.settings.noiseSuppression === "rnnoise");
   }
 
   private async wire(rnnoise: boolean): Promise<void> {

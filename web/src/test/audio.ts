@@ -58,6 +58,18 @@ export function mockEngineContext(opts: { state?: string; now?: number; resumeWo
         ctx.state = "suspended";
       });
     },
+    sampleRate: 48000,
+    createBuffer: (channels: number, length: number, rate: number) => {
+      calls.push(`buffer:${channels}x${length}@${rate}`);
+      return {};
+    },
+    createBufferSource: () => ({
+      buffer: null as unknown,
+      connect: () => undefined,
+      start: () => {
+        calls.push("silent");
+      },
+    }),
     setSinkId: (sink: string) => {
       calls.push(`sink:${sink}`);
       return settle(() => undefined);

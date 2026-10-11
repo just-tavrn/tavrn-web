@@ -72,6 +72,17 @@ test.describe("Calls in direct messages", () => {
       const remote = state.remote.find((r) => r.identity.startsWith(`${other.address}/`))!;
       await expect.poll(() => inboundPeak(me.page, remote.identity), { timeout: 20_000 }).toBeGreaterThan(0.01);
     }
+    // Muted, alice's microphone capture is released after a short grace period (on Android an open capture with echo
+    // cancellation keeps the phone in its call audio mode, which made remote voices very quiet); unmuting opens it
+    // again with the same device, and bob hears her again.
+    expect((await hooks(alice.page)).capturing).toBe(true);
+    const mute = alice.page.getByTestId("call-view").getByTestId("voice-mute");
+    await mute.click();
+    await expect.poll(async () => (await hooks(alice.page)).capturing, { timeout: 10_000 }).toBe(false);
+    await mute.click();
+    await expect.poll(async () => (await hooks(alice.page)).capturing, { timeout: 10_000 }).toBe(true);
+    const aliceId = (await hooks(bob.page)).remote.find((r) => r.identity.startsWith(`${alice.address}/`))!.identity;
+    await expect.poll(() => inboundPeak(bob.page, aliceId), { timeout: 20_000 }).toBeGreaterThan(0.01);
     await expect(alice.page.getByTestId("call-status")).toHaveText(/\d+:\d\d/);
     // Minimize and reopen (desktop: from the voice bar; phones: the pill).
     await alice.page.getByTestId("call-minimize").click();
