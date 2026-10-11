@@ -36,7 +36,11 @@ extension can do the same (the client's own PRF assertions name the relying part
 in IndexedDB, encrypted under a device key derived from the master secret; the security settings manage factors,
 recovery codes, the recovery key and the optional lock **Require the recovery key or a passkey every time**. Without
 the recovery key the client offers a degraded mode (plaintext channels only, encrypted conversations stay locked) or
-an identity reset (old encrypted history is lost). Details:
+an identity reset (old encrypted history is lost). **Signing out** (by choice, or because the home node refused the
+session, for example after the device was removed elsewhere, or because another tab signed in with another account)
+ends the account's sessions on other nodes and forgets them, empties the client's cache of rooms, DMs and contacts and
+removes the account's per-browser data (room rail folders, notification entries, push record, terms state, closed
+DMs); a new session never uses federated sessions of another account or device. Details:
 [PROTOCOL.md](https://github.com/just-tavrn/tavrn-protocol/blob/main/PROTOCOL.md) §5a,
 [ENCRYPTION.md](https://github.com/just-tavrn/tavrn-protocol/blob/main/ENCRYPTION.md) §2.4.
 
@@ -78,7 +82,10 @@ keys are checked against that user's own home node. Friends and DMs work by full
 lives on the home node of the person who starts it and shows its node's domain in the DM list; DMs started by a friend
 on another node appear by themselves, room invitations by address wait in the invite list on the home view. A node
 that is down only marks its own rooms and conversations as unreachable; a node that refuses to renew the session asks
-to sign in there again. Details:
+to sign in there again. **The first sign-in on a node the account has nothing on** (a link to `/n/<domain>/…` of a node
+without a room or conversation of the account in its index) asks first: "Connect to \<node> as \<address>?", because
+signing in tells that node the address, the IP address and the online times; nothing is stored before the user agrees,
+and side panels never ask. Details:
 [FEDERATION.md](https://github.com/just-tavrn/tavrn-protocol/blob/main/FEDERATION.md) §4, §6, §8 and §13.2.
 
 **The connect page for the apps.** The same `/connect` page also confirms the sign-in of the desktop app
@@ -255,7 +262,10 @@ line under the channel name (and the mark in its channel list), so admins see wh
 ## Messages and the composer
 
 **Formatting** is Markdown with line breaks (`lib/markdown.ts`): bold, italic, strikethrough, inline code, links (they
-open in a new tab), lists, quotes and headings up to level three; raw HTML is never rendered. Code blocks show their
+open in a new tab; http, https and mailto only), lists, quotes and headings up to level three; raw HTML is never
+rendered, and nothing edits the sanitized HTML as a string afterwards (emojis and mention badges are applied to its
+text nodes). Names and file names are shown without Unicode bidi controls and isolated from the surrounding text, so
+they cannot display in a misleading order. Code blocks show their
 language, are highlighted and have "Copy code" and "Wrap long lines" buttons. Custom emojis (`:name:` of the room,
 `<:name:ID>` from other rooms and nodes) render as images. **Spoilers** `||text||` (inline, also in quotes and lists)
 stay hidden until clicked or activated with Enter or Space; the composer's spoiler button and Ctrl+Shift+S wrap the
@@ -274,7 +284,10 @@ location, camera and time metadata on the device before the upload (Settings →
 always, the default, ask or never; HEIC/AVIF images and videos cannot be cleaned, and videos with a location ask
 before uploading). **Link previews** are made when sending (Settings → Privacy & safety → "Create link previews when
 sending"): the home node loads the page, the preview travels with the message (encrypted with it in encrypted chats),
-and readers never load anything.
+and readers never load anything. Because the home node learns every link it loads, end-to-end encrypted conversations
+make previews while typing only with **"Fetch link previews in encrypted conversations"** switched on (off by default;
+the device-local setting `encryptedPreviews` in `tavrn.privacy.content`); plaintext channels keep the default above.
+Typing indicators are not sent while the status is "invisible".
 
 **Messages** get reactions, replies, inline edits (marked "(edited)"), pins (the channel's "Pinned messages" panel) and
 threads. Links to YouTube, Twitch, Vimeo and Spotify become click-to-play embeds (Settings → Privacy & safety →
@@ -300,7 +313,9 @@ the download icon. SVG files are never shown inline or opened, only downloaded (
 Privacy & safety → Image previews** decides which images load by themselves: always, only from friends and members of
 shared rooms (default; in rooms every member counts) or never; images larger than the node's
 `TAVRN_PREVIEW_AUTO_MAX_BYTES` (default 5 MiB) always wait. The others show a placeholder with name, size and a
-**Load** button (and "Load all" for several in one message); nothing is fetched before.
+**Load** button (and "Load all" for several in one message); nothing is fetched before. GIFs in messages come from the
+GIF provider's servers and follow the same setting (a placeholder with **Load** otherwise); they load without a
+referrer. "Open original" is offered only for concrete image and video types; anything else is only downloaded.
 
 ### Threads
 
