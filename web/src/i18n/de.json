@@ -1167,6 +1167,8 @@
   "notice.kicked": "Du wurdest aus einem Raum entfernt",
   "notice.banned": "Du wurdest aus einem Raum verbannt",
   "errors.auth.invalid_credentials": "Benutzername oder Passwort falsch",
+  "errors.auth.session_revoked": "Deine Sitzung wurde auf diesem Gerät abgemeldet.",
+  "errors.mail.unavailable": "Dieser Knoten kann gerade keine E-Mails senden; das Zurücksetzen des Passworts ist nicht verfügbar.",
   "errors.auth.username_taken": "Dieser Benutzername ist bereits vergeben",
   "errors.auth.password_weak": "Passwort: mindestens 10 Zeichen",
   "errors.auth.reset_invalid": "Link ungültig oder abgelaufen",

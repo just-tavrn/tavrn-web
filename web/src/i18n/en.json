@@ -1167,6 +1167,8 @@
   "notice.kicked": "You were removed from a room",
   "notice.banned": "You were banned from a room",
   "errors.auth.invalid_credentials": "Wrong username or password",
+  "errors.auth.session_revoked": "Your session was signed out on this device.",
+  "errors.mail.unavailable": "This node cannot send e-mail at the moment; password reset is unavailable.",
   "errors.auth.username_taken": "This username is already taken",
   "errors.auth.password_weak": "Password: at least 10 characters",
   "errors.auth.reset_invalid": "Link invalid or expired",
