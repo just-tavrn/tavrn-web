@@ -32,12 +32,23 @@ const files = readdirSync(WORKFLOWS).filter((f) => f.endsWith(".yml"));
 const desktop = jobsOf(readFileSync(new URL("desktop.yml", WORKFLOWS), "utf8"));
 const signer = desktop.jobs["release-assets"];
 
-test("only desktop.yml's release-assets job names the updater key", () => {
+/** The caller's pass-through of an environment secret by name: `NAME: ${{ secrets.NAME }}` in a `secrets:` mapping. */
+const PASS_THROUGH = /^ {6}(TAURI_SIGNING_PRIVATE_KEY(?:_PASSWORD)?): \$\{\{ secrets\.\1 \}\}$/;
+
+test("only desktop.yml's release-assets job names the updater key; release.yml passes it by name to desktop.yml", () => {
   for (const file of files) {
     const { jobs } = jobsOf(readFileSync(new URL(file, WORKFLOWS), "utf8"));
     for (const [name, body] of Object.entries(jobs)) {
       if (file === "desktop.yml" && name === "release-assets") continue;
-      assert.doesNotMatch(code(body), KEY, `${file}: job ${name} names the updater key`);
+      let lines = code(body).split("\n");
+      if (file === "release.yml" && name === "desktop") {
+        // A called workflow receives an environment secret only when the caller passes it by name; the value is the
+        // environment's, resolved at the job that declares the environment. Nothing else of this job may name it.
+        const passed = lines.filter((l) => PASS_THROUGH.test(l));
+        assert.equal(passed.length, 2, "release.yml passes the key and its password by name");
+        lines = lines.filter((l) => !PASS_THROUGH.test(l));
+      }
+      assert.doesNotMatch(lines.join("\n"), KEY, `${file}: job ${name} names the updater key`);
     }
   }
   assert.match(signer, KEY);
