@@ -99,7 +99,11 @@ jobs:
     uses: ./.github/workflows/desktop.yml
     with:
       release-tag: ${{ github.ref_name }}
-    # The updater key is not passed: it is a secret of the environment `release`, which only desktop.yml's
-    # release-assets job declares (docs/GITHUB.md "Releases").
+    # The updater key is a secret of the environment `release`, which only desktop.yml's release-assets job declares
+    # (docs/GITHUB.md "Releases"). A called workflow receives an environment secret only when the caller passes it by
+    # name (an unpassed one resolves to an empty string); the value comes from the environment at the job that
+    # declares it, so no build job of desktop.yml can read it (apps/desktop/scripts/release-workflow.test.mjs).
     secrets:
       TAVRN_READ_PAT: ${{ secrets.TAVRN_READ_PAT }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}

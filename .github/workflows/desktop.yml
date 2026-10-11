@@ -59,8 +59,9 @@ on:
     secrets:
       TAVRN_READ_PAT:
         required: false
-      # The updater key is a secret of the environment `release`, which only `release-assets` declares; GitHub gives a
-      # job with an environment that environment's secret, so release.yml passes nothing. Declared for completeness.
+      # The updater key is a secret of the environment `release`, which only `release-assets` declares. release.yml
+      # passes both by name (a called workflow gets an environment secret only when the caller passes it); the job
+      # with the environment receives the environment's value.
       TAURI_SIGNING_PRIVATE_KEY:
         required: false
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
