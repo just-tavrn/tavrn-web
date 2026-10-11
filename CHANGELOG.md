@@ -18,3 +18,15 @@ First public release of the web client and the desktop apps.
   native notifications and downloads.
 - **Desktop app for Linux** (Electron): `.AppImage` and `.deb` with the same client in Chromium (voice, video and
   screen sharing as in the browser), the desktop's keyring, tray, notifications, global hotkeys and its own updater.
+
+### Security
+
+- Plaintext in end-to-end encrypted conversations is shown as "not end-to-end encrypted", never as the author's
+  content (list, replies, notifications, push); a person's plaintext message without a device id is marked unverified.
+- Every encrypted write path (edits, thread titles, forum posts, file records, whiteboard scenes) shows the
+  unknown-device warning and encrypts nothing until it is acknowledged.
+- Plaintext attachments are checked against their signed SHA-256 before they are shown or saved.
+- Pinned keys and verified contacts survive a sign-out (encrypted trust record with the backups).
+- Decrypted attachment and thumbnail object URLs are revoked on sign-out.
+- A node reporting "no identity key" no longer makes a device with local keys set up anew; an own identity change is
+  judged against the key the device follows now.

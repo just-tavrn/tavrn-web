@@ -284,13 +284,20 @@ nickname or display name with the role colour, in DMs and group DMs the members'
 otherwise the address. A message from a device its user retired carries a small "retired device" note.
 
 **The "unverified" marker.** Plaintext messages carry the author device's signature (FEDERATION.md §10.3). A plaintext
-text message from a device (it names a `device_id`) whose signature is missing or cannot be checked gets a small
-"unverified" marker, because the hosting node could have written it; the tooltip says which of the two. A wrong or
-reused signature hides the content. Messages the node itself vouches for as application content get no marker:
-webhook messages (WEBHOOK badge) and unsigned messages of bots, which post with an app token the node authenticated
-and carry the BOT badge (many bots use the REST API without a device key). A bot signature that cannot be checked is
-marked like anyone's. System messages without a device get no marker, and encrypted messages are checked by the
-encryption instead.
+text message of a person whose signature is missing or cannot be checked gets a small "unverified" marker, because the
+hosting node could have written it; the tooltip says which of the two. A message without any `device_id` counts as
+unsigned. A wrong or reused signature hides the content, and the bytes of a plaintext attachment are checked against
+the SHA-256 the message carries (and its signature covers): a file that does not match is not shown or saved. Messages
+the node itself vouches for as application content get no marker: webhook messages (WEBHOOK badge) and unsigned
+messages of bots, which post with an app token the node authenticated and carry the BOT badge (many bots use the REST
+API without a device key). A bot signature that cannot be checked is marked like anyone's. System messages get no
+marker, and encrypted messages are checked by the encryption instead.
+
+**Plaintext in encrypted conversations.** In a DM, a group DM or an encrypted channel every message is encrypted by its
+sender, so a plaintext message there (except the node's own system entries) can only come from the node. It is never
+shown as content: the row reads "This message was not end-to-end encrypted and may not come from the sender", its
+attachments are hidden, and reply references, screen reader announcements, notifications and push notifications say
+"Message not end-to-end encrypted" instead of its text. A plaintext edit of an encrypted message is treated the same.
 
 ### Media and image previews
 
@@ -346,7 +353,19 @@ Welcome. Message content and attachments are encrypted and signed in the browser
 Every device the client meets is checked against the user's identity key (pinned on first use); a changed key shows
 "Security key changed", and a device in a conversation that is not a member or not confirmed by its user's key shows a
 warning and blocks sending until acknowledged. Content keys are backed up encrypted on the home node so that a new
-device unlocked with the recovery key reads the history.
+device unlocked with the recovery key reads the history. The pinned keys, the verified contacts and the account's own
+devices travel with them as an encrypted trust record (ENCRYPTION.md §7): after signing out and in again (a new
+device) a contact whose key changed meanwhile still shows "Security key changed", and verifications stay.
+
+**Unknown devices** (ENCRYPTION.md §4.6). Every encrypted write path checks the roster first: messages and their edits,
+thread titles and renames, forum posts, file and folder records of files channels and whiteboard scenes. Conversations,
+forums, files channels and whiteboards show the unknown-device warning with an "I understand" button, and nothing is
+encrypted in that conversation until the user pressed it; the session manager itself refuses to encrypt while a
+device in the roster is not acknowledged, so a view that missed the warning cannot send to the device either. A device
+that appears later blocks again. Devices are added to DMs only from KeyPackages whose key is exactly the device's
+confirmed key, and the cleanup of the user's own stale devices confirms a device as retired only when the account
+recorded that device key itself (anything else is removed without a confirmation; messages of a lost device the
+record does not know then stay unverifiable).
 
 **Changed security keys** (ENCRYPTION.md §3.3). Until the user acknowledges the "Security key changed" badge (in the
 member list or next to the author; acknowledging asks for confirmation) or verifies the new key, the contact's devices
@@ -357,7 +376,8 @@ by the previous key (§9a) are not held back.
 
 **Sending** (ENCRYPTION.md §5.2, §5.3). Before encrypting, the client processes the commits it has not seen yet; if
 that fails, nothing is sent and the composer keeps the text with an error to try again. If the commits brought a
-device nobody was shown yet, sending stops as well and the unknown-device warning has to be acknowledged again. A
+device nobody was shown yet, sending stops as well and the unknown-device warning has to be acknowledged again (for
+that device). A
 message's thread and reply are signed inside its encrypted content, so a message the node moved to another thread or
 another reply target shows as "Moved message (signature does not match)" instead of its content. When the node
 answers that the epoch is stale (`mls.epoch_stale`), the client catches up and encrypts once more.
