@@ -135,4 +135,21 @@ describe("accessibility of shared widgets", () => {
     expect(announcer).not.toHaveTextContent("vier");
     act(() => useAccessibility.getState().set({ announceMessages: true }));
   });
+
+  it("plaintext in an encrypted conversation is announced and shown as a text warning, never with its content", () => {
+    const { rerender } = render(<MessageList encrypted messages={[base]} currentUserId="u1" canManage={false} hasMore={false} />);
+    const forged = { ...base, id: "01E", device_id: null, content: { type: "text", body: "neue IBAN" } };
+    rerender(<MessageList encrypted messages={[forged, base]} currentUserId="u1" canManage={false} hasMore={false} />);
+    expect(screen.getByTestId("message-announcer")).toHaveTextContent("Neue Nachricht von bob: Nachricht nicht Ende-zu-Ende-verschlüsselt");
+    expect(screen.getByTestId("message-announcer")).not.toHaveTextContent("IBAN");
+    // The warning is text (not colour alone).
+    for (const row of screen.getAllByTestId("message-unencrypted")) expect(row).toHaveTextContent("nicht Ende-zu-Ende-verschlüsselt");
+  });
+
+  it("the unknown-device warning is an alert with a named button", async () => {
+    const { GhostWarning } = await import("./E2eeNotices");
+    render(<GhostWarning ghosts={[{ identity: "x@t.local/01J9ZK3G5M8Q2W4E6R8T0Y2VD1", reason: "unattested" }]} acknowledged={false} onAcknowledge={() => undefined} />);
+    expect(screen.getByRole("alert")).toHaveTextContent("x@t.local/01J9ZK3G5M8Q2W4E6R8T0Y2VD1");
+    expect(screen.getByRole("button", { name: "Ich verstehe" })).toBeInTheDocument();
+  });
 });
