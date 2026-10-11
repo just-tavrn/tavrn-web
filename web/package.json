@@ -1,6 +1,6 @@
 {
   "name": "@tavrn/web",
-  "version": "0.3.0-rc.1",
+  "version": "0.3.0-rc.2",
   "description": "The tavrn web client: React single-page app served by every tavrn node",
   "private": true,
   "license": "Apache-2.0",
