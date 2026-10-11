@@ -65,6 +65,16 @@ describe("ConfirmDialog", () => {
     await u.click(button);
     expect(onConfirm).toHaveBeenCalled();
   });
+
+  it("shows the confirmation word exactly as it must be typed (entities and markup stay text)", async () => {
+    const word = "Tom &amp; <b>Jerry</b>";
+    render(<ConfirmDialog open title="Löschen" text="Wirklich?" confirmWord={word} actionLabel="Löschen" onConfirm={() => {}} onClose={() => {}} />);
+    const strong = screen.getByText(word, { selector: "strong" });
+    expect(strong.querySelector("b")).toBeNull();
+    const u = userEvent.setup();
+    await u.type(screen.getByLabelText("Bestätigung"), word);
+    expect(screen.getByRole("button", { name: "Löschen" })).toBeEnabled();
+  });
 });
 
 describe("PermissionCheckboxes: phase 4E bits", () => {
