@@ -95,7 +95,7 @@ test("linux-electron uploads the packages right after packaging, before the spec
   const steps = code(desktop.jobs["linux-electron"]).split(/\n(?= {6}- )/);
   const at = (re) => steps.findIndex((s) => re.test(s));
   const pack = at(/pnpm --filter @tavrn\/desktop-electron package/);
-  const upload = at(/name: desktop-linux-electron\n/);
+  const upload = at(/name: desktop-linux-electron-a\$\{\{ github\.run_attempt \}\}\n/);
   assert.ok(pack >= 0 && upload > pack, "packaging, then the upload of desktop-linux-electron");
   assert.equal(upload - pack, 2, "only the collect step between packaging and the upload");
   for (const re of [/playwright install/, /livekit-install/, /NODE_IMAGE/, /playwright test/]) {
