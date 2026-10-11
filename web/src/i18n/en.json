@@ -1620,6 +1620,8 @@
   "errors.e2ee.device_not_attested": "This device is not verified for encryption yet",
   "attachment.decrypt_failed": "Attachment {name} could not be decrypted",
   "attachment.decrypt_failed_hint": "The file was changed on the node or its key is wrong. It is not shown.",
+  "attachment.tampered": "Attachment {name} does not match the sent file",
+  "attachment.tampered_hint": "The node served other bytes than the sender attached. The file is not shown or saved.",
   "attachment.upload_mismatch": "The node stored a different file than was uploaded.",
   "badge.bot": "Bot",
   "badge.bot_hint": "This account is an application (bot).",

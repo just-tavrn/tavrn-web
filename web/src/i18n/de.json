@@ -1620,6 +1620,8 @@
   "errors.e2ee.device_not_attested": "Dieses Gerät ist für die Verschlüsselung noch nicht bestätigt",
   "attachment.decrypt_failed": "Anhang {name} konnte nicht entschlüsselt werden",
   "attachment.decrypt_failed_hint": "Die Datei wurde auf dem Knoten verändert oder ihr Schlüssel passt nicht. Sie wird nicht angezeigt.",
+  "attachment.tampered": "Anhang {name} stimmt nicht mit der gesendeten Datei überein",
+  "attachment.tampered_hint": "Der Knoten hat andere Daten geliefert, als der Absender angehängt hat. Die Datei wird nicht angezeigt und nicht gespeichert.",
   "attachment.upload_mismatch": "Der Knoten hat eine andere Datei gespeichert als hochgeladen wurde.",
   "badge.bot": "Bot",
   "badge.bot_hint": "Dieses Konto ist eine Anwendung (Bot).",

@@ -121,6 +121,13 @@ export async function makeThumbnail(file: Blob): Promise<{ bytes: Uint8Array; mi
 /** Decrypted thumbnails of this session as object URLs (never stored, never in the search index). */
 const thumbnails = new Map<string, Promise<string | null>>();
 
+/** Sign-out: the decrypted thumbnails of this session go (their object URLs are revoked). */
+export function forgetThumbnails(): void {
+  const all = [...thumbnails.values()];
+  thumbnails.clear();
+  for (const p of all) void p.then((url) => url && URL.revokeObjectURL(url));
+}
+
 /** The thumbnail of an entry as an object URL (fetched and decrypted once per session), or null. */
 export function thumbnailUrl(api: FilesApi, roomId: string, channelId: string, entry: Pick<FileEntry, "id">, record: FileRecord): Promise<string | null> {
   if (!record.thumbnail) return Promise.resolve(null);
