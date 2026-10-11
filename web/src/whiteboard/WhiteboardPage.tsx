@@ -5,6 +5,7 @@
  * conversation's MLS group like the message view does (ephemeral content is encrypted with its content
  * key), then shows {@link WhiteboardSession}.
  */
+import { useGhostGate, type GhostGate } from "../components/GhostGate";
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "react-router";
@@ -40,8 +41,10 @@ function useDirectTargets(): ShareTarget[] {
   return useMemo(() => (list.data ?? []).map((c: Conversation) => ({ domain: me?.domain ?? "", conversationId: c.id, encrypted: true, label: `@ ${conversationTitle(c, me?.address)}` })), [list.data, me?.domain, me?.address]);
 }
 
-function notReadyText(t: (k: string) => string, e2ee: E2eeConversation, encrypted: boolean) {
+function notReadyText(t: (k: string) => string, e2ee: E2eeConversation, encrypted: boolean, gate: GhostGate) {
   if (!encrypted) return null;
+  // Scenes are not encrypted while a ghost leaf is not acknowledged (ENCRYPTION.md §4.6): the warning instead.
+  if (e2ee.phase === "ready" && gate.blocked) return gate.warning;
   if (e2ee.phase === "locked") return <LockedNotice />;
   if (e2ee.phase === "error") return <p className="text-sm text-danger">{e2ee.error}</p>;
   return <p className="text-sm text-fg-2">{t("whiteboard.joining_e2ee")}</p>;
@@ -63,6 +66,7 @@ export function useChannelBoard(roomId: string, channelId: string): { props: Whi
   const encrypted = channel?.encrypted ?? true;
   const memberAddresses = useMemo(() => members.data?.map((m) => m.user.address) ?? null, [members.data]);
   const e2ee = useE2eeConversation({ conversationId: qualify(domain, channelId), encrypted, canCreate: canOpen, members: memberAddresses, mayManage: room.data ? mayManageRoom(room.data) : false });
+  const gate = useGhostGate(qualify(domain, channelId), e2ee, encrypted);
   const memberList: Member[] = useMemo(() => (members.data ?? []).map((m) => ({ address: m.user.address, name: m.nickname || m.user.display_name })), [members.data]);
   const targets = useMemo<ShareTarget[]>(() => {
     if (!room.data) return direct;
@@ -81,8 +85,8 @@ export function useChannelBoard(roomId: string, channelId: string): { props: Whi
       backTo: roomPath(roomId, channelId),
       canOpen,
       canModerate: hasPermission(perms, Permission.MANAGE_WHITEBOARD),
-      ready: !encrypted || e2ee.phase === "ready",
-      notReady: notReadyText(t, e2ee, encrypted),
+      ready: !encrypted || (e2ee.phase === "ready" && !gate.blocked),
+      notReady: notReadyText(t, e2ee, encrypted, gate),
       members: memberList,
       shareTargets: targets,
     },
@@ -105,6 +109,7 @@ function ConversationBoard({ conversationId }: { conversationId: string }) {
   const direct = useDirectTargets();
   const addresses = useMemo(() => conv.data?.members.map((m) => m.address) ?? null, [conv.data]);
   const e2ee = useE2eeConversation({ conversationId: qualify(domain, conversationId), encrypted: true, canCreate: true, members: addresses, direct: addresses ?? undefined, mayManage: true });
+  const gate = useGhostGate(qualify(domain, conversationId), e2ee, true);
   const memberList: Member[] = useMemo(() => (conv.data?.members ?? []).map((m) => ({ address: m.address, name: m.display_name })), [conv.data]);
   if (conv.isPending) return <p className="p-4 text-sm text-fg-2">{t("common.loading")}</p>;
   if (conv.isError) return <p className="p-4 text-sm text-danger">{describeError(conv.error)}</p>;
@@ -115,8 +120,8 @@ function ConversationBoard({ conversationId }: { conversationId: string }) {
       backTo={conversationPath(home ? null : domain, conversationId)}
       canOpen
       canModerate={false}
-      ready={e2ee.phase === "ready"}
-      notReady={notReadyText(t, e2ee, true)}
+      ready={e2ee.phase === "ready" && !gate.blocked}
+      notReady={notReadyText(t, e2ee, true, gate)}
       members={memberList}
       shareTargets={direct}
     />

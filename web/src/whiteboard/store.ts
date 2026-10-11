@@ -6,6 +6,7 @@
  * to the controller. The owner's controller outlives its views: the board keeps running (and answering late
  * joiners) while the owner looks at another channel, until it is closed.
  */
+import { forgetGhostAck, isGhostRefusal } from "../components/GhostGate";
 import { useEffect, useSyncExternalStore } from "react";
 import type { TavrnApi, TavrnSocket, WhiteboardSession } from "@tavrn/sdk";
 import { useAuth } from "../stores/auth";
@@ -72,7 +73,13 @@ export function ephemeralTransport(ctx: BoardContext): Transport {
       if (ctx.encrypted) {
         const mls = await getMls();
         if (!mls) throw new Error("locked");
-        sealed = await mls.encryptEphemeral(q, content);
+        try {
+          sealed = await mls.encryptEphemeral(q, content);
+        } catch (e) {
+          // An unacknowledged ghost leaf (ENCRYPTION.md §4.6): the board shows the warning again.
+          if (isGhostRefusal(e)) forgetGhostAck(q);
+          throw e;
+        }
       }
       const r = await ctx.api.ephemeral.send(ctx.conversationId, { type, content: sealed, ...(session ? { session } : {}) });
       return r.session ?? null;

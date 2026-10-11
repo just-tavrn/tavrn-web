@@ -9,6 +9,7 @@
  * record's epoch can open. Entries whose record this device cannot open are listed as locked with their size and
  * date, and their owner can still delete them ("Your files").
  */
+import { forgetGhostAck, isGhostRefusal } from "../components/GhostGate";
 import { newUlid as ulid, type FileEntry, type TavrnApi } from "@tavrn/sdk";
 import {
   decryptFileChunks,
@@ -169,7 +170,7 @@ export async function uploadEncrypted(
     const id = ulid();
     const mime = (file.type || "application/octet-stream").toLowerCase();
     const record: FileRecord = { entry: id, kind: "file", name, mime, size: file.size, key: fileKeyText(fileKey), ...(thumb ? { thumbnail: { mime: thumb.mime, width: thumb.width, height: thumb.height } } : {}) };
-    const enc = await encryptFileRecord(ctx.mls, ctx.conversation, record);
+    const enc = await sealRecord(ctx, record);
     const entry = await ctx.api.files.uploadEncrypted(ctx.roomId, ctx.channelId, blob, {
       id,
       record: enc.record,
@@ -189,12 +190,22 @@ export async function uploadEncrypted(
   }
 }
 
+/** Encrypts an entry record; a refusal for an unacknowledged ghost leaf shows the view's warning again (§4.6). */
+async function sealRecord(ctx: EncryptedContext, record: FileRecord): Promise<{ record: string; record_epoch: number }> {
+  try {
+    return await encryptFileRecord(ctx.mls, ctx.conversation, record);
+  } catch (e) {
+    if (isGhostRefusal(e)) forgetGhostAck(ctx.conversation);
+    throw e;
+  }
+}
+
 /** Creates a folder with its record. */
 export async function createFolderEncrypted(ctx: EncryptedContext, rawName: string, parentId: string | null): Promise<FileEntry> {
   const name = entryName(rawName);
   if (!name) throw new RangeError("invalid name");
   const id = ulid();
-  const enc = await encryptFileRecord(ctx.mls, ctx.conversation, { entry: id, kind: "folder", name, mime: "", size: 0, key: "" });
+  const enc = await sealRecord(ctx, { entry: id, kind: "folder", name, mime: "", size: 0, key: "" });
   return ctx.api.files.createFolderEncrypted(ctx.roomId, ctx.channelId, { id, ...enc, parent_id: parentId });
 }
 
@@ -202,7 +213,7 @@ export async function createFolderEncrypted(ctx: EncryptedContext, rawName: stri
 export async function renameEncrypted(ctx: EncryptedContext, entry: Pick<FileEntry, "id">, record: FileRecord, rawName: string): Promise<FileEntry> {
   const name = entryName(rawName);
   if (!name) throw new RangeError("invalid name");
-  const enc = await encryptFileRecord(ctx.mls, ctx.conversation, { ...record, entry: entry.id, name });
+  const enc = await sealRecord(ctx, { ...record, entry: entry.id, name });
   return ctx.api.files.update(ctx.roomId, ctx.channelId, entry.id, enc);
 }
 
