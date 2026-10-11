@@ -2,7 +2,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
-import { ADULT_DOB, NODE, adminAccount, completeDateOfBirth, confirmRecoveryKey, createRoomViaApi, enrollTotp, loginAs, nextTotpCode, registerViaApi, tokenOf, uniqueName } from "./helpers";
+import { ADULT_DOB, NODE, adminAccount, completeDateOfBirth, confirmRecoveryKey, confirmWithPassword, createRoomViaApi, enrollTotp, loginAs, nextTotpCode, registerViaApi, tokenOf, uniqueName } from "./helpers";
 import { createRole, openMembers } from "./menu-helpers";
 import { logoutViaUi, openNavIfMobile } from "./helpers";
 
@@ -135,7 +135,11 @@ test.describe("Single Sign-on (APPLICATIONS.md §8)", () => {
     await page.goto("/settings/security");
     const section = page.getByTestId("sso-section");
     await expect(section).toContainText("Dein Konto ist nicht mit dem Identitätsanbieter verknüpft.");
+    // Linking adds a way to sign in: it needs a fresh confirmation (PROTOCOL.md §5c), asked before the provider opens.
     await section.getByTestId("sso-link").click();
+    await expect(page.getByTestId("reauth-dialog")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Fake IdP sign-in" })).toHaveCount(0);
+    await confirmWithPassword(page, account.password);
     await signInAtProvider(page, idpName);
     await expect(page).toHaveURL(/\/settings\/security$/);
     await expect(page.getByRole("status").filter({ hasText: "SSO-Konto verknüpft" })).toBeVisible();
@@ -150,8 +154,9 @@ test.describe("Single Sign-on (APPLICATIONS.md §8)", () => {
     await expect(other.getByTestId("encryption-account")).toHaveText(`${account.username}@localhost`, { timeout: 20_000 });
     await context.close();
 
-    // Unlinking is allowed: the account keeps its password and second factor.
+    // Unlinking is allowed after a confirmation: the account keeps its password and second factor.
     await page.getByTestId("sso-unlink").click();
+    await confirmWithPassword(page, account.password);
     await expect(page.getByTestId("sso-link")).toBeVisible();
   });
 
