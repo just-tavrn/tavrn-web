@@ -1058,7 +1058,7 @@ All artifacts are kept for 7 days.
 - **The Linux packages are uploaded before the specs run**: `Desktop (Linux, Electron)` hashes the `.AppImage`, the
   `.deb` and the feed and uploads them right after packaging, then downloads the node binary, Chromium and
   livekit-server for the specs and tests a copy of the AppImage; `Release assets` checks the sums before it signs. A
-  release's specs run against a node image pinned by digest (`TAVRN_NODE_IMAGE`, GITHUB.md).
+  release's specs run against a node image pinned by digest (`TAVRN_RELEASE_NODE_IMAGE`, GITHUB.md).
 - **Limits of the cross-compiled installer** (experimental upstream, [Tauri: build Windows apps on
   Linux](https://v2.tauri.app/distribute/windows-installer/#build-windows-apps-on-linux-and-macos)): NSIS only (the
   `.msi` needs WiX, which runs on Windows), x86_64 only, built but not started (no Windows on the runner), no updater
@@ -1106,6 +1106,8 @@ signatures are the only signatures.
    owner's approval of the environment `release` (check that the run belongs to the tag you pushed), then
    - refuses to go on while `tauri.conf.json` carries the placeholder key or the secret `TAURI_SIGNING_PRIVATE_KEY` is
      missing ([Updates](#updates));
+   - downloads each build job's artifact by the id its upload reported into a directory of its own and copies only
+     the files that job may deliver (`release-assets.mjs collect`: no signature, no file of another job);
    - checks the Linux packages against the sums written at packaging;
    - signs each Tauri installer (`tauri signer sign`, the Tauri CLI pinned by the lockfile, installed alone with
      `--ignore-scripts`: `<installer>.sig`, the same signature `createUpdaterArtifacts` would write during the build)
@@ -1114,7 +1116,8 @@ signatures are the only signatures.
    - writes a `.sha256` per installer and `latest.json` (the Tauri installers only; the Electron Windows installer is
      never a Tauri update), verifies every signature exactly as the apps will (`apps/desktop-electron/scripts/
      verify-feed.mjs`, `apps/desktop/scripts/verify-tauri.mjs`), records GitHub's build provenance for every installer
-     and feed (`actions/attest-build-provenance`), checks the directory against the expected set, uploads it
+     and feed (`actions/attest-build-provenance`; from the public switch on, GitHub's Free plan offers artifact
+     attestations for public repositories only), checks the directory against the expected set, uploads it
      (`--clobber`), and checks the whole release including the web bundle.
 4. The website's download page reads the latest release through GitHub's API by itself (tavrn-website serves the
    release data from a cached server-side proxy), so nothing tells it: the new version appears within minutes.
@@ -1231,7 +1234,7 @@ base64 -d Tavrn_<version>_x64-setup.exe.sig > setup.minisig
 minisign -V -P RWREFh2wkYQiCvEndPJNukS8PFRiauKz3KjZBnqNfeEHYgcg3DuNUUcn -m Tavrn_<version>_x64-setup.exe -x setup.minisig
 ```
 
-**Build provenance** (every installer and feed of a release built by this workflow): GitHub's attestation names the
+**Build provenance** (every installer and feed of a release built after the repository went public): GitHub's attestation names the
 repository, the workflow and the commit that built the file:
 
 ```sh

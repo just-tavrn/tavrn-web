@@ -92,3 +92,27 @@ test("linux-electron uploads the packages right after packaging, before the spec
     assert.ok(i > upload, `${re} must come after the upload`);
   }
 });
+
+test("release-assets takes each build artifact by id into its own directory and collects only allowed files before signing", () => {
+  const steps = code(signer).split(/\n(?= {6}- )/);
+  const downloads = steps.filter((s) => /actions\/download-artifact@/.test(s));
+  assert.equal(downloads.length, 3);
+  for (const d of downloads) {
+    assert.match(d, /artifact-ids: \$\{\{ needs\.(windows|linux-electron|windows-electron)\.outputs\.artifact-id \}\}/);
+    assert.doesNotMatch(d, /^\s+name:/m, "never by artifact name");
+    assert.match(d, /path: built\//);
+  }
+  const at = (re) => steps.findIndex((s) => re.test(s));
+  const collect = at(/release-assets\.mjs collect/);
+  assert.ok(collect > at(/download-artifact/) && collect < at(/tauri signer sign/), "collect after the downloads, before signing");
+  for (const job of ["windows", "linux-electron", "windows-electron"]) {
+    assert.match(desktop.jobs[job], /outputs:\n\s+artifact-id: \$\{\{ steps\.\w+\.outputs\.artifact-id \}\}/, `${job} reports its artifact id`);
+  }
+});
+
+test("build provenance only for public repositories; release specs use their own digest-pinned node image variable", () => {
+  const attest = code(signer).split(/\n(?= {6}- )/).find((s) => /attest-build-provenance@/.test(s));
+  assert.match(attest, /if: \$\{\{ !github\.event\.repository\.private \}\}/);
+  const specs = code(desktop.jobs["linux-electron"]);
+  assert.match(specs, /inputs\.release-tag && \(vars\.TAVRN_RELEASE_NODE_IMAGE \|\| 'ghcr\.io\/just-tavrn\/tavrn-node@sha256:[0-9a-f]{64}'\)/);
+});

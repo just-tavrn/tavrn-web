@@ -181,6 +181,10 @@ jobs:
       contents: read
       packages: read
     timeout-minutes: 60
+    # release-assets downloads the packages by this id: the artifact exactly as uploaded after packaging, never one the
+    # later steps of this job (the specs) could have uploaded under the same name.
+    outputs:
+      artifact-id: ${{ steps.packages.outputs.artifact-id }}
     steps:
       - name: Access to private organization repositories
         env:
@@ -267,7 +271,8 @@ jobs:
           cp apps/desktop-electron/release/*.AppImage apps/desktop-electron/release/*.deb apps/desktop-electron/release/latest-linux.yml dist-electron/
           node apps/desktop/scripts/checksums.mjs dist-electron
           ls -l dist-electron
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - id: packages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: desktop-linux-electron
           path: dist-electron/
@@ -294,15 +299,15 @@ jobs:
       # The node runs as a process of the job (the Playwright config starts it with E2E_NODE_BIN), copied out of the
       # node image (the self-hosted runners reach Docker only through the stack's DinD, whose network is not the job's);
       # voice through the livekit-server of the runner image.
-      # The node image: for a release, a release image pinned by digest (vars.TAVRN_NODE_IMAGE, default the latest
-      # node release's digest, docs/GITHUB.md "Variables"); otherwise the edge image of tavrn-node's main.
+      # The node image: for a release, a release image pinned by digest (vars.TAVRN_RELEASE_NODE_IMAGE, default the
+      # latest node release's digest, docs/GITHUB.md "Variables"); otherwise the edge image of tavrn-node's main.
       - name: Playwright specs (the full smoke test of the AppImage; the shell's and the services' specs, the real keyring)
         env:
           GHCR_TOKEN: ${{ github.token }}
-          NODE_IMAGE: ${{ inputs.release-tag && (vars.TAVRN_NODE_IMAGE || 'ghcr.io/just-tavrn/tavrn-node@sha256:6de0debeafff5ee546d29bb408eed4218dd6e2d81acc567aea2cd83427b2e30e') || 'ghcr.io/just-tavrn/tavrn-node:edge' }}
+          NODE_IMAGE: ${{ inputs.release-tag && (vars.TAVRN_RELEASE_NODE_IMAGE || 'ghcr.io/just-tavrn/tavrn-node@sha256:6de0debeafff5ee546d29bb408eed4218dd6e2d81acc567aea2cd83427b2e30e') || 'ghcr.io/just-tavrn/tavrn-node:edge' }}
         run: |
           if [ -n "$RELEASE_TAG" ] && [[ "$NODE_IMAGE" != *@sha256:* ]]; then
-            echo "::error::a release tests against a node image pinned by digest (vars.TAVRN_NODE_IMAGE = <image>@sha256:…), not $NODE_IMAGE"; exit 1
+            echo "::error::a release tests against a node image pinned by digest (vars.TAVRN_RELEASE_NODE_IMAGE = <image>@sha256:…), not $NODE_IMAGE"; exit 1
           fi
           bin="$RUNNER_TEMP/tavrn-node-bin"
           mkdir -p "$bin"
@@ -426,6 +431,8 @@ jobs:
     permissions:
       contents: read
     timeout-minutes: 75
+    outputs:
+      artifact-id: ${{ steps.installers.outputs.artifact-id }}
     defaults:
       run:
         shell: bash
@@ -470,7 +477,8 @@ jobs:
           cp apps/desktop/src-tauri/target/release/bundle/msi/*.msi dist-desktop/
           cp apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe dist-desktop/
           ls -l dist-desktop
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - id: installers
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: desktop-windows
           path: dist-desktop/
@@ -488,6 +496,8 @@ jobs:
     permissions:
       contents: read
     timeout-minutes: 60
+    outputs:
+      artifact-id: ${{ steps.installer.outputs.artifact-id }}
     defaults:
       run:
         shell: bash
@@ -540,7 +550,8 @@ jobs:
           mkdir -p ../../../dist-electron-windows
           cp "$exe" "$exe.blockmap" latest.yml ../../../dist-electron-windows/
           ls -l ../../../dist-electron-windows
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - id: installer
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: desktop-windows-electron
           path: dist-electron-windows/
@@ -584,19 +595,28 @@ jobs:
             echo "tauri.conf.json still carries the placeholder public key (docs/DESKTOP.md, Updates)" >&2; exit 1
           fi
           [ -n "$KEY" ] || { echo "the secret TAURI_SIGNING_PRIVATE_KEY of the environment release is missing (docs/GITHUB.md)" >&2; exit 1; }
-      # The installers only, by name: never the screenshots of the specs.
+      # Each build job's artifact by the id its upload step reported (never by name: a later step of a build job could
+      # upload another artifact of that name), into a directory of its own; then only the files that job may deliver
+      # go into installers/ (apps/desktop/scripts/release-assets.mjs `collect`: no signature, no other job's file).
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: desktop-windows
-          path: installers
+          artifact-ids: ${{ needs.windows.outputs.artifact-id }}
+          path: built/tauri
+          merge-multiple: true
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: desktop-linux-electron
-          path: installers
+          artifact-ids: ${{ needs.linux-electron.outputs.artifact-id }}
+          path: built/linux
+          merge-multiple: true
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: desktop-windows-electron
-          path: installers
+          artifact-ids: ${{ needs.windows-electron.outputs.artifact-id }}
+          path: built/electron-windows
+          merge-multiple: true
+      - name: Only the files each build job may deliver
+        run: |
+          node apps/desktop/scripts/release-assets.mjs collect "$RELEASE_TAG" installers \
+            tauri=built/tauri linux=built/linux electron-windows=built/electron-windows
       - name: The Linux packages are the ones hashed at packaging
         working-directory: installers
         run: sha256sum -c ./*.AppImage.sha256 ./*.deb.sha256
@@ -639,8 +659,10 @@ jobs:
           # Exactly the files the download page and the updaters expect, nothing else (docs/DESKTOP.md "Builds and releases").
           node apps/desktop/scripts/release-assets.mjs check "$RELEASE_TAG" installers
           ls -l installers
-      # GitHub's build provenance for every installer and feed (docs/DESKTOP.md "Updates": `gh attestation verify`).
+      # GitHub's build provenance for every installer and feed (docs/DESKTOP.md "Checking a download"). Artifact
+      # attestations need a public repository on GitHub's Free plan: skipped while the repository is private.
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        if: ${{ !github.event.repository.private }}
         with:
           subject-path: |
             installers/*.AppImage

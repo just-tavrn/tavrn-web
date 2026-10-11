@@ -2,7 +2,10 @@
 // node --test apps/desktop/scripts: the asset set of a release, as the website's download page reads it.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkAssets, expectedAssets, releaseNotes, versionOf, websiteEntry } from "./release-assets.mjs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { checkAssets, collectAssets, expectedAssets, releaseNotes, sourceAssets, versionOf, websiteEntry } from "./release-assets.mjs";
 
 const RELEASE_0_3_0 = [
   "Tavrn_0.3.0_x64-setup.exe",
@@ -81,4 +84,46 @@ test("the release notes name every download with its platform, the fallback mark
   assert.match(notes, /latest-linux\.yml/);
   assert.match(notes, /\.minisig/);
   assert.ok(notes.startsWith("## Downloads\n"));
+});
+
+/** One directory per build artifact, each with exactly its allowed files (content: the file's own name). */
+function artifacts(version, change = () => {}) {
+  const root = mkdtempSync(join(tmpdir(), "release-assets-"));
+  const dirs = {};
+  for (const [source, names] of Object.entries(sourceAssets(version))) {
+    dirs[source] = join(root, source);
+    mkdirSync(dirs[source]);
+    for (const name of names) writeFileSync(join(dirs[source], name), `${source}:${name}`);
+  }
+  change(dirs);
+  return { dirs, out: join(root, "installers") };
+}
+
+test("collect copies exactly the files each build job may deliver, which with release-assets' own files make the release", () => {
+  const { dirs, out } = artifacts("0.3.0");
+  const copied = collectAssets("0.3.0", dirs, out);
+  assert.deepEqual(readdirSync(out).sort(), copied);
+  assert.equal(readFileSync(join(out, "latest-linux.yml"), "utf8"), "linux:latest-linux.yml");
+  // What release-assets writes itself: signatures, the remaining sums and latest.json.
+  const own = RELEASE_0_3_0.filter((n) => !copied.includes(n) && !n.startsWith("tavrn-web-"));
+  assert.deepEqual(own.sort(), [
+    "Tavrn_0.3.0_x64-setup.exe.sha256", "Tavrn_0.3.0_x64-setup.exe.sig", "Tavrn_0.3.0_x64_en-US.msi.sha256",
+    "Tavrn_0.3.0_x64_en-US.msi.sig", "latest-linux.yml.minisig", "latest.json", "latest.yml.minisig",
+    "tavrn-electron_0.3.0_x64-setup.exe.sha256",
+  ]);
+});
+
+test("collect refuses a file of another job, a signature from a build, a missing file, a symlink and a missing source", () => {
+  const fails = (change, re) => {
+    const { dirs, out } = artifacts("0.3.0", change);
+    assert.throws(() => collectAssets("0.3.0", dirs, out), re);
+    assert.equal(readdirSync(join(out, "..")).includes("installers"), false, "nothing copied");
+  };
+  fails((d) => writeFileSync(join(d["electron-windows"], "latest-linux.yml"), "x"), /electron-windows: unexpected latest-linux\.yml/);
+  fails((d) => writeFileSync(join(d.tauri, "Tavrn_0.3.0_x64-setup.exe.sig"), "x"), /tauri: unexpected Tavrn_0\.3\.0_x64-setup\.exe\.sig/);
+  fails((d) => writeFileSync(join(d.linux, "latest-linux.yml.minisig"), "x"), /linux: unexpected latest-linux\.yml\.minisig/);
+  fails((d) => writeFileSync(join(d.linux, "tavrn_0.3.0_amd64.deb.sha256.tmp"), ""), /linux: unexpected/);
+  fails((d) => rmSync(join(d.tauri, "Tavrn_0.3.0_x64_en-US.msi")), /tauri: missing Tavrn_0\.3\.0_x64_en-US\.msi/);
+  fails((d) => { const f = join(d.linux, "latest-linux.yml"); rmSync(f); symlinkSync("/etc/hostname", f); }, /not a regular file/);
+  fails((d) => delete d["electron-windows"], /source electron-windows not given/);
 });
