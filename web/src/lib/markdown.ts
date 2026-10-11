@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import DOMPurify from "dompurify";
 import { marked, type Tokens } from "marked";
+import { editHtml, replaceInText } from "./domText";
 
 /**
  * Markdown (subset) → safe HTML for messages. No raw HTML (`<` and `>` are escaped before parsing), links open
@@ -15,7 +16,9 @@ import { marked, type Tokens } from "marked";
  *   caller's resolver; the room's `:name:` emojis as before.
  *
  * The rendering of a text is cached (least recently used entries go first); emoji substitution happens after
- * the cache.
+ * the cache. Nothing edits the HTML string after sanitising: link attributes are set in a DOMPurify hook, emoji
+ * tokens, room emojis and mentions are applied to DOM text nodes ({@link editHtml}), so message text can never
+ * leave an attribute value.
  */
 
 marked.setOptions({ gfm: true, breaks: true });
@@ -28,11 +31,20 @@ const URI_SAFE = ["type", "tabindex", "aria-pressed", "data-code-action", "data-
 const CLASS_OK = /^(hljs(-[a-z0-9_]+)*|language-[a-z0-9+#._-]{1,24}|spoiler|codeblock(-[a-z]+)?|emoji-token)$/;
 
 const purify = DOMPurify();
+/** True while a message is sanitised (the hooks below apply to messages, not to legal documents). */
+let rendering = false;
 purify.addHook("uponSanitizeAttribute", (_node, data) => {
+  // A token inside an attribute value (a link title, say) stays its literal text.
+  if (rendering && data.attrValue.includes("\uE000")) data.attrValue = restoreLiteral(data.attrValue);
   if (data.attrName !== "class") return;
   const kept = data.attrValue.split(/\s+/).filter((c) => CLASS_OK.test(c));
   if (kept.length) data.attrValue = kept.join(" ");
   else data.keepAttr = false;
+});
+purify.addHook("afterSanitizeAttributes", (node) => {
+  if (!rendering || node.nodeName !== "A") return;
+  node.setAttribute("target", "_blank");
+  node.setAttribute("rel", "noopener noreferrer nofollow");
 });
 
 /** Rendered (sanitized) HTML per source text; marked + DOMPurify are the expensive part of a message row. */
@@ -211,45 +223,86 @@ function sanitized(src: string): string {
   // Without `<` no tag can form; `>` stays so that blockquotes work.
   const escaped = withPlaceholders.replace(/</g, "&lt;");
   const html = marked.parse(escaped, { async: false }) as string;
-  const clean = purify.sanitize(html, { ALLOWED_TAGS, ALLOWED_ATTR, ALLOWED_URI_REGEXP: /^(?:https?|mailto|blob):/i, ADD_URI_SAFE_ATTR: URI_SAFE, FORBID_TAGS: ["img"], ALLOW_DATA_ATTR: false });
-  const withLinks = clean.replace(/<a /g, '<a target="_blank" rel="noopener noreferrer nofollow" ');
-  // Tokens outside code: a marker the emoji pass turns into an image (text `:name:` with encoded colons, so
-  // the room-emoji pass below never mistakes it for one of the room's).
-  const withTokens = withLinks.replace(PLACEHOLDER, (_m, i: string) => {
-    const t = current[Number(i)];
-    if (!t) return "";
-    return `<span class="emoji-token" data-emoji-id="${t.id}" data-emoji-host="${t.host ?? ""}" data-emoji-name="${t.name}">&#58;${t.name}&#58;</span>`;
-  });
+  rendering = true;
+  let fragment: DocumentFragment;
+  try {
+    fragment = purify.sanitize(html, { ALLOWED_TAGS, ALLOWED_ATTR, ALLOWED_URI_REGEXP: /^(?:https?|mailto):/i, ADD_URI_SAFE_ATTR: URI_SAFE, FORBID_TAGS: ["img"], ALLOW_DATA_ATTR: false, RETURN_DOM_FRAGMENT: true });
+  } finally {
+    rendering = false;
+  }
+  // Tokens outside code (code renderers already put the literal text back): a marker the emoji pass turns into an
+  // image. The room-emoji pass skips markers, so a token's `:name:` is never mistaken for one of the room's.
+  const tokens = current;
+  replaceInText(
+    fragment,
+    PLACEHOLDER,
+    (m, doc) => {
+      const t = tokens[Number(m[1])];
+      if (!t) return doc.createTextNode("");
+      const span = doc.createElement("span");
+      span.className = "emoji-token";
+      span.setAttribute("data-emoji-id", t.id);
+      span.setAttribute("data-emoji-host", t.host ?? "");
+      span.setAttribute("data-emoji-name", t.name);
+      span.textContent = `:${t.name}:`;
+      return span;
+    },
+    () => false,
+  );
+  const box = (fragment.ownerDocument ?? document).createElement("div");
+  box.append(fragment);
+  const withTokens = box.innerHTML;
   current = [];
   cache.set(src, withTokens);
   if (cache.size > MARKDOWN_CACHE_SIZE) cache.delete(cache.keys().next().value as string);
   return withTokens;
 }
 
-const TOKEN_SPAN = /<span class="emoji-token" data-emoji-id="([0-9A-Z]{26})" data-emoji-host="([a-z0-9.:-]*)" data-emoji-name="([a-z0-9_]{2,32})">&#58;[a-z0-9_]{2,32}&#58;<\/span>/g;
+const TOKEN_ID = new RegExp(`^${ULID}$`);
+const TOKEN_HOST = new RegExp(`^(?:${HOST})?$`);
+const TOKEN_NAME = new RegExp(`^${NAME}$`);
+const ROOM_EMOJI = /:([a-z0-9_]{2,32}):/g;
+
+/** Not inside code, and not inside a token marker (its `:name:` belongs to the token). */
+const skipCodeAndTokens = (el: Element) => el.localName === "code" || el.localName === "pre" || el.classList.contains("emoji-token");
+
+function emojiImage(doc: Document, url: string, name: string): HTMLImageElement {
+  const img = doc.createElement("img");
+  img.className = "emoji";
+  img.setAttribute("src", url);
+  img.setAttribute("alt", `:${name}:`);
+  img.setAttribute("title", `:${name}:`);
+  return img;
+}
+
+function hasRoomEmoji(html: string, emojiUrls: Record<string, string>): boolean {
+  for (const m of html.matchAll(ROOM_EMOJI)) if (Object.hasOwn(emojiUrls, m[1]!)) return true;
+  return false;
+}
 
 /**
  * Markdown → safe HTML. `:name:` tokens become the room's emojis (URLs from `emojiUrls`), `<:name:ID@host>`
  * tokens images from `resolve` (without a resolver, or when it returns null, the name stays as text).
  */
 export function renderMarkdown(src: string, emojiUrls: Record<string, string> = {}, resolve?: EmojiResolver): string {
-  let html = sanitized(src);
-  if (resolve && html.includes('class="emoji-token"')) {
-    html = html.replace(TOKEN_SPAN, (match, id: string, host: string, name: string) => {
-      const url = resolve({ id, host: host || null, name });
-      return url ? `<img class="emoji" src="${escapeAttr(url)}" alt=":${name}:" title=":${name}:">` : match;
-    });
-  }
-  if (Object.keys(emojiUrls).length === 0) return html;
-  // Only in text nodes, never inside tags or code.
-  let inCode = 0;
-  return html.replace(/(<\/?(code)?[^>]*>)|:([a-z0-9_]{2,32}):/g, (match, tag: string | undefined, code: string | undefined, name: string | undefined) => {
-    if (tag) {
-      if (code) inCode += tag.startsWith("</") ? -1 : 1;
-      return tag;
+  const html = sanitized(src);
+  const tokens = !!resolve && html.includes('class="emoji-token"');
+  const room = hasRoomEmoji(html, emojiUrls);
+  if (!tokens && !room) return html;
+  return editHtml(html, (root) => {
+    if (tokens) {
+      for (const span of root.querySelectorAll<HTMLElement>("span.emoji-token")) {
+        const id = span.getAttribute("data-emoji-id") ?? "";
+        const host = span.getAttribute("data-emoji-host") ?? "";
+        const name = span.getAttribute("data-emoji-name") ?? "";
+        if (!TOKEN_ID.test(id) || !TOKEN_HOST.test(host) || !TOKEN_NAME.test(name)) continue;
+        const url = resolve!({ id, host: host || null, name });
+        if (url) span.replaceWith(emojiImage(span.ownerDocument, url, name));
+      }
     }
-    const url = name && inCode === 0 ? emojiUrls[name] : undefined;
-    return url ? `<img class="emoji" src="${escapeAttr(url)}" alt=":${name}:" title=":${name}:">` : match;
+    if (room) {
+      replaceInText(root, ROOM_EMOJI, (m, doc) => (Object.hasOwn(emojiUrls, m[1]!) ? emojiImage(doc, emojiUrls[m[1]!]!, m[1]!) : null), skipCodeAndTokens);
+    }
   });
 }
 

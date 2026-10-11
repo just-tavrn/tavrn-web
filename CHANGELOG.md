@@ -18,3 +18,9 @@ First public release of the web client and the desktop apps.
   native notifications and downloads.
 - **Desktop app for Linux** (Electron): `.AppImage` and `.deb` with the same client in Chromium (voice, video and
   screen sharing as in the browser), the desktop's keyring, tray, notifications, global hotkeys and its own updater.
+
+### Security
+
+- Rendered messages are no longer edited as HTML strings after sanitising: link attributes, custom emojis, room
+  emojis and bot mention badges are applied to DOM nodes, so text in a link title can no longer escape the
+  attribute on browser engines that do not escape `<` in attribute values; `blob:` links are no longer kept.
