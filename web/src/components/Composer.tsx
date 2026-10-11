@@ -90,6 +90,7 @@ export function Composer({
   uploadPolicy,
   resolveUploadPolicy,
   above,
+  encrypted = false,
 }: {
   placeholder: string;
   disabled?: boolean;
@@ -107,6 +108,8 @@ export function Composer({
   resolveUploadPolicy?: () => Promise<ComposerUploadPolicy | undefined>;
   /** Shown directly above the input and part of the expanded overlay (the reply bar). */
   above?: ReactNode;
+  /** End-to-end encrypted conversation: link previews while typing follow their own setting. */
+  encrypted?: boolean;
 }) {
   const t = useT();
   const paletteId = useId();
@@ -140,7 +143,7 @@ export function Composer({
   const [, viewportChanged] = useReducer((x: number) => x + 1, 0);
   const blurTimer = useRef<number | undefined>(undefined);
   const uploadPrivacy = useUploadPrivacy();
-  const composePreview = useComposePreview(value, !disabled && !value.startsWith("/"));
+  const composePreview = useComposePreview(value, !disabled && !value.startsWith("/"), encrypted);
   const uploading = uploads.some((u) => !u.attachment && !u.error);
   const ready = uploads.filter((u) => u.attachment).map((u) => u.attachment!.id);
   const spoilerIds = uploads.filter((u) => u.attachment && u.spoiler).map((u) => u.attachment!.id);

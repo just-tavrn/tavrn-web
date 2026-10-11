@@ -37,6 +37,7 @@ import { registerFilesChannel, useHistoryKeys } from "../files/registry";
 import { parseHistoryPolicy } from "@tavrn/e2ee";
 import { alertText, reportCreated, type ModerationAlert, type ReportCreated } from "../moderation/realtime";
 import { rememberDeleted } from "../moderation/deletedIds";
+import { viaOf } from "../components/ViaNode";
 
 /**
  * May this user commit removals of departed members in a conversation (`mls.remove_needed`)? DMs and group DMs:
@@ -174,7 +175,9 @@ export async function onInvite(invite: PendingInvite, queryClient: QueryClient) 
     }
   }
   const name = invite.room?.name ?? invite.conversation?.name ?? "";
-  useToasts.getState().push({ kind: "info", title: t(invite.kind === "room" ? "invites.toast_room" : "invites.toast_conversation", { name, inviter: invite.inviter }), detail: invite.node });
+  // A sender named by a node that is not their home node is not verified: the toast says "via <node>" too.
+  const via = viaOf(invite);
+  useToasts.getState().push({ kind: "info", title: t(invite.kind === "room" ? "invites.toast_room" : "invites.toast_conversation", { name, inviter: invite.inviter }), detail: via ? `${invite.node} · ${t("invites.via", { node: via })}` : invite.node });
 }
 
 interface RealtimeState {

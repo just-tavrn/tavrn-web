@@ -34,6 +34,8 @@ function connectSession(): Session {
   ses.setDevicePermissionHandler(() => false);
   ses.setDisplayMediaRequestHandler((_request, callback) => callback(null));
   ses.on("will-download", (event) => event.preventDefault());
+  // Also switched off at the app's start (index.ts): no dictionary downloads from this session either.
+  ses.setSpellCheckerEnabled(false);
   configured = ses;
   return ses;
 }

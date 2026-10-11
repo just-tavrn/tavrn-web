@@ -4,7 +4,8 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TavrnApiError } from "@tavrn/sdk";
 import { useAuth } from "../stores/auth";
-import { nodeDeps, resetNodeCaches, useNodes } from "../stores/nodes";
+import { useConversationIndex } from "../stores/conversationIndex";
+import { confirmNode, nodeDeps, resetNodeCaches, useNodes } from "../stores/nodes";
 import { useReach } from "../stores/reach";
 import { renderWithProviders } from "../test/render";
 import { NodeScope, NodeSessionBanner, conversationPath, roomPath, useNode } from "./NodeScope";
@@ -24,6 +25,7 @@ beforeEach(() => {
   useNodes.getState().clear();
   useReach.setState({ nodes: {} });
   useAuth.setState({ token: "t", refresh: "r", user: me, deviceId: "D", home: null });
+  useConversationIndex.setState({ state: { version: 1, items: [] } as never });
 });
 
 describe("node routes and scopes", () => {
@@ -76,6 +78,7 @@ describe("node routes and scopes", () => {
   });
 
   it("shows only the banner of a node that cannot be reached; quiet scopes show nothing", async () => {
+    confirmNode("c.test");
     nodeDeps.discover = async () => {
       useReach.getState().set("c.test", "unreachable");
       throw new TypeError("Failed to fetch");
@@ -98,6 +101,7 @@ describe("node routes and scopes", () => {
   });
 
   it("shows the block warning when the home node does not federate with the node (FEDERATION.md §9.4)", async () => {
+    confirmNode("c.test");
     nodeDeps.discover = async () => {
       throw new TavrnApiError({ type: "x", title: "", status: 403, detail: "", code: "federation.peer_blocked" });
     };
@@ -109,5 +113,49 @@ describe("node routes and scopes", () => {
     expect(await screen.findByTestId("peer-blocked")).toHaveTextContent("föderiert nicht mit c.test");
     expect(screen.queryByTestId("node-unreachable-banner")).toBeNull();
     expect(screen.queryByTestId("probe")).toBeNull();
+  });
+
+  it("asks before the first sign-in on a node the account has nothing on, and stores nothing before", async () => {
+    const session = { domain: "evil.test", base: "https://evil.test", ws: "wss://evil.test/ws", web: "https://evil.test" };
+    const contacted: string[] = [];
+    nodeDeps.home = () => ({ federation: { token: async (d: string) => (contacted.push(`token:${d}`), { token: "fed", target: d, expires_in: 600 }) } }) as never;
+    nodeDeps.discover = async (domain) => (contacted.push(`discover:${domain}`), { ...session, domain });
+    globalThis.fetch = (async (url: string) => {
+      contacted.push(String(url));
+      return new Response(JSON.stringify({ status: "ok", user: { ...me, id: "E-ID" }, access_token: "x", refresh_token: "r", expires_in: 3600, device_id: "D", session_expires_at: "2099-01-01T00:00:00Z" }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }) as unknown as typeof fetch;
+    renderWithProviders(
+      <>
+        <NodeScope domain="evil.test">
+          <Probe />
+        </NodeScope>
+        <NodeScope domain="evil.test" quiet>
+          <Probe />
+        </NodeScope>
+      </>,
+    );
+    const ask = await screen.findByTestId("node-connect-confirm");
+    expect(ask).toHaveTextContent("Mit evil.test als alice@a.test verbinden?");
+    expect(contacted.filter((c) => c.includes("evil.test"))).toEqual([]);
+    expect(useNodes.getState().sessions).toEqual({});
+    await userEvent.setup().click(screen.getByRole("button", { name: "Verbinden" }));
+    await vi.waitFor(() => expect(useNodes.getState().sessions["evil.test"]?.token).toBe("x"));
+    expect(contacted).toContain("token:evil.test");
+    expect(await screen.findAllByTestId("probe")).toHaveLength(2);
+  });
+
+  it("signs in without asking on a node the conversation index names", async () => {
+    useConversationIndex.setState({ state: { version: 1, items: [{ node: "b.test", kind: "room", room_id: "R1", conversation_id: null, joined_at: "" }] } as never });
+    nodeDeps.home = () => ({ federation: { token: async (d: string) => ({ token: "fed", target: d, expires_in: 600 }) } }) as never;
+    nodeDeps.discover = async (domain) => ({ domain, base: `https://${domain}`, ws: `wss://${domain}/ws`, web: `https://${domain}` });
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ status: "ok", user: { ...me, id: "B-ID" }, access_token: "bt", refresh_token: "r", expires_in: 3600, device_id: "D", session_expires_at: "2099-01-01T00:00:00Z" }), { status: 200, headers: { "Content-Type": "application/json" } })) as typeof fetch;
+    renderWithProviders(
+      <NodeScope domain="b.test">
+        <Probe />
+      </NodeScope>,
+    );
+    expect(await screen.findByTestId("probe")).toHaveTextContent("b.test|false|B-ID");
+    expect(screen.queryByTestId("node-connect-confirm")).toBeNull();
   });
 });

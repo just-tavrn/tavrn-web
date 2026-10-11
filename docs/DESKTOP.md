@@ -54,7 +54,7 @@ The properties of the Tauri shell (Windows, macOS; on Linux it builds for develo
 | The main window shows only the bundled client: `tauri://localhost` (Linux), `https://tauri.localhost` (Windows), in development the Vite dev server. Every other navigation is refused; web links (http, https, mailto) open in the system browser, new windows are never opened. The click-to-play embeds load in their frames. | `src-tauri/src/guard.rs`, `src/lib.rs` |
 | Content Security Policy: scripts only from the bundle (`script-src 'self' 'wasm-unsafe-eval'`, no eval, no inline scripts, no third-party scripts), `connect-src` https and wss to any node plus plain http/ws to `localhost` and `127.0.0.1` (development nodes), images and media from https, frames only for the embed providers. | `tauri.conf.json` `app.security.csp` |
 | One capability for the main window: the app's commands, nothing else (no `remote` origins, no plugin or core permissions, no global Tauri object). No capability names the sign-in window (a test checks every capability file). | `src-tauri/capabilities/main.json`, `build.rs`, `src-tauri/src/conf_tests.rs` |
-| The sign-in window (`connect`) shows only the chosen node's `/connect?session=…` page (`open_connect` checks origin, path and parameters) and follows https pages from there (identity providers redirect), plain http only on this computer; it never loads the bundled client or `tauri:`, `file:`, `data:`, `javascript:` or `blob:` URLs, and new windows go to the system browser. The node's web client there runs as a plain web client: only the main window counts as the app (`platform/tauriDetect.ts`). | `src-tauri/src/guard.rs`, `src/lib.rs` |
+| The sign-in window (`connect`) shows only the chosen node's `/connect?session=…` page (`open_connect` checks origin, path and parameters) and follows https pages from there (identity providers redirect), plain http only on this computer; it never loads the bundled client or `tauri:`, `file:`, `data:`, `javascript:` or `blob:` URLs, and new windows go to the system browser. It refuses every download and every permission request (microphone, camera, location, notifications; a test checks both handlers). The node's web client there runs as a plain web client: only the main window counts as the app (`platform/tauriDetect.ts`). | `src-tauri/src/guard.rs`, `src/lib.rs` |
 | The microphone and the camera are granted to the main window without a prompt of the webview (it shows only the bundled client); screen capture and every other permission keep the webview's default. | `src-tauri/src/media.rs` |
 | The node URL is validated twice: in the client and again in the shell before it is stored. | `web/src/platform/nodeUrl.ts`, `src-tauri/src/node_url.rs` |
 | Downloads are written by the shell: the webview names only a file name to suggest and a save's id, never a path; the user picks the target in the native save dialog, the shell writes a temporary file next to it and renames it into place. The dialog, opener and fs plugins have no permission in the webview. | `src-tauri/src/download.rs` |
@@ -102,7 +102,10 @@ page with the username filled in. The resolution runs in the shell (`src-tauri/s
 1. `https://<domain>/.well-known/tavrn`, validated (`tavrn` = 1, `domain` equal, endpoints https/wss without
    credentials, query or fragment, `api` ending in `/api/v1`);
 2. after a `404` or without an HTTPS server: the `_tavrn._tcp.<domain>` SRV records (system resolver, at most 3
-   targets, lowest priority first, then highest weight), whose document must name the domain;
+   targets, lowest priority first, then highest weight), whose document must name the domain. The shell connects to
+   the target's host and port but asks for the identity domain (TLS SNI and `Host` are the domain), so the target's
+   certificate must be valid for the domain: a forged DNS answer pointing at a server with a certificate only for its
+   own name ends in "cannot reach \<domain>". This is why a TLS failure of step 1 may still lead to SRV;
 3. after a `404` only: `https://<domain>/api/v1`.
 
 Errors are distinct and name the step that failed: "no node found for \<domain>", "the node's document is invalid",
@@ -406,7 +409,9 @@ and the client keeps the browser engine.
 The webview keeps everything but the media: it joins the MLS group, gets the LiveKit URL and token from the node
 (VOICE.md §3), derives the frame key of the current epoch (ENCRYPTION.md §5a) and hands it to the shell with
 `voice_join`; every newer epoch's key follows with `voice_set_key` (never an older one; the webview wipes its copy, the
-shell keeps keys in memory only and never logs them). The shell (`src-tauri/src/voice`):
+shell keeps keys in memory only and never logs them). The LiveKit URL must be `wss://` or `https://`; plain `ws://` and
+`http://` are accepted only to this computer (`localhost`, `127.0.0.1`, `[::1]`), so the room token never travels
+unencrypted (`voice.invalid_url` otherwise). The shell (`src-tauri/src/voice`):
 
 - **End-to-end encryption** with exactly the web client's key provider configuration (`e2ee.rs`): one shared key per
   epoch at key index `epoch mod 256` in a ring of 256, HKDF with LiveKit's salt, AES-GCM, no ratcheting, no failure
@@ -598,7 +603,8 @@ with `IpcRegistry.handle(namespace, method, argumentCheck, handler)`. The preloa
 | The node URL is validated twice: in the client and again in the shell before it is stored. | `web/src/platform/nodeUrl.ts`, `src/main/node_url.ts` |
 | Electron's fuses in the packages: no `ELECTRON_RUN_AS_NODE`, no `NODE_OPTIONS`, no `--inspect` (the smoke test starts the package with both and checks), the app only from `app.asar`, embedded asar integrity validation (Electron enforces it on macOS and Windows only; on Linux the fuse has no effect), cookie encryption, no extra privileges for `file://`. | `electron-builder.config.mjs` |
 | The renderer's Chromium sandbox is never switched off (no `--no-sandbox`, also not in tests): the `.deb` installs an AppArmor profile that lets the app use user namespaces (Ubuntu 24.04 and later restrict them), and makes `chrome-sandbox` setuid only where user namespaces do not work ([Packages and the Chromium sandbox](#packages-and-the-chromium-sandbox)). | electron-builder's `.deb` scripts |
-| Updates: nothing is downloaded unless the feed of the release is signed with the update key of `tauri.conf.json` (the Tauri updater's, one key for both shells), names this feed file and its version, and lists every file to download with the SHA-512 that electron-updater then checks; a refusal is logged and shown. | `src/main/updater.ts`, `src/main/minisign.ts` |
+| Updates: nothing is downloaded unless the feed of the release is signed with the update key of `tauri.conf.json` (the Tauri updater's, one key for both shells), names this feed file and its version, and lists every file to download with the SHA-512 that electron-updater then checks; everything else electron-updater parsed from its own copy of the feed (path, release date, administrator rights, staged rollout, file sizes) must equal the signed feed, a feed with web-installer `packages` is refused and the web installer is off; a refusal is logged and shown. | `src/main/updater.ts`, `src/main/minisign.ts` |
+| No contact before a node is chosen: the spellchecker is off in the app's session and the sign-in window's (their Chromium `Preferences` are seeded with it off before the app is ready, because Chromium starts it when it creates a profile; once ready both sessions switch it off and drop its languages again), so Chromium downloads no dictionaries from Google's servers (the smoke test reads Chromium's net log of a first start and finds only this computer). A package refuses to start with `--remote-debugging-port` or `--remote-debugging-pipe` (the packaged Playwright specs allow it with `TAVRN_DESKTOP_ALLOW_DEBUGGING=1`). | `src/main/hardening.ts`, `index.ts`, `connect.ts` |
 
 ### Settings and profile
 
@@ -619,7 +625,10 @@ The node picker works as in "The node picker": `resolveNode` runs in the shell (
 errors of the Tauri shell. Its requests go through Chromium's network stack (`net.fetch`: TLS verified against the
 system's trust store, the system's proxy settings), at most 3 redirects to https on the same host, 5 s until the
 answer's headers and 10 s in total (Chromium has no separate connect timeout), the document capped at 64 KiB; SRV
-records come from the system's DNS configuration (`/etc/resolv.conf`).
+records come from the system's DNS configuration (`/etc/resolv.conf`). The SRV step alone uses Node's TLS
+(`https.request` to the target with `servername` and `Host` set to the identity domain), because Chromium's fetch
+cannot connect to one host while verifying the certificate for another; it trusts Node's bundled Mozilla roots plus
+the system's certificate store.
 
 Signing in on the node's page works as in "Signing in", in the window of `connect.ts`. The page knows the sign-in window
 by the marker `TavrnDesktopSignIn/1` that the window's session adds to the user agent (`inSignInWindow`,

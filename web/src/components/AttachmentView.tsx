@@ -16,6 +16,7 @@ import { useNode } from "./NodeScope";
 import { useT } from "../i18n";
 import { AttachmentIntegrityError, decryptAttachment, verifyPlainAttachment, type ContentAttachment } from "@tavrn/e2ee";
 import { isSvg, safeBlobType, shouldAutoPreview } from "../lib/preview";
+import { stripBidi } from "../lib/untrusted";
 import { usePrivacy } from "../stores/privacy";
 import { toastError } from "../stores/toasts";
 import { saveDownload } from "../lib/download";
@@ -43,11 +44,12 @@ export interface ViewAttachment {
   sha256?: string | null;
 }
 
-export const fromPlain = (a: Attachment): ViewAttachment => ({ id: a.id, name: a.name, mime: a.mime, size: a.size, encrypted: null, expired: !!a.expired, spoiler: !!a.spoiler, sha256: a.sha256 || null });
+export const fromPlain = (a: Attachment): ViewAttachment => ({ id: a.id, name: stripBidi(a.name), mime: a.mime, size: a.size, encrypted: null, expired: !!a.expired, spoiler: !!a.spoiler, sha256: a.sha256 || null });
 /** An attachment of an encrypted message; `listed` are the node's rows of the message (they carry `expired`). */
 export const fromEncrypted = (a: ContentAttachment, listed?: Attachment[] | null): ViewAttachment => ({
   id: a.id,
-  name: a.name,
+  // Shown and saved without bidi controls: the name the sender declared can otherwise display in another order.
+  name: stripBidi(a.name),
   mime: a.mime,
   size: a.size,
   encrypted: a,

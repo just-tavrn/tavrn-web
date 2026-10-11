@@ -14,7 +14,7 @@
 import { create } from "zustand";
 import { TavrnApi, TavrnApiError, createRefresher, isNodeDomain, resolveNode, type FederatedSessionResponse, type NodeEndpoints, type UserKeys, type UserPrivate, type WellKnown } from "@tavrn/sdk";
 import { CLIENT_HEADER, api, publicApi } from "../lib/api";
-import { useAuth } from "./auth";
+import { onAccountChange, useAuth } from "./auth";
 import { trackingFetch, useReach } from "./reach";
 import { allowsInsecureNodes, deviceName, originUrl, originWsUrl, webOrigin } from "../platform";
 
@@ -171,6 +171,26 @@ function toSession(endpoints: NodeEndpoints, resp: FederatedSessionResponse): Fe
 
 const inflight = new Map<string, Promise<FederatedSession>>();
 
+/** Nodes the user agreed to connect to in this tab (a first visit through a link asks, see `NodeScope`). */
+const confirmed = new Set<string>();
+
+/** Records that the user agreed to sign in on `domain`. */
+export function confirmNode(domain: string): void {
+  confirmed.add(domain);
+}
+
+/**
+ * Whether a federated login on `domain` needs no confirmation: a session exists or existed (refused renewal), the user
+ * already agreed in this tab, or it is the node this web client was loaded from. The conversation index (rooms and
+ * conversations of the account there) is checked by the caller.
+ */
+export async function nodeNeedsNoConfirmation(domain: string): Promise<boolean> {
+  const st = useNodes.getState();
+  if (st.sessions[domain] || st.failed[domain] || confirmed.has(domain)) return true;
+  const own = await originDocument().catch(() => null);
+  return own?.domain === domain;
+}
+
 /** A federated login on `domain` with a fresh federation token of the home node. */
 async function login(domain: string): Promise<FederatedSession> {
   const endpoints = await endpointsOf(domain);
@@ -326,17 +346,56 @@ export function meOn(domain: string | null | undefined): UserPrivate | null {
   return useNodes.getState().sessions[domain as string]?.user ?? null;
 }
 
-/** Ends all federated sessions (best effort) and forgets them. */
-export async function signOutNodes(): Promise<void> {
-  const sessions = Object.keys(useNodes.getState().sessions);
-  await Promise.all(sessions.map((d) => apiFor(d).auth.logout().catch(() => undefined)));
+/** Forgets every federated session and the per-node caches (synchronously: nothing can pick them up afterwards). */
+function forgetNodes(): void {
   useNodes.getState().clear();
   clients.clear();
   publicClients.clear();
   discovered.clear();
   refreshers.clear();
+  inflight.clear();
+  confirmed.clear();
   useReach.setState({ nodes: {} });
 }
+
+/**
+ * Ends all federated sessions (best effort) and forgets them. The sessions are forgotten first; each node is then
+ * asked to end its session with that session's own tokens (one refresh when the access token has expired), so this
+ * also works after the home session is gone.
+ */
+export async function signOutNodes(): Promise<void> {
+  const sessions = Object.values(useNodes.getState().sessions);
+  forgetNodes();
+  await Promise.all(sessions.map((s) => endSession(s).catch(() => undefined)));
+}
+
+async function endSession(s: FederatedSession): Promise<void> {
+  const plain = () => new TavrnApi({ baseUrl: s.base, clientHeader: CLIENT_HEADER, fetchImpl: trackingFetch(() => s.domain) });
+  const client = new TavrnApi({
+    baseUrl: s.base,
+    clientHeader: CLIENT_HEADER,
+    fetchImpl: trackingFetch(() => s.domain),
+    getToken: () => s.token,
+    refreshToken: async () => (await plain().auth.refresh(s.refresh).catch(() => null))?.access_token ?? null,
+  });
+  await client.auth.logout();
+}
+
+/** Federated sessions belong to one account and device: another one ends and drops them (best effort). */
+async function endForeignSessions(address: string, deviceId: string | null): Promise<void> {
+  const foreign = Object.values(useNodes.getState().sessions).filter((s) => s.user.address !== address || (deviceId !== null && s.deviceId !== deviceId));
+  for (const s of foreign) useNodes.getState().drop(s.domain);
+  await Promise.all(foreign.map((s) => endSession(s).catch(() => undefined)));
+}
+
+// Signed out (forced or explicit, or in another tab): end and forget the account's federated sessions.
+onAccountChange(() => {
+  if (!useAuth.getState().user) void signOutNodes();
+});
+// A session of another account or device: never keep federated sessions that are not its own.
+useAuth.subscribe((state, prev) => {
+  if (state.user && (state.user.address !== prev.user?.address || state.deviceId !== prev.deviceId)) void endForeignSessions(state.user.address, state.deviceId ?? null);
+});
 
 // Another tab rotated or replaced federated sessions: take them over (PROTOCOL.md §5b).
 if (typeof window !== "undefined") {
@@ -349,6 +408,7 @@ if (typeof window !== "undefined") {
 
 /** Forget the discovery cache (tests). */
 export function resetNodeCaches(): void {
+  confirmed.clear();
   refreshers.clear();
   clients.clear();
   publicClients.clear();

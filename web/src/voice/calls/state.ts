@@ -24,6 +24,8 @@ export interface Ring {
   group: boolean;
   /** When this device learned about it (ms since epoch). */
   receivedAt: number;
+  /** The node that named a caller who is not its own user (not verified by the caller's home node). */
+  via?: string;
 }
 
 export interface CallsState {

@@ -168,3 +168,11 @@ body { @apply bg-bg-2 text-fg-0 font-sans antialiased; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }
+
+/* Names and file names from other people are isolated from the text around them: right-to-left text in a name
+   cannot reorder the rest of the line (bidi controls are also stripped for display, lib/untrusted.ts). */
+[data-testid="message-author"],
+[data-testid="download-warning-name"],
+.mention {
+  unicode-bidi: isolate;
+}

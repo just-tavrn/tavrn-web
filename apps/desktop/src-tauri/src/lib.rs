@@ -26,7 +26,7 @@ mod conf_tests;
 
 use std::sync::Arc;
 
-use tauri::webview::NewWindowResponse;
+use tauri::webview::{NewWindowResponse, PermissionKind, PermissionResponse};
 use tauri::{AppHandle, Manager, Runtime, Url, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 /// Label of the app's window; capabilities/main.json applies to it (and only to it).
@@ -39,6 +39,16 @@ fn open_link(link: String) {
 }
 
 /// Shows `url` (validated by `guard::connect_url`) in the sign-in window, creating it on first use.
+/// The sign-in window never downloads: a node's page or an identity provider cannot save files under the app's name.
+pub fn connect_download(_url: &Url) -> bool {
+    false
+}
+
+/// The sign-in window grants no permission (microphone, camera, location, notifications, …) and asks for none.
+pub fn connect_permission(_kind: PermissionKind) -> PermissionResponse {
+    PermissionResponse::Deny
+}
+
 pub fn open_connect_window<R: Runtime>(app: &AppHandle<R>, url: Url) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window(CONNECT_WINDOW) {
         window.navigate(url)?;
@@ -64,6 +74,11 @@ pub fn open_connect_window<R: Runtime>(app: &AppHandle<R>, url: Url) -> tauri::R
             }
             NewWindowResponse::Deny
         })
+        .on_download(|_webview, event| match event {
+            tauri::webview::DownloadEvent::Requested { url, .. } => connect_download(&url),
+            _ => false,
+        })
+        .on_permission_request(|_webview, kind| connect_permission(kind))
         .build()?;
     Ok(())
 }
