@@ -19,6 +19,11 @@ First public release of the web client and the desktop apps.
 - **Desktop app for Linux** (Electron): `.AppImage` and `.deb` with the same client in Chromium (voice, video and
   screen sharing as in the browser), the desktop's keyring, tray, notifications, global hotkeys and its own updater.
 
+### Fixed
+
+- The registration form follows the node's e-mail policy: "Email" and required when the node requires an address,
+  "Email (optional)" when it is optional, no field when the node accepts none.
+
 ### Security
 
 - Plaintext in end-to-end encrypted conversations is shown as "not end-to-end encrypted", never as the author's

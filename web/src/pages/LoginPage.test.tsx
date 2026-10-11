@@ -239,6 +239,92 @@ describe("LoginPage: registration wizard", () => {
   });
 });
 
+describe("LoginPage: the node's e-mail policy", () => {
+  // `email` of the discovery document: none | optional | required (TAVRN_EMAIL).
+  const nodeWith = (email: string | null, extra: Record<string, unknown> = {}) => ({
+    "/api/v1/node": { body: { registration: "invite", ...extra } },
+    "/.well-known/tavrn": email === null ? { status: 503, body: {} } : { body: { domain: "t.local", registration: "invite", email } },
+  });
+  const fillAccount = async (u: ReturnType<typeof userEvent.setup>) => {
+    await u.type(screen.getByLabelText("Benutzername"), "alice");
+    await u.type(screen.getByLabelText("Passwort", { exact: true }), "passwort-alice-123");
+    await u.type(screen.getByLabelText("Passwort wiederholen"), "passwort-alice-123");
+    fireEvent.change(screen.getByLabelText("Geburtsdatum"), { target: { value: "1990-05-17" } });
+  };
+
+  it("required: the field is labelled without (optional), is required and checked before asking the node", async () => {
+    const calls = mockFetch({ ...nodeWith("required"), "/api/v1/auth/register": { status: 201, body: enrollStep } });
+    renderLogin("/login?invite=ABC123");
+    const field = await screen.findByLabelText("E-Mail");
+    expect(field).toBeRequired();
+    expect(screen.queryByLabelText("E-Mail (optional)")).toBeNull();
+    const u = userEvent.setup();
+    await fillAccount(u);
+    // The browser's own check aside, the form checks the field itself before it sends anything.
+    fireEvent.submit(screen.getByRole("tabpanel"));
+    expect(await screen.findByRole("alert")).toHaveTextContent("E-Mail-Adresse");
+    expect(field).toHaveAttribute("aria-invalid", "true");
+    expect(calls.some((c) => c.url.includes("/auth/register"))).toBe(false);
+    await u.type(field, "alice@example.org");
+    await u.click(screen.getByRole("button", { name: "Konto erstellen" }));
+    expect(await screen.findByRole("heading", { name: "Zweiten Faktor einrichten" })).toBeInTheDocument();
+    expect(body(calls.find((c) => c.url.includes("/auth/register"))!)).toMatchObject({ email: "alice@example.org", invite: "ABC123" });
+  });
+
+  it("optional: the field is labelled (optional) and may stay empty", async () => {
+    const calls = mockFetch({ ...nodeWith("optional"), "/api/v1/auth/register": { status: 201, body: enrollStep } });
+    renderLogin("/login?invite=ABC123");
+    const field = await screen.findByLabelText("E-Mail (optional)");
+    expect(field).not.toBeRequired();
+    const u = userEvent.setup();
+    await fillAccount(u);
+    await u.click(screen.getByRole("button", { name: "Konto erstellen" }));
+    expect(await screen.findByRole("heading", { name: "Zweiten Faktor einrichten" })).toBeInTheDocument();
+    expect(body(calls.find((c) => c.url.includes("/auth/register"))!)).toMatchObject({ email: null });
+  });
+
+  it("none: no e-mail field, and no address is sent", async () => {
+    const calls = mockFetch({ ...nodeWith("none"), "/api/v1/auth/register": { status: 201, body: enrollStep } });
+    renderLogin("/login?invite=ABC123");
+    await screen.findByLabelText("Einladungscode");
+    await waitFor(() => expect(calls.some((c) => c.url.includes("/.well-known/tavrn"))).toBe(true));
+    await waitFor(() => expect(screen.queryByLabelText(/E-Mail/)).toBeNull());
+    const u = userEvent.setup();
+    await fillAccount(u);
+    await u.click(screen.getByRole("button", { name: "Konto erstellen" }));
+    expect(await screen.findByRole("heading", { name: "Zweiten Faktor einrichten" })).toBeInTheDocument();
+    expect(body(calls.find((c) => c.url.includes("/auth/register"))!)).toMatchObject({ email: null });
+  });
+
+  it("unknown policy (discovery document unavailable): the field stays optional, the node decides", async () => {
+    mockFetch(nodeWith(null));
+    renderLogin("/login?invite=ABC123");
+    expect(await screen.findByLabelText("E-Mail (optional)")).not.toBeRequired();
+  });
+
+  it("a refused registration keeps every entered value, including the invite code", async () => {
+    mockFetch({
+      ...nodeWith("required"),
+      "/api/v1/auth/register": { status: 403, body: { type: "x", title: "Forbidden", status: 403, code: "auth.invite_invalid", detail: "Invite invalid, expired or used up" } },
+    });
+    renderLogin("/login?invite=ABC123");
+    const u = userEvent.setup();
+    await screen.findByLabelText("E-Mail");
+    await fillAccount(u);
+    await u.type(screen.getByLabelText("Anzeigename (optional)"), "Alice");
+    await u.type(screen.getByLabelText("E-Mail"), "alice@example.org");
+    await u.click(screen.getByRole("button", { name: "Konto erstellen" }));
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(screen.getByLabelText("Benutzername")).toHaveValue("alice");
+    expect(screen.getByLabelText("Passwort", { exact: true })).toHaveValue("passwort-alice-123");
+    expect(screen.getByLabelText("Passwort wiederholen")).toHaveValue("passwort-alice-123");
+    expect(screen.getByLabelText("Geburtsdatum")).toHaveValue("1990-05-17");
+    expect(screen.getByLabelText("Anzeigename (optional)")).toHaveValue("Alice");
+    expect(screen.getByLabelText("E-Mail")).toHaveValue("alice@example.org");
+    expect(screen.getByLabelText("Einladungscode")).toHaveValue("ABC123");
+  });
+});
+
 describe("LoginPage: captcha", () => {
   afterEach(() => {
     delete window.turnstile;
