@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MyPresence, Presence, TavrnApi } from "@tavrn/sdk";
-import { activeCustom, applyPresence, statusLine, statusOf, usePresence } from "./presence";
+import { activeCustom, applyPresence, sendsTyping, statusLine, statusOf, usePresence } from "./presence";
 import { pushPresence, setAutoIdle, syncPresence } from "../lib/presence";
 
 const p = (user: string, status: string, extra: Partial<Presence> = {}): Presence => ({ user, user_id: user, status, ...extra });
@@ -85,5 +85,16 @@ describe("presence store", () => {
     await setAutoIdle(false);
     expect(home.calls).toEqual([{ status: "idle" }, { status: "online" }]);
     spy.mockRestore();
+  });
+});
+
+describe("typing indicators", () => {
+  const mine = (status: string, effective = status) => ({ status, effective, idle: false, hide_activity: false }) as MyPresence;
+  it("are not sent while the user is invisible", () => {
+    expect(sendsTyping(mine("invisible"))).toBe(false);
+    expect(sendsTyping(mine("online", "invisible"))).toBe(false);
+    expect(sendsTyping(mine("online"))).toBe(true);
+    expect(sendsTyping(mine("dnd"))).toBe(true);
+    expect(sendsTyping(null)).toBe(true);
   });
 });
