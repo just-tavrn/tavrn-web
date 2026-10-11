@@ -2252,6 +2252,8 @@
   "home.invite_dm": "Direct message",
   "home.invite_group": "Group",
   "invites.toast_room": "Invitation to {name} from {inviter}",
+  "invites.via": "via {node}",
+  "invites.via_hint": "{node} named this person, but their home node did not confirm it: treat them like a stranger.",
   "invites.toast_conversation": "{inviter} wants to start a conversation with you",
   "invite.direct_label": "Invite a person directly",
   "invite.direct_hint": "Username or full address on any node, e.g. alice@node.example. The invitation appears in their invite list.",

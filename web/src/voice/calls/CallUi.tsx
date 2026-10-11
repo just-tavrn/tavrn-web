@@ -30,6 +30,7 @@ import { StageGrid } from "../ui/StageGrid";
 import { answerCall, applyCall, callTitle, declineCall, startCall } from "./actions";
 import { callKey, expireRings, useCalls, type Ring } from "./state";
 import { LockMark } from "../../components/Badges";
+import { ViaNode } from "../../components/ViaNode";
 
 /** The conversation of a call (members, name) from its node; shared cache with the DM page. */
 function useConversation(domain: string, conversationId: string, enabled = true) {
@@ -103,7 +104,15 @@ function IncomingCall({ ring }: { ring: Ring }) {
       </span>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold text-fg-0">{ring.group ? t("calls.incoming_group", { name: callTitle(conv.data, self) }) : t("calls.incoming_from", { name: caller })}</p>
-        <p className="truncate text-xs text-fg-2">{ring.group ? t("calls.started_by", { name: caller }) : ring.from}</p>
+        <p className="truncate text-xs text-fg-2">
+          {ring.group ? t("calls.started_by", { name: caller }) : ring.from}
+          {ring.via && (
+            <>
+              {" "}
+              <ViaNode node={ring.via} />
+            </>
+          )}
+        </p>
       </div>
       <button
         type="button"

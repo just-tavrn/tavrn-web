@@ -10,6 +10,7 @@ import { NodeScope, useNode } from "../components/NodeScope";
 import { RequestActions, requestPath, useMessageRequests, type RequestItem } from "../components/MessageRequests";
 import { MediaAvatar } from "../components/Avatar";
 import { formatTime } from "../lib/format";
+import { ViaNode } from "../components/ViaNode";
 
 /** All open message requests (`/requests`). */
 export function MessageRequestsPage() {
@@ -48,6 +49,12 @@ function RequestSummary({ request: r }: { request: RequestItem }) {
         <p className="truncate font-medium">{r.fromName}</p>
         <p className="truncate text-xs text-fg-2" data-testid="request-from">
           {r.from}
+          {r.via && (
+            <>
+              {" "}
+              <ViaNode node={r.via} />
+            </>
+          )}
           {r.node ? ` · ${t("requests.remote", { node: r.node })}` : ""}
         </p>
         <p className="mt-1 text-xs text-fg-1" data-testid="request-shared">

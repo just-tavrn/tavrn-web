@@ -80,7 +80,10 @@ for passkeys and captchas); on that origin the recovery key unlocks the encrypte
 Encryption works across nodes: the MLS group of a conversation lives on the node that hosts it, while every user's
 keys are checked against that user's own home node. Friends and DMs work by full address (`bob@other.example`); a DM
 lives on the home node of the person who starts it and shows its node's domain in the DM list; DMs started by a friend
-on another node appear by themselves, room invitations by address wait in the invite list on the home view. A node
+on another node appear by themselves, room invitations by address wait in the invite list on the home view. An
+invitation or call that a node forwards for a person of a third node (the invitation's or ring's `via`) shows "via
+\<node>" next to the name, with the explanation that the person's home node did not confirm it; such an invitation is
+always a message request. A node
 that is down only marks its own rooms and conversations as unreachable; a node that refuses to renew the session asks
 to sign in there again. **The first sign-in on a node the account has nothing on** (a link to `/n/<domain>/…` of a node
 without a room or conversation of the account in its index) asks first: "Connect to \<node> as \<address>?", because

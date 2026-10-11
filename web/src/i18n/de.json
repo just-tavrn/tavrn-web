@@ -2252,6 +2252,8 @@
   "home.invite_dm": "Direktnachricht",
   "home.invite_group": "Gruppe",
   "invites.toast_room": "Einladung zu {name} von {inviter}",
+  "invites.via": "über {node}",
+  "invites.via_hint": "{node} hat diese Person genannt, ihr Heimatknoten hat das aber nicht bestätigt: Behandle sie wie eine fremde Person.",
   "invites.toast_conversation": "{inviter} möchte eine Unterhaltung mit dir beginnen",
   "invite.direct_label": "Eine Person direkt einladen",
   "invite.direct_hint": "Benutzername oder vollständige Adresse auf einem beliebigen Knoten, z. B. alice@node.example. Die Einladung erscheint in ihrer Einladungsliste.",

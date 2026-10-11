@@ -42,3 +42,4 @@ First public release of the web client and the desktop apps.
 - Windows app (Tauri): the sign-in window refuses downloads and permission requests; the native voice engine refuses
   plain `ws://`/`http://` LiveKit URLs except to this computer.
 - The installers' terms describe the Electron app's folders, keychain item and update feeds.
+- Invitations and call rings that a node forwards for a person of a third node show "via <node>" with an explanation.
