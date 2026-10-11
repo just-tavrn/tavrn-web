@@ -56,7 +56,7 @@ function seed() {
   localStorage.setItem("tavrn.rail:alice@home.test", "x");
 }
 
-describe("sign-out races (red until fixed)", () => {
+describe("sign-out races", () => {
   beforeEach(() => {
     localStorage.clear();
     resetNodeCaches();
@@ -147,6 +147,18 @@ describe("sign-out races (red until fixed)", () => {
     release();
     await p;
     await flush();
+    expect(useNodes.getState().sessions["far.test"]).toBeUndefined();
+  });
+
+  it("dropping a session removes only that entry from the storage another tab may have written meanwhile", () => {
+    useAuth.getState().setSession(session(userA, "devA"));
+    useNodes.getState().put(fedA);
+    // Another tab stored a session this tab has not taken over yet.
+    const other = { ...fedA, domain: "other.test", token: "other-tab" };
+    localStorage.setItem("tavrn.nodes", JSON.stringify({ ...JSON.parse(localStorage.getItem("tavrn.nodes")!), "other.test": other }));
+    useNodes.getState().drop("far.test");
+    const stored = JSON.parse(localStorage.getItem("tavrn.nodes")!) as Record<string, FederatedSession>;
+    expect(Object.keys(stored)).toEqual(["other.test"]);
     expect(useNodes.getState().sessions["far.test"]).toBeUndefined();
   });
 

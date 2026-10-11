@@ -95,8 +95,10 @@ export const useNodes = create<NodesState>((set, get) => ({
     set({ sessions });
   },
   drop: (domain) => {
+    // Only this entry goes: what another tab stored meanwhile stays (its storage event updates this tab).
+    const { [domain]: _stored, ...rest } = readStoredSessions() ?? get().sessions;
+    save(rest);
     const { [domain]: _gone, ...sessions } = get().sessions;
-    save(sessions);
     set({ sessions });
   },
   clear: () => {
@@ -191,12 +193,23 @@ export async function nodeNeedsNoConfirmation(domain: string): Promise<boolean> 
   return own?.domain === domain;
 }
 
-/** A federated login on `domain` with a fresh federation token of the home node. */
+/** Bumped whenever the account's federated sessions are forgotten (sign-out, another account or device). */
+let generation = 0;
+
+/**
+ * A federated login on `domain` with a fresh federation token of the home node. A login that finishes after the
+ * account signed out or changed is ended with its own token (best effort) and never stored.
+ */
 async function login(domain: string): Promise<FederatedSession> {
+  const started = generation;
   const endpoints = await endpointsOf(domain);
   const { token } = await nodeDeps.home().federation.token(domain);
   const target = new TavrnApi({ baseUrl: endpoints.base, clientHeader: CLIENT_HEADER, fetchImpl: trackingFetch(() => domain) });
   const session = toSession(endpoints, await target.auth.federated(token, deviceName()));
+  if (started !== generation) {
+    void endSession(session).catch(() => undefined);
+    throw new Error("the account changed during the federated login");
+  }
   useNodes.getState().put(session);
   return session;
 }
@@ -348,6 +361,7 @@ export function meOn(domain: string | null | undefined): UserPrivate | null {
 
 /** Forgets every federated session and the per-node caches (synchronously: nothing can pick them up afterwards). */
 function forgetNodes(): void {
+  generation++;
   useNodes.getState().clear();
   clients.clear();
   publicClients.clear();
@@ -394,7 +408,11 @@ onAccountChange(() => {
 });
 // A session of another account or device: never keep federated sessions that are not its own.
 useAuth.subscribe((state, prev) => {
-  if (state.user && (state.user.address !== prev.user?.address || state.deviceId !== prev.deviceId)) void endForeignSessions(state.user.address, state.deviceId ?? null);
+  if (state.user && (state.user.address !== prev.user?.address || state.deviceId !== prev.deviceId)) {
+    // Logins of the previous account or device still in flight must not be stored for this one.
+    generation++;
+    void endForeignSessions(state.user.address, state.deviceId ?? null);
+  }
 });
 
 // Another tab rotated or replaced federated sessions: take them over (PROTOCOL.md §5b).
