@@ -96,7 +96,10 @@ and side panels never ask. Details:
 app's device and, after "Sign in to the app", says "return to the app" instead of redirecting; a sign-in on the page
 for such a confirmation skips the encryption step, because the app creates its own device keys. `method=passkey` (or
 `sso`) starts that method at once with only "Signing in with a passkey…" and "Use another method"; `method=register`
-opens the registration. After a passkey ceremony with the PRF extension the page seals the passkey's unlock secret to
+opens the registration. The confirmation of a sign-in needs a fresh proof of the account (PROTOCOL.md §5c): a sign-in
+on the page a moment ago counts; a page that was already signed in asks for it, with `method=passkey` through the
+passkey itself (one touch confirms and unlocks), otherwise in the usual confirmation dialog. After a passkey ceremony
+with the PRF extension the page seals the passkey's unlock secret to
 the app's key from the URL fragment (`#k=`, never sent to a server) and sends it with the confirmation, so the passkey
 unlocks the app's encrypted messages as it does in the browser; an *unlock* request of a signed-in app ("Unlock the
 tavrn app?") asks only for the passkey ([DESKTOP.md](DESKTOP.md) "Signing in").

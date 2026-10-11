@@ -5,7 +5,7 @@
  * the caller for local use only; the JSON sent to the node never contains it.
  */
 import { secretStoragePrfInput } from "@tavrn/crypto";
-import { b64urlDecode, credentialToJSON, parseCreationOptions, parseRequestOptions, prfEnabled, prfFirst, stripPrfResults, type AuthResponse, type TavrnApi, type WebauthnRegistered, type DeviceProof } from "@tavrn/sdk";
+import { b64urlDecode, credentialToJSON, parseCreationOptions, parseRequestOptions, prfEnabled, prfFirst, stripPrfResults, type AuthResponse, type ReauthToken, type TavrnApi, type WebauthnRegistered, type DeviceProof } from "@tavrn/sdk";
 import { ensureCrypto } from "@tavrn/e2ee";
 import { platform } from "../platform";
 import { publicApi } from "./api";
@@ -59,6 +59,31 @@ export async function passkeyLogin(api: TavrnApi, opts: { preauthToken?: string;
     device: opts.device ?? null,
   });
   return { session, credentialId: cred.id, prf };
+}
+
+export interface PasskeyReauth {
+  reauth: ReauthToken;
+  credentialId: string;
+  /** PRF output of the same assertion (the node's options request it), or null without PRF. Local use only. */
+  prf: Uint8Array | null;
+}
+
+/**
+ * Re-authentication with a passkey (PROTOCOL.md §5c, `POST /auth/reauth`) whose assertion also evaluates the secret
+ * storage PRF: one touch yields the reauth token and the PRF output. The response sent to the node never contains it.
+ */
+export async function passkeyReauth(api: TavrnApi): Promise<PasskeyReauth> {
+  const { challenge_id, options } = await api.auth.reauthWebauthnStart();
+  const cred = (await navigator.credentials.get(parseRequestOptions(options))) as PublicKeyCredential | null;
+  if (!cred) throw cancelled();
+  const prf = prfFirst(cred);
+  try {
+    const reauth = await api.auth.reauth({ challenge_id, response: stripPrfResults(credentialToJSON(cred)) });
+    return { reauth, credentialId: cred.id, prf };
+  } catch (e) {
+    prf?.fill(0);
+    throw e;
+  }
 }
 
 let rpIdPromise: Promise<string | null> | null = null;
