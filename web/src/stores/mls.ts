@@ -24,7 +24,7 @@ interface MlsUiState {
   rejoined: Record<string, true>;
   /** Incremented on every epoch change of a conversation: views re-check roster and messages. */
   epochs: Record<string, number>;
-  /** Ghost leaves the user acknowledged in this session, per qualified conversation id (components/GhostGate.tsx). */
+  /** Ghost leaves (`identity|key`) the user acknowledged in this session, per qualified conversation id (components/GhostGate.tsx). */
   ghostAck: Record<string, string[]>;
   /** Conversation currently on screen. */
   open: string | null;

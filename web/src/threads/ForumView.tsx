@@ -8,6 +8,7 @@ import { useNode } from "../components/NodeScope";
 import { UnencryptedBanner } from "../components/UnencryptedBanner";
 import { E2eeStatusLine, LockedNotice } from "../components/E2eeNotices";
 import { forgetGhostAck, isGhostRefusal, useGhostGate } from "../components/GhostGate";
+import { plainInEncrypted } from "../lib/unverified";
 import { Button, Dialog, ErrorText, Field, Input } from "../components/ui";
 import { Select, Textarea } from "../pages/settings/common";
 import { useDecrypted, useE2eeConversation } from "../hooks/useE2eeConversation";
@@ -75,6 +76,8 @@ export function ForumView({ room, channel, perms, roomMembers, members, refreshM
   const preview = (th: Thread): string => {
     const m = th.first_message;
     if (!m) return "";
+    // Plaintext in an encrypted forum can only come from the node (ENCRYPTION.md §5.4): never previewed.
+    if (plainInEncrypted(m, channel.encrypted)) return t("messages.not_e2ee_short");
     const content = (m.encrypted ? (decrypted[m.id]?.ok ? (decrypted[m.id] as { content: Record<string, unknown> }).content : null) : m.content) as { body?: unknown } | null;
     if (m.encrypted && !content) return t("messages.encrypted_short");
     return typeof content?.body === "string" ? content.body.replace(/\s+/g, " ").slice(0, 200) : "";

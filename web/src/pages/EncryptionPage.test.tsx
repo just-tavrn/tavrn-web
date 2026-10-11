@@ -119,6 +119,24 @@ describe("EncryptionPage", () => {
     expect(await cryptoStore.status(user.address)).toBe("locked");
   });
 
+  it("a refused setup (the node has a recovery entry) switches to unlocking and writes nothing", async () => {
+    const user = signIn(false);
+    const calls = mockFetch({
+      "/users/me/secret-storage": { body: { items: [{ method: "recovery", wrapped: "AAAA", params: {}, updated_at: "" }] } },
+      "/auth/factors": { body: { totp: true, webauthn: [], recovery_codes_left: 10 } },
+      "/api/v1/users/me": { body: user },
+    });
+    renderPage();
+    expect(await screen.findByRole("heading", { name: "Dein Wiederherstellungsschlüssel" })).toBeInTheDocument();
+    const u = userEvent.setup();
+    await u.click(screen.getByLabelText("Ich habe meinen Wiederherstellungsschlüssel gesichert"));
+    await u.click(screen.getByRole("button", { name: "Einrichtung abschließen" }));
+    expect(await screen.findByRole("heading", { name: "Verschlüsselte Nachrichten entsperren" })).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("bereits eingerichtet");
+    expect(calls.filter((c) => c.init.method === "PUT" || c.init.method === "POST").map((c) => c.url)).toEqual([]);
+    expect(await cryptoStore.status(user.address)).toBe("none");
+  });
+
   it("offers the degraded mode and the identity reset with a warning", async () => {
     const user = signIn(true);
     mockFetch({ "/users/me/secret-storage": { body: { items: [] } }, "/api/v1/users/me": { body: user } });

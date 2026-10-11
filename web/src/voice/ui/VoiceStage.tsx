@@ -9,7 +9,7 @@ import { useLocale, useT } from "../../i18n";
 import { useNode } from "../../components/NodeScope";
 import { Button } from "../../components/ui";
 import { GhostWarning } from "../../components/E2eeNotices";
-import { acknowledgeGhosts } from "../../components/GhostGate";
+import { acknowledgeGhosts, ghostAckId } from "../../components/GhostGate";
 import { channelName } from "../../lib/names";
 import { channelPermissions, useRoomMembers } from "../../pages/ChannelPage";
 import { getMls, useMlsUi } from "../../stores/mls";
@@ -295,7 +295,7 @@ export function VoiceStage({ room, channel }: { room: RoomDetail; channel: Chann
   const online = useMemo(() => participants.map((p) => p.identity), [participants]);
   const ghosts = useGhosts(q, memberAddresses, connected, online, ghostNoBots(channel, room));
   const acked = useMlsUi((s) => s.ghostAck[q]);
-  const ghostAck = ghosts.every((g) => acked?.includes(g.identity));
+  const ghostAck = ghosts.every((g) => acked?.includes(ghostAckId(g)));
 
   const tiles = useMemo(() => {
     const out: Tile[] = [];

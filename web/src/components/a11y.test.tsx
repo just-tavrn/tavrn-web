@@ -148,7 +148,7 @@ describe("accessibility of shared widgets", () => {
 
   it("the unknown-device warning is an alert with a named button", async () => {
     const { GhostWarning } = await import("./E2eeNotices");
-    render(<GhostWarning ghosts={[{ identity: "x@t.local/01J9ZK3G5M8Q2W4E6R8T0Y2VD1", reason: "unattested" }]} acknowledged={false} onAcknowledge={() => undefined} />);
+    render(<GhostWarning ghosts={[{ identity: "x@t.local/01J9ZK3G5M8Q2W4E6R8T0Y2VD1", reason: "unattested", key: "K810" }]} acknowledged={false} onAcknowledge={() => undefined} />);
     expect(screen.getByRole("alert")).toHaveTextContent("x@t.local/01J9ZK3G5M8Q2W4E6R8T0Y2VD1");
     expect(screen.getByRole("button", { name: "Ich verstehe" })).toBeInTheDocument();
   });

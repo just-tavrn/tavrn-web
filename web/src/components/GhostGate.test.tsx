@@ -10,7 +10,7 @@ import { mockFetch, renderWithProviders } from "../test/render";
 import { forgetGhostAck, isGhostRefusal, useGhostGate } from "./GhostGate";
 import { ForumView } from "../threads/ForumView";
 
-const ghost: GhostViolation = { identity: "bob@t.local/01J9ZK3G5M8Q2W4E6R8T0Y2VD1", reason: "unattested" };
+const ghost: GhostViolation = { identity: "bob@t.local/01J9ZK3G5M8Q2W4E6R8T0Y2VD1", reason: "unattested", key: "K865" };
 const acknowledge = vi.fn(async () => undefined);
 const mls = { acknowledgeGhosts: acknowledge } as unknown as MlsManager;
 let e2ee = { phase: "ready", mls, waiting: [] as string[], ghosts: [ghost] as GhostViolation[], error: null, rejoined: false, tick: 0 };
@@ -28,9 +28,12 @@ describe("the ghost gate of encrypted write paths (ENCRYPTION.md §4.6)", () => 
     const { result, rerender } = renderHook(({ ghosts }) => useGhostGate(q, { ghosts, mls }, true), { initialProps: { ghosts: [ghost] } });
     expect(result.current.blocked).toBe(true);
     await act(() => result.current.acknowledge());
-    expect(acknowledge).toHaveBeenCalledWith(q, [ghost.identity]);
+    expect(acknowledge).toHaveBeenCalledWith(q, [{ identity: ghost.identity, key: ghost.key }]);
     expect(result.current.blocked).toBe(false);
-    rerender({ ghosts: [ghost, { identity: "eve@t.local/01J9ZK3G5M8Q2W4E6R8T0Y2VE1", reason: "not_member" }] });
+    rerender({ ghosts: [ghost, { identity: "eve@t.local/01J9ZK3G5M8Q2W4E6R8T0Y2VE1", reason: "not_member", key: "K532" }] });
+    expect(result.current.blocked).toBe(true);
+    // The same device id with a new key (another leaf the node brought) warns again.
+    rerender({ ghosts: [{ ...ghost, key: "another-key" }] });
     expect(result.current.blocked).toBe(true);
     act(() => forgetGhostAck(q));
     rerender({ ghosts: [ghost] });
@@ -54,6 +57,6 @@ describe("the ghost gate of encrypted write paths (ENCRYPTION.md §4.6)", () => 
     expect(screen.getByTestId("forum-new-post")).toBeDisabled();
     await userEvent.setup().click(screen.getByRole("button", { name: "Ich verstehe" }));
     await waitFor(() => expect(screen.getByTestId("forum-new-post")).toBeEnabled());
-    expect(acknowledge).toHaveBeenCalledWith("t.local/01J9ZK3G5M8Q2W4E6R8T0Y2VF0", [ghost.identity]);
+    expect(acknowledge).toHaveBeenCalledWith("t.local/01J9ZK3G5M8Q2W4E6R8T0Y2VF0", [{ identity: ghost.identity, key: ghost.key }]);
   });
 });

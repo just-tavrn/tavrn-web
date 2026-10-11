@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { ghostNoBots } from "../lib/botAccess";
 import { forgetGhostAck, isGhostRefusal, useGhostGate } from "./GhostGate";
+import { plainInEncrypted } from "../lib/unverified";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "react-router";
@@ -556,6 +557,8 @@ export function ConversationView(p: ConversationViewProps) {
   };
 
   const pinText = (m: Message): string => {
+    // Plaintext in an encrypted conversation can only come from the node (ENCRYPTION.md §5.4): never shown.
+    if (plainInEncrypted(m, p.encrypted)) return t("messages.not_e2ee_short");
     const c = m.encrypted ? (pinDecrypted[m.id]?.ok ? (pinDecrypted[m.id] as { content: Record<string, unknown> }).content : null) : (m.content as Record<string, unknown> | null);
     if (m.encrypted && !c) return t("messages.encrypted_short");
     return typeof c?.body === "string" ? c.body : t("channel.attachment");

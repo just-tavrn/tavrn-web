@@ -3,7 +3,8 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { b64urlEncode } from "@tavrn/sdk";
-import { MessageAttachments, forgetAttachments, type ViewAttachment } from "./AttachmentView";
+import { MessageAttachments, forgetAttachments, fromPlain, type ViewAttachment } from "./AttachmentView";
+import type { Attachment } from "@tavrn/sdk";
 import { usePrivacy } from "../stores/privacy";
 import { mockFetch } from "../test/render";
 
@@ -29,6 +30,13 @@ describe("plaintext attachments and their signed hash", () => {
     await waitFor(() => expect(screen.getByTestId("attachment-failed")).toHaveTextContent("bad1.png"));
     expect(screen.getByTestId("attachment-failed")).toHaveTextContent("stimmt nicht mit der gesendeten Datei überein");
     expect(screen.getAllByTestId("attachment-image")).toHaveLength(1);
+  });
+
+  it("a message's plaintext attachment carries its hash into the view (fromPlain)", async () => {
+    mockFetch({ "/blobs/msg1": { body: "swapped by the node" } });
+    const listed = { id: "msg1", name: "msg1.png", mime: "image/png", size: 10, sha256: await sha256Of("picture") } as Attachment;
+    render(<MessageAttachments items={[fromPlain(listed)]} inRoom />);
+    await waitFor(() => expect(screen.getByTestId("attachment-failed")).toHaveTextContent("msg1.png"));
   });
 
   it("revokes the object URLs of the session on sign-out", async () => {
