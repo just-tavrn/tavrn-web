@@ -166,10 +166,28 @@ impl fmt::Debug for JoinArgs {
     }
 }
 
+/// The LiveKit URL of a voice join answer: `wss://`/`https://` to any host, plain `ws://`/`http://` only to this computer
+/// (a development node). The engine sends the room token over it, so it never goes out unencrypted.
+fn voice_url_ok(url: &str) -> bool {
+    if url.len() > 2_048 {
+        return false;
+    }
+    let Ok(parsed) = tauri::Url::parse(url) else { return false };
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return false;
+    }
+    let host = parsed.host_str().unwrap_or_default();
+    let local = matches!(host, "localhost" | "127.0.0.1" | "[::1]");
+    match parsed.scheme() {
+        "wss" | "https" => !host.is_empty(),
+        "ws" | "http" => local,
+        _ => false,
+    }
+}
+
 impl JoinArgs {
     pub fn validate(&self) -> Result<(), String> {
-        let url_ok = self.url.len() <= 2_048 && ["wss://", "ws://", "https://", "http://"].iter().any(|s| self.url.starts_with(s));
-        if !url_ok {
+        if !voice_url_ok(&self.url) {
             return Err("voice.invalid_url".into());
         }
         if self.token.is_empty() || self.token.len() > 8_192 {
@@ -390,6 +408,13 @@ mod tests {
     fn join_arguments_are_validated() {
         assert!(args().validate().is_ok());
         assert_eq!(JoinArgs { url: "file:///etc/passwd".into(), ..args() }.validate(), Err("voice.invalid_url".into()));
+        // The token travels over this URL: plain ws/http only to this computer.
+        for plain in ["ws://voice.example", "http://voice.example:7880", "ws://10.0.0.5:7880", "ws://localhost.evil.example", "wss://user:pw@voice.example"] {
+            assert_eq!(JoinArgs { url: plain.into(), ..args() }.validate(), Err("voice.invalid_url".into()), "{plain}");
+        }
+        for ok in ["wss://voice.example", "https://voice.example/rtc", "ws://127.0.0.1:7880", "ws://localhost:7880", "http://[::1]:7880"] {
+            assert!(JoinArgs { url: ok.into(), ..args() }.validate().is_ok(), "{ok}");
+        }
         assert_eq!(JoinArgs { url: format!("wss://{}", "a".repeat(3000)), ..args() }.validate(), Err("voice.invalid_url".into()));
         assert_eq!(JoinArgs { token: String::new(), ..args() }.validate(), Err("voice.invalid_token".into()));
         assert_eq!(JoinArgs { key: vec![1; 16], ..args() }.validate(), Err("voice.invalid_key".into()));
