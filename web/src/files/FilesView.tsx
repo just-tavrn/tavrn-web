@@ -12,6 +12,7 @@
  * index, the lock state of the message list ("Your files" when nothing can be decrypted) and the SVG lock in the
  * header.
  */
+import { useGhostGate } from "../components/GhostGate";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router";
@@ -165,6 +166,8 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
   const addresses = useMemo(() => new Map((members.data ?? []).map((m) => [m.user.id, m.user.address])), [members.data]);
   const memberAddresses = useMemo(() => (members.data ? members.data.map((m) => m.user.address) : null), [members.data]);
   const e2ee = useE2eeConversation({ conversationId: q, encrypted, canCreate: !!info.data?.can_upload, members: memberAddresses, mayManage: false });
+  // File records (keys and names) are not encrypted while a ghost leaf is not acknowledged (ENCRYPTION.md §4.6).
+  const gate = useGhostGate(q, e2ee, encrypted);
   useEffect(() => (encrypted ? registerFilesChannel(q, room.id) : undefined), [encrypted, q, room.id]);
   const refresh = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: filesKey });
@@ -269,7 +272,10 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
     },
     [e2ee.mls, q],
   );
-  const ctx = (): EncryptedContext | null => (e2ee.mls ? { api, mls: e2ee.mls, conversation: q, roomId: room.id, channelId: channel.id } : null);
+  const ctx = (): EncryptedContext | null => {
+    if (gate.blocked) throw new Error(t("e2ee.composer_ghost"));
+    return e2ee.mls ? { api, mls: e2ee.mls, conversation: q, roomId: room.id, channelId: channel.id } : null;
+  };
   useEffect(() => setSelection((s) => pruneSelection(s, order)), [order]);
   useEffect(() => {
     if (params.get("entry")) return;
@@ -342,6 +348,7 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
 
   const uploadFiles = async (files: File[], target: string | null = search ? null : folder) => {
     if (!i) return;
+    if (encrypted && gate.blocked) return toastError(new Error(t("e2ee.composer_ghost")));
     const enc = encrypted ? ctx() : null;
     if (encrypted && !enc) return toastError(new Error(t("files.e2ee_not_ready")));
     const taken = enc ? await namesIn(target).catch(() => [] as string[]) : [];
@@ -552,6 +559,7 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
         </p>
       )}
       {encrypted && lockState === "locked" && <LockedNotice />}
+      {gate.warning}
       {encrypted && (lockState === "joining" || lockState === "no_group" || lockState === "error") && <E2eeStatusLine kind={lockState} detail={e2ee.error ?? undefined} />}
       {encrypted && lockState === "missing_keys" && (
         <p role="status" className="border-b border-line bg-bg-1 px-4 py-2 text-sm text-fg-1" data-testid="files-missing-keys">

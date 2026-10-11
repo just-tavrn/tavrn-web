@@ -85,6 +85,11 @@ describe("service worker", () => {
     expect([dm.title, dm.options.body]).toEqual(["Alice", "New encrypted message"]);
     const group = helpers.notificationFor({ ...base, type: "dm", conversation_kind: "group", conversation: "Raid", sender: "Alice", encrypted: true }, null, home);
     expect([group.title, group.options.body]).toEqual(["Raid", "Alice: New encrypted message"]);
+    // DMs are always end-to-end encrypted: a text the node puts into the push is never shown, nor for an encrypted message.
+    const forged = helpers.notificationFor({ ...base, type: "dm", conversation_kind: "dm", sender: "Alice", text: "new bank account", encrypted: false }, null, home);
+    expect(forged.options.body).not.toContain("bank");
+    const forgedChannel = helpers.notificationFor({ ...base, type: "mention", room: "Tavern", conversation: "general", sender: "Alice", text: "new bank account", encrypted: true }, null, home);
+    expect(forgedChannel.options.body).not.toContain("bank");
     const call = helpers.notificationFor({ ...base, type: "call", sender: "Alice" }, null, home);
     expect([call.title, call.options.body, call.options.requireInteraction]).toEqual(["Alice", "Alice is calling", true]);
     const remote = helpers.notificationFor({ v: 1, type: "mention", node: "other.example", local: false, conversation_id: "C9", room_id: "R9", encrypted: true }, null, home);

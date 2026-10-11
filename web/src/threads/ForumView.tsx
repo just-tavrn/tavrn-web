@@ -7,6 +7,8 @@ import { useLocale, useT } from "../i18n";
 import { useNode } from "../components/NodeScope";
 import { UnencryptedBanner } from "../components/UnencryptedBanner";
 import { E2eeStatusLine, LockedNotice } from "../components/E2eeNotices";
+import { forgetGhostAck, isGhostRefusal, useGhostGate } from "../components/GhostGate";
+import { plainInEncrypted } from "../lib/unverified";
 import { Button, Dialog, ErrorText, Field, Input } from "../components/ui";
 import { Select, Textarea } from "../pages/settings/common";
 import { useDecrypted, useE2eeConversation } from "../hooks/useE2eeConversation";
@@ -66,12 +68,16 @@ export function ForumView({ room, channel, perms, roomMembers, members, refreshM
   const titles = useThreadTitles(q, threads, e2ee.tick);
   const names = useMemo(() => new Map((roomMembers ?? []).map((m) => [m.user.address, memberName(m)])), [roomMembers]);
   const ready = !channel.encrypted || e2ee.phase === "ready";
+  // No post is encrypted while a ghost leaf is not acknowledged (ENCRYPTION.md §4.6).
+  const gate = useGhostGate(q, e2ee, channel.encrypted);
   // Keys shared for posts from before this device entered the group, and our keys for members who wait (ENCRYPTION.md §7b).
   const history = useChannelHistory({ api, domain, q, channelId: channel.id, encrypted: channel.encrypted, policy: channel.history_for_new_members, ready: channel.encrypted && e2ee.phase === "ready" });
 
   const preview = (th: Thread): string => {
     const m = th.first_message;
     if (!m) return "";
+    // Plaintext in an encrypted forum can only come from the node (ENCRYPTION.md §5.4): never previewed.
+    if (plainInEncrypted(m, channel.encrypted)) return t("messages.not_e2ee_short");
     const content = (m.encrypted ? (decrypted[m.id]?.ok ? (decrypted[m.id] as { content: Record<string, unknown> }).content : null) : m.content) as { body?: unknown } | null;
     if (m.encrypted && !content) return t("messages.encrypted_short");
     return typeof content?.body === "string" ? content.body.replace(/\s+/g, " ").slice(0, 200) : "";
@@ -91,7 +97,7 @@ export function ForumView({ room, channel, perms, roomMembers, members, refreshM
         )}
         <span className="flex-1" />
         {canPost && (
-          <Button onClick={() => setComposing(true)} disabled={!ready} data-testid="forum-new-post">
+          <Button onClick={() => setComposing(true)} disabled={!ready || gate.blocked} title={gate.blocked ? t("e2ee.composer_ghost") : undefined} data-testid="forum-new-post">
             {t("forum.new_post")}
           </Button>
         )}
@@ -101,6 +107,7 @@ export function ForumView({ room, channel, perms, roomMembers, members, refreshM
       {channel.encrypted && e2ee.phase === "joining" && <E2eeStatusLine kind="joining" />}
       {channel.encrypted && e2ee.phase === "error" && <E2eeStatusLine kind="error" detail={e2ee.error ?? ""} />}
       {history.locked && <E2eeStatusLine kind="history" />}
+      {gate.warning}
       <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2" data-testid="forum-filters">
         <TagChip active={tag === null} onClick={() => setTag(null)} label={t("forum.all_tags")} testId="forum-tag-all" />
         {channel.tags?.map((tg) => (
@@ -225,6 +232,8 @@ function NewPostDialog({ open, onClose, room, channel, mls, onCreated }: { open:
             reset();
             onCreated(id);
           } catch (err) {
+            // A device joined that nobody was shown yet: the view shows the warning again.
+            if (isGhostRefusal(err)) forgetGhostAck(qualify(domain, channel.id));
             setError(describeError(err));
           } finally {
             setBusy(false);

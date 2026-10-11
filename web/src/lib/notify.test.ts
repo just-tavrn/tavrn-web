@@ -47,6 +47,14 @@ describe("notifyMessage", () => {
     expect(useNotifications.getState().entries[0]).toMatchObject({ kind: "dm" });
   });
 
+  it("never previews plaintext the node put into a DM: it says the message was not end-to-end encrypted", async () => {
+    await notifyMessage(message({ conversation_id: "dm1", content: { type: "text", body: "new bank account" }, mentions: [] }), { queryClient: client(), node: null, me });
+    const toast = useToasts.getState().toasts[0]!;
+    expect(toast.detail).not.toContain("bank");
+    expect(toast.detail).toBe("Nachricht nicht Ende-zu-Ende-verschlüsselt");
+    expect(plainPreview(message(), true)).toBeNull();
+  });
+
   it("stays quiet for unmentioned room messages, the welcome channel and unknown conversations; loads rooms once", async () => {
     await notifyMessage(message({ mentions: [] }), { queryClient: client(), node: null, me });
     await notifyMessage(message({ conversation_id: "welcome" }), { queryClient: client(), node: null, me });

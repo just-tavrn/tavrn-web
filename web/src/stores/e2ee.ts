@@ -12,6 +12,8 @@ import { useConversationIndex } from "./conversationIndex";
 import { rememberSsoLogout } from "../lib/sso";
 import { wipeLocalIndex } from "../search/local";
 import { usePush } from "./push";
+import { forgetAttachments } from "../components/AttachmentView";
+import { forgetThumbnails } from "../files/e2ee";
 
 interface E2eeState {
   /** null until checked. */
@@ -90,6 +92,9 @@ export async function signOut(): Promise<void> {
   } finally {
     useConversationIndex.getState().reset();
     resetMls();
+    // Decrypted attachments and thumbnails of this session go with the keys (object URLs revoked).
+    forgetAttachments();
+    forgetThumbnails();
     // The local search index goes with the other local data (tavrn-protocol/SEARCH.md §3.5).
     if (user) await wipeLocalIndex(user.address).catch(() => undefined);
     if (user) await wipeLocal(user.address);

@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Thread } from "@tavrn/sdk";
 import { THREAD_TITLE_MAX, type MlsManager } from "@tavrn/e2ee";
 import { getMls, useMlsUi } from "../stores/mls";
+import { forgetGhostAck, isGhostRefusal } from "../components/GhostGate";
 
 /** A decrypted title, or null when it cannot be read (missing key, bad signature, a title of another thread, …). */
 export type TitleResult = string | null;
@@ -26,7 +27,13 @@ export async function sealTitle(q: string, encrypted: boolean, title: string, ml
   if (!encrypted) return { title: title.trim() };
   const manager = mls ?? (await getMls());
   if (!manager) throw new Error("locked");
-  return manager.encryptThreadTitle(q, title, threadId);
+  try {
+    return await manager.encryptThreadTitle(q, title, threadId);
+  } catch (e) {
+    // Refused for an unacknowledged ghost leaf (ENCRYPTION.md §4.6): the conversation shows its warning again.
+    if (isGhostRefusal(e)) forgetGhostAck(q);
+    throw e;
+  }
 }
 
 /**

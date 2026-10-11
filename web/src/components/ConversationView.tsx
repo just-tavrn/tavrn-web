@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { ghostNoBots } from "../lib/botAccess";
-import { useLabelledGhosts } from "../lib/leafCleanup";
+import { forgetGhostAck, isGhostRefusal, useGhostGate } from "./GhostGate";
+import { plainInEncrypted } from "../lib/unverified";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "react-router";
@@ -39,7 +40,7 @@ import { InteractionNotices } from "./InteractionNotices";
 import { fuzzyFilter } from "../commands/fuzzy";
 import { classifyFile, declaredCategory } from "../lib/uploads";
 import { UnencryptedBanner } from "./UnencryptedBanner";
-import { E2eeStatusLine, GhostWarning, LockedNotice } from "./E2eeNotices";
+import { E2eeStatusLine, LockedNotice } from "./E2eeNotices";
 import { VerificationNotice } from "./Verification";
 import { AuthorProfiles } from "./AuthorProfiles";
 import { WhiteboardButton } from "../whiteboard/WhiteboardBadge";
@@ -160,7 +161,6 @@ export function ConversationView(p: ConversationViewProps) {
   const externalAllowed = !p.roomId || hasPermission(p.permissions ?? 0n, Permission.USE_EXTERNAL_EMOJIS);
   const [showPins, setShowPins] = useState(false);
   const pins = useQuery({ queryKey: ["pins", conversationId], queryFn: () => api.conversations.pins(conversationId), enabled: showPins });
-  const ghostAck = useMlsUi((s) => !!s.ghostAck[conversationId]);
   /** Keys of encrypted uploads until the message is sent (memory only). */
   const uploadKeys = useRef(new Map<string, ContentAttachment>());
   /** Plaintext uploads until the message is sent: size and hash are covered by the signature. */
@@ -188,8 +188,9 @@ export function ConversationView(p: ConversationViewProps) {
   // applies the room's `bots_in_encrypted_channels` itself (design note 4.7).
   const noBots = ghostNoBots(p.room?.channels.find((c) => c.id === conversationId), p.room);
   const e2ee = useE2eeConversation({ conversationId: q, encrypted: p.encrypted, canCreate: p.canSend, members: p.members, direct: p.direct, mayManage: p.mayManage, refreshMembers: p.refreshMembers, noBots });
-  // Leaves of deleted devices read "removed, cleanup pending" instead of "unknown device" (ENCRYPTION.md §4.7).
-  const ghosts = useLabelledGhosts(q, e2ee.ghosts);
+  // The ghost gate (§4.6): leaves of deleted devices read "removed, cleanup pending" (§4.7); nothing is encrypted
+  // while a ghost is not acknowledged (messages, edits; the session manager refuses as well).
+  const gate = useGhostGate(q, e2ee, p.encrypted);
   const decrypted = useDecrypted(q, loaded, e2ee.mls, e2ee.tick);
   const pinDecrypted = useDecrypted(q, pins.data?.messages, e2ee.mls, e2ee.tick);
   const signatures = usePlainSignatures(q, loaded, e2ee.mls, e2ee.tick);
@@ -298,7 +299,7 @@ export function ConversationView(p: ConversationViewProps) {
 
   const ready = !p.encrypted || e2ee.phase === "ready" || e2ee.phase === "no_group";
   const waiting = p.encrypted && e2ee.waiting.length > 0;
-  const ghostBlock = p.encrypted && e2ee.ghosts.length > 0 && !ghostAck;
+  const ghostBlock = gate.blocked;
   const canSendNow = p.canSend && (!p.encrypted || e2ee.phase === "ready") && !waiting && !ghostBlock && !verificationBlock;
   const disabledReason = !p.canSend
     ? p.noPermissionReason
@@ -361,17 +362,12 @@ export function ConversationView(p: ConversationViewProps) {
   const seal = async (content: Record<string, unknown>, ctx: MessageContext): Promise<{ content: unknown; epoch?: number }> => {
     if (!p.encrypted) return { content };
     if (!e2ee.mls) throw new Error(t("e2ee.composer_locked"));
+    if (gate.blocked) throw new Error(t("e2ee.composer_ghost"));
     try {
-      return await e2ee.mls.encrypt(q, content, { ctx, ...(p.members ? { members: p.members, noBots } : {}), knownGhosts: e2ee.ghosts.map((g) => g.identity) });
+      return await e2ee.mls.encrypt(q, content, { ctx, ...(p.members ? { members: p.members, noBots } : {}) });
     } catch (e) {
       // A device joined that nobody was shown yet: the warning has to be acknowledged again.
-      if ((e as { name?: string; code?: string }).name === "MlsError" && (e as { code?: string }).code === "ghost") {
-        useMlsUi.setState((st) => {
-          const ghostAck = { ...st.ghostAck };
-          delete ghostAck[conversationId];
-          return { ghostAck };
-        });
-      }
+      if (isGhostRefusal(e)) forgetGhostAck(q);
       throw e;
     }
   };
@@ -561,6 +557,8 @@ export function ConversationView(p: ConversationViewProps) {
   };
 
   const pinText = (m: Message): string => {
+    // Plaintext in an encrypted conversation can only come from the node (ENCRYPTION.md §5.4): never shown.
+    if (plainInEncrypted(m, p.encrypted)) return t("messages.not_e2ee_short");
     const c = m.encrypted ? (pinDecrypted[m.id]?.ok ? (pinDecrypted[m.id] as { content: Record<string, unknown> }).content : null) : (m.content as Record<string, unknown> | null);
     if (m.encrypted && !c) return t("messages.encrypted_short");
     return typeof c?.body === "string" ? c.body : t("channel.attachment");
@@ -609,11 +607,12 @@ export function ConversationView(p: ConversationViewProps) {
       {waiting && <E2eeStatusLine kind="waiting" detail={e2ee.waiting.join(", ")} />}
       {historyLocked && <E2eeStatusLine kind="history" />}
       {p.encrypted && p.room && !threadId && <HistoryRestoreBanner room={p.room} />}
-      {p.encrypted && <GhostWarning ghosts={ghosts} acknowledged={ghostAck} onAcknowledge={() => useMlsUi.setState((s) => ({ ghostAck: { ...s.ghostAck, [conversationId]: true } }))} />}
+      {gate.warning}
       <VerificationNotice addresses={broken} blocking={verificationBlock} />
       {messages.isError && <p className="p-4 text-sm text-danger">{describeError(messages.error)}</p>}
       <AuthorProfiles messages={loaded}>
       <MessageList
+        encrypted={p.encrypted}
         messages={loaded}
         currentUserId={user?.id}
         canManage={p.canManage}
