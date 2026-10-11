@@ -581,10 +581,13 @@ Tauri app uses its native voice engine ("The desktop app" below).
 ### Voice channels
 
 Clicking a voice channel joins it. While connected, the voice channel shows the stage: one tile per participant with
-avatar or camera, a glowing border and level meter while someone speaks, screen shares as large tiles (enlarge,
-picture-in-picture); phones get a swipeable grid of four and a bottom control bar. Screen shares, camera tiles, the
-whiteboard and the whole stage can go full screen ("F" toggles, Escape leaves) with mute, deafen, leave and exit at
-hand; iOS uses its native video full screen. The voice bar at the bottom of the sidebar keeps mute, deafen, leave and
+avatar or camera, a glowing border and level meter while someone speaks, screen shares as large tiles that are
+joined on demand ("Streams are joined" below; enlarge, picture-in-picture); phones get a swipeable grid of four and a
+bottom control bar. Joined streams, camera tiles, the whiteboard and the whole stage can go full screen ("F" toggles,
+Escape leaves) with mute, deafen, leave and exit at hand; iOS uses its native video full screen. On phones and
+tablets a stream wider than tall turns the screen to landscape in full screen (Screen Orientation API; browsers
+without it, like iOS Safari, simply rotate with the device) and the lock ends with full screen; the full screen view
+follows every rotation and fills the screen (the whole width and height, the video contained, no scrolling). The voice bar at the bottom of the sidebar keeps mute, deafen, leave and
 the connection quality at hand while you read text channels: its first line is the signal bars with a small padlock
 (voice is always end-to-end encrypted; the tooltip names both, for example "Encrypted · connection good"), a short
 status ("Connected") and the quality, the second line the channel and room. Joining the same account's voice on
@@ -600,6 +603,28 @@ cannot rejoin by themselves. Everybody can set a per-person volume there. A drop
 (after 0.5, 1, 2, 4 and then every 8 seconds, as long as the node's grace period keeps the seat, 45 seconds by
 default); others see an amber plug on your avatar meanwhile
 instead of you vanishing.
+
+### Streams are joined
+
+A screen share is opt-in: nobody receives it until they join it. A participant who shares shows up as a stream tile
+with their name, the red LIVE badge and **Join stream**; until then nothing of the stream (video or its audio) is
+transferred to this device. Joining (the button, a double-click on the tile, or a double-click or Enter on the member
+marked LIVE in the voice channel's member list in the sidebar, which also opens the stage) receives the video and the
+stream's audio; **Leave stream** (on the tile, or in the full screen controls) stops receiving it and the tile is a
+placeholder again. Joining and leaving work any number of times without reconnecting. Several streams are separate:
+joining one joins none of the others. The member list only joins from inside the same voice channel; elsewhere a
+double-click says "Join the voice channel to watch the stream.". A stream that ends is forgotten: the next share of
+the same person is joined anew. Cameras are not affected: a camera still replaces the participant's avatar by itself.
+
+The sharer has no permanent self view: their share shows as a preview tile they can hide (and a double-click on
+themselves in the member list brings it back), and a small "You are streaming" bar on the stage offers **Show
+preview** / **Hide preview** and **Stop**.
+
+In the browser engine (`web/src/voice/streams.ts`, `session.ts`) the room connects without LiveKit's auto-subscription;
+microphones, cameras and every other track are subscribed as they are published, a screen share's video and audio
+(`screen_share`, `screen_share_audio`) only while the stream is joined. The desktop app's native voice engine plays no
+video and never subscribes screen shares at all; joining a stream there says that streams cannot be watched with the
+native voice engine (docs/DESKTOP.md "Voice").
 
 ### Quick menus on mute and deafen
 
@@ -620,7 +645,7 @@ device): the voice volume in the participant's menu, the stream volume behind th
 and, while they stream, in the menu next to the voice volume; Settings → Voice & video → "Volumes of other people"
 lists them with Reset. The output volume of the settings multiplies with both; the priority speaker still ducks the
 others' voices and streams. Deafen mutes voices and the notification sounds about others, but a stream you are
-watching (its tile is on screen) keeps playing: the tile shows a speaker badge and the voice bar says "Voices muted,
+watching (joined, and its tile is on screen) keeps playing: the tile shows a speaker badge and the voice bar says "Voices muted,
 the stream keeps playing". A stream that is not on screen (you opened a text channel or the settings) goes silent
 while deafened. The switch "Streams stay audible while deafened" in the voice settings (on by default) turns this
 off, so that deafen silences everything.

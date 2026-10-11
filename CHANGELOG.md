@@ -19,6 +19,17 @@ First public release of the web client and the desktop apps.
 - **Desktop app for Linux** (Electron): `.AppImage` and `.deb` with the same client in Chromium (voice, video and
   screen sharing as in the browser), the desktop's keyring, tray, notifications, global hotkeys and its own updater.
 
+### Changed
+
+- Screen shares are opt-in: nobody receives a stream until they join it. A share shows as a tile with the streamer's
+  name, LIVE and **Join stream**; joining (the button, a double-click on the tile, or a double-click or Enter on the
+  LIVE member in the voice member list) receives its video and audio, **Leave stream** (tile or full screen controls)
+  stops it again, as often as wanted and without reconnecting; each of several streams is joined on its own. The
+  sharer gets a preview they can hide and a "You are streaming" bar with Stop. The desktop app's native voice engine
+  never subscribes screen shares.
+- A stream in full screen on a phone or tablet turns the screen to landscape when the video is wider than tall (where
+  the browser can lock the orientation; the lock ends with full screen) and fills the screen after every rotation.
+
 ### Security
 
 - Plaintext in end-to-end encrypted conversations is shown as "not end-to-end encrypted", never as the author's
