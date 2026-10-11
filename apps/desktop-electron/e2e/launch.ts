@@ -140,7 +140,8 @@ export async function startApp(options: StartOptions = {}): Promise<ElectronApp>
   const mode = packaged ? "packaged" : "dev";
   const file = packaged ?? (createRequire(import.meta.url)("electron") as unknown as string);
   const args = [...(packaged ? [] : [appDir]), "--ozone-platform=x11", ...extra];
-  const env = appEnv(process.env, configHome, { APPIMAGE_EXTRACT_AND_RUN: "1", ...(options.env ?? {}) });
+  // A package refuses remote debugging unless told it runs under these specs (src/main/hardening.ts).
+  const env = appEnv(process.env, configHome, { APPIMAGE_EXTRACT_AND_RUN: "1", TAVRN_DESKTOP_ALLOW_DEBUGGING: "1", ...(options.env ?? {}) });
 
   const debug = ["--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0", ...(packaged ? [] : ["--inspect=0"])];
   const child = spawn(file, [...args, ...debug], { cwd: appDir, env, stdio: ["ignore", "pipe", "pipe"], detached: true });
