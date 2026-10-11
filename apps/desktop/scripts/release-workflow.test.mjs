@@ -125,5 +125,5 @@ test("build provenance only for public repositories; release specs use their own
   const attest = code(signer).split(/\n(?= {6}- )/).find((s) => /attest-build-provenance@/.test(s));
   assert.match(attest, /if: \$\{\{ !github\.event\.repository\.private \}\}/);
   const specs = code(desktop.jobs["linux-electron"]);
-  assert.match(specs, /inputs\.release-tag && \(vars\.TAVRN_RELEASE_NODE_IMAGE \|\| 'ghcr\.io\/just-tavrn\/tavrn-node@sha256:[0-9a-f]{64}'\)/);
+  assert.match(specs, /inputs\.release-tag && vars\.TAVRN_RELEASE_NODE_IMAGE \|\| 'ghcr\.io\/just-tavrn\/tavrn-node:edge'/);
 });
