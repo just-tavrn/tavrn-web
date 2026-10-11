@@ -88,6 +88,16 @@ export async function playSound(sound: import("./session").PlayableSound): Promi
   }
 }
 
+/** Joins the stream (screen share) of a participant of the own call (`streams.ts`: screen shares are opt-in). */
+export function joinStream(identity: string): void {
+  module?.joinStream(identity);
+}
+
+/** Leaves that stream again (its tile goes back to "Join stream"). */
+export function leaveStream(identity: string): void {
+  module?.leaveStream(identity);
+}
+
 export function pushToTalk(pressed: boolean): void {
   module?.pushToTalk(pressed);
 }

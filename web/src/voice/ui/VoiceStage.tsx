@@ -16,14 +16,15 @@ import { getMls, useMlsUi } from "../../stores/mls";
 import { qualify, splitIdentity, type GhostViolation } from "@tavrn/e2ee";
 import { participantsOf, useVoicePresence } from "../presence";
 import { useVoiceSettings } from "../settings";
-import { ownVoiceChannel, useVoice, watchStream } from "../store";
-import { joinVoice, loadedSession } from "../index";
+import { ownVoiceChannel, useVoice } from "../store";
+import { joinVoice } from "../index";
 import { AvatarTile } from "./AvatarTile";
-import { ConnectionGlyph, LevelMeterBars, ParticipantFlags, ScreenBadge, SoundOverlay, levelStyle, useMemberLooks, useParticipantStatus, usePriority } from "./common";
-import { ExpandIcon, MegaphoneIcon, PipIcon, SpeakerIcon } from "./icons";
+import { ConnectionGlyph, LevelMeterBars, ParticipantFlags, SoundOverlay, levelStyle, useMemberLooks, useParticipantStatus, usePriority } from "./common";
+import { MegaphoneIcon, SpeakerIcon } from "./icons";
 import { FullscreenButton, FullscreenControls, exitFullscreen, useFullscreen, useFullscreenShortcut } from "./fullscreen";
 import { StageGrid } from "./StageGrid";
-import { StreamAudioControls } from "./StreamAudio";
+import { ScreenTile, StreamingIndicator } from "./ScreenTile";
+import { VideoView } from "./VideoView";
 import { useParticipantMenu } from "./useParticipantMenu";
 import { MenuButton, type ContextMenuTrigger } from "../../components/ContextMenu";
 import { sortByRank, stableOrder } from "../order";
@@ -48,9 +49,6 @@ export interface Tile {
   color?: string | null;
 }
 
-/** Snapshot interval of remote camera tiles, so a dropped camera freezes on its last frame. */
-const SNAPSHOT_MS = 2_000;
-
 /** Tiles per swipe page on phones (VOICE.md §9). */
 const PAGE = 4;
 
@@ -64,63 +62,6 @@ export function useIsPhone(): boolean {
     return () => mq.removeEventListener("change", on);
   }, []);
   return phone;
-}
-
-/**
- * A participant's camera or screen video, attached through the LiveKit session. With `snapshot`, a small
- * still is kept every few seconds (cheap, no per-frame work), so that a camera whose connection dropped
- * freezes on its last frame instead of turning black (design note 4.5 item 7).
- */
-function VideoView({ identity, source, mirror = false, fit = "auto", onVideo, snapshot = false }: { identity: string; source: "camera" | "screen"; mirror?: boolean; fit?: "cover" | "contain" | "auto"; onVideo?: (el: HTMLVideoElement | null) => void; snapshot?: boolean }) {
-  const ref = useRef<HTMLVideoElement>(null);
-  const still = useRef<HTMLCanvasElement>(null);
-  const [frozen, setFrozen] = useState(false);
-  // A portrait source (a phone camera held upright) is letterboxed instead of cropped to a thin band.
-  const [portrait, setPortrait] = useState(false);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const on = () => setPortrait(el.videoHeight > el.videoWidth * 1.05);
-    el.addEventListener("loadedmetadata", on);
-    el.addEventListener("resize", on);
-    return () => {
-      el.removeEventListener("loadedmetadata", on);
-      el.removeEventListener("resize", on);
-    };
-  }, []);
-  const contain = fit === "contain" || (fit === "auto" && portrait);
-  const present = useVoice((s) => (source === "camera" ? s.media[identity]?.camera : s.media[identity]?.screen) ?? false);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el || !present) return;
-    setFrozen(false);
-    onVideo?.(el);
-    return loadedSession()?.attachVideo(identity, source, el);
-  }, [identity, source, present, onVideo]);
-  useEffect(() => {
-    const el = ref.current;
-    const canvas = still.current;
-    if (!snapshot || !present || !el || !canvas) return;
-    const take = () => {
-      if (!el.videoWidth) return;
-      canvas.width = 320;
-      canvas.height = Math.round((320 * el.videoHeight) / el.videoWidth);
-      canvas.getContext("2d")?.drawImage(el, 0, 0, canvas.width, canvas.height);
-    };
-    const timer = setInterval(take, SNAPSHOT_MS);
-    return () => {
-      clearInterval(timer);
-      take();
-      setFrozen(true);
-    };
-  }, [snapshot, present]);
-  const style = mirror ? { transform: "scaleX(-1)" } : undefined;
-  return (
-    <>
-      <video ref={ref} autoPlay playsInline muted className={`h-full w-full bg-black ${contain ? "object-contain" : "object-cover"} ${frozen && !present ? "hidden" : ""}`} style={style} data-testid={`video-${source}`} data-fit={contain ? "contain" : "cover"} />
-      {snapshot && <canvas ref={still} className={`h-full w-full ${contain ? "object-contain" : "object-cover"} ${frozen && !present ? "" : "hidden"}`} style={style} data-testid="video-frozen" />}
-    </>
-  );
 }
 
 /**
@@ -189,51 +130,6 @@ export function ParticipantTile({ roomId, tile, menu, overlay }: { roomId?: stri
           />
         )}
       </div>
-    </div>
-  );
-}
-
-/**
- * A screen share: watched while the tile is shown (its audio then stays audible while deafened, issue #20),
- * with the stream's own volume when it carries audio.
- */
-export function ScreenTile({ tile, focused, onFocus }: { tile: Tile; focused: boolean; onFocus: () => void }) {
-  const t = useT();
-  const video = useRef<HTMLVideoElement | null>(null);
-  const fs = useFullscreen<HTMLDivElement>();
-  const screenAudio = useVoice((s) => !!s.media[tile.identity]?.screenAudio);
-  useEffect(() => (tile.self ? undefined : watchStream(tile.identity)), [tile.identity, tile.self]);
-  const pip = async () => {
-    const el = video.current;
-    if (!el) return;
-    try {
-      if (document.pictureInPictureElement === el) await document.exitPictureInPicture();
-      else await el.requestPictureInPicture();
-    } catch {
-      /* not supported or not allowed */
-    }
-  };
-  return (
-    <div ref={fs.ref} className="relative h-full w-full overflow-hidden rounded-xl border-2 border-line bg-black [&:fullscreen]:rounded-none [&:fullscreen]:border-0" data-testid="screen-tile" data-user={tile.address} data-focused={focused || undefined} data-audio={(screenAudio && !tile.self) || undefined}>
-      <VideoView identity={tile.identity} source="screen" fit="contain" onVideo={(el) => (video.current = el)} />
-      <div className="absolute inset-x-1.5 top-1.5 flex items-center gap-1.5">
-        <ScreenBadge />
-        <span className="truncate rounded-md bg-black/60 px-1.5 py-0.5 text-xs text-fg-0">{tile.name}</span>
-        <span className="flex-1" />
-        {screenAudio && !tile.self && <StreamAudioControls address={tile.address} name={tile.name} />}
-        {"pictureInPictureEnabled" in document && document.pictureInPictureEnabled && (
-          <button type="button" onClick={() => void pip()} className="min-h-8 min-w-8 rounded-md bg-black/60 text-fg-0" aria-label={t("voice.pip")} title={t("voice.pip")}>
-            <PipIcon size={16} className="mx-auto" />
-          </button>
-        )}
-        <FullscreenButton active={fs.active} onToggle={fs.toggle} testId="screen-fullscreen" />
-        {!fs.active && (
-          <button type="button" onClick={onFocus} className="min-h-8 min-w-8 rounded-md bg-black/60 text-fg-0" aria-label={focused ? t("voice.unfocus") : t("voice.focus")} title={focused ? t("voice.unfocus") : t("voice.focus")} data-testid="screen-focus">
-            <ExpandIcon size={16} className="mx-auto" />
-          </button>
-        )}
-      </div>
-      {fs.active && <FullscreenControls onExit={fs.toggle} />}
     </div>
   );
 }
@@ -357,7 +253,9 @@ export function VoiceStage({ room, channel }: { room: RoomDetail; channel: Chann
     return order.current!.map((id) => byId.get(id)!).filter(Boolean);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tiles, order.current]);
-  const screens = tiles.filter((x) => media[x.identity]?.screen);
+  // Every running share is a stream tile (a placeholder until joined); the own one only while its preview is shown.
+  const selfPreview = useVoice((s) => s.selfPreview);
+  const screens = tiles.filter((x) => media[x.identity]?.screen && (!x.self || selfPreview));
   // The channel's whiteboard: shown on the presenter's tile, as a large tile once joined (design note 4.10).
   const board = useStageBoard(channel.id, tiles.map((x) => x.identity));
   const [boardFocus, setBoardFocus] = useState(false);
@@ -365,12 +263,12 @@ export function VoiceStage({ room, channel }: { room: RoomDetail; channel: Chann
   // Fullscreen (polish round 2): the whole stage, the whiteboard, and every share or camera tile on its own.
   const stageFs = useFullscreen<HTMLDivElement>();
   const boardFs = useFullscreen<HTMLDivElement>();
-  // `F`: the focused share first, then the whiteboard, then any share, else the whole stage.
+  // `F`: the focused share first, then the whiteboard, then any joined share, else the whole stage.
   useFullscreenShortcut(() => {
     const body = stageFs.ref.current;
     if (!body) return null;
     const pick = (selector: string) => body.querySelector<HTMLElement>(selector);
-    return pick('[data-testid="screen-tile"][data-focused]') ?? pick('[data-testid="whiteboard-frame"]') ?? pick('[data-testid="screen-tile"]') ?? body;
+    return pick('[data-testid="screen-tile"][data-focused]') ?? pick('[data-testid="whiteboard-frame"]') ?? pick('[data-testid="screen-tile"]:not([data-state="available"])') ?? body;
   });
 
   const header = (
@@ -451,6 +349,7 @@ export function VoiceStage({ room, channel }: { room: RoomDetail; channel: Chann
       {status === "reconnecting" && <div className="border-b border-warn/40 bg-warn/10 px-4 py-1.5 text-xs text-fg-1">{t("voice.status.reconnecting")}</div>}
       <GhostWarning ghosts={ghosts} acknowledged={ghostAck} onAcknowledge={() => void getMls().then((m) => acknowledgeGhosts(q, m, ghosts))} />
       <div ref={stageFs.ref} className="relative flex min-h-0 flex-1 flex-col gap-2 bg-bg-0 p-2 md:p-3" data-testid="stage-body">
+        <StreamingIndicator />
         {board.visible && (
           <div ref={boardFs.ref} className={`relative min-h-0 bg-bg-0 ${boardFocus || boardFs.active ? "flex-1" : "flex-[3]"}`} data-testid="whiteboard-frame">
             <Suspense fallback={null}>

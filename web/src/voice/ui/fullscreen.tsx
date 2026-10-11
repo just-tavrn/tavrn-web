@@ -2,20 +2,69 @@
 /**
  * Real fullscreen for the voice stage (polish round 2): screen shares, camera tiles, the whiteboard and the
  * whole stage can go fullscreen through the Fullscreen API (`F` toggles, Escape leaves); inside, a controls
- * overlay (mute, deafen, leave, exit) appears on mouse movement or a tap. The orientation is never locked,
- * so phones can turn to landscape for a share. iOS Safari only knows fullscreen for a `<video>`: there the
- * element's video goes fullscreen natively.
+ * overlay (mute, deafen, leave, exit) appears on mouse movement or a tap. On touch devices a video wider than
+ * tall turns the screen to landscape (Screen Orientation API, where it exists; refusals are ignored) until
+ * fullscreen ends; the fullscreen element follows every rotation (`orientation`, 100dvw × 100dvh, contained).
+ * iOS Safari only knows fullscreen for a `<video>`: there the element's video goes fullscreen natively.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useT } from "../../i18n";
 import { useVoice } from "../store";
 import { leaveVoice, toggleDeafen, toggleMute } from "../index";
 import { ControlButton } from "./VoiceBar";
-import { ExitFullscreenIcon, FullscreenIcon, HeadphonesIcon, HeadphonesOffIcon, LeaveIcon, MicIcon, MicOffIcon } from "./icons";
+import { ExitFullscreenIcon, FullscreenIcon, HeadphonesIcon, HeadphonesOffIcon, LeaveIcon, MicIcon, MicOffIcon, ScreenOffIcon } from "./icons";
 
 type FsDocument = Document & { webkitFullscreenElement?: Element | null; webkitExitFullscreen?: () => Promise<void> | void };
 type FsElement = HTMLElement & { webkitRequestFullscreen?: () => Promise<void> | void };
 type IosVideo = HTMLVideoElement & { webkitEnterFullscreen?: () => void };
+type LockableOrientation = ScreenOrientation & { lock?: (o: string) => Promise<void>; unlock?: () => void };
+
+export type Orientation = "landscape" | "portrait";
+
+const orientationApi = (): LockableOrientation | undefined => (typeof window === "undefined" ? undefined : ((window.screen?.orientation as LockableOrientation | undefined) ?? undefined));
+
+/** A touch device (phones, tablets): their screen turns for a wide stream. */
+const touchDevice = () => typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
+
+/** The video of a fullscreen element is wider than tall (a screen share or a landscape camera). */
+function wideVideo(el: HTMLElement): boolean {
+  const video = el instanceof HTMLVideoElement ? el : el.querySelector("video");
+  return !!video && video.videoWidth > video.videoHeight;
+}
+
+/** The orientation lock this client asked for (released when fullscreen ends). */
+let locked = false;
+
+function unlockOrientation() {
+  if (!locked) return;
+  locked = false;
+  document.removeEventListener("fullscreenchange", onFullscreenChange);
+  document.removeEventListener("webkitfullscreenchange", onFullscreenChange);
+  try {
+    orientationApi()?.unlock?.();
+  } catch {
+    /* not locked or not supported */
+  }
+}
+
+/** Fullscreen ended some other way (the system's back gesture, the browser's Escape): release the lock. */
+function onFullscreenChange() {
+  if (!fullscreenElement()) unlockOrientation();
+}
+
+/** Turns a touch device to landscape for a wide video; iOS Safari has no lock, a browser may refuse: ignored. */
+function lockLandscapeFor(el: HTMLElement) {
+  const api = orientationApi();
+  if (!api?.lock || !touchDevice() || !wideVideo(el)) return;
+  locked = true;
+  document.addEventListener("fullscreenchange", onFullscreenChange);
+  document.addEventListener("webkitfullscreenchange", onFullscreenChange);
+  try {
+    void api.lock("landscape").catch(() => undefined);
+  } catch {
+    /* not supported */
+  }
+}
 
 /** The element currently in fullscreen (null: none). */
 export function fullscreenElement(): Element | null {
@@ -38,17 +87,13 @@ export async function enterFullscreen(el: HTMLElement): Promise<boolean> {
   } catch {
     return false;
   }
-  // Phones: free rotation (a share is best watched in landscape); never lock the orientation.
-  try {
-    (screen.orientation as ScreenOrientation & { unlock?: () => void } | undefined)?.unlock?.();
-  } catch {
-    /* not locked or not supported */
-  }
+  lockLandscapeFor(el);
   return true;
 }
 
 export async function exitFullscreen(): Promise<void> {
   const d = document as FsDocument;
+  unlockOrientation();
   if (!fullscreenElement()) return;
   try {
     if (typeof d.exitFullscreen === "function") await d.exitFullscreen();
@@ -64,10 +109,30 @@ export async function toggleFullscreen(el: HTMLElement): Promise<void> {
   else await enterFullscreen(el);
 }
 
-/** A fullscreen-capable element: the ref to put on it, whether it is in fullscreen, and the toggle. */
+const viewportOrientation = (): Orientation => (typeof window !== "undefined" && window.innerWidth > window.innerHeight ? "landscape" : "portrait");
+
+/**
+ * A fullscreen-capable element: the ref to put on it, whether it is in fullscreen, the toggle, and the viewport's
+ * orientation while in fullscreen (followed on every rotation and resize, for the layout of the fullscreen view).
+ */
 export function useFullscreen<T extends HTMLElement>() {
   const ref = useRef<T>(null);
   const [active, setActive] = useState(false);
+  const [orientation, setOrientation] = useState<Orientation>(viewportOrientation);
+  useEffect(() => {
+    if (!active) return;
+    const on = () => setOrientation(viewportOrientation());
+    on();
+    window.addEventListener("resize", on);
+    window.addEventListener("orientationchange", on);
+    const api = orientationApi();
+    api?.addEventListener?.("change", on);
+    return () => {
+      window.removeEventListener("resize", on);
+      window.removeEventListener("orientationchange", on);
+      api?.removeEventListener?.("change", on);
+    };
+  }, [active]);
   useEffect(() => {
     const on = () => setActive(!!ref.current && fullscreenElement() === ref.current);
     document.addEventListener("fullscreenchange", on);
@@ -80,7 +145,7 @@ export function useFullscreen<T extends HTMLElement>() {
   const toggle = useCallback(() => {
     if (ref.current) void toggleFullscreen(ref.current);
   }, []);
-  return { ref, active, toggle };
+  return { ref, active, toggle, orientation };
 }
 
 /** Typing somewhere (or drawing on the whiteboard, which has its own `F` shortcut): no stage shortcut. */
@@ -148,11 +213,11 @@ export function FullscreenButton({ active, onToggle, className = "", testId = "f
 export const CONTROLS_HIDE_MS = 2500;
 
 /**
- * The controls inside a fullscreen element: mute, deafen and leave of the call plus "exit fullscreen". They
- * show on mouse movement or a tap on the fullscreen element and fade out after a moment; keyboard focus
- * keeps them visible.
+ * The controls inside a fullscreen element: mute, deafen and leave of the call plus "exit fullscreen", and on a
+ * joined stream "leave stream" (`onLeaveStream`). They show on mouse movement or a tap on the fullscreen element
+ * and fade out after a moment; keyboard focus keeps them visible.
  */
-export function FullscreenControls({ onExit }: { onExit: () => void }) {
+export function FullscreenControls({ onExit, onLeaveStream }: { onExit: () => void; onLeaveStream?: () => void }) {
   const t = useT();
   const muted = useVoice((s) => s.muted);
   const deafened = useVoice((s) => s.deafened);
@@ -197,6 +262,19 @@ export function FullscreenControls({ onExit }: { onExit: () => void }) {
         <ControlButton label={t("voice.fullscreen_exit")} onClick={onExit} testid="fullscreen-exit" className="min-h-11 min-w-11">
           <ExitFullscreenIcon size={20} />
         </ControlButton>
+        {onLeaveStream && (
+          <ControlButton
+            label={t("voice.stream.leave")}
+            onClick={() => {
+              void exitFullscreen();
+              onLeaveStream();
+            }}
+            testid="fullscreen-stream-leave"
+            className="min-h-11 min-w-11"
+          >
+            <ScreenOffIcon size={20} />
+          </ControlButton>
+        )}
         {inCall && (
           <ControlButton
             label={t("voice.leave")}

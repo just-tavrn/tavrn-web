@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The LiveKit side of the native engine: joins the room with end-to-end encryption (`e2ee.rs`), publishes the
-//! microphone once the frame cryptor of the own track is active (never unencrypted, VOICE.md §6), subscribes to every
-//! remote audio track and feeds it into the playback mix (`mix.rs`), follows the node's permission changes (server
-//! mute), reconnects through the SDK and reports everything to the webview as [`VoiceEvent`]s.
+//! microphone once the frame cryptor of the own track is active (never unencrypted, VOICE.md §6), subscribes to the
+//! remote tracks except screen shares (streams are opt-in, as in the browser engine, and this engine has no video to
+//! join one with), feeds the remote audio into the playback mix (`mix.rs`), follows the node's permission changes
+//! (server mute), reconnects through the SDK and reports everything to the webview as [`VoiceEvent`]s.
 
 use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
@@ -167,7 +168,8 @@ impl Engine {
         let mut ring = KeyRing::default();
         ring.mark(args.epoch);
         let mut options = RoomOptions::default();
-        options.auto_subscribe = true;
+        // Nothing is subscribed by itself: screen shares (video and audio) are opt-in and never joined here.
+        options.auto_subscribe = false;
         options.encryption = Some(E2eeOptions { encryption_type: EncryptionType::Gcm, key_provider: key_provider.clone() });
         let (room, mut rx) = Room::connect(&args.url, &args.token, options).await.map_err(|e| {
             eprintln!("tavrn: voice: connecting failed: {e}");
@@ -202,7 +204,13 @@ impl Engine {
             engine.leave().await;
             return Err(e);
         }
-        // Tracks of those already in the room arrive as events too.
+        // Those already in the room: their microphones (and cameras) now, never their screen shares; tracks published
+        // later follow as `TrackPublished` events.
+        for participant in room.remote_participants().into_values() {
+            for publication in participant.track_publications().into_values() {
+                subscribe_wanted(&publication);
+            }
+        }
         let task_parts = Arc::clone(&parts);
         let task_room = Arc::clone(&room);
         engine.tasks.push(tokio::spawn(async move {
@@ -447,6 +455,20 @@ fn participants(room: &Room) -> VoiceEvent {
     VoiceEvent::Participants { participants: list }
 }
 
+/// Whether this engine subscribes a remote track of `source`: everything but screen shares (video and audio), which
+/// are opt-in in tavrn (a viewer receives a stream only after joining it) and cannot be joined without video.
+fn wants_subscription(source: TrackSource) -> bool {
+    !matches!(source, TrackSource::Screenshare | TrackSource::ScreenshareAudio)
+}
+
+/// Brings a remote publication to the wanted subscription (the room connects without auto-subscription).
+fn subscribe_wanted(publication: &RemoteTrackPublication) {
+    let want = wants_subscription(publication.source());
+    if publication.is_desired() != want {
+        publication.set_subscribed(want);
+    }
+}
+
 /// Plays a subscribed remote audio track: its decoded frames go into the mix.
 fn start_downlink(parts: &Arc<Parts>, track: RemoteAudioTrack, sid: String, identity: String) {
     lock(&parts.mixer).add(&sid, &identity);
@@ -475,8 +497,16 @@ fn stop_downlink(parts: &Parts, sid: &str) {
 
 async fn handle(parts: &Arc<Parts>, room: &Arc<Room>, event: RoomEvent) {
     match event {
+        RoomEvent::TrackSubscribed { publication, .. } if !wants_subscription(publication.source()) => {
+            // Never played: a screen share is only received after joining it, which this engine cannot.
+            publication.set_subscribed(false);
+        }
         RoomEvent::TrackSubscribed { track: RemoteTrack::Audio(track), publication, participant } => {
             start_downlink(parts, track, publication.sid().to_string(), participant.identity().to_string());
+            parts.send(participants(room));
+        }
+        RoomEvent::TrackPublished { publication, .. } => {
+            subscribe_wanted(&publication);
             parts.send(participants(room));
         }
         RoomEvent::TrackUnsubscribed { publication, .. } => {
@@ -485,7 +515,6 @@ async fn handle(parts: &Arc<Parts>, room: &Arc<Room>, event: RoomEvent) {
         }
         RoomEvent::ParticipantConnected(_)
         | RoomEvent::ParticipantDisconnected(_)
-        | RoomEvent::TrackPublished { .. }
         | RoomEvent::TrackUnpublished { .. }
         | RoomEvent::TrackMuted { .. }
         | RoomEvent::TrackUnmuted { .. }
@@ -548,5 +577,15 @@ mod tests {
         assert!(may_publish_mic(true, &[PROTO_MICROPHONE]));
         assert!(!may_publish_mic(true, &[1]), "camera only");
         assert!(!may_publish_mic(false, &[]));
+    }
+
+    #[test]
+    fn screen_shares_are_never_subscribed() {
+        // Streams are opt-in (the web client's `streams.ts`); this engine plays no video, so it never joins one.
+        assert!(wants_subscription(TrackSource::Microphone));
+        assert!(wants_subscription(TrackSource::Camera));
+        assert!(wants_subscription(TrackSource::Unknown));
+        assert!(!wants_subscription(TrackSource::Screenshare));
+        assert!(!wants_subscription(TrackSource::ScreenshareAudio));
     }
 }

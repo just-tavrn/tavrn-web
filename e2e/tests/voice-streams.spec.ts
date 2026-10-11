@@ -76,11 +76,14 @@ test.describe("Stream audio", () => {
       await expect(u.page.getByTestId("voice-e2ee")).toBeVisible({ timeout: 30_000 });
     }
 
-    // Bob shares his screen with audio: Alice's tile offers the stream volume.
+    // Bob shares his screen with audio: nothing of it plays for Alice until she joins the stream (screen shares are
+    // opt-in, voice-stream-join.spec.ts); joined, her tile offers the stream volume.
     await bob.page.getByTestId("voice-screen").click();
     await bob.page.getByTestId("screen-share-start").click();
     const screen = alice.page.getByTestId("screen-tile").and(alice.page.locator(`[data-user="${bob.address}"]`));
-    await expect(screen).toBeVisible({ timeout: 30_000 });
+    await expect(screen).toHaveAttribute("data-state", "available", { timeout: 30_000 });
+    await expect.poll(async () => (await gainsOf(alice.page, bob.address))?.stream, { timeout: 5_000 }).toBeNull();
+    await screen.getByTestId("stream-join").click();
     await expect(screen).toHaveAttribute("data-audio", "true", { timeout: 30_000 });
     await expect.poll(async () => (await gainsOf(alice.page, bob.address))?.stream, { timeout: 30_000 }).toBeCloseTo(1, 1);
     expect((await gainsOf(alice.page, bob.address))?.microphone).toBeCloseTo(1, 1);
