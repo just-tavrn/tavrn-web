@@ -44,6 +44,11 @@ DMs); a new session never uses federated sessions of another account or device. 
 [PROTOCOL.md](https://github.com/just-tavrn/tavrn-protocol/blob/main/PROTOCOL.md) §5a,
 [ENCRYPTION.md](https://github.com/just-tavrn/tavrn-protocol/blob/main/ENCRYPTION.md) §2.4.
 
+The registration form follows the node's e-mail policy (`email` of the discovery document `/.well-known/tavrn`,
+`TAVRN_EMAIL`): `required` shows a mandatory "Email" field that the form checks before it sends anything, `optional`
+shows "Email (optional)", `none` shows no field. A refused registration keeps every entered value, including the
+invite code, so the person corrects only what the node named.
+
 ### Date of birth and age gates
 
 Nodes with `age.v1` (PROTOCOL.md §5e) ask every account for its date of birth.
