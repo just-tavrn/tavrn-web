@@ -753,6 +753,7 @@
   "media.volume": "Lautstärke",
   "media.load": "Laden",
   "media.load_named": "{name} laden",
+  "media.load_gif": "GIF laden",
   "media.load_all": "Alle {count} Bilder laden",
   "media.preview_hint": "Nicht automatisch geladen (Privatsphäre-Einstellung oder Größe). Erst nach deiner Wahl wird etwas abgerufen.",
   "notify.bell": "Benachrichtigungen",

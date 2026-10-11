@@ -9,6 +9,7 @@ import { MAX_CACHED, PAGE } from "../lib/messagePages";
 import { configureMarkdown, handleMarkdownClick, handleMarkdownKey, markdownVersion, renderMarkdown, subscribeMarkdown } from "../lib/markdown";
 import { useEmojiResolver } from "../lib/emojis";
 import { isGifUrl } from "../lib/gifs";
+import { GifView } from "./GifView";
 import { useLocale, useT } from "../i18n";
 import { Avatar } from "./ui";
 import { MessageAttachments, fromEncrypted, fromPlain } from "./AttachmentView";
@@ -890,9 +891,7 @@ const MessageRow = memo(function MessageRow({ m, grouped, own, bot, author, repl
               />
             )
           )}
-          {c.kind === "text" && c.gif?.url && (
-            <img src={c.gif.url} alt="GIF" loading="lazy" className="mt-1 max-h-72 max-w-full rounded-md border border-line" style={typeof c.gif.width === "number" && typeof c.gif.height === "number" && c.gif.width > 0 && c.gif.height > 0 ? { aspectRatio: `${c.gif.width} / ${c.gif.height}` } : undefined} data-testid="gif" />
-          )}
+          {c.kind === "text" && c.gif?.url && <GifView gif={{ url: c.gif.url, width: c.gif.width, height: c.gif.height }} author={m.author} own={own} inRoom={!!roomId} />}
           {c.kind === "text" && !editing && <LinkPreviews body={c.body} content={c.raw ?? m.content} />}
           {c.kind === "cipher" && <p className="text-sm italic text-fg-2">{t("messages.encrypted")}</p>}
           {c.kind === "undecryptable" && (

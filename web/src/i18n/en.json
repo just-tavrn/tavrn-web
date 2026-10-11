@@ -753,6 +753,7 @@
   "media.volume": "Volume",
   "media.load": "Load",
   "media.load_named": "Load {name}",
+  "media.load_gif": "Load GIF",
   "media.load_all": "Load all {count} images",
   "media.preview_hint": "Not loaded automatically (privacy settings or size). Nothing is fetched until you choose to.",
   "notify.bell": "Notifications",
