@@ -361,8 +361,9 @@ device) a contact whose key changed meanwhile still shows "Security key changed"
 thread titles and renames, forum posts, file and folder records of files channels and whiteboard scenes. Conversations,
 forums, files channels and whiteboards show the unknown-device warning with an "I understand" button, and nothing is
 encrypted in that conversation until the user pressed it; the session manager itself refuses to encrypt while a
-device in the roster is not acknowledged, so a view that missed the warning cannot send to the device either. A device
-that appears later blocks again. Devices are added to DMs only from KeyPackages whose key is exactly the device's
+device in the roster is not acknowledged, so a view that missed the warning cannot send to the device either. An
+acknowledgement covers that device's key: a device that appears later blocks again, also one under an acknowledged
+device id with another key. Devices are added to DMs only from KeyPackages whose key is exactly the device's
 confirmed key, and the cleanup of the user's own stale devices confirms a device as retired only when the account
 recorded that device key itself (anything else is removed without a confirmation; messages of a lost device the
 record does not know then stay unverifiable).
