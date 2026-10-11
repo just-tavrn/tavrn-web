@@ -392,7 +392,7 @@ export function useRealtime() {
       // 4001 (expired token): one refresh, shared with the API client and the other tabs (PROTOCOL.md §5b).
       refreshToken: refreshHome,
       // Only when the node refused the session itself: network errors keep the user signed in.
-      onAuthFailure: () => useAuth.getState().logout(),
+      onAuthFailure: () => useAuth.getState().sessionRefused(),
     });
     socketRef.current = socket;
     useRealtimeState.setState({ socket });

@@ -29,7 +29,7 @@ export const refreshHome = createRefresher({
   adopt: () => useAuth.getState().adoptStored(),
   call: (refresh) => new TavrnApi({ baseUrl: homeBase(), clientHeader: CLIENT_HEADER }).auth.refresh(refresh),
   store: (pair) => useAuth.getState().setTokens(pair),
-  onInvalid: () => useAuth.getState().logout(),
+  onInvalid: () => useAuth.getState().sessionRefused(),
 });
 
 /**

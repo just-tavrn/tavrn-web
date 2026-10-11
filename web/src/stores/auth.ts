@@ -100,6 +100,23 @@ function accountEnded(previous: string | null) {
   }
 }
 
+let explicitSignOuts = 0;
+
+/**
+ * Marks an explicit sign-out (stores/e2ee `signOut`) until the returned function runs. Meanwhile a refused session
+ * ({@link AuthState.sessionRefused}) leaves the account signed in: the node revokes the session while the sign-out
+ * still waits for its answer and deletes the local data, and the sign-out ends the account itself afterwards.
+ */
+export function beginSignOut(): () => void {
+  explicitSignOuts++;
+  let ended = false;
+  return () => {
+    if (ended) return;
+    ended = true;
+    explicitSignOuts--;
+  };
+}
+
 const persisted = (s: Persisted): Persisted => ({ token: s.token, refresh: s.refresh, user: s.user, deviceId: s.deviceId ?? null, home: s.home ?? null });
 
 export interface AuthState extends Persisted {
@@ -111,6 +128,11 @@ export interface AuthState extends Persisted {
   /** Takes over what another tab stored (rotated tokens, sign-out, another account). */
   adoptStored: () => void;
   logout: () => void;
+  /**
+   * The home node refused the session (refused refresh token, socket closed for authentication): signs out, unless an
+   * explicit sign-out is running ({@link beginSignOut}), which signs out once the local data is gone.
+   */
+  sessionRefused: () => void;
 }
 
 export const useAuth = create<AuthState>((set, get) => ({
@@ -159,6 +181,9 @@ export const useAuth = create<AuthState>((set, get) => ({
     save(next);
     set(next);
     accountEnded(previous);
+  },
+  sessionRefused: () => {
+    if (explicitSignOuts === 0) get().logout();
   },
 }));
 
