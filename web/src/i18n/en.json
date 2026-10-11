@@ -2037,6 +2037,8 @@
   "privacy.link_previews_title": "Link previews",
   "privacy.create_previews": "Create link previews when sending",
   "privacy.create_previews_hint": "Your home node loads the page to build the preview, so it sees the link. The preview is sent with the message (encrypted with it in encrypted chats); readers never load anything.",
+  "privacy.encrypted_previews": "Fetch link previews in encrypted conversations",
+  "privacy.encrypted_previews_hint": "Off by default. When on, your home node loads links you type in end-to-end encrypted conversations to build the preview, so it learns those links. Messages stay encrypted either way.",
   "privacy.show_previews": "Show link previews",
   "privacy.show_previews_hint": "Previews come from the sender, not from the linked page.",
   "settings.icon": "Room icon",

@@ -39,6 +39,11 @@ export function ContentPrivacySection() {
         </label>
         <p className="text-xs text-fg-2">{t("privacy.create_previews_hint")}</p>
         <label className="flex min-h-10 items-center gap-2 text-sm">
+          <input type="checkbox" className="h-4 w-4 accent-accent" checked={s.encryptedPreviews} disabled={!s.createPreviews} onChange={(e) => s.set({ encryptedPreviews: e.target.checked })} data-testid="encrypted-previews" aria-describedby="encrypted-previews-hint" />
+          {t("privacy.encrypted_previews")}
+        </label>
+        <p id="encrypted-previews-hint" className="text-xs text-fg-2">{t("privacy.encrypted_previews_hint")}</p>
+        <label className="flex min-h-10 items-center gap-2 text-sm">
           <input type="checkbox" className="h-4 w-4 accent-accent" checked={s.showPreviews} onChange={(e) => s.set({ showPreviews: e.target.checked })} data-testid="show-previews" />
           {t("privacy.show_previews")}
         </label>

@@ -54,6 +54,7 @@ import { evidenceCandidates } from "../moderation/evidence";
 import { isAutomodBlock } from "../moderation/blocked";
 import { wasDeleted } from "../moderation/deletedIds";
 import { LockMark } from "./Badges";
+import { sendsTyping, usePresence } from "../stores/presence";
 
 /** An error that was already shown to the user. */
 class AlreadyReported extends Error {}
@@ -664,7 +665,13 @@ export function ConversationView(p: ConversationViewProps) {
         disabled={!canSendNow}
         disabledReason={canSendNow ? undefined : disabledReason}
         onSend={send}
-        onTyping={() => (p.roomId ? socket?.typing(p.roomId, conversationId) : socket?.typingIn(conversationId))}
+        encrypted={p.encrypted}
+        onTyping={() => {
+          // Invisible users appear offline: no typing indicator either.
+          if (!sendsTyping(usePresence.getState().mine)) return;
+          if (p.roomId) socket?.typing(p.roomId, conversationId);
+          else socket?.typingIn(conversationId);
+        }}
         canAttach={p.canAttach && (node.data?.policies.uploads_enabled ?? true)}
         // Ciphertext is 16 bytes (GCM tag) larger than the file.
         uploadLimitBytes={uploadLimit && p.encrypted ? uploadLimit - 16 : uploadLimit}
