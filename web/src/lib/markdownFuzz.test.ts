@@ -98,6 +98,9 @@ function check(src: string) {
   }
 }
 
+// Thousands of pipeline runs: well above the 5 s default so a loaded machine or CI runner does not fail the test.
+const FUZZ_TIMEOUT_MS = 60_000;
+
 describe("the message pipeline stays inert for random payloads", () => {
   it("random payloads stay inert", () => {
     const r = rng(42);
@@ -107,7 +110,7 @@ describe("the message pipeline stays inert for random payloads", () => {
       for (let j = 0; j < n; j++) s += PIECES[Math.floor(r() * PIECES.length)];
       check(s);
     }
-  });
+  }, FUZZ_TIMEOUT_MS);
   it("title payloads stay inert", () => {
     const r = rng(7);
     for (let i = 0; i < 2000; i++) {
@@ -117,5 +120,5 @@ describe("the message pipeline stays inert for random payloads", () => {
         `[x](https://a.example "${t.replace(/"/g, "")}") and :smile: <:aa:${ID}> @weather`,
       );
     }
-  });
+  }, FUZZ_TIMEOUT_MS);
 });
