@@ -8,7 +8,8 @@ import { channelName } from "../../lib/names";
 import { channelPermissions } from "../../pages/ChannelPage";
 import { participantsOf, useVoicePresence } from "../presence";
 import { ownVoiceChannel, useVoice } from "../store";
-import { joinVoice } from "../index";
+import { joinStream, joinVoice } from "../index";
+import { rowStreamAction } from "../streams";
 import { useRoomVoiceStates } from "../useVoiceRealtime";
 import { AvatarTile } from "./AvatarTile";
 import { ConnectionGlyph, ParticipantFlags, levelStyle, useMemberLooks, useParticipantStatus, usePriority } from "./common";
@@ -33,7 +34,8 @@ const DRAG_TYPE = "application/x-tavrn-voice-member";
  * `move_members` participants can be dragged onto another voice channel. The channel's context menu
  * (right-click, long press or ⋯) is the one of text channels plus the mass moves (design note 4.11).
  * Participants are sorted by their highest role, then name, and shown in their role colour; each has the
- * member list's context menu (design note 4.13 item 3).
+ * member list's context menu (design note 4.13 item 3). A double-click (or Enter) on a streaming member (LIVE) joins
+ * their stream and opens the stage, while this device is in the same voice channel (otherwise a hint).
  */
 export function VoiceChannelRow({ room, channel, onNavigate }: { room: RoomDetail; channel: Channel; onNavigate: () => void }) {
   const t = useT();
@@ -148,7 +150,18 @@ export function VoiceChannelRow({ room, channel, onNavigate }: { room: RoomDetai
       {participants.length > 0 && (
         <ul className="mb-1 ml-7 space-y-0.5" data-testid="voice-participants">
           {participants.map((p) => (
-            <ParticipantRow key={p.identity} room={room} channelId={channel.id} p={p} look={look(p.user)} draggable={canMove && p.user_id !== me?.id} />
+            <ParticipantRow
+              key={p.identity}
+              room={room}
+              channelId={channel.id}
+              p={p}
+              look={look(p.user)}
+              draggable={canMove && p.user_id !== me?.id}
+              onStage={() => {
+                onNavigate();
+                navigate(roomPath(room.id, channel.id));
+              }}
+            />
           ))}
         </ul>
       )}
@@ -156,13 +169,26 @@ export function VoiceChannelRow({ room, channel, onNavigate }: { room: RoomDetai
   );
 }
 
-function ParticipantRow({ room, channelId, p, look, draggable }: { room: RoomDetail; channelId: string; p: VoiceParticipant; look: ParticipantLook; draggable: boolean }) {
+function ParticipantRow({ room, channelId, p, look, draggable, onStage }: { room: RoomDetail; channelId: string; p: VoiceParticipant; look: ParticipantLook; draggable: boolean; onStage: () => void }) {
   const t = useT();
+  const { domain } = useNode();
   const { status, level } = useParticipantStatus(p);
   const priority = usePriority(p.identity);
   const { menu, overlay } = useParticipantMenu(room, channelId, p);
   const speaking = status === "speaking";
   const name = look.name;
+  // A streaming member: double-click or Enter joins the stream (opt-in screen shares, `streams.ts`).
+  const streaming = !!p.streaming;
+  const watchStream = () => {
+    const v = useVoice.getState();
+    const action = rowStreamAction({ identity: p.identity, streaming }, v, { domain, channelId });
+    if (action === "hint") useToasts.getState().push({ kind: "info", title: t("voice.stream.join_first"), testId: "stream-join-hint" });
+    if (action !== "join" && action !== "preview") return;
+    if (action === "join") joinStream(p.identity);
+    else useVoice.setState({ selfPreview: true });
+    onStage();
+  };
+  const hint = draggable ? `${p.user} – ${t("voice.mod.drag_hint")}` : p.user;
   return (
     <li
       className={`group flex min-h-8 items-center gap-2 rounded-md px-1 text-[13px] hover:bg-bg-3/60 ${priority ? "voice-priority-row" : ""}`}
@@ -178,7 +204,25 @@ function ParticipantRow({ room, channelId, p, look, draggable }: { room: RoomDet
         e.dataTransfer.effectAllowed = "move";
       }}
       {...menu.triggerProps}
-      title={draggable ? `${p.user} – ${t("voice.mod.drag_hint")}` : p.user}
+      title={streaming ? `${hint} – ${t("voice.stream.row_hint")}` : hint}
+      data-streaming={streaming || undefined}
+      tabIndex={streaming ? 0 : undefined}
+      aria-keyshortcuts={streaming ? "Enter" : undefined}
+      onDoubleClick={
+        streaming
+          ? (e) => {
+              // Not from the (portaled) member menu, which bubbles through the React tree.
+              if (!e.currentTarget.contains(e.target as Node)) return;
+              e.preventDefault();
+              watchStream();
+            }
+          : undefined
+      }
+      onKeyDown={(e) => {
+        if (!streaming || e.defaultPrevented || e.key !== "Enter" || e.target !== e.currentTarget) return;
+        e.preventDefault();
+        watchStream();
+      }}
     >
       <span className={`voice-ring relative rounded-full ${status === "reconnecting" ? "opacity-70" : ""}`} data-speaking={speaking || undefined} style={levelStyle(level)}>
         <AvatarTile roomId={room.id} name={name} address={p.user} size={24} speaking={speaking} />

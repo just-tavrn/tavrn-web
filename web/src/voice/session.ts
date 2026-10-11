@@ -16,6 +16,9 @@
  * `AnalyserNode` for the speaking ring (microphones only, `speaking.ts`) and a ducking gain for the
  * priority speaker (`priority.ts`). Both sit behind the decryption (insertable streams work on encoded
  * frames, the nodes see decoded audio) and before the per-user volume, which multiplies with the ducking.
+ *
+ * Screen shares are opt-in (`streams.ts`): the room connects without auto-subscription; microphones and cameras
+ * are subscribed as they are published, a screen share's video and audio only once this viewer joined it.
  */
 import { cleanupConversation } from "../lib/leafCleanup";
 import {
@@ -31,6 +34,7 @@ import {
   type Participant,
   type RemoteParticipant,
   type RemoteTrack,
+  type RemoteTrackPublication,
 } from "livekit-client";
 import E2EEWorker from "livekit-client/e2ee-worker?worker";
 import type { Sound, TavrnApi } from "@tavrn/sdk";
@@ -61,6 +65,7 @@ import { hotkeyHeld } from "./hotkeys";
 import { PttCues } from "./pttCues";
 import type { BackgroundHandle } from "./background";
 import { endpoints, followOthers as followOthersOf, type Endpoints, type JoinInfo } from "./sessionShared";
+import { StreamSubscriptions } from "./streams";
 
 /** LiveKit must confirm encryption for this device within this time, else nothing is published. */
 const E2EE_CONFIRM_MS = 10_000;
@@ -100,6 +105,8 @@ interface Session {
   priority: PriorityTracker;
   /** Rate limit of soundboard signals (own and per sender). */
   signals: SignalLimiter;
+  /** The streams this device joined and the subscriptions that follow (screen shares are opt-in). */
+  streams: StreamSubscriptions;
 }
 
 interface Tap {
@@ -167,14 +174,21 @@ function qualityOf(q: ConnectionQuality): Quality {
   }
 }
 
-function mediaOf(p: Participant): ParticipantMedia {
+/**
+ * A participant's media. A remote screen share counts from its publication on (before it is joined, the stream tile
+ * offers joining); its video is there only once joined and subscribed. The own share counts once its track runs.
+ */
+function mediaOf(p: Participant, local: boolean): ParticipantMedia {
   const cam = p.getTrackPublication(Track.Source.Camera);
   const mic = p.getTrackPublication(Track.Source.Microphone);
+  const screen = p.getTrackPublication(Track.Source.ScreenShare);
+  const screenAudio = p.getTrackPublication(Track.Source.ScreenShareAudio);
   return {
     camera: !!cam?.track && !cam.isMuted,
-    screen: !!p.getTrackPublication(Track.Source.ScreenShare)?.track,
+    screen: local ? !!screen?.track : !!screen,
+    screenVideo: !!screen?.track,
     micMuted: !mic || mic.isMuted,
-    screenAudio: !!p.getTrackPublication(Track.Source.ScreenShareAudio)?.track,
+    screenAudio: local ? !!screenAudio?.track : !!screenAudio,
   };
 }
 
@@ -329,11 +343,15 @@ function clearSoundOverlays() {
 
 function refreshMedia(s: Session) {
   if (current !== s) return;
-  const media: Record<string, ParticipantMedia> = { [s.room.localParticipant.identity]: mediaOf(s.room.localParticipant) };
-  for (const p of s.room.remoteParticipants.values()) media[p.identity] = mediaOf(p);
-  const local = media[s.room.localParticipant.identity]!;
+  const media: Record<string, ParticipantMedia> = { [s.room.localParticipant.identity]: mediaOf(s.room.localParticipant, true) };
+  for (const p of s.room.remoteParticipants.values()) media[p.identity] = mediaOf(p, false);
+  const localId = s.room.localParticipant.identity;
+  const local = media[localId]!;
+  // A stream that ended is forgotten: the next share of that person is joined anew.
+  s.streams.prune((id) => !!media[id]?.screen);
   const focus = useVoice.getState().focus;
-  set({ media, camera: local.camera, screen: local.screen, focus: focus && media[focus]?.screen ? focus : null });
+  const focusable = (id: string) => !!media[id]?.screen && (id === localId || s.streams.isJoined(id));
+  set({ media, camera: local.camera, screen: local.screen, focus: focus && focusable(focus) ? focus : null });
 }
 
 /** The volumes last applied per identity (development test hooks). */
@@ -471,7 +489,11 @@ function wire(s: Session) {
       stopAudio(s, track);
       media();
     })
-    .on(RoomEvent.TrackPublished, media)
+    .on(RoomEvent.TrackPublished, (pub: RemoteTrackPublication, p: RemoteParticipant) => {
+      // Microphones and cameras at once, screen shares only once joined (`streams.ts`).
+      if (current === s) s.streams.apply(p.identity, pub);
+      media();
+    })
     .on(RoomEvent.TrackUnpublished, media)
     .on(RoomEvent.TrackMuted, media)
     .on(RoomEvent.TrackUnmuted, media)
@@ -540,6 +562,7 @@ async function cleanup(s: Session) {
     current = null;
     batcher.clear();
     clearSoundOverlays();
+    set({ streams: {} });
     lastReport = { level: Number.NEGATIVE_INFINITY, open: false };
     applied.clear();
   }
@@ -698,6 +721,12 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
         (active) => applyDucking(s, active),
       ),
       signals: new SignalLimiter(),
+      streams: new StreamSubscriptions(
+        () => room!.remoteParticipants.values(),
+        (joined) => {
+          if (current === s) set({ streams: Object.fromEntries([...joined].map((id) => [id, true as const])) });
+        },
+      ),
     };
     current = s;
     s.pipeline.onPtt = (open) => s.pttCues.mic(open);
@@ -715,7 +744,9 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
     if (!room.localParticipant.isE2EEEnabled) throw new VoiceError("e2ee_failed");
     // Extra addresses of the media server (TAVRN_RTC_ADVERTISE_IPS, VOICE.md §10.2) for this call's connections.
     setIcePolicy({ aliases: info.ice_aliases ?? [] });
-    await room.connect(info.url, info.token, { autoSubscribe: true });
+    // Screen shares are opt-in: nothing is subscribed by itself, `streams` subscribes what this viewer wants.
+    await room.connect(info.url, info.token, { autoSubscribe: false });
+    s.streams.applyAll();
     await confirmE2ee(room);
     if (current !== s) return;
     await room.startAudio().catch(() => undefined);
@@ -885,6 +916,22 @@ export interface ScreenShareOptions {
   /** `720p` … `4k`, lowered to the node's maximum. */
   resolution: string;
   fps: number;
+}
+
+/** Joins the stream (screen share) of `identity`: its video and audio are received from now on. */
+export function joinStream(identity: string): void {
+  const s = current;
+  if (!s || identity === s.room.localParticipant.identity) return;
+  if (s.streams.join(identity)) refreshMedia(s);
+}
+
+/** Leaves the stream of `identity` again: nothing of it is received, its tile is a placeholder. */
+export function leaveStream(identity: string): void {
+  const s = current;
+  if (!s) return;
+  s.streams.leave(identity);
+  if (useVoice.getState().focus === identity) set({ focus: null });
+  refreshMedia(s);
 }
 
 export async function setScreenShare(on: boolean, opts: ScreenShareOptions = { audio: true, resolution: "1080p", fps: 30 }): Promise<void> {
@@ -1089,6 +1136,7 @@ function exposeForTests(s: Session) {
           return [p.identity, { microphone: gain(Track.Source.Microphone), stream: gain(Track.Source.ScreenShareAudio) }];
         }),
       ),
+      streams: s.streams.joined(),
       remote: [...s.room.remoteParticipants.values()].map((p) => ({
         identity: p.identity,
         isSpeaking: p.isSpeaking,

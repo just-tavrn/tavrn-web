@@ -24,7 +24,8 @@ import { useVoice } from "../store";
 import { AvatarTile } from "../ui/AvatarTile";
 import { ControlButton } from "../ui/VoiceBar";
 import { ScreenShareDialog } from "../ui/VoiceControls";
-import { ParticipantTile, ScreenTile, useIsPhone, type Tile } from "../ui/VoiceStage";
+import { ParticipantTile, useIsPhone, type Tile } from "../ui/VoiceStage";
+import { ScreenTile, StreamingIndicator } from "../ui/ScreenTile";
 import { HeadphonesIcon, HeadphonesOffIcon, MicIcon, MicOffIcon, MinimizeIcon, PhoneIcon, PhoneOffIcon, ScreenIcon, VideoIcon } from "../ui/icons";
 import { StageGrid } from "../ui/StageGrid";
 import { answerCall, applyCall, callTitle, declineCall, startCall } from "./actions";
@@ -238,6 +239,7 @@ function ActiveCall() {
   const deafened = useVoice((s) => s.deafened);
   const camera = useVoice((s) => s.camera);
   const screen = useVoice((s) => s.screen);
+  const selfPreview = useVoice((s) => s.selfPreview);
   const phone = useIsPhone();
   const [screenOpen, setScreenOpen] = useState(false);
   const answered = (call?.participants.length ?? 0) > 1;
@@ -253,7 +255,8 @@ function ActiveCall() {
       </button>
     ) : null;
   }
-  const screens = tiles.filter((x) => media[x.identity]?.screen);
+  // Streams are joined (a placeholder until then); the own share only while its preview is shown.
+  const screens = tiles.filter((x) => media[x.identity]?.screen && (!x.self || selfPreview));
   const focused = focus ? screens.find((x) => x.identity === focus) : undefined;
   const toggleFocus = (id: string) => useVoice.setState((s) => ({ focus: s.focus === id ? null : id }));
   const ringing = call?.ringing ?? [];
@@ -283,6 +286,7 @@ function ActiveCall() {
         </p>
       )}
       <div className="flex min-h-0 flex-1 flex-col gap-2 p-2">
+        <StreamingIndicator />
         {focused && (
           <StageGrid className="flex-[3]" testId="call-focus">
             <ScreenTile key={focused.identity} tile={focused} focused onFocus={() => toggleFocus(focused.identity)} />

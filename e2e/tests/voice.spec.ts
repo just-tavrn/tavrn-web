@@ -289,12 +289,15 @@ test.describe("Voice channels", () => {
     await bob.page.getByTestId("voice-camera").click();
     await expect(tile(alice.page, bob.address).getByTestId("video-camera")).toHaveCount(0, { timeout: 15_000 });
 
-    // Screen share (a canvas capture track headless): a large tile on the other side, focusable.
+    // Screen share (a canvas capture track headless): a large tile on the other side, joined on demand
+    // (voice-stream-join.spec.ts), then focusable.
     await bob.page.getByTestId("voice-screen").click();
     await bob.page.getByTestId("screen-share-start").click();
     const screen = alice.page.getByTestId("screen-tile").and(alice.page.locator(`[data-user="${bob.address}"]`));
     await expect(screen).toBeVisible({ timeout: 30_000 });
     await expect(row(alice.page, bob.address).getByTestId("flag-streaming")).toBeAttached({ timeout: 15_000 });
+    await screen.getByTestId("stream-join").click();
+    await expect(screen.getByTestId("video-screen")).toBeVisible({ timeout: 30_000 });
     await screen.getByTestId("screen-focus").click();
     await expect(alice.page.locator('[data-testid="screen-tile"][data-focused]')).toBeVisible();
     // The focused share is one large 16:9 tile, the people a strip of small 16:9 tiles.

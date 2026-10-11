@@ -43,6 +43,7 @@ on the desktop and the phone project unless noted:
 | `age.spec.ts` | the registration form, the room settings, the invite page, a locked channel, the date of birth dialog |
 | `threads.spec.ts` | a forum post open in the thread panel, the forum's post list |
 | `reports.spec.ts` | a report's detail with its action row |
+| `voice-stream-join.spec.ts` | the voice stage with a stream placeholder ("Join stream") and with a joined stream |
 | `desktop-voice.spec.ts` | the Tauri app's Settings → Voice & video and a joined voice channel with the native engine (axe-core inside the app's WebKitGTK webview) |
 | `apps/desktop-electron/e2e/smoke.spec.ts`, `electron-smoke.spec.ts` | the Linux app's screen-share picker window (axe-core inside the Electron shell; `smoke.spec.ts` fails on any WCAG violation, `electron-smoke.spec.ts` on serious and critical ones) |
 
