@@ -5,7 +5,7 @@
  * stage's tiles. The banner and the view are portals on `document.body`, so they show on every page and on
  * phones (where the sidebar is off-screen); the view can be minimized to the voice bar.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -17,7 +17,7 @@ import { Button } from "../../components/ui";
 import { useAuth } from "../../stores/auth";
 import { apiFor, connectNode, isHome } from "../../stores/nodes";
 import { splitIdentity } from "@tavrn/e2ee";
-import { startRingtone } from "../cues";
+import { cueEngine, startRingtone } from "../cues";
 import { leaveVoice, stopScreenShare, toggleCamera, toggleDeafen, toggleMute } from "../index";
 import { participantsOf, useVoicePresence } from "../presence";
 import { useVoice } from "../store";
@@ -27,7 +27,11 @@ import { ScreenShareDialog } from "../ui/VoiceControls";
 import { ParticipantTile, ScreenTile, useIsPhone, type Tile } from "../ui/VoiceStage";
 import { HeadphonesIcon, HeadphonesOffIcon, MicIcon, MicOffIcon, MinimizeIcon, PhoneIcon, PhoneOffIcon, ScreenIcon, VideoIcon } from "../ui/icons";
 import { StageGrid } from "../ui/StageGrid";
-import { answerCall, applyCall, callTitle, declineCall, startCall } from "./actions";
+import { answerCall, applyCall, callTitle, declineCall, ringNotice, startCall } from "./actions";
+import { callNoticeWanted, closeCallNotice, showCallNotice } from "./notify";
+import { pushSupported, readyRegistration } from "../../lib/push";
+import { usePush } from "../../stores/push";
+import { useNotifications } from "../../stores/notifications";
 import { callKey, expireRings, useCalls, type Ring } from "./state";
 import { LockMark } from "../../components/Badges";
 import { ViaNode } from "../../components/ViaNode";
@@ -89,8 +93,8 @@ export function CallButton({ conversation }: { conversation: Conversation }) {
   );
 }
 
-/** One incoming call: who calls, accept and decline. */
-function IncomingCall({ ring }: { ring: Ring }) {
+/** One incoming call: who calls, accept and decline; `soundBlocked`: the browser keeps the ringtone silent. */
+function IncomingCall({ ring, soundBlocked }: { ring: Ring; soundBlocked: boolean }) {
   const t = useT();
   const navigate = useNavigate();
   const conv = useConversation(ring.domain, ring.conversationId);
@@ -113,6 +117,11 @@ function IncomingCall({ ring }: { ring: Ring }) {
             </>
           )}
         </p>
+        {soundBlocked && (
+          <p className="text-xs text-fg-1" data-testid="call-sound-blocked">
+            {t("calls.sound_blocked")}
+          </p>
+        )}
       </div>
       <button
         type="button"
@@ -149,23 +158,69 @@ function IncomingCalls() {
   const rings = useCalls(useShallow((s) => Object.values(s.ringing)));
   const group = rings.length > 0 && rings.every((r) => r.group);
   const ringing = rings.length > 0;
+  const [soundBlocked, setSoundBlocked] = useState(false);
+  // Signed in: the next tap unlocks the sound, so a later call can ring without one (mobile autoplay policies).
+  useEffect(() => cueEngine.arm(), []);
   useEffect(() => {
     if (!ringing) return;
-    const stop = startRingtone(group ? "group" : "direct");
+    const stop = startRingtone(group ? "group" : "direct", undefined, undefined, { onAudible: (a) => setSoundBlocked(!a) });
     const timer = setInterval(() => useCalls.getState().set((s) => expireRings(s, Date.now())), 5_000);
     return () => {
       stop();
       clearInterval(timer);
+      setSoundBlocked(false);
     };
   }, [ringing, group]);
+  useCallNotices(rings, soundBlocked);
   if (!ringing) return null;
   return (
     <div className="pointer-events-none fixed inset-x-0 top-0 z-[60] flex flex-col items-center gap-2 p-3 pt-[max(0.75rem,env(safe-area-inset-top))]" data-testid="call-incoming-list">
       {rings.map((r) => (
-        <IncomingCall key={callKey(r.domain, r.conversationId)} ring={r} />
+        <IncomingCall key={callKey(r.domain, r.conversationId)} ring={r} soundBlocked={soundBlocked} />
       ))}
     </div>
   );
+}
+
+/**
+ * Browsers: a system notification for rings that cannot be heard (tab hidden, or sound blocked until the user touches
+ * the page), through the service worker (`notify.ts`); closed when the ring ends. The desktop app notifies natively.
+ */
+function useCallNotices(rings: Ring[], soundBlocked: boolean) {
+  const [hidden, setHidden] = useState(() => typeof document !== "undefined" && document.visibilityState === "hidden");
+  useEffect(() => {
+    const on = () => setHidden(document.visibilityState === "hidden");
+    document.addEventListener("visibilitychange", on);
+    return () => document.removeEventListener("visibilitychange", on);
+  }, []);
+  const pushOn = usePush((s) => s.status === "on");
+  const browserOn = useNotifications((s) => s.settings.global.browser);
+  const enabled = pushOn || browserOn;
+  const keys = rings.map((r) => callKey(r.domain, r.conversationId)).join(",");
+  const current = useRef(rings);
+  current.current = rings;
+  useEffect(() => {
+    if (!keys || !pushSupported()) return;
+    const permission = "Notification" in window ? Notification.permission : "unsupported";
+    if (!callNoticeWanted({ hidden, soundBlocked, permission, enabled })) return;
+    let cancelled = false;
+    void readyRegistration(3_000).then((reg) => {
+      if (cancelled) return;
+      for (const r of current.current) void showCallNotice(reg, ringNotice(r));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [keys, hidden, soundBlocked, enabled]);
+  // Rings that ended (answered here or elsewhere, declined, over): their notification goes too, also one of a push.
+  const before = useRef<string[]>([]);
+  useEffect(() => {
+    const now = keys ? keys.split(",") : [];
+    const gone = before.current.filter((k) => !now.includes(k));
+    before.current = now;
+    if (!gone.length || !pushSupported()) return;
+    void readyRegistration(3_000).then((reg) => gone.forEach((k) => void closeCallNotice(reg, k)));
+  }, [keys]);
 }
 
 function useDuration(since: string | null | undefined): string {

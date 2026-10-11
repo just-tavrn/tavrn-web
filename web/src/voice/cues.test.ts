@@ -221,6 +221,28 @@ describe("cue engine: one context, resumed before every cue, queued (design note
     expect(m.calls).toEqual(["suspend", "resume"]);
   });
 
+  it("armed after sign-in, the first gesture creates and unlocks the context (an incoming call can ring later), then it sleeps", async () => {
+    vi.useFakeTimers();
+    const m = mockEngineContext({ state: "suspended" });
+    const engine = new CueEngine(() => m.ctx, { idleMs: 1000, resumeTimeoutMs: 200 });
+    const target = new EventTarget();
+    installCueUnlock(target as unknown as Window, engine);
+    engine.arm();
+    target.dispatchEvent(new Event("pointerdown"));
+    await vi.advanceTimersByTimeAsync(0);
+    // Inside the gesture: a one-sample silent buffer (WebKit unlocks on a sound started in the gesture) and the resume.
+    expect(m.calls.slice(0, 3)).toEqual(["buffer:1x1@48000", "silent", "resume"]);
+    expect(m.ctx.state).toBe("running");
+    // Nothing plays: the context sleeps again until a cue or the ringtone needs it.
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(m.calls).toContain("suspend");
+    // Only the first gesture primes it.
+    const before = m.calls.length;
+    target.dispatchEvent(new Event("pointerdown"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(m.calls.slice(before).filter((c) => c === "silent")).toEqual([]);
+  });
+
   it("previews through the engine and resumes on user gestures", async () => {
     const m = mockEngineContext({ state: "suspended" });
     const engine = new CueEngine(() => m.ctx);
