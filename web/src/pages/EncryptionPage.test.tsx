@@ -128,6 +128,8 @@ describe("EncryptionPage", () => {
     });
     renderPage();
     expect(await screen.findByRole("heading", { name: "Dein Wiederherstellungsschlüssel" })).toBeInTheDocument();
+    // The heading shows while the key is still being made ("Lade…"): wait for the key before confirming it.
+    await screen.findByTestId("recovery-key-words");
     const u = userEvent.setup();
     await u.click(screen.getByLabelText("Ich habe meinen Wiederherstellungsschlüssel gesichert"));
     await u.click(screen.getByRole("button", { name: "Einrichtung abschließen" }));

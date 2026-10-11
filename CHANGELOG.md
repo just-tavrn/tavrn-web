@@ -21,8 +21,6 @@ First public release of the web client and the desktop apps.
 
 ### Security
 
-### Security
-
 - Plaintext in end-to-end encrypted conversations is shown as "not end-to-end encrypted", never as the author's
   content (list, replies, notifications, push); a person's plaintext message without a device id is marked unverified.
 - Every encrypted write path (edits, thread titles, forum posts, file records, whiteboard scenes) shows the
