@@ -397,8 +397,9 @@ exactly the 43-character session id and a 16 to 128 character state (the rules o
 invite to a room on chat.example", "A channel of a room on chat.example") and shows the link; only **Open** goes there,
 Cancel (focused first) and Escape drop it. An app without a home node yet offers **Choose node**: the node picker with
 the link's node filled in, and the link is offered again once a node is chosen. Links that arrive before the client
-listens (the link that started the app) wait in the shell (Tauri: with the notification clicks; Electron: until the
-client takes them, `shell.takeLinks`).
+listens (the link that started the app) wait in the shell (Tauri: with the notification clicks, then in the client's
+platform until the prompt subscribes, `linkEvents` in `platform/shellEvents.ts`; Electron: until the client takes
+them, `shell.takeLinks`).
 
 **Back to the app after the sign-in** (RFC 8252 style). When the node's page ran in a browser (the Android app's Custom
 Tab, "Open in the browser instead" on the desktop) its last screen offers **Open the tavrn app**, the link

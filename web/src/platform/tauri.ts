@@ -9,7 +9,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { externalUrl, installLinkHandler } from "./links";
 import { runAppSession, runAppUnlock } from "./appSession";
 import { shellMembers } from "./tauriShell";
-import { createShellEvents } from "./shellEvents";
+import { createShellEvents, linkEvents } from "./shellEvents";
 import { androidMembers, androidStatus } from "./tauriAndroid";
 import { createTauriSaveFile } from "./tauriFiles";
 import { voiceMember } from "./tauriVoice";
@@ -99,7 +99,7 @@ export async function createTauriPlatform(doc: Document = document): Promise<Pla
     isDesktop: true,
     // Deep links (`tavrn://`, Android's App Links): the shell checked them and keeps those of the start until the
     // client listens.
-    links: { subscribe: (fn) => events.on((e) => e.kind === "link" && typeof e.url === "string" && fn(e.url)) },
+    links: linkEvents(events),
     nodeBase: () => node ?? "",
     // A node serves its web client on the URL the user picked (where links shared with others point to), unless its
     // document names another origin.

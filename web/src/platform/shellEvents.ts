@@ -42,3 +42,28 @@ export function createShellEvents(): ShellEvents {
     },
   };
 }
+
+/** Links kept while nobody listens for them (the link that started the app arrives before the client's prompt). */
+const MAX_WAITING_LINKS = 8;
+
+/**
+ * The deep links of the shell (`link` events) as `Platform.links`. It listens from its creation on and keeps the links
+ * that arrive while no subscriber exists: the shell hands its waiting links to the first listener of the channel, which
+ * may be another member (the Android insets, say), long before `DeepLinkPrompt` subscribes.
+ */
+export function linkEvents(events: ShellEvents): { subscribe(fn: (url: string) => void): () => void } {
+  const waiting: string[] = [];
+  const subscribers = new Set<(url: string) => void>();
+  events.on((e) => {
+    if (e.kind !== "link" || typeof e.url !== "string") return;
+    if (subscribers.size > 0) for (const fn of subscribers) fn(e.url);
+    else if (waiting.length < MAX_WAITING_LINKS) waiting.push(e.url);
+  });
+  return {
+    subscribe: (fn) => {
+      subscribers.add(fn);
+      for (const url of waiting.splice(0)) fn(url);
+      return () => void subscribers.delete(fn);
+    },
+  };
+}
