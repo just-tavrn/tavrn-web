@@ -72,6 +72,10 @@ First public release of the web client and the desktop apps.
   blocked sound shows a system notification through the service worker (with push or browser notifications on).
   Call rings are now also pushed while a tab is connected (the node change of the same release): the service worker
   stays silent while a page of the client is visible and replaces the page's own notification without a second alert.
+- Desktop app for Linux: the global hotkeys also work with an X server that listens on the Linux abstract socket only
+  (`@/tmp/.X11-unix/X<n>`, for example Xvfb under WSL2 with WSLg, where `/tmp/.X11-unix` is read-only). The key
+  listener tried only the file socket and TCP and said "Global hotkeys unavailable" while the window itself showed;
+  it now tries the display's abstract socket as well, with the same Xauthority cookie.
 
 ### Security
 
