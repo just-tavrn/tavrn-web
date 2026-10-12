@@ -39,6 +39,8 @@ pub enum ShellEvent {
     PushUnregistered,
     /// Android: the call's audio routes changed (`mobile::AudioRoutes`).
     AudioRoutes(crate::mobile::AudioRoutes),
+    /// Android: the screen share went live or stopped (`mobile::ScreenEvent`, VOICE.md §4b).
+    ScreenShare(crate::mobile::ScreenEvent),
 }
 
 /// Links and notification clicks kept while the client has not subscribed yet (the one that started the app).

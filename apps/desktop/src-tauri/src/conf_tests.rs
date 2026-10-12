@@ -187,6 +187,10 @@ fn the_android_capability_grants_only_the_app_commands_of_the_android_app() {
             "allow-android-unlock-store",
             "allow-android-unlock-get",
             "allow-android-unlock-clear",
+            "allow-android-screen-share-start",
+            "allow-android-screen-share-key",
+            "allow-android-screen-share-stop",
+            "allow-android-screen-share-status",
             "allow-passkey-create",
             "allow-passkey-get",
         ]
@@ -259,6 +263,47 @@ fn the_android_manifest_keeps_its_promises() {
     for google in ["firebase", "play-services", "gms"] {
         assert!(!gradle.contains(google) && !manifest.contains(google), "{google} in the Android app");
     }
+}
+
+/// The libraries the Android app declares and their licences (docs/ANDROID.md "Libraries and licences" lists them with
+/// their own dependencies): a new one needs a line here and there, with a licence of the project's allow-list.
+const ANDROID_LIBRARIES: [(&str, &str); 10] = [
+    ("androidx.webkit:webkit", "Apache-2.0"),
+    ("androidx.appcompat:appcompat", "Apache-2.0"),
+    ("androidx.activity:activity-ktx", "Apache-2.0"),
+    ("com.google.android.material:material", "Apache-2.0"),
+    ("androidx.lifecycle:lifecycle-process", "Apache-2.0"),
+    ("androidx.browser:browser", "Apache-2.0"),
+    ("org.unifiedpush.android:connector", "Apache-2.0"),
+    ("androidx.credentials:credentials", "Apache-2.0"),
+    ("io.livekit:livekit-android", "Apache-2.0"),
+    ("org.jetbrains.kotlinx:kotlinx-coroutines-android", "Apache-2.0"),
+];
+
+#[test]
+fn the_android_libraries_are_listed_with_their_licences() {
+    let gradle = include_str!("../gen/android/app/build.gradle.kts");
+    let docs = include_str!("../../../../docs/ANDROID.md");
+    let allowed = ["Apache-2.0", "MIT", "BSD-2-Clause", "BSD-3-Clause", "MPL-2.0", "ISC"];
+    let declared: Vec<&str> = gradle
+        .lines()
+        .filter_map(|l| l.trim().strip_prefix("implementation(\""))
+        .filter_map(|l| l.split('"').next())
+        .map(|coordinate| coordinate.rsplit_once(':').map_or(coordinate, |(lib, _version)| lib))
+        .collect();
+    assert_eq!(declared.len(), ANDROID_LIBRARIES.len(), "build.gradle.kts declares {declared:?}");
+    for lib in &declared {
+        let licence = ANDROID_LIBRARIES.iter().find(|(name, _)| name == lib).map(|(_, l)| *l);
+        assert!(licence.is_some_and(|l| allowed.contains(&l)), "{lib} is not on the licence list");
+        assert!(docs.contains(&format!("`{lib}`")), "docs/ANDROID.md does not list {lib}");
+    }
+    // JitPack serves the one group the LiveKit SDK needs from there, nothing else.
+    let root = include_str!("../gen/android/build.gradle.kts");
+    assert_eq!(root.matches("maven(").count(), 1);
+    assert!(root.contains("includeGroup(\"com.github.davidliu\")"));
+    // The screen share's service comes with the SDK; the app names its permission and no service of its own type.
+    let manifest = include_str!("../gen/android/app/src/main/AndroidManifest.xml");
+    assert!(manifest.contains("android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"));
 }
 
 #[test]

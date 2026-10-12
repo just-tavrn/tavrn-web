@@ -14,6 +14,11 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        // The LiveKit SDK's audio routing helper (com.github.davidliu:audioswitch, Apache-2.0, pinned to a commit by the
+        // SDK) is published on JitPack only: that repository serves this one group and nothing else.
+        maven("https://jitpack.io") {
+            content { includeGroup("com.github.davidliu") }
+        }
     }
 }
 

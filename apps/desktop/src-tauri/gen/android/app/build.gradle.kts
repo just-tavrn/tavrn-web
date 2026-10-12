@@ -90,9 +90,23 @@ dependencies {
     // Passkeys through Android's Credential Manager (Passkeys.kt): the framework's on Android 14+, without Google's
     // companion library for older systems (the app must work on de-googled phones).
     implementation("androidx.credentials:credentials:1.6.0")
+    // Screen sharing (ScreenShare.kt, docs/ANDROID.md "Screen sharing"): the LiveKit Android SDK publishes the screen as
+    // the device's screen publisher, since the webview's WebRTC takes no screen capture. Apache-2.0, like its WebRTC
+    // build (BSD-3-Clause); the licences of its whole dependency tree are listed in docs/ANDROID.md.
+    implementation("io.livekit:livekit-android:2.29.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     testImplementation("junit:junit:4.13.2")
     // The real org.json for the JVM unit tests (android.jar has only stubs).
     testImplementation("org.json:json:20250517")
+}
+
+configurations.all {
+    resolutionStrategy.dependencySubstitution {
+        // The UnifiedPush connector asks for Tink's JVM build, which brings protobuf's full runtime, while the LiveKit
+        // SDK brings protobuf's lite runtime: both define the same classes. Tink's Android build has the same API (the
+        // connector uses only Tink's core: HybridDecrypt, EllipticCurves, Hkdf) with its protobuf shaded.
+        substitute(module("com.google.crypto.tink:tink")).using(module("com.google.crypto.tink:tink-android:1.23.0"))
+    }
 }
 
 apply(from = file("tauri.build.gradle.kts"))

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-android-screen-share-start"
+description = "Enables the android_screen_share_start command without any pre-configured scope."
+commands.allow = ["android_screen_share_start"]
+
+[[permission]]
+identifier = "deny-android-screen-share-start"
+description = "Denies the android_screen_share_start command without any pre-configured scope."
+commands.deny = ["android_screen_share_start"]

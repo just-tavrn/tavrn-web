@@ -20,6 +20,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- Screen sharing: the LiveKit SDK's own foreground service of type mediaProjection (merged from its manifest,
+         not exported) runs while the screen is shared, after Android's consent dialog (docs/ANDROID.md). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Unlock with fingerprint, face or PIN: the system's prompt (granted at install). -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
