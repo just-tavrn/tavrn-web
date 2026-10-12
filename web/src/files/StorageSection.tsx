@@ -5,7 +5,7 @@
  * Only for members with `manage_channels` and `manage_files`; secrets are write-only (the node returns
  * whether one is stored, never the value).
  */
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Permission, hasPermission, type BackendInfo, type BackendRequest, type Channel, type RoomDetail } from "@tavrn/sdk";
 import { useT } from "../i18n";
@@ -28,6 +28,29 @@ interface Form {
   bucket: string;
   prefix: string;
   encrypt_files: boolean;
+  /** The limit on an external store in GB (GiB) as typed; empty = unlimited. */
+  limit: string;
+}
+
+const GIB = 1024 ** 3;
+/** Largest limit the node accepts (1 PiB). */
+const MAX_LIMIT_BYTES = 2 ** 50;
+
+/**
+ * The limit on the external store in bytes from the typed gigabytes (FILES.md §5): empty or 0 = unlimited (0), a comma
+ * as decimal separator is fine; `null` for anything that is not a number between 0 and 1 PiB.
+ */
+export function parseLimit(raw: string): number | null {
+  const text = raw.trim().replace(",", ".");
+  if (text === "") return 0;
+  if (!/^\d+(\.\d+)?$/.test(text)) return null;
+  const bytes = Math.round(Number(text) * GIB);
+  return bytes <= MAX_LIMIT_BYTES ? bytes : null;
+}
+
+/** The stored limit as gigabytes for the field (empty = unlimited). */
+export function limitText(bytes: number): string {
+  return bytes > 0 ? String(Number((bytes / GIB).toFixed(3))) : "";
 }
 
 /**
@@ -39,13 +62,13 @@ export function initialKind(b: Pick<BackendInfo, "kind" | "external_allowed">): 
 }
 
 function formOf(b: BackendInfo): Form {
-  return { kind: initialKind(b), url: b.url, username: b.username, password: "", access_key: b.access_key, secret_key: "", region: b.region, bucket: b.bucket, prefix: b.prefix, encrypt_files: b.encrypt_files };
+  return { kind: initialKind(b), url: b.url, username: b.username, password: "", access_key: b.access_key, secret_key: "", region: b.region, bucket: b.bucket, prefix: b.prefix, encrypt_files: b.encrypt_files, limit: limitText(b.max_bytes ?? 0) };
 }
 
 /** The request for the node: only the fields of the chosen kind; empty secrets keep the stored ones. */
 export function backendRequest(f: Form): BackendRequest {
   if (f.kind === "internal") return { kind: "internal" };
-  const common = { kind: f.kind, url: f.url.trim(), prefix: f.prefix.trim() || null, encrypt_files: f.encrypt_files };
+  const common = { kind: f.kind, url: f.url.trim(), prefix: f.prefix.trim() || null, encrypt_files: f.encrypt_files, max_bytes: parseLimit(f.limit) ?? 0 };
   if (f.kind === "webdav") return { ...common, username: f.username, password: f.password || null };
   return { ...common, access_key: f.access_key.trim(), secret_key: f.secret_key || null, region: f.region.trim() || null, bucket: f.bucket.trim() };
 }
@@ -58,6 +81,7 @@ export function StorageSection({ room, channel }: { room: RoomDetail; channel: C
   const allowed = hasPermission(perms, Permission.MANAGE_CHANNELS) && hasPermission(perms, Permission.MANAGE_FILES);
   const backend = useQuery({ queryKey: ["files-backend", domain, channel.id], queryFn: () => api.files.backend(room.id, channel.id), enabled: allowed });
   const [form, setForm] = useState<Form | null>(null);
+  const limitErrorId = useId();
   const [error, setError] = useState<string | null>(null);
   const [tested, setTested] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
@@ -73,6 +97,7 @@ export function StorageSection({ room, channel }: { room: RoomDetail; channel: C
     setTested(null);
   };
   const external = form.kind !== "internal";
+  const limitInvalid = external && parseLimit(form.limit) === null;
   const locked = b.has_files;
   const run = async (action: () => Promise<unknown>, done?: string) => {
     setBusy(true);
@@ -137,6 +162,14 @@ export function StorageSection({ room, channel }: { room: RoomDetail; channel: C
             <Field label={t("files.prefix")} hint={t("files.prefix_hint")}>
               <Input value={form.prefix} onChange={(e) => set({ prefix: e.target.value })} placeholder={`tavrn/${channel.id}/`} data-testid="files-storage-prefix" />
             </Field>
+            <Field label={t("files.store_limit")} hint={t("files.store_limit_hint")} errorId={limitInvalid ? limitErrorId : undefined}>
+              <Input inputMode="decimal" value={form.limit} onChange={(e) => set({ limit: e.target.value })} placeholder={t("files.store_limit_unlimited")} data-testid="files-storage-limit" />
+            </Field>
+            {limitInvalid && (
+              <p id={limitErrorId} className="text-sm text-danger" role="alert" data-testid="files-storage-limit-error">
+                {t("files.store_limit_invalid")}
+              </p>
+            )}
             {channel.encrypted ? (
               // End-to-end encrypted channels store the clients' ciphertext as it is (FILES.md §5).
               <p className="text-xs text-fg-2" data-testid="files-storage-e2ee">
@@ -162,7 +195,7 @@ export function StorageSection({ room, channel }: { room: RoomDetail; channel: C
             </Button>
           )}
           <Button
-            disabled={busy}
+            disabled={busy || limitInvalid}
             data-testid="files-storage-save"
             onClick={() =>
               void run(async () => {

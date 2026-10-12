@@ -77,8 +77,15 @@ test("a files channel on a node without internal storage asks for a store before
     await storage.getByTestId("files-storage-url").fill(store.url);
     await storage.getByTestId("files-storage-username").fill("team");
     await storage.getByTestId("files-storage-password").fill("store-password");
+    // The channel's own limit on the store (FILES.md §5): an invalid entry blocks saving, gigabytes are sent as bytes.
+    await storage.getByTestId("files-storage-limit").fill("viel");
+    await expect(storage.getByTestId("files-storage-limit-error")).toBeVisible();
+    await expect(storage.getByTestId("files-storage-save")).toBeDisabled();
+    await storage.getByTestId("files-storage-limit").fill("1,5");
     await storage.getByTestId("files-storage-save").click();
     await expect(page.getByText("Speicher gespeichert")).toBeVisible();
+    const backend = await (await request.get(`${FILES_NODE}/api/v1/rooms/${room.id}/channels/${ch.id}/files/backend`, { headers: auth })).json();
+    expect(backend.max_bytes).toBe(1.5 * 1024 ** 3);
 
     // Back in the channel the upload goes to the store.
     await page.goto(`${FILES_WEB}/rooms/${room.id}/channels/${ch.id}`);
@@ -88,6 +95,8 @@ test("a files channel on a node without internal storage asks for a store before
     await page.getByTestId("files-upload-input").setInputFiles({ name: "plan.txt", mimeType: "text/plain", buffer: Buffer.from("auf dem eigenen Speicher") });
     await expect(page.getByTestId("file-row")).toHaveAttribute("data-name", "plan.txt");
     expect([...store.objects.values()].map((b) => b.toString())).toContain("auf dem eigenen Speicher");
+    const usage = await (await request.get(`${FILES_NODE}/api/v1/rooms/${room.id}/channels/${ch.id}/files/usage`, { headers: auth })).json();
+    expect(usage.limit_bytes).toBe(1.5 * 1024 ** 3);
   } finally {
     store.server.close();
   }

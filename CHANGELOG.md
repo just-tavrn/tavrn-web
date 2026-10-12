@@ -27,6 +27,9 @@ First public release of the web client and the desktop apps.
 
 ### Changed
 
+- **A limit per external store** (protocol FILES.md §5): the storage settings of a files channel on WebDAV or S3 get
+  "Limit on the store (GB)" (empty = no limit), which the channel's meter shows; the node's own quota no longer
+  applies to external stores.
 - **Files channels on nodes without their own storage for them** (`TAVRN_FILES_INTERNAL=off`, protocol FILES.md §5):
   a channel without an external store shows "Choose a store first" instead of the upload button (a link to its
   storage settings for its managers, a note for everybody else), and the storage settings offer only WebDAV and S3.
