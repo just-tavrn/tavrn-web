@@ -3,8 +3,10 @@
  * Two-node setup of the Playwright config (FEDERATION.md §13): nodes a.test and b.test with their own
  * web clients. The browser resolves both names to 127.0.0.1 (Chromium only).
  */
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
-import type { Account } from "./helpers";
+import { ADULT_DOB, type Account, enrollTotp, ensureDateOfBirth, loginViaApi } from "./helpers";
 
 const nodePort = process.env.E2E_NODE_PORT ?? "8080";
 const webPort = process.env.E2E_WEB_PORT ?? "5173";
@@ -69,4 +71,85 @@ export async function indexOf(request: APIRequestContext, homeBase: string, toke
   const resp = await request.get(`${homeBase}/api/v1/users/me/conversations-index`, { headers: { Authorization: `Bearer ${token}` } });
   expect(resp.ok(), await resp.text()).toBeTruthy();
   return resp.json();
+}
+
+/** The data directory of a.test or b.test (`data-dev/e2e-a`, `data-dev/e2e-b`): caches next to the node's database. */
+export function dataDirOf(domain: string): string {
+  return resolve(dirname(new URL(import.meta.url).pathname), `../../data-dev/e2e-${domain === A ? "a" : "b"}`);
+}
+
+/** Serializes a section across workers and projects (they share the nodes), with a lock directory next to the node's data. */
+export async function withNodeLock<T>(domain: string, name: string, fn: () => Promise<T>): Promise<T> {
+  const dir = dataDirOf(domain);
+  mkdirSync(dir, { recursive: true });
+  const lock = resolve(dir, `${name}.lock`);
+  for (;;) {
+    try {
+      mkdirSync(lock);
+      break;
+    } catch {
+      try {
+        if (Date.now() - statSync(lock).mtimeMs > 120_000) rmSync(lock, { recursive: true, force: true });
+      } catch {
+        /* lock vanished meanwhile */
+      }
+      await new Promise((r) => setTimeout(r, 250));
+    }
+  }
+  try {
+    return await fn();
+  } finally {
+    rmSync(lock, { recursive: true, force: true });
+  }
+}
+
+/** The node admin of a.test or b.test (`TAVRN_ADMIN_USERS=fedadmin`), cached next to the node's database across runs. */
+export async function fedAdmin(request: APIRequestContext, domain: string): Promise<Account> {
+  const username = "fedadmin";
+  const password = "passwort-fedadmin-xyz";
+  const base = domain === A ? NODE_A : NODE_B;
+  const name = domain === A ? "a" : "b";
+  const cache = resolve(dataDirOf(domain), "fedadmin.json");
+  return withNodeLock(domain, "fedadmin", async () => {
+    const cached: Account | null = existsSync(cache) ? JSON.parse(readFileSync(cache, "utf8")) : null;
+    if (cached) {
+      const me = await request.get(`${base}/api/v1/users/me`, { headers: { Authorization: `Bearer ${cached.token}` } });
+      if (me.ok()) {
+        await ensureDateOfBirth(request, cached.token, base);
+        return cached;
+      }
+    }
+    let account: Account;
+    const reg = await request.post(`${base}/api/v1/auth/register`, { data: { username, password, device_name: "e2e", date_of_birth: ADULT_DOB } });
+    if (reg.ok()) {
+      const totp = await enrollTotp(request, (await reg.json()).preauth_token, base);
+      const s = totp.session!;
+      account = { username, password, token: s.access_token, refresh: s.refresh_token, userId: s.user.id, isNodeAdmin: s.user.is_node_admin, deviceId: s.device_id, totpSecret: totp.secret, recoveryCodes: totp.recoveryCodes, lastStep: totp.lastStep };
+    } else if (reg.status() === 409 && cached) {
+      const s = await loginViaApi(request, cached, "e2e", base);
+      account = { ...cached, token: s.token, refresh: s.refresh, deviceId: s.deviceId };
+    } else {
+      throw new Error(`fedadmin on ${domain}: ${reg.status()} ${await reg.text()} (delete data-dev/e2e-${name}.db and data-dev/e2e-${name} to start over)`);
+    }
+    expect(account.isNodeAdmin).toBeTruthy();
+    writeFileSync(cache, JSON.stringify(account));
+    return account;
+  });
+}
+
+/** Opens `path` (e.g. `/admin/reports`) in the web client of `domain` as its node admin `admin`. */
+export async function openAdminOn(page: Page, domain: string, admin: Account, path: string) {
+  const web = domain === A ? WEB_A : WEB_B;
+  await loginOn(page, web, admin, { domain, remote: false });
+  // `loginOn` stores a non-admin user; the admin page needs the flag.
+  await page.addInitScript(
+    ({ origin }) => {
+      if (location.origin !== origin) return;
+      const state = JSON.parse(localStorage.getItem("tavrn.auth") ?? "{}");
+      if (state.user) state.user.is_node_admin = true;
+      localStorage.setItem("tavrn.auth", JSON.stringify(state));
+    },
+    { origin: web },
+  );
+  await page.goto(`${web}${path}`);
 }

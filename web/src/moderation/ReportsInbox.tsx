@@ -4,7 +4,8 @@
  * Reports) and every report of the node for node admins (Admin → Reports). A report shows the snapshot of a
  * plaintext message or the evidence the reporter released for an encrypted one, labelled as such: the node cannot
  * verify it. Triage (status, assignee, note) and the action shortcuts run on the report's node with the moderator's
- * own permissions.
+ * own permissions. Node admins forward reports about users of other nodes to their home node (MODERATION.md §1.6,
+ * `reports.v2`); reports other nodes forwarded show their origin and the reporter's pseudonym.
  */
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -17,8 +18,10 @@ import { Button, ErrorText, Field } from "../components/ui";
 import { ConfirmAction } from "../components/menus/common";
 import { ConfirmDialog, Section, Select, Textarea } from "../pages/settings/common";
 import { reportKeys } from "./hooks";
+import { forwardTarget } from "./forwarding";
 
-export type InboxMode = { kind: "room"; roomId: string; node: string | null } | { kind: "admin" };
+/** `forwardFrom`: the admin's own domain when the node announces `reports.v2` (forwarding offered), else absent. */
+export type InboxMode = { kind: "room"; roomId: string; node: string | null } | { kind: "admin"; forwardFrom?: string | null };
 
 const STATUSES = ["open", "resolved", "dismissed"] as const;
 
@@ -36,8 +39,16 @@ function targetLine(r: ModerationReport, t: ReturnType<typeof useT>): string {
   return t("reports.about_user", { user: who });
 }
 
+/** Who reported it: the reporter, the pseudonym of a forwarded report, or nobody (auto-moderation). */
+function reporterLine(r: ModerationReport, t: ReturnType<typeof useT>): string | null {
+  if (r.reporter) return t("reports.by", { user: r.reporter.address });
+  if (r.origin) return t("reports.by_pseudonym", { pseudonym: r.origin.reporter, node: r.origin.node });
+  return null;
+}
+
 /** Where it happened. */
 function placeLine(r: ModerationReport, t: ReturnType<typeof useT>): string | null {
+  if (r.origin) return t("reports.place_origin", { node: r.origin.node });
   if (r.node) return t("reports.place_remote", { node: r.node });
   if (r.conversation_kind === "dm") return t("reports.place_dm");
   if (r.conversation_kind === "group") return t("reports.place_group");
@@ -59,6 +70,7 @@ export function ReportsInbox({ client, mode, meId }: { client: TavrnApi; mode: I
         : client.reports.admin({ status: status || undefined, scope: scope || undefined, limit: 50 }),
   });
   const node = mode.kind === "room" ? mode.node : null;
+  const forwardFrom = mode.kind === "admin" ? (mode.forwardFrom ?? null) : null;
   return (
     <div className="space-y-4" data-testid="reports-inbox">
       <Section title={t("reports.title")} description={mode.kind === "room" ? t("reports.hint_room") : t("reports.hint_admin")}>
@@ -107,16 +119,26 @@ export function ReportsInbox({ client, mode, meId }: { client: TavrnApi; mode: I
                     <StatusBadge status={r.status} />
                     <span className="font-medium">{t(`report.category.${r.category}`)}</span>
                     {r.source === "automod" && <span className="rounded bg-bg-3 px-1.5 py-0.5 text-[11px]">{t("reports.automod")}</span>}
+                    {r.origin && (
+                      <span className="rounded bg-accent-soft px-1.5 py-0.5 text-[11px] text-fg-0" data-testid="report-origin-badge">
+                        {t("reports.forwarded_from", { node: r.origin.node })}
+                      </span>
+                    )}
+                    {r.forwarded && (
+                      <span className="rounded bg-bg-3 px-1.5 py-0.5 text-[11px] text-fg-1" data-testid="report-forwarded-badge">
+                        {t("reports.forwarded_to", { node: r.forwarded.node })}
+                      </span>
+                    )}
                     {r.evidence_count > 0 && <span className="rounded bg-warn/20 px-1.5 py-0.5 text-[11px]">{t("reports.evidence_badge", { count: r.evidence_count })}</span>}
                   </span>
                   <span className="block truncate text-fg-1">{targetLine(r, t)}</span>
-                  <span className="block truncate text-xs text-fg-2">{[placeLine(r, t), r.reporter ? t("reports.by", { user: r.reporter.address }) : null].filter(Boolean).join(" · ")}</span>
+                  <span className={`block truncate text-xs ${selected === r.id ? "text-fg-1" : "text-fg-2"}`}>{[placeLine(r, t), reporterLine(r, t)].filter(Boolean).join(" · ")}</span>
                 </span>
-                <time className="text-xs text-fg-2" dateTime={r.created_at}>
+                <time className={`text-xs ${selected === r.id ? "text-fg-1" : "text-fg-2"}`} dateTime={r.created_at}>
                   {new Date(r.created_at).toLocaleString(intlLocale())}
                 </time>
               </button>
-              {selected === r.id && <ReportDetail client={client} node={node} id={r.id} admin={mode.kind === "admin"} meId={meId} onGone={() => setSelected(null)} />}
+              {selected === r.id && <ReportDetail client={client} node={node} id={r.id} admin={mode.kind === "admin"} forwardFrom={forwardFrom} meId={meId} onGone={() => setSelected(null)} />}
             </li>
           ))}
           {list.data?.reports.length === 0 && <li className="py-3 text-sm text-fg-2">{t("reports.none")}</li>}
@@ -126,7 +148,7 @@ export function ReportsInbox({ client, mode, meId }: { client: TavrnApi; mode: I
   );
 }
 
-function ReportDetail({ client, node, id, admin, meId, onGone }: { client: TavrnApi; node: string | null; id: string; admin: boolean; meId: string | undefined; onGone: () => void }) {
+function ReportDetail({ client, node, id, admin, forwardFrom, meId, onGone }: { client: TavrnApi; node: string | null; id: string; admin: boolean; forwardFrom: string | null; meId: string | undefined; onGone: () => void }) {
   const t = useT();
   const queryClient = useQueryClient();
   const q = useQuery({ queryKey: reportKeys.detail(node, id), queryFn: () => client.reports.get(id) });
@@ -138,7 +160,21 @@ function ReportDetail({ client, node, id, admin, meId, onGone }: { client: Tavrn
     <div className="space-y-3 rounded-md border border-line bg-bg-0 p-3 text-sm" data-testid="report-detail">
       <dl className="grid gap-x-3 gap-y-1 text-xs sm:grid-cols-[max-content_1fr]">
         <dt className="text-fg-2">{t("reports.field.reporter")}</dt>
-        <dd data-testid="report-reporter">{r.reporter ? `${r.reporter.display_name} (${r.reporter.address})` : t("reports.automod")}</dd>
+        <dd data-testid="report-reporter">
+          {r.reporter ? `${r.reporter.display_name} (${r.reporter.address})` : r.origin ? t("reports.pseudonymous_reporter", { pseudonym: r.origin.reporter, node: r.origin.node }) : t("reports.automod")}
+        </dd>
+        {r.origin && (
+          <>
+            <dt className="text-fg-2">{t("reports.field.origin")}</dt>
+            <dd data-testid="report-origin">{t("reports.origin_line", { node: r.origin.node, time: formatFullTime(r.origin.reported_at) })}</dd>
+          </>
+        )}
+        {r.forwarded && (
+          <>
+            <dt className="text-fg-2">{t("reports.field.forwarded")}</dt>
+            <dd data-testid="report-forwarded">{t("reports.forwarded_line", { node: r.forwarded.node, time: formatFullTime(r.forwarded.at), user: r.forwarded.by })}</dd>
+          </>
+        )}
         <dt className="text-fg-2">{t("reports.field.target")}</dt>
         <dd data-testid="report-target">{targetLine(r, t)}</dd>
         {placeLine(r, t) && (
@@ -204,6 +240,7 @@ function ReportDetail({ client, node, id, admin, meId, onGone }: { client: Tavrn
         </div>
       )}
       <ActionBar client={client} report={r} admin={admin} onDone={refresh} />
+      {forwardFrom && <ForwardBar client={client} report={r} ownDomain={forwardFrom} onDone={refresh} />}
       <Triage client={client} report={r} meId={meId} admin={admin} onDone={refresh} onDeleted={onGone} />
     </div>
   );
@@ -311,6 +348,42 @@ function ActionBar({ client, report, admin, onDone }: { client: TavrnApi; report
           setPending(null);
         }}
       />
+    </div>
+  );
+}
+
+/** "Forward to the user's home node" with a confirmation that says what leaves the node (MODERATION.md §1.6). */
+function ForwardBar({ client, report, ownDomain, onDone }: { client: TavrnApi; report: ModerationReport; ownDomain: string; onDone: () => void }) {
+  const t = useT();
+  const [confirm, setConfirm] = useState(false);
+  const home = forwardTarget(report, ownDomain);
+  if (!home) return null;
+  return (
+    <div className="space-y-2 border-t border-line pt-3" data-testid="report-forward-bar">
+      <p className="text-xs text-fg-2">{t("reports.forward_hint", { node: home })}</p>
+      <Button variant="ghost" className="shrink-0 whitespace-nowrap" onClick={() => setConfirm(true)} data-testid="report-forward">
+        ↗ {t("reports.forward")}
+      </Button>
+      {confirm && (
+        <ConfirmAction
+          title={t("reports.forward_confirm_title", { node: home })}
+          text={
+            <div className="space-y-2">
+              <p>{t("reports.forward_confirm_text", { node: home })}</p>
+              <p>{t("reports.forward_confirm_private")}</p>
+            </div>
+          }
+          action={t("reports.forward_action")}
+          danger={false}
+          onClose={() => setConfirm(false)}
+          onConfirm={async () => {
+            await client.reports.forward(report.id);
+            useToasts.getState().push({ kind: "info", title: t("reports.forward_done", { node: home }) });
+            onDone();
+          }}
+          testId="report-forward-confirm"
+        />
+      )}
     </div>
   );
 }

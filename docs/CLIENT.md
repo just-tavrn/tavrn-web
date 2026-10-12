@@ -911,6 +911,15 @@ the client shows them only for nodes that announce `reports.v1` and `automod.v1`
   report. The room header's chevron, "Room settings" in its menu and the tabs show the number of open reports; new
   reports arrive in the bell and as a toast (not while notifications are set to nothing or the room is muted), and as
   a web push while no tab is open ("Notifications").
+- **Forwarding to the home node** (protocol MODERATION.md §1.6, shown where the node announces `reports.v2`). In
+  Admin → Reports, a report by a member about a user of another node offers **"Forward to the user's home node"**:
+  only that node's admins can act on the account. A confirmation names the node and says what leaves this node (the
+  category, the reporter's text, the reported message or the released text) and what does not (the reporter's
+  address, which the other node sees only as a pseudonym, other people in the released text, notes, actions and the
+  room's name); the reporter is not told. A report is forwarded once; it then shows "Forwarded to \<node>" with time
+  and admin and stays in the inbox. Reports other nodes forwarded here are marked "Forwarded from \<node>", name the
+  reporter by their pseudonym and the original time, and offer the account actions (node ban, delete the person's
+  messages) but not the message ones (the content lives on the other node).
 - **Auto-moderation.** Room settings → **Auto-moderation** shows the node's flood protection and edits the room's
   content rules: words and phrases (one per line, `*` within a word, optionally whole words only), link filters (block
   all, allow only some domains, block some domains), exempt roles and channels, and the action (block, remove

@@ -36,6 +36,8 @@ export function AdminPage() {
   const sso = !!node.data?.capabilities?.includes("sso.oidc");
   // Reports (MODERATION.md) on nodes that announce them; the tab shows the open count.
   const reports = !!node.data?.capabilities?.includes("reports.v1");
+  // Forwarding reports about users of other nodes to their home node (MODERATION.md §1.6).
+  const forwardFrom = node.data?.capabilities?.includes("reports.v2") ? (user?.domain ?? null) : null;
   const tabs = TABS.filter((x) => (x !== "sso" || sso) && (x !== "reports" || reports));
   const openReports = badgeText(useOpenAdminReports(api, !!user?.is_node_admin && reports));
   if (!user?.is_node_admin) return <Navigate to="/" replace />;
@@ -68,7 +70,7 @@ export function AdminPage() {
           {tab === "users" && <UsersTab />}
           {tab === "invites" && <InvitesTab />}
           {tab === "bans" && <BansTab />}
-          {tab === "reports" && <ReportsInbox client={api} mode={{ kind: "admin" }} meId={user?.id} />}
+          {tab === "reports" && <ReportsInbox client={api} mode={{ kind: "admin", forwardFrom }} meId={user?.id} />}
           {tab === "entitlements" && <EntitlementsTab />}
           {tab === "tokens" && <ApiTokensTab />}
           {tab === "applications" && <ApplicationsTab />}
