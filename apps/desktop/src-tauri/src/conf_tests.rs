@@ -99,6 +99,8 @@ fn the_capability_grants_only_the_app_commands_to_the_main_window() {
             "allow-open-external",
             "allow-check-update",
             "allow-install-update",
+            "allow-get-update-channel",
+            "allow-set-update-channel",
             "allow-resolve-node",
             "allow-open-connect",
             "allow-close-connect",
@@ -155,6 +157,8 @@ fn the_android_capability_grants_only_the_app_commands_of_the_android_app() {
             "allow-app-info",
             "allow-open-external",
             "allow-resolve-node",
+            "allow-get-update-channel",
+            "allow-set-update-channel",
             "allow-open-connect",
             "allow-close-connect",
             "allow-notify",
@@ -292,10 +296,12 @@ fn version_and_identity() {
 }
 
 #[test]
-fn updates_come_from_the_github_releases_and_are_signed() {
+fn updates_come_from_the_websites_channel_feeds_and_are_signed() {
     let c = conf();
     let plugin = &c["plugins"]["updater"];
-    assert_eq!(plugin["endpoints"], serde_json::json!([updater::ENDPOINT]));
+    // The shell sets the endpoint of the chosen channel at every check (commands.rs); the configured one is stable's.
+    assert_eq!(plugin["endpoints"], serde_json::json!([updater::endpoint(updater::FEED_BASE, updater::Channel::Stable)]));
+    assert!(plugin.get("dangerousInsecureTransportProtocol").is_none(), "https only in release builds");
     let key = plugin["pubkey"].as_str().unwrap_or_default();
     assert!(key == updater::PLACEHOLDER || updater::pubkey_configured(key), "the pubkey is the owner's key or the marked placeholder");
     assert_eq!(c["bundle"]["createUpdaterArtifacts"], false, "updater artifacts only in the tagged release build (desktop.yml)");

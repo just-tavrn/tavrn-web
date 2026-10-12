@@ -10,6 +10,8 @@
     "allow-app-info",
     "allow-open-external",
     "allow-resolve-node",
+    "allow-get-update-channel",
+    "allow-set-update-channel",
     "allow-open-connect",
     "allow-close-connect",
     "allow-notify",

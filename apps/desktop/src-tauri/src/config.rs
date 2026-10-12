@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The app's settings in `<app config dir>/config.json` (Linux `~/.config/org.tavrn.desktop/`, Windows
 //! `%APPDATA%\org.tavrn.desktop\`): the home node chosen in the node picker, with its identity domain and the origin
-//! of its web client when they are known (delegation: both may differ from the node's URL), and "close to tray". A
+//! of its web client when they are known (delegation: both may differ from the node's URL), "close to tray" and the
+//! update channel (`updater.rs`). A
 //! missing, unreadable or corrupt file means "no settings" (the node picker asks again); a stored node that no longer
 //! passes the validation is dropped.
 
@@ -29,6 +30,10 @@ pub struct Config {
     /// Closing the window hides it into the tray; none: the platform's default (`tray::close_to_tray_default`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub close_to_tray: Option<bool>,
+    /// The update channel chosen in Settings → App (`stable` or `beta`); none: the default for this version
+    /// (`updater::Channel::default_for`). Any other value is dropped when the file is read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update_channel: Option<String>,
 }
 
 /// An identity domain worth storing: a node domain, or `localhost` (a development node).
@@ -49,6 +54,7 @@ pub fn load(path: &Path) -> Config {
     // The web origin and the domain belong to the node: without it they mean nothing.
     config.web = config.web.filter(|_| config.node.is_some()).and_then(|w| node_url::validate(&w).ok());
     config.domain = config.domain.filter(|d| config.node.is_some() && valid_identity_domain(d));
+    config.update_channel = config.update_channel.filter(|c| crate::updater::Channel::parse(c).is_some());
     config
 }
 
@@ -90,6 +96,7 @@ mod tests {
             web: Some("https://web.tavrn.example".into()),
             domain: Some("tavrn.example".into()),
             close_to_tray: Some(true),
+            update_channel: Some("beta".into()),
         };
         save(&path, &config)?;
         assert_eq!(load(&path), config);
@@ -126,6 +133,21 @@ mod tests {
         assert_eq!((c.web, c.domain), (None, None), "an invalid web origin or domain is dropped");
         fs::write(&path, r#"{"web": "https://web.tavrn.example", "domain": "tavrn.example"}"#)?;
         assert_eq!(load(&path), Config::default(), "nothing without a node");
+        fs::remove_dir_all(d)
+    }
+
+    #[test]
+    fn the_update_channel_is_kept_only_when_it_is_known() -> io::Result<()> {
+        let d = dir("channel");
+        fs::create_dir_all(&d)?;
+        let path = d.join(FILE_NAME);
+        fs::write(&path, r#"{"update_channel": "stable"}"#)?;
+        assert_eq!(load(&path).update_channel.as_deref(), Some("stable"), "a choice without a node is kept");
+        fs::write(&path, r#"{"node": "https://tavrn.example", "update_channel": "nightly"}"#)?;
+        let c = load(&path);
+        assert_eq!((c.node.as_deref(), c.update_channel), (Some("https://tavrn.example"), None), "an unknown channel is dropped");
+        save(&path, &Config::default())?;
+        assert!(!fs::read_to_string(&path)?.contains("update_channel"), "no choice, no field");
         fs::remove_dir_all(d)
     }
 }
