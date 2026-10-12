@@ -176,8 +176,8 @@ The file names the app and the SHA-256 fingerprint of its **release signing cert
 
 - `https://app.tavrn.org/.well-known/assetlinks.json`: the host of the App Links (the node's host; served by the reverse
   proxy in front of the node until the node serves it itself);
-- `https://tavrn.org/.well-known/assetlinks.json`: the relying party of the passkeys (the website,
-  tavrn-website `deploy/README.md`).
+- `https://tavrn.org/.well-known/assetlinks.json`: the relying party of the passkeys (the website answers it once its
+  variable `TAVRN_ANDROID_CERT_SHA256` holds the fingerprint; tavrn-website `deploy/README.md` "Android app").
 
 Both with `Content-Type: application/json`, status 200, no redirect. Android checks them at install; `adb shell pm
 get-app-links org.tavrn.app` shows the result.
@@ -237,7 +237,8 @@ Owner steps, once:
    `tavrn-release.jks.b64`), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`tavrn`), `ANDROID_KEY_PASSWORD`.
    Optional, recommended: the repository variable `ANDROID_CERT_SHA256` with the fingerprint, so a release signed with
    another key fails.
-3. Publish `assetlinks.json` with that fingerprint on `app.tavrn.org` and `tavrn.org` (above).
+3. Publish `assetlinks.json` with that fingerprint: `TAVRN_ANDROID_CERT_SHA256` in the website's stack (tavrn.org),
+   and the same document on `app.tavrn.org` from the reverse proxy in front of the node (above).
 4. Later, for Google Play: Play App Signing with this key as the upload key or the app signing key; the fingerprint
    in `assetlinks.json` must be the one Play signs with.
 
