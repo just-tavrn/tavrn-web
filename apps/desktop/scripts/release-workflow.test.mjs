@@ -168,3 +168,14 @@ test("macOS: GitHub-hosted, universal, unsigned, no key, never fails a release; 
   assert.match(code(signer), /macos=built\/macos/);
   assert.match(code(signer), /for f in installers\/\*\.msi installers\/\*-setup\.exe installers\/\*\.app\.tar\.gz; do/);
 });
+
+
+test("macOS checkout disables credential helpers, has a short timeout and precedes dependency URL rewrites", () => {
+  const steps = code(desktop.jobs.macos).split(/\n(?= {6}- )/);
+  const helper = steps.findIndex((s) => /git config --global credential\.helper ''/.test(s));
+  const checkout = steps.findIndex((s) => /actions\/checkout@/.test(s));
+  const auth = steps.findIndex((s) => /insteadOf/.test(s));
+  assert.ok(helper >= 0 && helper < checkout && checkout < auth);
+  assert.match(steps[checkout], /timeout-minutes: 5/);
+  assert.match(steps[checkout], /persist-credentials: false/);
+});
