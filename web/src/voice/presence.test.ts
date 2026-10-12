@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { beforeEach, describe, expect, it } from "vitest";
 import type { VoiceParticipant } from "@tavrn/sdk";
-import { channelKey, participantsOf, useVoicePresence, voiceChannelOfUser } from "./presence";
+import { channelKey, participantsOf, screensOf, useVoicePresence, voiceChannelOfUser } from "./presence";
 
 function p(user: string, extra: Partial<VoiceParticipant> = {}): VoiceParticipant {
   const device = `D${user.length}`;
@@ -24,6 +24,29 @@ describe("voice presence store (VOICE.md §5)", () => {
     expect(useVoicePresence.getState().channels[channelKey("n.example", "C")]).toBeUndefined();
     // A stable empty list (no re-render loops in selectors).
     expect(participantsOf(useVoicePresence.getState(), "n.example", "C")).toBe(participantsOf(useVoicePresence.getState(), "n.example", "X"));
+  });
+
+  it("keeps screen publishers apart from the people of a channel (VOICE.md §4b)", () => {
+    const s = useVoicePresence.getState();
+    const alice = p("alice", { streaming: true });
+    const screen = p("alice", { identity: `${alice.identity}#screen`, screen_of: alice.identity, muted: true, streaming: true });
+    s.apply("n.example", { room_id: "R", channel_id: "C", epoch: 1, participants: [alice, screen, p("bob")] });
+    const now = useVoicePresence.getState();
+    expect(participantsOf(now, "n.example", "C").map((x) => x.identity)).toEqual([alice.identity, p("bob").identity]);
+    expect(screensOf(now, "n.example", "C").map((x) => x.identity)).toEqual([screen.identity]);
+    expect(voiceChannelOfUser(now, "n.example", "R", "U-alice")).toBe("C");
+    // The share ends: the screen list goes, the people stay.
+    s.apply("n.example", { room_id: "R", channel_id: "C", epoch: 1, participants: [alice, p("bob")] });
+    expect(screensOf(useVoicePresence.getState(), "n.example", "C")).toEqual([]);
+    expect(participantsOf(useVoicePresence.getState(), "n.example", "C")).toHaveLength(2);
+    // Seeds split the same way; a deleted channel takes its screens along.
+    s.seedRoom("n.example", "R", [{ room_id: "R", channel_id: "C", epoch: 1, participants: [alice, screen] }]);
+    expect(screensOf(useVoicePresence.getState(), "n.example", "C")).toHaveLength(1);
+    s.seedAll("n.example", [{ room_id: "R", channels: [{ room_id: "R", channel_id: "C", epoch: 1, participants: [alice, screen] }] }]);
+    expect(participantsOf(useVoicePresence.getState(), "n.example", "C")).toHaveLength(1);
+    expect(screensOf(useVoicePresence.getState(), "n.example", "C")).toHaveLength(1);
+    s.removeChannel("n.example", "C");
+    expect(screensOf(useVoicePresence.getState(), "n.example", "C")).toEqual([]);
   });
 
   it("keeps channels of different nodes apart", () => {

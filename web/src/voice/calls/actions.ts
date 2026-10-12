@@ -62,7 +62,9 @@ function presence(domain: string, call: CallState) {
 
 /** Applies a call state (`call.update` or `GET …/call`). */
 export function applyCall(domain: string, call: CallState): void {
-  useCalls.getState().set((s) => onUpdate(s, domain, call, me()));
+  // Screen publishers (VOICE.md §4b) are their device's stream: the call's people are counted without them.
+  const people = call.participants.some((p) => p.screen_of) ? { ...call, participants: call.participants.filter((p) => !p.screen_of) } : call;
+  useCalls.getState().set((s) => onUpdate(s, domain, people, me()));
   presence(domain, call);
 }
 

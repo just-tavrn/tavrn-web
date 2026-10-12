@@ -654,6 +654,18 @@ The sharer has no permanent self view: their share shows as a preview tile they 
 themselves in the member list brings it back), and a small "You are streaming" bar on the stage offers **Show
 preview** / **Hide preview** and **Stop**.
 
+In the Android app the screen is shared natively (the webview cannot): the same button opens a dialog with the
+resolution, the frame rate and "Share the sound of other apps too" (off by default, Android 10 and newer), then
+Android asks for its consent and the whole screen is shared until the user stops it in the "You are streaming" bar,
+with the voice controls' button, or with **Stop sharing** in the notification Android shows meanwhile. The app
+publishes the screen as the device's *screen publisher* (VOICE.md §4b), a second participant `<device>#screen` the
+node lists with `screen_of`: everybody else sees it exactly like a browser's share, a stream tile under the sharer's
+name that is joined on demand; it never shows up as a person of its own (no row, no tile, no count, no join cue), and
+the sharer's own app shows no tile of it (the bar has no preview toggle then). It ends with the sharer's voice
+session. Phones that watch are unchanged. Code: `web/src/voice/nativeScreen.ts` (start, keys, stop), the stream
+mapping in `streams.ts` (`screenOwner`, `publisherStreams`, `streamIdentity`) and the presence store, which keeps
+screen publishers apart from the people of a channel (`screensOf`); docs/ANDROID.md "Screen sharing".
+
 The whiteboard of a voice channel (one per channel, "The whiteboard" below) is joined the same way. It is a tile of
 its own next to the participants, never on the presenter's tile: every camera tile, the presenter's included, stays
 as it is. Before joining the tile shows the board badge, "Whiteboard · <who started it>", the presenter's live

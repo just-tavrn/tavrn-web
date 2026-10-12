@@ -111,6 +111,55 @@ export class StreamSubscriptions {
   }
 }
 
+/**
+ * Screen publishers (VOICE.md §4b): a device may publish its screen as a second participant `<identity>#screen` (the
+ * Android app, whose webview cannot share the screen). The node lists it with `screen_of` = the device's identity;
+ * LiveKit names it by the suffix alone, also before the node reported it. It is that device's stream, never a
+ * participant of its own.
+ */
+export const SCREEN_SUFFIX = "#screen";
+
+/** The device a screen publisher's identity belongs to, or null for a device's own identity. */
+export function screenOwner(identity: string): string | null {
+  return identity.endsWith(SCREEN_SUFFIX) && identity.length > SCREEN_SUFFIX.length ? identity.slice(0, -SCREEN_SUFFIX.length) : null;
+}
+
+/** A stream of another device's screen publisher, shown under that device's user. */
+export interface PublisherStream {
+  /** The screen publisher's identity (its LiveKit participant). */
+  identity: string;
+  /** The device it belongs to. */
+  owner: string;
+}
+
+/**
+ * The screen publishers of the call to show as streams: the node's (`screen_of`) and those LiveKit already
+ * connected (by the suffix), each once, never this device's own (its sharer sees the "You are streaming" bar, and
+ * the publisher sends nothing back to its own device).
+ */
+export function publisherStreams(nodeScreens: ReadonlyArray<{ identity: string; screen_of?: string | null }>, livekitIdentities: Iterable<string>, self: string | null): PublisherStream[] {
+  const out = new Map<string, PublisherStream>();
+  for (const p of nodeScreens) {
+    const owner = p.screen_of ?? screenOwner(p.identity);
+    if (owner && owner !== self) out.set(p.identity, { identity: p.identity, owner });
+  }
+  for (const identity of livekitIdentities) {
+    const owner = screenOwner(identity);
+    if (owner && owner !== self && !out.has(identity)) out.set(identity, { identity, owner });
+  }
+  return [...out.values()];
+}
+
+/**
+ * The identity whose stream a viewer joins for `identity` (a member row names the device): the device's own share
+ * if it publishes one, else its screen publisher's when that shares.
+ */
+export function streamIdentity(identity: string, sharing: (identity: string) => boolean): string {
+  if (sharing(identity) || screenOwner(identity)) return identity;
+  const publisher = identity + SCREEN_SUFFIX;
+  return sharing(publisher) ? publisher : identity;
+}
+
 /** What a double-click (or Enter) on a member of the voice member list does. */
 export type RowStreamAction = "join" | "preview" | "hint" | null;
 

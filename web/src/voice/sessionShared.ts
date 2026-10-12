@@ -17,17 +17,28 @@ export interface Endpoints {
   join: (start: boolean) => Promise<JoinInfo>;
   leave: () => Promise<unknown>;
   updateState: (patch: VoiceStatePatch) => Promise<unknown>;
+  /** This device's screen publisher (VOICE.md §4b, the Android app): its join and its leave. */
+  joinScreen: () => Promise<JoinInfo>;
+  leaveScreen: () => Promise<unknown>;
 }
 
 export function endpoints(api: TavrnApi, target: VoiceTarget): Endpoints {
   if (target.call) {
     const id = target.channelId;
-    return { join: (start) => (start ? api.calls.start(id) : api.calls.join(id)), leave: () => api.calls.leave(id), updateState: (patch) => api.calls.updateState(id, patch) };
+    return {
+      join: (start) => (start ? api.calls.start(id) : api.calls.join(id)),
+      leave: () => api.calls.leave(id),
+      updateState: (patch) => api.calls.updateState(id, patch),
+      joinScreen: () => api.calls.join(id, "screen"),
+      leaveScreen: () => api.calls.leave(id, "screen"),
+    };
   }
   return {
     join: () => api.voice.join(target.roomId, target.channelId),
     leave: () => api.voice.leave(target.roomId, target.channelId),
     updateState: (patch) => api.voice.updateState(target.roomId, target.channelId, patch),
+    joinScreen: () => api.voice.join(target.roomId, target.channelId, "screen"),
+    leaveScreen: () => api.voice.leave(target.roomId, target.channelId, "screen"),
   };
 }
 

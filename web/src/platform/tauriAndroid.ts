@@ -16,6 +16,9 @@ import { createAndroidUnlock } from "./unlock";
 import type {
   AppUpdater,
   AndroidInsets,
+  AndroidScreenEvent,
+  AndroidScreenShare,
+  AndroidScreenStopReason,
   AndroidStatus,
   AudioRoutes,
   PlatformAndroid,
@@ -119,6 +122,37 @@ export function createAndroidSaveFile(call: ShellCall = invoke): SaveFile {
   };
 }
 
+const STOP_REASONS: readonly AndroidScreenStopReason[] = ["stopped", "notification", "revoked", "failed"];
+
+/**
+ * Screen sharing through the shell (docs/ANDROID.md "Screen sharing", `ScreenShare.kt`): the screen publisher's token
+ * and this device's frame key go to the native side, which asks Android's consent and publishes the screen. The key
+ * crosses the local bridge only (as 32 numbers, checked by the shell); the shell's answers are error codes.
+ */
+export function androidScreenShare(events: ShellEvents, sdk: number, call: ShellCall = invoke): AndroidScreenShare {
+  return {
+    // AudioPlaybackCapture: Android 10 and newer.
+    audio: sdk >= 29,
+    start: async (a) => {
+      await call("android_screen_share_start", {
+        share: { url: a.url, token: a.token, key: Array.from(a.key), epoch: a.epoch, max_side: a.maxSide, fps: a.fps, max_bitrate: a.maxBitrate, audio: a.audio, title: a.notice.title, text: a.notice.text, stop: a.notice.stop },
+      });
+    },
+    setKey: async (key, epoch) => {
+      await call("android_screen_share_key", { key: Array.from(key), epoch });
+    },
+    stop: async () => {
+      await call("android_screen_share_stop");
+    },
+    onEvent: (fn) =>
+      events.on((e) => {
+        if (e.kind !== "screen_share") return;
+        const event: AndroidScreenEvent | null = e.state === "live" ? { state: "live" } : e.state === "stopped" ? { state: "stopped", reason: e.reason && STOP_REASONS.includes(e.reason) ? e.reason : "stopped" } : null;
+        if (event) fn(event);
+      }),
+  };
+}
+
 export interface AndroidMembers {
   saveFile: SaveFile;
   updater: AppUpdater;
@@ -169,6 +203,7 @@ export function androidMembers(events: ShellEvents, initial: AndroidStatus): And
       onRoutes: (fn) => on((e) => (e.kind === "audio_routes" ? { available: e.available ?? [], current: e.current ?? null } : undefined), fn),
     },
     lockOrientation: (orientation) => invoke<void>("android_orientation", { lock: orientation }),
+    screenShare: androidScreenShare(events, initial.sdk),
   };
 
   const notifications: PlatformNotifications = {

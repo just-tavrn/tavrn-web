@@ -529,6 +529,48 @@ export interface AndroidAudio {
 }
 
 /** The Android app's own pieces (`platform/tauriAndroid.ts`). */
+/** What the Android app's screen share is given to publish (VOICE.md §4b; `android_screen_share_start`). */
+export interface AndroidScreenShareStart {
+  /** The screen publisher's join answer: LiveKit URL and token (`voice/join` with `role: "screen"`). */
+  url: string;
+  token: string;
+  /** This device's frame key of `epoch` (32 bytes, ENCRYPTION.md §5a): the publisher encrypts with it. */
+  key: Uint8Array;
+  epoch: number;
+  /** The capture's size (the longer side; Android keeps the screen's aspect ratio), frame rate and bitrate. */
+  maxSide: number;
+  fps: number;
+  maxBitrate: number;
+  /** The sound of other apps too (Android 10+, `AndroidScreenShare.audio`). */
+  audio: boolean;
+  /** The notification while sharing, in the client's language. */
+  notice: { title: string; text: string; stop: string };
+}
+
+/** The Android app's screen share stopped: the user (`stop`), the notification's button, Android, or an error. */
+export type AndroidScreenStopReason = "stopped" | "notification" | "revoked" | "failed";
+
+/** An event of the screen share (the shell's `screen_share` event). */
+export type AndroidScreenEvent = { state: "live" } | { state: "stopped"; reason: AndroidScreenStopReason };
+
+/**
+ * The Android app's screen share (docs/ANDROID.md "Screen sharing"): Android's MediaProjection published by the
+ * native LiveKit SDK as this device's screen publisher, because the webview cannot share the screen.
+ */
+export interface AndroidScreenShare {
+  /** The sound of other apps can be shared too (Android 10 and newer). */
+  readonly audio: boolean;
+  /**
+   * Asks Android's consent, starts the foreground service and connects; resolves once the screen is published.
+   * Rejects with `screen.cancelled` (the user declined), `screen.busy` (already sharing) or `screen.failed`.
+   */
+  start(args: AndroidScreenShareStart): Promise<void>;
+  /** The frame key of a new epoch (sent as soon as this device derived it). */
+  setKey(key: Uint8Array, epoch: number): Promise<void>;
+  stop(): Promise<void>;
+  onEvent(fn: (event: AndroidScreenEvent) => void): () => void;
+}
+
 export interface PlatformAndroid {
   /** The Android API level at start. */
   readonly sdk: number;
@@ -564,4 +606,6 @@ export interface PlatformAndroid {
    * API here): only while an element is in fullscreen; null releases the lock.
    */
   lockOrientation(orientation: string | null): Promise<void>;
+  /** Screen sharing through the native side (absent in shells without it). */
+  screenShare?: AndroidScreenShare;
 }

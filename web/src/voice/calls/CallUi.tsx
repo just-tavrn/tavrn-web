@@ -19,14 +19,15 @@ import { apiFor, connectNode, isHome } from "../../stores/nodes";
 import { splitIdentity } from "@tavrn/e2ee";
 import { cueEngine, startRingtone } from "../cues";
 import { leaveVoice, stopScreenShare, toggleCamera, toggleDeafen, toggleMute } from "../index";
-import { participantsOf, useVoicePresence } from "../presence";
+import { participantsOf, screensOf, useVoicePresence } from "../presence";
+import { screenOwner } from "../streams";
 import { useVoice } from "../store";
 import { AvatarTile } from "../ui/AvatarTile";
 import { ControlButton } from "../ui/VoiceBar";
 import { ScreenShareDialog } from "../ui/VoiceControls";
 import { useVoiceDeviceMenu } from "../ui/VoiceDeviceMenu";
 import { AudioRouteButton } from "../ui/AudioRouteButton";
-import { ParticipantTile, useIsPhone, type Tile } from "../ui/VoiceStage";
+import { ParticipantTile, publisherTiles, useIsPhone, type Tile } from "../ui/VoiceStage";
 import { ScreenTile, StreamingIndicator } from "../ui/ScreenTile";
 import { HeadphonesIcon, HeadphonesOffIcon, MicIcon, MicOffIcon, MinimizeIcon, PhoneIcon, PhoneOffIcon, ScreenIcon, VideoIcon } from "../ui/icons";
 import { StageGrid } from "../ui/StageGrid";
@@ -239,9 +240,13 @@ function useDuration(since: string | null | undefined): string {
   return `${m}:${String(secs % 60).padStart(2, "0")}`;
 }
 
-/** Tiles of the call: the node's participants, plus devices LiveKit already connected (own included). */
-function useCallTiles(domain: string, conversationId: string, conv: Conversation | undefined): Tile[] {
+/**
+ * Tiles of the call: the node's participants, plus devices LiveKit already connected (own included); and the stream
+ * tiles of other devices' screen publishers (VOICE.md §4b).
+ */
+function useCallTiles(domain: string, conversationId: string, conv: Conversation | undefined): { tiles: Tile[]; publishers: Tile[] } {
   const participants = useVoicePresence((s) => participantsOf(s, domain, conversationId));
+  const screenPublishers = useVoicePresence((s) => screensOf(s, domain, conversationId));
   const identity = useVoice((s) => s.identity);
   const media = useVoice((s) => s.media);
   const self = useVoice(useShallow((s) => ({ muted: s.muted, deafened: s.deafened, serverMuted: s.serverMuted, camera: s.camera, screen: s.screen })));
@@ -272,9 +277,10 @@ function useCallTiles(domain: string, conversationId: string, conv: Conversation
       seen.add(p.identity);
       add(p.identity, p.user, p);
     }
-    for (const id of Object.keys(media)) if (!seen.has(id)) add(id, splitIdentity(id).address, null);
-    return out;
-  }, [participants, media, identity, self.muted, self.deafened, self.camera, self.screen, conv]);
+    for (const id of Object.keys(media)) if (!seen.has(id) && !screenOwner(id)) add(id, splitIdentity(id).address, null);
+    const publishers = publisherTiles(screenPublishers, Object.keys(media), identity, (address) => ({ name: nameOf(conv, address), user: user(address) }));
+    return { tiles: out, publishers };
+  }, [participants, screenPublishers, media, identity, self.muted, self.deafened, self.camera, self.screen, conv]);
 }
 
 /** The own call: tiles and controls; full screen on phones, a large panel on desktop; minimizable. */
@@ -288,14 +294,15 @@ function ActiveCall() {
   const conversationId = target?.channelId ?? "";
   const conv = useConversation(domain, conversationId, !!target);
   const call = useCalls((s) => (target ? s.calls[callKey(domain, conversationId)] : undefined));
-  const tiles = useCallTiles(domain, conversationId, conv.data);
+  const { tiles, publishers } = useCallTiles(domain, conversationId, conv.data);
   const media = useVoice((s) => s.media);
   const focus = useVoice((s) => s.focus);
   const limits = useVoice((s) => s.limits);
   const muted = useVoice((s) => s.muted);
   const deafened = useVoice((s) => s.deafened);
   const camera = useVoice((s) => s.camera);
-  const screen = useVoice((s) => s.screen);
+  // The webview's own share, or the Android app's through the shell (VOICE.md §4b).
+  const screen = useVoice((s) => s.screen || s.nativeScreen !== null);
   const selfPreview = useVoice((s) => s.selfPreview);
   const phone = useIsPhone();
   const [screenOpen, setScreenOpen] = useState(false);
@@ -314,7 +321,7 @@ function ActiveCall() {
     ) : null;
   }
   // Streams are joined (a placeholder until then); the own share only while its preview is shown.
-  const screens = tiles.filter((x) => media[x.identity]?.screen && (!x.self || selfPreview));
+  const screens = [...tiles, ...publishers].filter((x) => media[x.identity]?.screen && (!x.self || selfPreview));
   const focused = focus ? screens.find((x) => x.identity === focus) : undefined;
   const toggleFocus = (id: string) => useVoice.setState((s) => ({ focus: s.focus === id ? null : id }));
   const ringing = call?.ringing ?? [];

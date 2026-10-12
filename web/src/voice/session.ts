@@ -67,7 +67,8 @@ import { PttCues } from "./pttCues";
 import { CaptureRelease } from "./capture";
 import type { BackgroundHandle } from "./background";
 import { endpoints, followOthers as followOthersOf, type Endpoints, type JoinInfo } from "./sessionShared";
-import { StreamSubscriptions } from "./streams";
+import { StreamSubscriptions, streamIdentity } from "./streams";
+import { NativeScreenShare, NoFrameKeyError } from "./nativeScreen";
 
 /** LiveKit must confirm encryption for this device within this time, else nothing is published. */
 const E2EE_CONFIRM_MS = 10_000;
@@ -113,6 +114,8 @@ interface Session {
   signals: SignalLimiter;
   /** The streams this device joined and the subscriptions that follow (screen shares are opt-in). */
   streams: StreamSubscriptions;
+  /** The Android app's screen share through the shell (VOICE.md §4b); null elsewhere. */
+  nativeScreen: NativeScreenShare | null;
 }
 
 interface Tap {
@@ -394,6 +397,8 @@ async function rekey(s: Session) {
   const vk = s.mls.voiceKey(s.q);
   if (!vk) return;
   try {
+    // The Android app's screen publisher encrypts with this device's key too (VOICE.md §4b): it gets every epoch's.
+    if (s.nativeScreen?.active) void s.nativeScreen.rekey({ key: vk.key.slice(), epoch: vk.epoch }).catch(() => undefined);
     await s.keyProvider.setEpochKey(vk.key, vk.epoch);
   } finally {
     vk.key.fill(0);
@@ -585,6 +590,8 @@ async function switchCamera(s: Session, next: VoiceSettings) {
 
 async function cleanup(s: Session) {
   s.leaving = true;
+  // The screen publisher ends with the voice session (the node also removes it with this device).
+  void s.nativeScreen?.dispose();
   s.capture.close();
   s.offs.forEach((off) => off());
   s.offs = [];
@@ -760,7 +767,9 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
           if (current === s) set({ streams: Object.fromEntries([...joined].map((id) => [id, true as const])) });
         },
       ),
+      nativeScreen: null,
     };
+    s.nativeScreen = nativeScreenFor(s);
     current = s;
     s.pipeline.onPtt = (open) => s.pttCues.mic(open);
     if (s.pttHeld) applyPtt(s);
@@ -980,11 +989,48 @@ export interface ScreenShareOptions {
   fps: number;
 }
 
-/** Joins the stream (screen share) of `identity`: its video and audio are received from now on. */
+/**
+ * Joins the stream (screen share) of `identity`: its video and audio are received from now on. A member's device
+ * whose screen publisher shares (the Android app, VOICE.md §4b) has its stream joined there.
+ */
 export function joinStream(identity: string): void {
   const s = current;
   if (!s || identity === s.room.localParticipant.identity) return;
-  if (s.streams.join(identity)) refreshMedia(s);
+  const target = streamIdentity(identity, (id) => !!useVoice.getState().media[id]?.screen);
+  if (s.streams.join(target)) refreshMedia(s);
+}
+
+/** The Android app's screen share for this session (`nativeScreen.ts`), when the shell offers it. */
+function nativeScreenFor(s: Session): NativeScreenShare | null {
+  const shell = platform().android?.screenShare;
+  if (!shell) return null;
+  return new NativeScreenShare({
+    shell,
+    join: () => s.ep.joinScreen(),
+    leave: () => s.ep.leaveScreen(),
+    key: () => s.mls.voiceKey(s.q),
+    notice: () => ({ title: t("voice.screen.notice_title"), text: t("voice.screen.notice_text"), stop: t("voice.screen.notice_stop") }),
+    onState: (state, reason) => {
+      if (current !== s) return;
+      const before = useVoice.getState().nativeScreen;
+      set({ nativeScreen: state });
+      if (state === "live" && before !== "live") cue("stream_on", true);
+      if (state === null && before === "live") cue("stream_off", true);
+      if (reason === "failed") useToasts.getState().push({ kind: "warning", title: t("voice.screen.native_failed") });
+    },
+  });
+}
+
+/** The Android app's screen share: start (Android asks for consent) or stop it. */
+async function setNativeScreenShare(s: Session, native: NativeScreenShare, on: boolean, opts: ScreenShareOptions): Promise<void> {
+  if (!on) return native.stop();
+  try {
+    await native.start(opts, s.info.limits.screenshare);
+  } catch (e) {
+    // The user declined Android's dialog: nothing to report.
+    if (e === "screen.cancelled") return;
+    useToasts.getState().push({ kind: "warning", title: e instanceof NoFrameKeyError ? voiceErrorMessage(new VoiceError("e2ee_failed")) : typeof e === "string" ? t("voice.screen.native_failed") : voiceErrorMessage(e) });
+  }
 }
 
 /** Leaves the stream of `identity` again: nothing of it is received, its tile is a placeholder. */
@@ -1001,6 +1047,8 @@ export async function setScreenShare(on: boolean, opts: ScreenShareOptions = { a
   if (!s) return;
   const limit = s.info.limits.screenshare;
   if (on && !limit.enabled) return;
+  // The Android app: the webview cannot share the screen, the shell's screen publisher does (VOICE.md §4b).
+  if (s.nativeScreen) return setNativeScreenShare(s, s.nativeScreen, on, opts);
   try {
     if (on) {
       const order = ["720p", "1080p", "1440p", "4k"];
@@ -1176,6 +1224,48 @@ interface TestHooks {
   /** Simulates a broken connection: the room goes away without the user leaving, the client rejoins. */
   drop: () => Promise<void>;
 }
+
+/** The publisher a development build plays for the simulated Android shell (`fakeScreenPublisher`). */
+interface FakeScreenPublisher {
+  setKey(key: number[], epoch: number): Promise<unknown>;
+  stop(): Promise<void>;
+}
+
+/**
+ * Development builds only: what the Android app's native screen publisher does (`ScreenShare.kt`, VOICE.md §4b),
+ * played in the page for the Playwright fake of the shell (e2e/tests/android-helpers.ts): a second LiveKit
+ * connection with the screen publisher's token that encrypts with the frame key the client handed over and
+ * publishes a moving canvas as the screen share.
+ */
+async function fakeScreenPublisher(a: { url: string; token: string; key: number[]; epoch: number }): Promise<FakeScreenPublisher> {
+  const keyProvider = new TavrnKeyProvider();
+  await keyProvider.setEpochKey(new Uint8Array(a.key), a.epoch);
+  const room = new Room({ encryption: { keyProvider, worker: new E2EEWorker() } });
+  await room.setE2EEEnabled(true);
+  await room.connect(a.url, a.token, { autoSubscribe: false });
+  await confirmE2ee(room);
+  const canvas = document.createElement("canvas");
+  canvas.width = 640;
+  canvas.height = 360;
+  const g = canvas.getContext("2d")!;
+  let hue = 0;
+  const timer = setInterval(() => {
+    g.fillStyle = `hsl(${(hue += 7) % 360} 60% 40%)`;
+    g.fillRect(0, 0, canvas.width, canvas.height);
+  }, 100);
+  const track = canvas.captureStream(10).getVideoTracks()[0]!;
+  await room.localParticipant.publishTrack(track, { source: Track.Source.ScreenShare, videoCodec: "vp8" });
+  return {
+    setKey: (key, epoch) => keyProvider.setEpochKey(new Uint8Array(key), epoch),
+    stop: async () => {
+      clearInterval(timer);
+      track.stop();
+      await room.disconnect();
+    },
+  };
+}
+
+if (import.meta.env.DEV) (window as { __tavrnFakeScreenPublisher?: typeof fakeScreenPublisher }).__tavrnFakeScreenPublisher = fakeScreenPublisher;
 
 /** Development builds only: lets the Playwright specs check encryption and speaking via the SDK. */
 function exposeForTests(s: Session) {

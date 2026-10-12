@@ -104,4 +104,18 @@ describe("the sharer's indicator", () => {
     expect(stopScreenShare).toHaveBeenCalled();
     view.unmount();
   });
+
+  it("shows the Android app's share once it is live, with Stop and without a preview (VOICE.md §4b)", () => {
+    const view = render(<StreamingIndicator />);
+    act(() => useVoice.setState({ nativeScreen: "starting" }));
+    expect(screen.queryByTestId("streaming-indicator")).toBeNull();
+    act(() => useVoice.setState({ nativeScreen: "live" }));
+    const bar = screen.getByTestId("streaming-indicator");
+    expect(bar).toHaveAttribute("data-native", "true");
+    expect(bar).toHaveTextContent("Du streamst");
+    expect(within(bar).queryByTestId("stream-preview-toggle")).toBeNull();
+    fireEvent.click(within(bar).getByRole("button", { name: "Teilen beenden" }));
+    expect(stopScreenShare).toHaveBeenCalled();
+    view.unmount();
+  });
 });
