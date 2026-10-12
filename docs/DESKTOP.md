@@ -889,10 +889,11 @@ shows the client under test; the app gets its own `XDG_CONFIG_HOME`, always on x
   both directions with a second user (Chromium, the node's own web client), checked to be ciphertext on the node; an
   encrypted image in the media viewer; voice with Chromium's fake microphone (the other side sees the app speaking); the
   fake camera (the other side sees the video); a screen share through the shell's picker (the axe gate, WCAG 2.2 AA, on
-  the picker window; the first source; the other side sees the share); push-to-talk on the left Ctrl alone, pressed
-  through the X server with xdotool while the second user's Chromium window has the X focus (the app transmits, and its
-  page itself receives no key event); close to tray (the call stays) and restore by starting the app again (against a
-  package only the restore: closing the window needs its main process, out of reach there); quit through the shell.
+  the picker window; the first source; the other side joins the stream, as shares are opt-in, and sees it);
+  push-to-talk on the left Ctrl alone, pressed through the X server with xdotool while the second user's Chromium window
+  has the X focus (the app transmits, and its page itself receives no key event); close to tray (the call stays) and
+  restore by starting the app again (against a package only the restore: closing the window needs its main process, out
+  of reach there); quit through the shell.
   `E2E_ELECTRON_PARTIAL=1` turns the steps whose part of the shell a branch lacks (the sign-in window, the picker, the
   tray) into notes instead of failures; CI never sets it. An AppImage runs with `APPIMAGE_EXTRACT_AND_RUN=1` (no FUSE).
 
