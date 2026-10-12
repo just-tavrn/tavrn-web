@@ -264,10 +264,12 @@ jobs:
           pnpm --filter @tavrn/desktop-electron test
           scripts/check-spdx.sh
           node scripts/check-js-licenses.mjs
-      - name: Key listener module (fmt, clippy, cargo deny, napi build, node test under xvfb)
+      - name: Key listener module (fmt, clippy, cargo deny, napi build, crate and node tests under xvfb)
         working-directory: apps/desktop-electron/native/keywatch
         run: |
-          (cd ../../../desktop/crates/keywatch && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked)
+          # Under xvfb-run the crate's X11 tests run too (the abstract-socket fallback, RECORD with xdotool); without a
+          # display they skip themselves.
+          (cd ../../../desktop/crates/keywatch && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && xvfb-run -a cargo test --locked)
           cargo fmt --check
           cargo clippy --all-targets --locked -- -D warnings
           cargo deny check
