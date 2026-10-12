@@ -11,7 +11,7 @@ const detached = () => document.implementation.createHTMLDocument("app");
 
 type Calls = Array<{ cmd: string; args: unknown }>;
 
-function backend(state: { node: string | null; web?: string | null; domain?: string | null; updater?: boolean; update?: unknown; updateError?: string; updateChannel?: string; channel?: Channel<HotkeyEvent> }): Calls {
+function backend(state: { node: string | null; web?: string | null; domain?: string | null; updater?: boolean; update?: unknown; updateError?: string; updateChannel?: string; channel?: Channel<HotkeyEvent>; events?: Channel<unknown> }): Calls {
   const calls: Calls = [];
   mockWindows("main");
   mockIPC((cmd, args) => {
@@ -58,6 +58,11 @@ function backend(state: { node: string | null; web?: string | null; domain?: str
         return null;
       case "set_hotkeys_enabled":
         return (args as { enabled: boolean }).enabled;
+      case "shell_events":
+        state.events = (args as { onEvent: Channel<unknown> }).onEvent;
+        return null;
+      case "games_watch":
+        return true;
     }
     throw `unknown command ${cmd}`;
   });
@@ -303,6 +308,21 @@ describe("global hotkeys (platform.hotkeys)", () => {
       { action: "push_to_talk", pressed: false },
     ]);
     expect(other).toHaveBeenCalledTimes(3);
+  });
+
+  it("game activity: the list goes to the shell, the listed game in front comes back", async () => {
+    const state: Parameters<typeof backend>[0] = { node: "https://tavrn.example" };
+    const calls = backend(state);
+    const p = await createTauriPlatform(detached());
+    const seen: Array<string | null> = [];
+    p.games!.onGame((name) => seen.push(name));
+    await expect(p.games!.watch([{ process: "factorio", name: "Factorio" }])).resolves.toBe(true);
+    expect(calls.find((c) => c.cmd === "games_watch")?.args).toEqual({ entries: [{ process: "factorio", name: "Factorio" }] });
+    await vi.waitFor(() => expect(state.events).toBeDefined());
+    state.events!.onmessage({ kind: "game", name: "Factorio" });
+    state.events!.onmessage({ kind: "game", name: null });
+    state.events!.onmessage({ kind: "game", name: 42 });
+    expect(seen).toEqual(["Factorio", null, null]);
   });
 
   it("the browser has no global hotkeys", async () => {

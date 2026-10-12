@@ -58,6 +58,8 @@ export interface Platform {
    * the shell; `DeepLinkPrompt` shows their target before anything happens (docs/DESKTOP.md "Links into the app").
    */
   readonly links?: PlatformLinks;
+  /** Desktop: game activity, opt-in ("Playing <game>" from the program in front, docs/DESKTOP.md "Game activity"). */
+  readonly games?: PlatformGames;
   /** Android: permissions, the back gesture, the system bars, push without Google (docs/ANDROID.md). */
   readonly android?: PlatformAndroid;
   /**
@@ -73,6 +75,20 @@ export interface Platform {
 export interface PlatformLinks {
   /** Every link that opened the app from now on, and those that waited for the client; returns the unsubscriber. */
   subscribe(fn: (url: string) => void): () => void;
+}
+
+/** An entry of the game list: the process name the shell looks for and the name others see. */
+export interface GameEntry {
+  process: string;
+  name: string;
+}
+
+/** The shell's watch for the listed game in front (`games.rs`, the Electron shell's `games.ts`). */
+export interface PlatformGames {
+  /** Watches for these games (an empty list stops); answers whether this system can tell the program in front at all. */
+  watch(entries: GameEntry[]): Promise<boolean>;
+  /** The listed game in front changed (null: none any more); returns the unsubscriber. */
+  onGame(fn: (name: string | null) => void): () => void;
 }
 
 /** WebAuthn JSON as the node sends and expects it (PROTOCOL.md §5a.4). */

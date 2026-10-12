@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-games-watch"
+description = "Enables the games_watch command without any pre-configured scope."
+commands.allow = ["games_watch"]
+
+[[permission]]
+identifier = "deny-games-watch"
+description = "Denies the games_watch command without any pre-configured scope."
+commands.deny = ["games_watch"]

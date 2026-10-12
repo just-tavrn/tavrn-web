@@ -47,6 +47,11 @@ First public release of the web client and the desktop apps.
   streaming" bar, the voice controls or the notification's **Stop sharing**, and with the voice session. Everybody
   else sees it as the sharer's stream, joined on demand like every screen share; the client lists screen publishers
   of any device as their owner's stream (`screen_of`), never as a person.
+- **Game activity in the desktop apps**, opt-in: Settings → App → **Show the game I am playing** sets "Playing
+  \<game>" while a game of the visible, editable list (built-in entries and your own) is in front, and clears it when
+  the game closes. Only the game's name from the list is sent, never window titles or other programs; nothing is
+  published with "Hide my activity". Windows and X11 (also games under XWayland); native Wayland windows and macOS
+  show nothing ([docs/DESKTOP.md](docs/DESKTOP.md) "Game activity").
 
 ### Changed
 

@@ -166,3 +166,37 @@ pub fn start(filter: Arc<KeyFilter>, sink: Sender<RawKey>) -> Result<Box<dyn Wat
         }
     }
 }
+
+/// The names of the program whose window is in front (`games.rs`): `GetForegroundWindow`, its process, the file name of
+/// its executable (`QueryFullProcessImageNameW` with the least access right, `PROCESS_QUERY_LIMITED_INFORMATION`).
+/// Empty when no window is in front or the process cannot be opened (a process of another user or an elevated one).
+pub fn foreground_names() -> Vec<String> {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+    // SAFETY: plain Win32 calls with valid out-pointers; the process handle is closed on every path.
+    unsafe {
+        let window = GetForegroundWindow();
+        if window.is_null() {
+            return Vec::new();
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(window, &mut pid);
+        if pid == 0 {
+            return Vec::new();
+        }
+        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if process.is_null() {
+            return Vec::new();
+        }
+        let mut buf = [0u16; 1024];
+        let mut len = buf.len() as u32;
+        let ok = QueryFullProcessImageNameW(process, PROCESS_NAME_WIN32, buf.as_mut_ptr(), &mut len);
+        CloseHandle(process);
+        if ok == 0 {
+            return Vec::new();
+        }
+        let path = String::from_utf16_lossy(buf.get(..len as usize).unwrap_or_default());
+        path.rsplit('\\').next().filter(|n| !n.is_empty()).map(|n| vec![n.to_string()]).unwrap_or_default()
+    }
+}

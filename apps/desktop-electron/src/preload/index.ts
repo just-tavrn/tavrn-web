@@ -26,6 +26,7 @@ const sameShape: { namespaces: Same<BridgeNamespace, BridgeNamespaceName> } & { 
   tray: true,
   hotkeys: true,
   passkeys: true,
+  games: true,
 };
 void sameShape;
 
@@ -40,6 +41,7 @@ const bridge = {
   tray: namespace("tray"),
   hotkeys: namespace("hotkeys"),
   passkeys: namespace("passkeys"),
+  games: namespace("games"),
   events,
 } as unknown as TavrnShellBridge;
 

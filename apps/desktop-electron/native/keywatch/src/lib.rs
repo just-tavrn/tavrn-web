@@ -9,6 +9,7 @@
 //! keywatch.setKeys(["ControlLeft", "KeyM"]);   // the filter: every other key is dropped in the platform callback
 //! keywatch.start((code, pressed) => { … });    // KeyboardEvent.code names; throws "keywatch.unavailable: <why>"
 //! keywatch.stop();
+//! keywatch.foregroundGame([{ process: "factorio", name: "Factorio" }]);   // "Factorio" while it is in front, else null
 //! ```
 //!
 //! Nothing is stored or logged: keys outside the filter never leave the platform callback, and what passes goes to the
@@ -101,4 +102,28 @@ pub fn stop() {
 #[napi]
 pub fn is_running() -> bool {
     RUNNING.lock().is_ok_and(|r| r.is_some())
+}
+
+/// An entry of the game list (`games.ts` of the main process).
+#[napi(object)]
+pub struct GameEntry {
+    pub process: String,
+    pub name: String,
+}
+
+/// Game activity (docs/DESKTOP.md "Game activity"): the display name of the game of `entries` whose program is in front
+/// now, or null (no listed game in front, or a system that cannot tell: a native Wayland window, another platform).
+/// Only a listed name comes back, never the name or title of another program. Throws `games.invalid` for a list that
+/// is too long or has an empty, overlong or path-like entry.
+#[napi]
+pub fn foreground_game(entries: Vec<GameEntry>) -> Result<Option<String>> {
+    if entries.len() > keywatch::games::MAX_ENTRIES {
+        return Err(invalid("games.invalid"));
+    }
+    let list: Vec<keywatch::games::Game> =
+        entries.into_iter().map(|e| keywatch::games::Game { process: e.process.trim().to_string(), name: e.name.trim().to_string() }).collect();
+    if !list.iter().all(keywatch::games::Game::valid) {
+        return Err(invalid("games.invalid"));
+    }
+    Ok(keywatch::games::foreground_game(&list).map(|g| g.name.clone()))
 }

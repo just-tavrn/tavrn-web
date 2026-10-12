@@ -17,6 +17,7 @@ import { PendingLinks, SCHEME as LINK_SCHEME } from "./deeplink.ts";
 import type { ShellContext, ShellPart } from "./context.ts";
 import { Downloads, handleWillDownload, registerFilesHandlers, saveDialogOptions, TEST_SAVE_DIR_ENV } from "./downloads.ts";
 import { ShellEvents } from "./events.ts";
+import { GameWatch, nativeForegroundGame, registerGamesHandlers } from "./games.ts";
 import { devServerUrl, isAppPage, permission } from "./guard.ts";
 import { disableSpellChecker, refusedDebugSwitch, seedNoSpellcheck } from "./hardening.ts";
 import { Hotkeys, nativeKeyListener, registerHotkeyHandlers } from "./hotkeys.ts";
@@ -185,6 +186,12 @@ function main(): void {
       const passkeys = new Passkeys({ native, origin: () => settingsOrigin(ctx.settings), prompt });
       registerPasskeyHandlers(ctx.registry, { passkeys });
       app.on("will-quit", () => passkeys.cancel());
+    },
+    // Game activity, opt-in (games.ts): the same native module tells the listed game in front.
+    (ctx) => {
+      const games = new GameWatch(nativeForegroundGame(join(here, "../native/keywatch.node")), (name) => void ctx.events.send({ channel: "shell_events", event: { kind: "game", name } }));
+      registerGamesHandlers(ctx.registry, { games });
+      app.on("will-quit", () => games.stop());
     },
   ];
   for (const part of parts) part(context);

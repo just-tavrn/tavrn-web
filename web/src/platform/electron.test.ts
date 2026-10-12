@@ -76,6 +76,7 @@ function fakeBridge(config: Partial<ShellConfig> = {}, updater = false, passkeys
       passkeyGet: vi.fn(async (_options: { [key: string]: unknown }) => ({ credential: { id: "Y3JlZA" } as { [key: string]: unknown }, prf: "BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU" as string | null })),
       passkeyStatus: vi.fn(async () => ({ ...passkeys })),
     },
+    games: { gamesWatch: vi.fn(async () => true) },
     events: {
       subscribe: vi.fn((handler: (e: BridgeEvent) => void) => {
         listener = handler;
@@ -297,6 +298,18 @@ describe("the shell's other parts through the bridge", () => {
     stop();
     emit({ channel: "shell_events", event: { kind: "link" } });
     expect(bridge.shell.takeLinks).toHaveBeenCalledTimes(2);
+  });
+
+  it("game activity: the list goes to the shell, the listed game in front comes back", async () => {
+    const { bridge, emit } = fakeBridge({ node: "https://tavrn.example" });
+    const p = await createElectronPlatform(bridge, detached());
+    const seen: Array<string | null> = [];
+    p.games!.onGame((name) => seen.push(name));
+    await expect(p.games!.watch([{ process: "factorio", name: "Factorio" }])).resolves.toBe(true);
+    expect(bridge.games.gamesWatch).toHaveBeenCalledWith([{ process: "factorio", name: "Factorio" }]);
+    emit({ channel: "shell_events", event: { kind: "game", name: "Factorio" } });
+    emit({ channel: "shell_events", event: { kind: "game", name: null } });
+    expect(seen).toEqual(["Factorio", null]);
   });
 
   it("notifications and tray: clicks and menu actions arrive as shell events, validated", async () => {

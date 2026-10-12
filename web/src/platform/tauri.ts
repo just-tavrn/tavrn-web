@@ -93,7 +93,17 @@ export async function createTauriPlatform(doc: Document = document): Promise<Pla
   // The desktop's tray, hotkeys, keychain, native voice and save dialog; the Android app's own members instead.
   const members: Partial<Platform> = android
     ? androidMembers(events, await androidStatus())
-    : { hotkeys: createHotkeys(), voice: voiceMember(), ...shellMembers(events), saveFile: createTauriSaveFile() };
+    : {
+        hotkeys: createHotkeys(),
+        voice: voiceMember(),
+        ...shellMembers(events),
+        saveFile: createTauriSaveFile(),
+        // Game activity (games.rs): the shell names only a listed game.
+        games: {
+          watch: (entries) => invoke<boolean>("games_watch", { entries }),
+          onGame: (fn) => events.on((e) => e.kind === "game" && fn(typeof e.name === "string" ? e.name : null)),
+        },
+      };
   const platform: Platform = {
     kind: android ? "android" : "desktop",
     isDesktop: true,

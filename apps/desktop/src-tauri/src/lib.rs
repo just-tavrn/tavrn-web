@@ -3,7 +3,8 @@
 //! the bundled client (`web/dist`); the client talks to the home node chosen in its node picker over https/wss.
 //! The shell offers the client a handful of commands (`commands.rs`): the chosen node, opening links in the system
 //! browser, signed updates, the OS keychain (`keychain.rs`), native notifications (`notify.rs`) and the tray
-//! (`tray.rs`), whose clicks come back to the client as shell events (`events.rs`), and the native voice engine
+//! (`tray.rs`), whose clicks come back to the client as shell events (`events.rs`), the opt-in game activity
+//! (`games.rs`), and the native voice engine
 //! (`voice`, Linux always, Windows behind a setting).
 //!
 //! The same crate is the Android app (docs/ANDROID.md, identifier `org.tavrn.app`): the modules marked desktop below
@@ -19,6 +20,8 @@ pub mod deeplink;
 #[cfg(desktop)]
 pub mod download;
 pub mod events;
+#[cfg(desktop)]
+pub mod games;
 pub mod guard;
 #[cfg(desktop)]
 pub mod hotkeys;
@@ -144,6 +147,7 @@ pub fn run() {
         .manage(download::Downloads::from_env())
         .manage(hotkeys)
         .manage(voice)
+        .manage(games::Games::default())
         .invoke_handler(tauri::generate_handler![
             commands::get_config,
             commands::set_node,
@@ -189,6 +193,8 @@ pub fn run() {
             // Passkeys through the Windows WebAuthn API (passkey.rs; elsewhere `passkey.unavailable`).
             passkey::passkey_create,
             passkey::passkey_get,
+            // Game activity, opt-in (games.rs).
+            games::games_watch,
         ])
         .on_window_event(|window, event| {
             if window.label() != MAIN_WINDOW {

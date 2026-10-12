@@ -46,6 +46,7 @@
     "allow-voice-configure",
     "allow-voice-set-volumes",
     "allow-passkey-create",
-    "allow-passkey-get"
+    "allow-passkey-get",
+    "allow-games-watch"
   ]
 }

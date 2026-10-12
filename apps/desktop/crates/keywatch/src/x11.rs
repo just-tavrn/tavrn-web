@@ -186,6 +186,36 @@ fn still_down(conn: &RustConnection, keycode: u8) -> bool {
         .is_some_and(|byte| byte & (1 << (keycode % 8)) != 0)
 }
 
+/// The names of the program whose window has the focus (`games.rs`): the window manager's `_NET_ACTIVE_WINDOW`, that
+/// window's `_NET_WM_PID`, and that process's executable file name and `comm`. Empty without an X display, an EWMH
+/// window manager, a pid (a native Wayland window, a remote client) or access to `/proc/<pid>`. One short connection
+/// per call; nothing else of the window (no title) is read.
+pub fn foreground_names() -> Vec<String> {
+    let Ok(conn) = connect() else { return Vec::new() };
+    let Some(pid) = active_pid(&conn) else { return Vec::new() };
+    let proc = std::path::PathBuf::from(format!("/proc/{pid}"));
+    let mut names = Vec::new();
+    if let Some(exe) = std::fs::read_link(proc.join("exe")).ok().and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned())) {
+        names.push(exe);
+    }
+    if let Ok(comm) = std::fs::read_to_string(proc.join("comm")) {
+        names.push(comm.trim_end_matches('\n').to_string());
+    }
+    names
+}
+
+fn active_pid(conn: &RustConnection) -> Option<u32> {
+    let root = conn.setup().roots.first()?.root;
+    let atom = |name: &[u8]| conn.intern_atom(true, name).ok()?.reply().ok().map(|r| r.atom).filter(|a| *a != x11rb::NONE);
+    let active = atom(b"_NET_ACTIVE_WINDOW")?;
+    let pid = atom(b"_NET_WM_PID")?;
+    let window = conn.get_property(false, root, active, xproto::AtomEnum::WINDOW, 0, 1).ok()?.reply().ok()?.value32()?.next()?;
+    if window == x11rb::NONE {
+        return None;
+    }
+    conn.get_property(false, window, pid, xproto::AtomEnum::CARDINAL, 0, 1).ok()?.reply().ok()?.value32()?.next().filter(|p| *p > 0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -248,6 +278,37 @@ mod tests {
         let stream = UnixStream::connect_addr(&addr).unwrap_or_else(|e| unreachable!("{e}"));
         let (stream, _) = DefaultStream::from_unix_stream(stream).unwrap_or_else(|e| unreachable!("{e}"));
         assert!(RustConnection::connect_to_stream(stream, usize::from(display.screen)).is_err());
+    }
+
+    /// The program in front as a window manager announces it: a window with this test's pid as `_NET_WM_PID`, named in
+    /// the root window's `_NET_ACTIVE_WINDOW` (Xvfb has no window manager, so the test plays one).
+    #[test]
+    fn the_program_in_front_is_named_by_its_process_only() {
+        if xvfb_display().is_none() {
+            return;
+        }
+        let conn = connect().unwrap_or_else(|e| unreachable!("{}", e.0));
+        let root = conn.setup().roots.first().map(|s| s.root).unwrap_or_else(|| unreachable!("no screen"));
+        let atom = |name: &[u8]| conn.intern_atom(false, name).ok().and_then(|c| c.reply().ok()).map(|r| r.atom).unwrap_or_else(|| unreachable!("atom"));
+        let (active, pid) = (atom(b"_NET_ACTIVE_WINDOW"), atom(b"_NET_WM_PID"));
+        let window = conn.generate_id().unwrap_or_else(|e| unreachable!("{e}"));
+        let ok = conn.create_window(0, window, root, 0, 0, 10, 10, 0, xproto::WindowClass::INPUT_OUTPUT, 0, &xproto::CreateWindowAux::new()).is_ok()
+            && conn.change_property32(xproto::PropMode::REPLACE, window, pid, xproto::AtomEnum::CARDINAL, &[std::process::id()]).is_ok()
+            && conn.change_property32(xproto::PropMode::REPLACE, root, active, xproto::AtomEnum::WINDOW, &[window]).is_ok()
+            && conn.change_property8(xproto::PropMode::REPLACE, window, xproto::AtomEnum::WM_NAME, xproto::AtomEnum::STRING, b"a secret title").is_ok()
+            && conn.sync().is_ok();
+        assert!(ok);
+        let names = foreground_names();
+        let exe = std::env::current_exe().ok().and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned())).unwrap_or_default();
+        assert!(names.contains(&exe), "{names:?} lacks {exe}");
+        assert!(names.len() <= 2 && !names.iter().any(|n| n.contains("secret")), "{names:?}");
+        let games = [crate::games::Game { process: exe.clone(), name: "The test".into() }];
+        assert_eq!(crate::games::foreground_game(&games).map(|g| g.name.as_str()), Some("The test"));
+        // No active window: nothing in front.
+        let _ = conn.change_property32(xproto::PropMode::REPLACE, root, active, xproto::AtomEnum::WINDOW, &[0]);
+        let _ = conn.destroy_window(window);
+        let _ = conn.sync();
+        assert!(foreground_names().is_empty());
     }
 
     fn xdotool(args: &[&str]) {

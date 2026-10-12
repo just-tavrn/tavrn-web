@@ -477,6 +477,32 @@ secret. A phone that held back the app's timers while the browser was in front c
 **The website's invite page** (tavrn.org) can offer "Open in the app" with `tavrn://invite/<node>/<code>` next to
 the link to the web client; that is a change of the website.
 
+## Game activity
+
+**Opt-in, off by default.** Settings → App → **Show the game I am playing** lets the app set the device's activity
+"Playing \<game>" (PROTOCOL.md §6a, `PUT /users/me/activity` to every node the client has a session on) while a game of
+its list is in front, and clear it when the game closes, another program comes to the front, the setting goes off or
+the client signs out.
+
+- **The list** is visible and editable in the same place: a built-in list of well-known games (`web/src/games/known.ts`,
+  process names of their Windows and Linux executables; each can be switched off) and the user's own entries (a
+  process name such as `game.exe` without a folder, at most 64 bytes, and the name to show, at most 128 characters).
+  The setting and the list stay on this device (`tavrn.games` in local storage).
+- **The shell watches** only while the setting is on and the client is signed in: every 5 seconds it asks which program
+  is in front and compares its **process name** with the list (without case and `.exe`; Linux' 15-byte `comm` of a
+  Wine or Proton game matches the start of a longer name). Windows: `GetForegroundWindow`, the process with the least
+  access right (`PROCESS_QUERY_LIMITED_INFORMATION`), the file name of its executable. Linux: the window manager's
+  `_NET_ACTIVE_WINDOW` on X11 (also X11 programs under XWayland, which most games are), its `_NET_WM_PID`, the file
+  name of `/proc/<pid>/exe` and its `comm`; a native Wayland window has no such answer, and then nothing is shown (the
+  setting says so). macOS: nothing yet.
+- **What leaves the shell**: only the display name of a listed game, as the shell event `game` when it changes. Window
+  titles are never read; the names of other programs never leave the native code (`apps/desktop/crates/keywatch`
+  `games.rs`, shared by both shells: the Tauri shell's `games.rs` command `games_watch`, the Electron shell's
+  `games.ts` through the native module's `foregroundGame`).
+- **The client** (`web/src/games/activity.ts`) publishes nothing for a user with "Hide my activity", never replaces an
+  activity it did not set (one chosen in the status menu or one of an application's activity bridge) and clears only
+  its own.
+
 ## Hotkeys
 
 Push-to-talk and the priority speaker (while held), mute and deafen (toggles) have **one binding each**, and it works
