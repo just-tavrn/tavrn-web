@@ -186,16 +186,12 @@ pub async fn android_save_begin(android: State<'_, Android<Wry>>, name: String, 
     Ok(begin)
 }
 
-/// Appends a raw IPC body (header `x-tavrn-save: <id>`, at most 4 MiB) to the save.
+/// Appends a piece of the file (base64, at most 1 MiB of content: Android's IPC carries JSON, no raw bodies).
 #[tauri::command]
-pub async fn android_save_chunk(request: tauri::ipc::Request<'_>, android: State<'_, Android<Wry>>) -> Result<(), String> {
-    use base64::Engine as _;
-    let id = request.headers().get("x-tavrn-save").and_then(|v| v.to_str().ok()).filter(|id| mobile::save_id(id)).ok_or("download.invalid")?.to_string();
-    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else { return Err("download.invalid".into()) };
-    if bytes.len() > 4 * 1024 * 1024 {
+pub async fn android_save_chunk(android: State<'_, Android<Wry>>, id: String, data: String) -> Result<(), String> {
+    if !mobile::save_id(&id) || !mobile::save_chunk(&data) {
         return Err("download.invalid".into());
     }
-    let data = base64::engine::general_purpose::STANDARD.encode(bytes);
     android.call("saveChunk", json!({ "id": id, "data": data })).await
 }
 

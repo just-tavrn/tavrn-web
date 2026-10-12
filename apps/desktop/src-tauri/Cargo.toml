@@ -62,8 +62,6 @@ keywatch = { package = "tavrn-keywatch", path = "../crates/keywatch" }
 # a Kotlin component on Android), the same bundle the native voice engine uses on the desktop.
 [target.'cfg(target_os = "android")'.dependencies]
 webpki-roots = "1"
-# Downloads: the content goes to the Kotlin side as base64 (src/android.rs).
-base64 = "0.23"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] }

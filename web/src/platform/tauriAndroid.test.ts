@@ -158,7 +158,20 @@ describe("downloads in the Android app", () => {
     expect(out).toEqual({ status: "saved", name: "key.txt", path: "", folder: "" });
     expect(calls.map((c) => c.cmd)).toEqual(["android_save_begin", "android_save_chunk", "android_save_end"]);
     expect(calls[0]?.args).toEqual({ name: "key.txt", mime: "text/plain", size: 6 });
-    expect(calls[1]?.headers).toEqual({ "x-tavrn-save": "0f8fad5b-d9cb-469f-a165-70867728950e" });
+    expect(calls[1]?.args).toEqual({ id: "0f8fad5b-d9cb-469f-a165-70867728950e", data: btoa("secret") });
+  });
+
+  it("sends a large file in pieces of 1 MiB", async () => {
+    const { createAndroidSaveFile, ANDROID_SAVE_CHUNK_BYTES } = await import("./tauriAndroid");
+    const sizes: number[] = [];
+    const call = async (cmd: string, args?: { data?: string }) => {
+      if (cmd === "android_save_begin") return { status: "ready", id: "0f8fad5b-d9cb-469f-a165-70867728950e" };
+      if (cmd === "android_save_chunk") sizes.push(atob(args?.data ?? "").length);
+      if (cmd === "android_save_end") return { name: "big.bin" };
+      return null;
+    };
+    await createAndroidSaveFile(call as never)({ name: "big.bin", data: new Uint8Array(2.5 * ANDROID_SAVE_CHUNK_BYTES) });
+    expect(sizes).toEqual([ANDROID_SAVE_CHUNK_BYTES, ANDROID_SAVE_CHUNK_BYTES, ANDROID_SAVE_CHUNK_BYTES / 2]);
   });
 
   it("cancel with the picker and remove a half-written file", async () => {

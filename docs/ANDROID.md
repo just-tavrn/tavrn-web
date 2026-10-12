@@ -185,7 +185,7 @@ get-app-links org.tavrn.app` shows the result.
 ## Downloads, updates, system bars
 
 - **Downloads** (attachments, exports, the recovery key) go through Android's document picker ("Save to"), the
-  equivalent of the desktop's save dialog: the client streams the file in 4 MiB pieces (`android_save_*`), the Kotlin
+  equivalent of the desktop's save dialog: the client streams the file in 1 MiB pieces (base64: Android's IPC carries JSON only; `android_save_*`), the Kotlin
   side writes it to the document the user picked; the webview never names a place.
 - **Updates**: Tauri's updater does not support Android. At start and in Settings → App the shell reads the release
   list of tavrn-web through the website's proxy (`https://tavrn.org/gh/releases/web`) and names the newest release with

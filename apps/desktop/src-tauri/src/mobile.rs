@@ -238,6 +238,17 @@ pub fn save_id(id: &str) -> bool {
     id.len() == 36 && id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-')
 }
 
+/// The largest piece of a save, in bytes of content.
+pub const SAVE_CHUNK_BYTES: usize = 1024 * 1024;
+
+/// A piece of a save as the client sends it: standard base64 of at most [`SAVE_CHUNK_BYTES`].
+pub fn save_chunk(data: &str) -> bool {
+    !data.is_empty()
+        && data.len() <= SAVE_CHUNK_BYTES.div_ceil(3) * 4
+        && data.len().is_multiple_of(4)
+        && data.bytes().all(|b| b.is_ascii_alphanumeric() || b"+/=".contains(&b))
+}
+
 /// A MIME type the picker may be given (`type/subtype`, no parameters).
 pub fn save_mime(mime: &str) -> String {
     let ok = mime.len() <= 100
@@ -349,6 +360,11 @@ mod tests {
         for bad in ["text", "text/plain; charset=utf-8", "*/*\n", ""] {
             assert_eq!(save_mime(bad), "application/octet-stream", "{bad:?}");
         }
+        assert!(save_chunk("c2VjcmV0"));
+        assert!(save_chunk(&"A".repeat(SAVE_CHUNK_BYTES.div_ceil(3) * 4)));
+        assert!(!save_chunk(&"A".repeat(SAVE_CHUNK_BYTES.div_ceil(3) * 4 + 4)));
+        assert!(!save_chunk("not base64!"));
+        assert!(!save_chunk(""));
         assert!(save_id("0f8fad5b-d9cb-469f-a165-70867728950e"));
         assert!(!save_id("../x"));
     }

@@ -7,7 +7,7 @@
  * when the shell reports `android`; nothing here runs in a browser or on the desktop.
  */
 import { invoke, type InvokeArgs, type InvokeOptions } from "@tauri-apps/api/core";
-import { asBlob, SAVE_CHUNK_BYTES, type SaveFile } from "./files";
+import { asBlob, type SaveFile } from "./files";
 import type { ShellEvents } from "./shellEvents";
 import { notificationOpens, trayActions } from "./tauriShell";
 import type {
@@ -76,9 +76,17 @@ export type ShellCall = (cmd: string, args?: InvokeArgs, options?: InvokeOptions
 
 /**
  * Downloads (docs/ANDROID.md "Downloads"): Android's document picker instead of the desktop's save dialog, the same
- * streaming in chunks (`android_save_*`); the picker names no folder, so the outcome carries none and no "show in
- * folder".
+ * streaming in chunks (`android_save_*`), base64 in pieces of 1 MiB (Android's IPC carries JSON only); the picker
+ * names no folder, so the outcome carries none and no "show in folder".
  */
+export const ANDROID_SAVE_CHUNK_BYTES = 1024 * 1024;
+
+function base64(bytes: Uint8Array): string {
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
 export function createAndroidSaveFile(call: ShellCall = invoke): SaveFile {
   return async (file) => {
     const blob = asBlob(file);
@@ -87,9 +95,9 @@ export function createAndroidSaveFile(call: ShellCall = invoke): SaveFile {
     if (begin.status !== "ready") return { status: "cancelled" };
     const { id } = begin;
     try {
-      for (let offset = 0; offset < blob.size; offset += SAVE_CHUNK_BYTES) {
-        const bytes = new Uint8Array(await blob.slice(offset, offset + SAVE_CHUNK_BYTES).arrayBuffer());
-        await call("android_save_chunk", bytes, { headers: { "x-tavrn-save": id } });
+      for (let offset = 0; offset < blob.size; offset += ANDROID_SAVE_CHUNK_BYTES) {
+        const bytes = new Uint8Array(await blob.slice(offset, offset + ANDROID_SAVE_CHUNK_BYTES).arrayBuffer());
+        await call("android_save_chunk", { id, data: base64(bytes) });
       }
       const saved = (await call("android_save_end", { id })) as { name: string };
       return { status: "saved", name: saved.name || file.name, path: "", folder: "" };
