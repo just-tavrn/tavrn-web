@@ -98,7 +98,8 @@ gh run list --workflow desktop.yml --limit 3      # then download desktop-linux-
 
 GitHub dispatches a workflow by hand only once the workflow file exists on the default branch; before that, a pull
 request's branch gets the automatic builds only. The installers are not signed with an OS certificate (Windows
-SmartScreen warns once); the updater signature is the only signature. macOS builds come later.
+SmartScreen warns once); the updater signature is the only signature. `-f macos=true` builds the unsigned universal
+macOS app on `macos-latest` (continue-on-error; DESKTOP.md "macOS").
 
 ## Settings applied through the API
 

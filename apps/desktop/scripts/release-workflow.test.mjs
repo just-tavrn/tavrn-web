@@ -71,7 +71,7 @@ test("the Windows build makes no updater artifacts (release-assets signs the ins
 });
 
 test("the parser sees the jobs of desktop.yml", () => {
-  assert.deepEqual(Object.keys(desktop.jobs).sort(), ["android", "linux-electron", "release-assets", "tauri-linux", "windows", "windows-electron", "windows-nsis"]);
+  assert.deepEqual(Object.keys(desktop.jobs).sort(), ["android", "linux-electron", "macos", "release-assets", "tauri-linux", "windows", "windows-electron", "windows-nsis"]);
 });
 
 test("no workflow passes the updater key through workflow-level env or `secrets: inherit`", () => {
@@ -108,16 +108,16 @@ test("linux-electron uploads the packages right after packaging, before the spec
 test("release-assets takes each build artifact by id into its own directory and collects only allowed files before signing", () => {
   const steps = code(signer).split(/\n(?= {6}- )/);
   const downloads = steps.filter((s) => /actions\/download-artifact@/.test(s));
-  assert.equal(downloads.length, 4);
+  assert.equal(downloads.length, 5);
   for (const d of downloads) {
-    assert.match(d, /artifact-ids: \$\{\{ needs\.(windows|linux-electron|windows-electron|android)\.outputs\.artifact-id \}\}/);
+    assert.match(d, /artifact-ids: \$\{\{ needs\.(windows|linux-electron|windows-electron|android|macos)\.outputs\.artifact-id \}\}/);
     assert.doesNotMatch(d, /^\s+name:/m, "never by artifact name");
     assert.match(d, /path: built\//);
   }
   const at = (re) => steps.findIndex((s) => re.test(s));
   const collect = at(/release-assets\.mjs collect/);
   assert.ok(collect > at(/download-artifact/) && collect < at(/tauri signer sign/), "collect after the downloads, before signing");
-  for (const job of ["windows", "linux-electron", "windows-electron", "android"]) {
+  for (const job of ["windows", "linux-electron", "windows-electron", "android", "macos"]) {
     assert.match(desktop.jobs[job], /outputs:\n\s+artifact-id: \$\{\{ steps\.\w+\.outputs\.artifact-id \}\}/, `${job} reports its artifact id`);
   }
 });
@@ -144,5 +144,27 @@ test("the Android build: GitHub-hosted, aarch64 only, an unsigned APK, no key; r
   assert.ok(sign < at(/checksums\.mjs/), "signed before the checksums and the asset check");
   assert.match(steps[sign], /apksigner" verify/);
   assert.match(steps[sign], /rm -f "\$keystore"/, "the keystore file is removed");
-  assert.match(code(signer), /needs: \[linux-electron, windows-electron, windows, android\]/);
+  assert.match(code(signer), /needs: \[linux-electron, windows-electron, windows, android, macos\]/);
+});
+
+test("macOS: GitHub-hosted, universal, unsigned, no key, never fails a release; release-assets signs its app archive", () => {
+  const macos = desktop.jobs.macos;
+  assert.match(code(macos), /runs-on: macos-latest/);
+  assert.match(code(macos), /^ {4}continue-on-error: true$/m, "a failed macOS build never fails the release");
+  assert.match(code(macos), /rustup target add aarch64-apple-darwin x86_64-apple-darwin/);
+  assert.match(code(macos), /tauri build --target universal-apple-darwin --bundles app,dmg/);
+  assert.match(code(macos), /"signingIdentity":"-"/, "signed ad hoc: Gatekeeper asks instead of calling the app damaged");
+  assert.doesNotMatch(code(macos), /createUpdaterArtifacts|APPLE_|notar/i, "no updater artifacts and no Apple credentials in the build");
+  assert.match(code(macos), /Tavrn_\$\{version\}_universal\.dmg/);
+  assert.match(code(macos), /Tavrn_\$\{version\}_universal\.app\.tar\.gz/);
+  // release-assets: the other build jobs must succeed, macOS may not; its download only when it uploaded.
+  const ifLine = /^ {4}if: >-\n((?: {6}.*\n)+)/m.exec(signer)?.[1] ?? "";
+  assert.match(ifLine, /!cancelled\(\)/);
+  for (const job of ["linux-electron", "windows-electron", "windows", "android"]) assert.match(ifLine, new RegExp(`needs\\.${job}\\.result == 'success'`), job);
+  assert.doesNotMatch(ifLine, /needs\.macos\.result/);
+  const steps = code(signer).split(/\n(?= {6}- )/);
+  const download = steps.find((s) => /needs\.macos\.outputs\.artifact-id \}\}\n/.test(s) && /download-artifact/.test(s));
+  assert.match(download, /if: \$\{\{ needs\.macos\.outputs\.artifact-id != '' \}\}/);
+  assert.match(code(signer), /macos=built\/macos/);
+  assert.match(code(signer), /for f in installers\/\*\.msi installers\/\*-setup\.exe installers\/\*\.app\.tar\.gz; do/);
 });

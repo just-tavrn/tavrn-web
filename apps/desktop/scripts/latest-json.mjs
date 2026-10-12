@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
  * Writes the update manifest `latest.json` of a release (tauri-plugin-updater's static JSON format) from the signed
- * Tauri installers in a directory: the `.sig` file next to the MSI and the NSIS installer (Windows; Linux ships the
- * Electron app, whose feed is electron-builder's latest-linux.yml). The Electron build for Windows (its name contains
+ * Tauri installers in a directory: the `.sig` file next to the MSI and the NSIS installer (Windows) and the universal
+ * `.app.tar.gz` (macOS, when its build succeeded); Linux ships the Electron app, whose feed is electron-builder's
+ * latest-linux.yml. The Electron build for Windows (its name contains
  * "electron") is never a Tauri update.
  *   node latest-json.mjs <dir> <tag> <owner/repo> [notes] > latest.json
  * The app fetches it from https://github.com/<owner/repo>/releases/latest/download/latest.json (docs/DESKTOP.md).
@@ -16,6 +17,8 @@ import { pathToFileURL } from "node:url";
 const KINDS = [
   { suffix: "-setup.exe", keys: ["windows-x86_64-nsis", "windows-x86_64"] },
   { suffix: ".msi", keys: ["windows-x86_64-msi"] },
+  // macOS: one universal app archive for Apple Silicon and Intel (present when the macOS build succeeded).
+  { suffix: "_universal.app.tar.gz", keys: ["darwin-aarch64-app", "darwin-aarch64", "darwin-x86_64-app", "darwin-x86_64"] },
 ];
 
 export function platformsOf(dir, downloadBase) {

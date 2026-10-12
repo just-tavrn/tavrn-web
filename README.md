@@ -22,7 +22,7 @@ single-page app that works on phones, tablets and desktops, in English and Germa
 |---|---|
 | [`web/`](web) | `@tavrn/web`: the client (`src/`), its static assets and generated icons (`public/`), translations (`src/i18n/`), Vitest tests next to the code |
 | [`e2e/`](e2e) | `@tavrn/e2e`: the Playwright suite (`tests/`), its fixtures (a fake OpenID provider, the example bot) and `playwright.config.ts` |
-| [`apps/desktop/`](apps/desktop) | `@tavrn/desktop`: the desktop app for Windows (and macOS later), a Tauri 2 shell around the client (Rust crate `tavrn-desktop` in `src-tauri/` with its own Cargo workspace, the release scripts in `scripts/`) |
+| [`apps/desktop/`](apps/desktop) | `@tavrn/desktop`: the desktop app for Windows (and macOS, experimental and unsigned), a Tauri 2 shell around the client (Rust crate `tavrn-desktop` in `src-tauri/` with its own Cargo workspace, the release scripts in `scripts/`) |
 | [`apps/desktop-electron/`](apps/desktop-electron) | `@tavrn/desktop-electron`: the desktop app for Linux and the Windows fallback, an Electron shell around the client (TypeScript main process and preload, the Playwright smoke test in `e2e/`) |
 | [`docs/`](docs) | [CLIENT.md](docs/CLIENT.md) (what the client does), [DESKTOP.md](docs/DESKTOP.md) (the desktop app), [ANDROID.md](docs/ANDROID.md) (the Android app), [ACCESSIBILITY.md](docs/ACCESSIBILITY.md), [GITHUB.md](docs/GITHUB.md) (repository setup) |
 | `scripts/` | license and hygiene checks |
