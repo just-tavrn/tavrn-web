@@ -36,6 +36,7 @@ function android(release: unknown = null) {
       case "get_update_channel":
         return "stable";
       case "set_update_channel":
+        return null;
       case "android_audio_routes":
         return { available: ["speaker", "earpiece"], current: "speaker" };
       case "android_audio_route":
