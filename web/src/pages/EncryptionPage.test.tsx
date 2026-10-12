@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import "fake-indexeddb/auto";
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { Route, Routes } from "react-router";
@@ -15,6 +15,8 @@ import { cryptoStore } from "../crypto/store";
 import { mockFetch, renderWithProviders } from "../test/render";
 import { initCryptoForTests } from "../test/wasm";
 import { resetPlatform, setPlatform, type NodePageUnlock, type Platform } from "../platform";
+import type { PlatformUnlock, UnlockAvailability, UnlockErrorCode, UnlockPromptTexts, UnlockStatus } from "../platform/types";
+import { UnlockError } from "../platform/unlockError";
 
 const DEV = "01J9ZK3G5M8Q2W4E6R8T0Y2VA1";
 let n = 0;
@@ -283,5 +285,162 @@ describe("EncryptionPage in the desktop app: passkey unlock on the node's page",
     expect(await screen.findByTestId("recovery-key-input")).toBeInTheDocument();
     await new Promise((r) => setTimeout(r, 50));
     expect(screen.queryByRole("button", { name: "Mit Passkey entsperren" })).toBeNull();
+  });
+});
+
+describe("EncryptionPage in the Android app: unlock with fingerprint, face or PIN", () => {
+  /** The shell's sealed keys (`platform/unlock.ts`): `next` ends the next prompt with that code. */
+  class FakeUnlock implements PlatformUnlock {
+    entries = new Map<string, Uint8Array>();
+    invalidated = new Set<string>();
+    available: UnlockAvailability = "ready";
+    next: UnlockErrorCode | null = null;
+    prompts: UnlockPromptTexts[] = [];
+    private prompt(p: UnlockPromptTexts) {
+      this.prompts.push(p);
+      const code = this.next;
+      this.next = null;
+      if (code) throw new UnlockError(code);
+    }
+    async status(account?: string): Promise<UnlockStatus> {
+      if (account && this.invalidated.delete(account)) {
+        this.entries.delete(account);
+        return { available: this.available, stored: "invalidated" };
+      }
+      return { available: this.available, stored: account && this.entries.has(account) ? "ready" : "none" };
+    }
+    async store(account: string, secret: Uint8Array, p: UnlockPromptTexts) {
+      this.prompt(p);
+      this.entries.set(account, secret.slice());
+    }
+    async get(account: string, p: UnlockPromptTexts) {
+      const secret = this.entries.get(account);
+      if (!secret) throw new UnlockError("none");
+      this.prompt(p);
+      return secret.slice();
+    }
+    async clear(account: string) {
+      this.entries.delete(account);
+    }
+  }
+
+  function android(unlock: FakeUnlock) {
+    setPlatform({
+      kind: "android",
+      isDesktop: true,
+      nodeBase: () => "https://t.local",
+      webOrigin: () => "https://t.local",
+      openExternal: async () => {},
+      appVersion: async () => "0.4.0",
+      unlock,
+    });
+  }
+
+  /** An account whose phone has its key sealed behind the biometric unlock, locked (`on`), or a new phone. */
+  async function phone(unlock: FakeUnlock, on = true) {
+    const user = signIn(true);
+    const master = MasterSecret.generate();
+    const recovery = RecoveryKey.generate();
+    const wrapped = b64urlEncode(wrapMasterSecret(master, recovery.wrappingKey(), user.address, "recovery"));
+    mockFetch({
+      "/users/me/secret-storage": { body: { items: [{ method: "recovery", wrapped, params: {}, updated_at: "" }] } },
+      [`/users/me/devices/${DEV}/key-packages`]: (init) => ({ body: { count: init.method === "POST" ? 20 : 0 } }),
+      [`/users/me/devices/${DEV}/key`]: { body: {} },
+      [`/users/${user.username}/keys`]: { body: { user: user.address, identity_public_key: b64urlEncode(master.identityPublicKey()), devices: [] } },
+      "/api/v1/users/me": { body: user },
+    });
+    android(unlock);
+    // Off: a new device, nothing stored yet.
+    if (on) {
+      await cryptoStore.saveMaster(user.address, DEV, master.toBytes());
+      await cryptoStore.enableBiometric({ title: "x", subtitle: "y" });
+      unlock.prompts = [];
+      cryptoStore.lock();
+    }
+    return { user, master, recovery };
+  }
+
+  afterEach(() => resetPlatform());
+
+  it("opens the system's prompt by itself and unlocks with it", async () => {
+    const unlock = new FakeUnlock();
+    const { user, master } = await phone(unlock);
+    renderPage();
+    expect(await screen.findByText("Raumseite")).toBeInTheDocument();
+    expect(cryptoStore.masterSecret()).toEqual(master.toBytes());
+    expect(unlock.prompts).toEqual([{ title: "tavrn entsperren", subtitle: user.address }]);
+  });
+
+  it("a closed prompt leaves the button and the recovery key, without an error; the button asks again", async () => {
+    const unlock = new FakeUnlock();
+    await phone(unlock);
+    unlock.next = "cancelled";
+    renderPage();
+    const button = await screen.findByRole("button", { name: "Mit Fingerabdruck, Gesicht oder PIN entsperren" });
+    expect(screen.getByTestId("recovery-key-input")).toBeInTheDocument();
+    expect(screen.getByText(/Oder gib deinen Wiederherstellungsschlüssel ein/)).toBeInTheDocument();
+    await waitFor(() => expect(unlock.prompts).toHaveLength(1));
+    expect(screen.queryByRole("alert")).toBeNull();
+    await userEvent.setup().click(button);
+    expect(await screen.findByText("Raumseite")).toBeInTheDocument();
+    expect(unlock.prompts).toHaveLength(2);
+  });
+
+  it("too many attempts: says so and keeps the recovery key", async () => {
+    const unlock = new FakeUnlock();
+    await phone(unlock);
+    unlock.next = "lockout";
+    renderPage();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Zu viele Versuche");
+    expect(screen.getByTestId("recovery-key-input")).toBeInTheDocument();
+    expect(cryptoStore.isUnlocked()).toBe(false);
+  });
+
+  it("an invalidated key: the notice, no button; the recovery key unlocks and offers to turn it on again", async () => {
+    const unlock = new FakeUnlock();
+    const { user, recovery } = await phone(unlock);
+    unlock.invalidated.add(user.address);
+    renderPage();
+    expect(await screen.findByTestId("unlock-biometric-invalidated")).toHaveTextContent("Displaysperre");
+    expect(screen.queryByRole("button", { name: "Mit Fingerabdruck, Gesicht oder PIN entsperren" })).toBeNull();
+    expect(unlock.prompts).toEqual([]);
+    const u = userEvent.setup();
+    await u.type(screen.getByTestId("recovery-key-input"), recovery.toCompact());
+    await u.click(screen.getByRole("button", { name: "Entsperren" }));
+    expect(await screen.findByTestId("biometric-offer")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Nächstes Mal schneller entsperren?" })).toBeInTheDocument();
+    await u.click(screen.getByRole("button", { name: "Einschalten" }));
+    expect(await screen.findByText("Raumseite")).toBeInTheDocument();
+    expect(unlock.prompts).toEqual([{ title: "Entsperren mit Fingerabdruck, Gesicht oder PIN einschalten", subtitle: user.address }]);
+    expect(unlock.entries.get(user.address)).toHaveLength(32);
+    expect(await cryptoStore.keyProtection(user.address)).toBe("biometric");
+  });
+
+  it("the offer after the recovery key: a closed prompt stays on the offer, \"Not now\" continues without it", async () => {
+    const unlock = new FakeUnlock();
+    const { user, recovery } = await phone(unlock, false);
+    renderPage();
+    const u = userEvent.setup();
+    await u.type(await screen.findByTestId("recovery-key-input"), recovery.toCompact());
+    await u.click(screen.getByRole("button", { name: "Entsperren" }));
+    unlock.next = "cancelled";
+    await u.click(await screen.findByRole("button", { name: "Einschalten" }));
+    expect(await screen.findByTestId("biometric-offer")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+    await u.click(screen.getByRole("button", { name: "Nicht jetzt" }));
+    expect(await screen.findByText("Raumseite")).toBeInTheDocument();
+    expect(unlock.entries.has(user.address)).toBe(false);
+  });
+
+  it("no offer on a phone without a screen lock", async () => {
+    const unlock = new FakeUnlock();
+    unlock.available = "no_lock";
+    const { recovery } = await phone(unlock, false);
+    renderPage();
+    const u = userEvent.setup();
+    await u.type(await screen.findByTestId("recovery-key-input"), recovery.toCompact());
+    await u.click(screen.getByRole("button", { name: "Entsperren" }));
+    expect(await screen.findByText("Raumseite")).toBeInTheDocument();
+    expect(screen.queryByTestId("biometric-offer")).toBeNull();
   });
 });

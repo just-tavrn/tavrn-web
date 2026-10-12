@@ -1012,6 +1012,11 @@ of a window ("Sign in on \<node>'s page"). What is different in the client:
   the browser. **Passkeys** run in the app through Android's Credential Manager (registration, sign-in,
   re-authentication, the PRF unlock) on Android 14+ when the home node lists the app's origin in `webauthn.origins`; otherwise on the node's page in the browser, with
   "This node does not accept the app's passkeys yet" where the node is the reason (ANDROID.md "Passkeys").
+- **Unlock with fingerprint, face or PIN** (Android 11+, a screen lock set): after an unlock with the recovery key or
+  a passkey the unlock screen offers it ("Unlock faster next time?"); then the key of the local key store is sealed in
+  Android's keystore, and the next start opens the system's prompt by itself, with the recovery key or a passkey as
+  the alternative. Settings → App turns it off (the sealed key is deleted); new fingerprints or a removed screen lock
+  invalidate it, which the unlock screen explains (ANDROID.md "Unlock with fingerprint, face or PIN").
 
 ## Translations
 

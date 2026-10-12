@@ -12,6 +12,7 @@ import type { ShellEvents } from "./shellEvents";
 import { updateFailure } from "./updateErrors";
 import { notificationOpens, trayActions } from "./tauriShell";
 import { nativePasskeys } from "./tauriPasskeys";
+import { createAndroidUnlock } from "./unlock";
 import type {
   AppUpdater,
   AndroidInsets,
@@ -21,6 +22,7 @@ import type {
   PlatformNotifications,
   PlatformPasskeys,
   PlatformTray,
+  PlatformUnlock,
   PushEndpointKeys,
   TrayVoiceExtra,
   TrayLabels,
@@ -125,6 +127,8 @@ export interface AndroidMembers {
   tray: PlatformTray;
   /** Passkeys through Android's Credential Manager (Android 14+), the same commands as the Windows app's. */
   passkeys?: PlatformPasskeys;
+  /** Unlock with fingerprint, face or PIN (Android 11+; older systems answer `unsupported`). */
+  unlock: PlatformUnlock;
 }
 
 /** The Android members; `initial` is the shell's `android_info` at start. */
@@ -204,7 +208,7 @@ export function androidMembers(events: ShellEvents, initial: AndroidStatus): And
     },
   };
 
-  return { saveFile: createAndroidSaveFile(), updater, android, notifications, tray, ...(initial.passkeys ? { passkeys: nativePasskeys() } : {}) };
+  return { saveFile: createAndroidSaveFile(), updater, android, notifications, tray, unlock: createAndroidUnlock(), ...(initial.passkeys ? { passkeys: nativePasskeys() } : {}) };
 }
 
 /** The shell's `android_info` at start. */

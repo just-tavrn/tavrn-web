@@ -41,6 +41,8 @@ export interface Platform {
   readonly hotkeys?: PlatformHotkeys;
   /** Desktop: the key that protects the local key store, in the OS keychain (`crypto/store.ts`). */
   readonly keystore?: PlatformKeystore;
+  /** Android: the key that protects the local key store, sealed behind fingerprint, face or PIN (`crypto/store.ts`). */
+  readonly unlock?: PlatformUnlock;
   /** Desktop: native notifications while the window is in the background. */
   readonly notifications?: PlatformNotifications;
   /** Desktop: the tray icon with the voice state. */
@@ -253,6 +255,40 @@ export interface PlatformKeystore {
   get(account: string): Promise<Uint8Array | null>;
   set(account: string, secret: Uint8Array): Promise<void>;
   delete(account: string): Promise<void>;
+}
+
+/** Whether the phone can unlock with fingerprint, face or PIN: `no_lock` (no screen lock), `unsupported` (before Android 11). */
+export type UnlockAvailability = "ready" | "no_lock" | "unsupported" | "unavailable";
+
+/** What the shell keeps for an account: `invalidated` (new biometrics, the screen lock removed) was wiped just now. */
+export type UnlockStored = "ready" | "none" | "invalidated";
+
+export interface UnlockStatus {
+  available: UnlockAvailability;
+  stored: UnlockStored;
+}
+
+/** Why an unlock call failed (`platform/unlock.ts`); `cancelled`: the user closed the prompt. */
+export type UnlockErrorCode = "cancelled" | "lockout" | "unavailable" | "invalidated" | "none" | "busy" | "invalid" | "no_node" | "failed";
+
+/** The texts of the system's prompt. */
+export interface UnlockPromptTexts {
+  title: string;
+  subtitle: string;
+}
+
+/**
+ * The Android app's biometric unlock (docs/ANDROID.md), scoped by the shell to the home node: one 32-byte secret per
+ * account (the local storage key), sealed with an Android Keystore key that needs fingerprint, face or the device's
+ * PIN, pattern or password for every use. `store` and `get` show the system's prompt; every call may reject with an
+ * `UnlockError`.
+ */
+export interface PlatformUnlock {
+  /** Availability, and what is stored for `account` (no prompt). */
+  status(account?: string): Promise<UnlockStatus>;
+  store(account: string, secret: Uint8Array, prompt: UnlockPromptTexts): Promise<void>;
+  get(account: string, prompt: UnlockPromptTexts): Promise<Uint8Array>;
+  clear(account: string): Promise<void>;
 }
 
 export interface NativeNotice {
