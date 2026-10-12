@@ -21,6 +21,8 @@ const RELEASE_0_3_0 = [
   "Tavrn-0.3.0.AppImage.sha256",
   "tavrn_0.3.0_amd64.deb",
   "tavrn_0.3.0_amd64.deb.sha256",
+  "Tavrn_0.3.0_android-arm64.apk",
+  "Tavrn_0.3.0_android-arm64.apk.sha256",
   "latest.json",
   "latest.yml",
   "latest.yml.minisig",
@@ -45,10 +47,12 @@ test("the download page reads every installer as the right system, shell, format
     "tavrn-electron_0.3.0_x64-setup.exe": { os: "windows", shell: "electron", kind: "nsis", arch: "x64" },
     "Tavrn-0.3.0.AppImage": { os: "linux", shell: "electron", kind: "appimage", arch: "x64" },
     "tavrn_0.3.0_amd64.deb": { os: "linux", shell: "electron", kind: "deb", arch: "x64" },
+    "Tavrn_0.3.0_android-arm64.apk": { os: "android", shell: "tauri", kind: "apk", arch: "arm64" },
   });
-  // Every installer has its checksum; the Tauri installers their updater signature.
+  // Every installer has its checksum; the Tauri desktop installers their updater signature (the APK is signed inside).
   for (const name of Object.keys(installers)) assert.ok(RELEASE_0_3_0.includes(`${name}.sha256`), name);
-  for (const name of Object.keys(installers).filter((n) => installers[n].shell === "tauri")) assert.ok(RELEASE_0_3_0.includes(`${name}.sig`), name);
+  for (const name of Object.keys(installers).filter((n) => installers[n].shell === "tauri" && installers[n].os === "windows")) assert.ok(RELEASE_0_3_0.includes(`${name}.sig`), name);
+  assert.ok(!RELEASE_0_3_0.includes("Tavrn_0.3.0_android-arm64.apk.sig"));
 });
 
 test("missing, retired and misnamed files fail the check", () => {
@@ -79,6 +83,7 @@ test("the release notes name every download with its platform, the fallback mark
   for (const a of expectedAssets("0.3.0").filter((x) => x.installer || x.name.endsWith(".tar.gz"))) {
     assert.ok(notes.includes(`[\`${a.name}\`](https://github.com/just-tavrn/tavrn-web/releases/download/v0.3.0/${a.name})`), a.name);
   }
+  assert.match(notes, /\| Android \| \[`Tavrn_0\.3\.0_android-arm64\.apk`\]/);
   assert.match(notes, /\| Windows \(fallback\) \| \[`tavrn-electron_0\.3\.0_x64-setup\.exe`\].*\*\*Fallback only\*\*/);
   assert.match(notes, /sha256sum -c/);
   assert.match(notes, /latest-linux\.yml/);
@@ -107,6 +112,7 @@ test("collect copies exactly the files each build job may deliver, which with re
   // What release-assets writes itself: signatures, the remaining sums and latest.json.
   const own = RELEASE_0_3_0.filter((n) => !copied.includes(n) && !n.startsWith("tavrn-web-"));
   assert.deepEqual(own.sort(), [
+    "Tavrn_0.3.0_android-arm64.apk", "Tavrn_0.3.0_android-arm64.apk.sha256",
     "Tavrn_0.3.0_x64-setup.exe.sha256", "Tavrn_0.3.0_x64-setup.exe.sig", "Tavrn_0.3.0_x64_en-US.msi.sha256",
     "Tavrn_0.3.0_x64_en-US.msi.sig", "latest-linux.yml.minisig", "latest.json", "latest.yml.minisig",
     "tavrn-electron_0.3.0_x64-setup.exe.sha256",
@@ -126,4 +132,12 @@ test("collect refuses a file of another job, a signature from a build, a missing
   fails((d) => rmSync(join(d.tauri, "Tavrn_0.3.0_x64_en-US.msi")), /tauri: missing Tavrn_0\.3\.0_x64_en-US\.msi/);
   fails((d) => { const f = join(d.linux, "latest-linux.yml"); rmSync(f); symlinkSync("/etc/hostname", f); }, /not a regular file/);
   fails((d) => delete d["electron-windows"], /source electron-windows not given/);
+  // The Android build delivers only the unsigned APK: a signed one (any signature) never comes from a build job.
+  fails((d) => writeFileSync(join(d.android, "Tavrn_0.3.0_android-arm64.apk"), "x"), /android: unexpected Tavrn_0\.3\.0_android-arm64\.apk/);
+});
+
+test("the Android build hands in the unsigned APK; release-assets signs it under the published name", () => {
+  assert.deepEqual(sourceAssets("0.3.0").android, ["Tavrn_0.3.0_android-arm64-unsigned.apk"]);
+  assert.equal(websiteEntry("Tavrn_0.3.0_android-arm64-unsigned.apk")?.os, "android");
+  assert.deepEqual(checkAssets([...RELEASE_0_3_0, "Tavrn_0.3.0_android-arm64-unsigned.apk"], "0.3.0"), ["unexpected: Tavrn_0.3.0_android-arm64-unsigned.apk"], "never published");
 });

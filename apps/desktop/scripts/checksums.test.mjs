@@ -23,11 +23,13 @@ test("every installer gets <asset>.sha256 in sha256sum format; signatures, feeds
     "latest.yml": "version: 0.3.0",
     "latest.yml.minisig": "sig",
     "latest-linux.yml": "version: 0.3.0",
+    "Tavrn_0.3.0_android-arm64.apk": "apk",
   };
   for (const [name, content] of Object.entries(files)) writeFileSync(join(dir, name), content);
   const written = writeChecksums(dir);
   assert.deepEqual(written, [
     "Tavrn-0.3.0.AppImage.sha256",
+    "Tavrn_0.3.0_android-arm64.apk.sha256",
     "Tavrn_0.3.0_x64-setup.exe.sha256",
     "Tavrn_0.3.0_x64_en-US.msi.sha256",
     "tavrn-electron_0.3.0_x64-setup.exe.sha256",
