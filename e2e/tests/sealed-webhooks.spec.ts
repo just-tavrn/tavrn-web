@@ -2,13 +2,14 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import sodium from "libsodium-wrappers";
 import { NODE, openNavIfMobile, registerViaUi, tokenOf, openRoomInvite } from "./helpers";
+import { scaled } from "./timeouts";
 
 // Write-only webhooks in encrypted channels (APPLICATIONS.md §6.1a, ENCRYPTION.md §5b): created in the room settings
 // with the sealing mode, a service seals with libsodium (`crypto_box_seal`) to the channel's inbox key, the node seals
 // plaintext posts of node-sealed webhooks and stores only sealed boxes, members read both with the WEBHOOK badge and a
 // lock, and a member who joins later reads them through the history keys.
 
-const CRYPTO = { timeout: 30_000 };
+const CRYPTO = { timeout: scaled(30_000) };
 const B64 = () => sodium.base64_variants.URLSAFE_NO_PADDING;
 
 async function newPage(browser: Browser): Promise<Page> {
@@ -72,7 +73,7 @@ async function postSealed(page: Page, url: string, inbox: string, payload: unkno
 
 test.describe("Sealed webhooks in encrypted channels", () => {
   test("sealed by the service and by the node: members read both, so does a member who joined later", async ({ browser, page }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(scaled(240_000));
     await registerViaUi(page, { prefix: "alice" });
     await openNavIfMobile(page);
     await page.getByRole("button", { name: "Raum erstellen" }).click();

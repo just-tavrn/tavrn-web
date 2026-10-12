@@ -7,6 +7,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { NODE, createRoomViaApi, loginAs, registerViaApi } from "./helpers";
 import { B, FEDERATION_BROWSER, NODE_B, WEB_B, chromiumOnly, loginOn } from "./federation-helpers";
+import { scaled } from "./timeouts";
 
 async function axe(page: Page, selector: string) {
   await page.waitForTimeout(300);
@@ -22,7 +23,7 @@ chromiumOnly();
 const NOTES = { name: "notizen.txt", mimeType: "text/plain", buffer: Buffer.from("Hallo") };
 
 test("a role limited to images cannot attach a text file; a channel override allows documents again", async ({ browser, page, request }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(scaled(120_000));
   const owner = await registerViaApi(request, "upo");
   const member = await registerViaApi(request, "upm");
   const room = await createRoomViaApi(request, owner.token, "Dateitypen");
@@ -83,7 +84,7 @@ test("a role limited to images cannot attach a text file; a channel override all
 
 test.describe("download warning", () => {
   test("an uploaded program asks before it is saved: cancel saves nothing, \"Download anyway\" saves", async ({ page, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(scaled(120_000));
     const owner = await registerViaApi(request, "exe", NODE_B);
     const room = await createRoomViaApi(request, owner.token, "Programme", "invite", { base: NODE_B });
     const channel = room.channels.find((c: { kind: string }) => c.kind === "text");

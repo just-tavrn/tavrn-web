@@ -154,6 +154,12 @@ Ports follow `E2E_NODE_PORT` (default 8080) and `E2E_WEB_PORT` (default 5173): t
 (+1, +2, +4 to +6) and LiveKit, ICE over TCP and TURN ports derived from them, so several checkouts can run at once
 with different base ports. `E2E_VOICE=false` skips voice where no `livekit-server` is available.
 
+Waits scale with `TAVRN_TEST_TIMEOUT_FACTOR` (default 1; the organization's self-hosted runners set 3): the test and
+`expect` timeouts and the explicit limits of the specs go through `scaled()` (`e2e/tests/timeouts.ts`), here and in
+the Electron shell's specs. A spec waits for a condition, never for a fixed time. In CI each test gets one retry as a
+safety net: a test that passes only on its retry counts as flaky in the HTML report, and the workflows put "N flaky"
+into the job summary with an annotation per test.
+
 ## Accessibility
 
 The client aims at WCAG 2.2 level AA. axe-core scans of every main screen on phone, tablet and desktop, keyboard

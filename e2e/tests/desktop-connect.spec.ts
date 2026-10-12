@@ -13,6 +13,7 @@ import { passkeyWrappingKey, unwrapMasterSecret } from "@tavrn/crypto";
 import { ensureCrypto } from "@tavrn/e2ee";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { ADULT_DOB, completeDateOfBirth, NODE, addVirtualAuthenticator, confirmRecoveryCodes, confirmRecoveryKey, nextTotpCode, registerViaApi, tokenOf, uniqueName } from "./helpers";
+import { scaled } from "./timeouts";
 
 interface AppSession {
   id: string;
@@ -81,7 +82,7 @@ test.describe("Sign-in page of the desktop app (app sessions, FEDERATION.md §8 
 
   test("registration with a passkey, then a passkey-only sign-in on the node's page", async ({ page, request, browserName }) => {
     test.skip(browserName !== "chromium", "CDP virtual authenticator is Chromium only");
-    test.setTimeout(120_000);
+    test.setTimeout(scaled(120_000));
     await addVirtualAuthenticator(page);
     const username = uniqueName("dcpk");
     const password = `passwort-${username}-xyz`;
@@ -188,7 +189,7 @@ async function unlocksWith(request: APIRequestContext, token: string, address: s
 test.describe("Sign-in page of the desktop app: passkeys unlock the app (sealed unlock material)", () => {
   test("method=passkey signs in with the passkey at once and seals its PRF output; an unlock session asks only for the passkey", async ({ page, request, browserName }) => {
     test.skip(browserName !== "chromium", "CDP virtual authenticator is Chromium only");
-    test.setTimeout(150_000);
+    test.setTimeout(scaled(150_000));
     await addVirtualAuthenticator(page);
     // The relying party ids of the page's own assertions (PROTOCOL.md §5a.4: the client passes the node's published id).
     await page.addInitScript(() => {

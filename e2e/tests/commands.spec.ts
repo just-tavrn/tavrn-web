@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test, type APIRequestContext } from "@playwright/test";
 import { NODE, createRoomViaApi, inviteCode, loginAs, registerViaApi, registerViaUi, tokenOf } from "./helpers";
+import { scaled } from "./timeouts";
 
 /** Slash commands in the composer (design note 4.11, PROTOCOL.md §4.1). */
 
@@ -73,7 +74,7 @@ test.describe("Slash commands", () => {
     await expect(page.getByTestId("command-help")).not.toContainText("/kick");
   });
   test("/me and /shrug in an encrypted channel go through the composer's encrypted send path", async ({ page, request }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(scaled(90_000));
     // A device with keys (wizard), then an encrypted room opened fresh: the command runner is built
     // while the device is still joining the group and must use the manager once it is ready.
     await registerViaUi(page, { prefix: "geheim" });

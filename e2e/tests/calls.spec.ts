@@ -6,6 +6,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { NODE, openNavIfMobile, tokenOf } from "./helpers";
 import { FAKE_MEDIA, befriend, closeOpened, cues, hooks, inboundPeak, message, openConversation, send, voiceUser, type VoiceUser } from "./voice-helpers";
+import { scaled } from "./timeouts";
 
 test.use({ launchOptions: { args: FAKE_MEDIA }, permissions: ["microphone", "camera"] });
 
@@ -40,7 +41,7 @@ async function dmBetween(alice: VoiceUser, bob: VoiceUser): Promise<string> {
 
 test.describe("Calls in direct messages", () => {
   test("Call: ringing with a ringtone, answering, encrypted audio, hanging up ends it for both", async ({ browser }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(scaled(240_000));
     const alice = await voiceUser(browser, "calla", consoleLines);
     const bob = await voiceUser(browser, "callb", consoleLines);
     const id = await dmBetween(alice, bob);
@@ -104,7 +105,7 @@ test.describe("Calls in direct messages", () => {
   });
 
   test("Declining ends the call as missed", async ({ browser }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(scaled(180_000));
     const alice = await voiceUser(browser, "calld", consoleLines);
     const bob = await voiceUser(browser, "calle", consoleLines);
     const id = await dmBetween(alice, bob);
@@ -129,7 +130,7 @@ test.describe("Calls in direct messages", () => {
   });
 
   test("A group call with three people shows who is in it", async ({ browser }) => {
-    test.setTimeout(300_000);
+    test.setTimeout(scaled(300_000));
     const alice = await voiceUser(browser, "calgf", consoleLines);
     const bob = await voiceUser(browser, "calgg", consoleLines);
     const carol = await voiceUser(browser, "calgh", consoleLines);

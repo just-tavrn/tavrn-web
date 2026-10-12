@@ -10,6 +10,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { NODE, createRoomViaApi, inviteCode, openNavIfMobile, tokenOf } from "./helpers";
 import { FAKE_MEDIA, closeOpened, hooks, voiceUser, type VoiceUser } from "./voice-helpers";
+import { scaled } from "./timeouts";
 
 test.use({ launchOptions: { args: FAKE_MEDIA }, permissions: ["microphone", "camera"] });
 test.afterEach(closeOpened);
@@ -85,7 +86,7 @@ async function axeStage(page: Page) {
 
 test.describe("Screen shares are joined", () => {
   test("a screen share is joined and left", async ({ browser, request }) => {
-    test.setTimeout(300_000);
+    test.setTimeout(scaled(300_000));
     const phone = (test.info().project.use.viewport?.width ?? 1280) < 768;
     const alice = await voiceUser(browser, "sjali");
     const bob = await voiceUser(browser, "sjbob");

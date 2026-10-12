@@ -8,6 +8,7 @@ import { createSocket } from "node:dgram";
 import { mkdirSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig } from "@playwright/test";
+import { scaled } from "../../../e2e/tests/timeouts.ts";
 import { nodePort, repoDir, webOrigin, webPort } from "./harness.ts";
 
 const nodeBin = process.env.E2E_NODE_BIN?.trim();
@@ -51,15 +52,20 @@ const voiceEnv: Record<string, string> =
       }
     : { TAVRN_VOICE_ENABLED: "false" };
 
+const ci = !!process.env.CI;
+
 export default defineConfig({
   testDir: ".",
   testMatch: "*.spec.ts",
   outputDir: "../test-results",
   workers: 1,
-  timeout: 180_000,
-  expect: { timeout: 20_000 },
-  reporter: "list",
-  use: { trace: "retain-on-failure", screenshot: "only-on-failure" },
+  // Every limit scaled by TAVRN_TEST_TIMEOUT_FACTOR (e2e/tests/timeouts.ts), like the main suite.
+  timeout: scaled(180_000),
+  expect: { timeout: scaled(20_000) },
+  // One retry in CI as a safety net, never as the fix: the JSON report feeds the desktop workflow's "N flaky" line.
+  retries: ci ? 1 : 0,
+  reporter: ci ? [["list"], ["json", { outputFile: "../test-results/results.json" }]] : "list",
+  use: { trace: ci ? "on-first-retry" : "retain-on-failure", screenshot: "only-on-failure" },
   webServer: external
     ? undefined
     : [

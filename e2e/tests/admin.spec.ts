@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test } from "@playwright/test";
 import { NODE, adminAccount, confirmRecoveryCodes, confirmRecoveryKey, enrollTotpInUi, loginAs, openNavIfMobile, registerViaApi, uniqueName } from "./helpers";
+import { scaled } from "./timeouts";
 
 test.describe("Node administration", () => {
   test("Overview, account invite, suspending a user and ban", async ({ page, request }) => {
@@ -57,7 +58,7 @@ test.describe("Node administration", () => {
   });
 
   test("Reset the second factor of a locked-out user; the user sets it up again", async ({ browser, page, request }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(scaled(90_000));
     const admin = await adminAccount(request);
     const victim = await registerViaApi(request, "locked");
     await loginAs(page, admin);

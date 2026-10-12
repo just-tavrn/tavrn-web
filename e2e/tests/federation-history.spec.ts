@@ -2,13 +2,14 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { openNavIfMobile, registerViaUi, tokenOf, openRoomInvite } from "./helpers";
 import { A, B, FEDERATION_BROWSER, NODE_A, WEB_A, WEB_B, chromiumOnly } from "./federation-helpers";
+import { scaled } from "./timeouts";
 
 test.use(FEDERATION_BROWSER);
 
 // History for new members across nodes (ENCRYPTION.md §7b): the history-keys routes live on the node that hosts
 // the conversation, shares are addressed by user address, a member of another node gets them through its
 // federated session there.
-const CRYPTO = { timeout: 30_000 };
+const CRYPTO = { timeout: scaled(30_000) };
 
 async function newPage(browser: Browser): Promise<Page> {
   const context = await browser.newContext({ ...test.info().project.use });
@@ -32,7 +33,7 @@ test.describe("History for new members across nodes", () => {
   chromiumOnly();
 
   test('Room on A with the "all" policy: Bob from B joins and reads older messages', async ({ browser, page }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(scaled(240_000));
     await registerViaUi(page, { prefix: "fha", web: WEB_A, domain: A });
     const bobPage = await newPage(browser);
     const bob = await registerViaUi(bobPage, { prefix: "fhb", web: WEB_B, domain: B });

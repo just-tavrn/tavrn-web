@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { openNavIfMobile, registerViaUi, openRoomInvite } from "./helpers";
+import { scaled } from "./timeouts";
 
 // The whiteboard on the voice stage (design note 4.10 "presented like a stream, joined on demand"): two people
 // in a voice call with Chromium's fake media devices, the board shown on the presenter's tile, joined from
@@ -106,7 +107,7 @@ test.describe("Whiteboard on the voice stage", () => {
   test("presented on the tile, joined from the tile, seen live, left; screen instead of whiteboard", async ({ browser }) => {
     const project = test.info().project.name;
     test.skip(project !== "chromium" && project !== "mobile-android", "voice runs in Chromium");
-    test.setTimeout(300_000);
+    test.setTimeout(scaled(300_000));
     const alice = await person(browser, "wbvalice", "Alice");
     await openNavIfMobile(alice.page);
     await alice.page.getByRole("button", { name: "Raum erstellen" }).click();

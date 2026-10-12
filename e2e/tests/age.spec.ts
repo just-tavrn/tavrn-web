@@ -5,6 +5,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { NODE, adminAccount, bornYearsAgo, createRoomViaApi, inviteCode, loginAs, registerViaApi, registerViaUi, tokenOf } from "./helpers";
+import { scaled } from "./timeouts";
 
 const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22a", "wcag22aa"];
 
@@ -18,7 +19,7 @@ async function axe(page: Page, view: string) {
 
 test.describe("Age gates", () => {
   test("a minor registers, an adult gates a room and a channel: hidden in Discover, no join by invite, locked channel", async ({ browser, page, request }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(scaled(180_000));
     // The registration form asks for the date of birth (and checks it before the node does).
     await page.goto("/login");
     await page.getByRole("tab", { name: "Registrieren" }).click();

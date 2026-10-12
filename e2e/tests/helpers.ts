@@ -3,6 +3,7 @@ import { createHmac } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { expect, type APIRequestContext, type Page } from "@playwright/test";
+import { scaled } from "./timeouts.ts";
 
 export const NODE = `http://127.0.0.1:${process.env.E2E_NODE_PORT ?? "8080"}`;
 
@@ -139,7 +140,7 @@ export async function ensureDateOfBirth(request: APIRequestContext, token: strin
 /** The blocking "add your date of birth" dialog (accounts provisioned by single sign-on): fills it in. */
 export async function completeDateOfBirth(page: Page, dateOfBirth = ADULT_DOB): Promise<void> {
   const dialog = page.getByTestId("dob-dialog");
-  await expect(dialog).toBeVisible({ timeout: 20_000 });
+  await expect(dialog).toBeVisible({ timeout: scaled(20_000) });
   await dialog.getByLabel("Geburtsdatum", { exact: true }).fill(dateOfBirth);
   await page.getByTestId("dob-save").click();
   await expect(dialog).toHaveCount(0);

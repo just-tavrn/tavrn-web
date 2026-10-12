@@ -2,6 +2,7 @@
 import { dirname, resolve } from "node:path";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { NODE, createRoomViaApi, inviteCode, loginAs, openNavIfMobile, registerViaApi, railName } from "./helpers";
+import { scaled } from "./timeouts";
 
 // Fixtures made with ffmpeg (testsrc): a still PNG and a one-second animated GIF.
 const FIXTURES = resolve(dirname(new URL(import.meta.url).pathname), "../fixtures");
@@ -31,7 +32,7 @@ async function openMembers(page: Page) {
 
 test.describe("Profile", () => {
   test("Avatar (image and animation), banner, description and accounts, visible in the profile popover and on the profile page", async ({ page, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(scaled(120_000));
     const alice = await registerViaApi(request, "alice");
     const bob = await registerViaApi(request, "bob");
     const room = await createRoomViaApi(request, alice.token, "Gilde");
@@ -105,7 +106,7 @@ test.describe("Profile", () => {
   });
 
   test("Upload a room icon: in the room bar and the room header, animated only on hover", async ({ page, request }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(scaled(90_000));
     const owner = await registerViaApi(request, "owner");
     const room = await createRoomViaApi(request, owner.token, "Icons");
     await loginAs(page, owner);

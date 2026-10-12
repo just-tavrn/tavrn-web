@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { NODE } from "./helpers";
+import { scaled } from "./timeouts";
 
 /** The e2e package (its node_modules hold vite-node and the installed @tavrn/bot). */
 const E2E = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -28,7 +29,7 @@ export async function startExampleBot(app: { secret: string; botUsername: string
     log = (log + d.toString()).slice(-4000);
   });
   await new Promise<void>((ready, fail) => {
-    const timer = setTimeout(() => fail(new Error(`example bot not ready:\n${log}`)), 60_000);
+    const timer = setTimeout(() => fail(new Error(`example bot not ready:\n${log}`)), scaled(60_000));
     child.stdout?.on("data", (d: Buffer) => {
       if (d.toString().includes("ready ")) {
         clearTimeout(timer);

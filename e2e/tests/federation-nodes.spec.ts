@@ -2,6 +2,7 @@
 import { expect, test } from "@playwright/test";
 import { createRoomViaApi, loginViaApi, openNavIfMobile, registerViaApi, uniqueName, railName } from "./helpers";
 import { A, B, BROWSER_API_B, FEDERATION_BROWSER, NODE_A, NODE_B, WEB_A, WEB_B, chromiumOnly, federatedSession, indexOf, loginOn } from "./federation-helpers";
+import { scaled } from "./timeouts";
 
 test.use(FEDERATION_BROWSER);
 
@@ -12,7 +13,7 @@ test.describe("Rooms on several nodes", () => {
   chromiumOnly();
 
   test("Index: a new device restores the rooms of both nodes", async ({ browser, page, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(scaled(120_000));
     const alice = await registerViaApi(request, "fidx", NODE_A);
     const carol = await registerViaApi(request, "fcarol", NODE_A);
     const bob = await registerViaApi(request, "fbob", NODE_B);
@@ -57,7 +58,7 @@ test.describe("Rooms on several nodes", () => {
   });
 
   test("One node is unreachable: only its rooms are affected", async ({ page, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(scaled(120_000));
     const alice = await registerViaApi(request, "foff", NODE_A);
     const bob = await registerViaApi(request, "foffb", NODE_B);
     const roomA = await createRoomViaApi(request, alice.token, uniqueName("lokal "), "invite", { base: NODE_A });

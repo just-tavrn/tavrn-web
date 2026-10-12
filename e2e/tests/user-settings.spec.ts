@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test } from "@playwright/test";
 import { NODE, addVirtualAuthenticator, createRoomViaApi, loginAs, loginViaApi, openNavIfMobile, registerViaApi, registerViaUi } from "./helpers";
+import { scaled } from "./timeouts";
 
 test.describe("User settings", () => {
   test("Switching the language localizes the interface and the default channels", async ({ page, request }) => {
@@ -64,7 +65,7 @@ test.describe("User settings", () => {
 
   test("A passkey confirms security-relevant changes after a reload", async ({ page, request, browserName }) => {
     test.skip(browserName !== "chromium", "CDP virtual authenticator is Chromium only");
-    test.setTimeout(120_000);
+    test.setTimeout(scaled(120_000));
     await addVirtualAuthenticator(page);
     const account = await registerViaUi(page, { prefix: "sudo" });
     // The login's confirmation lives in memory only: after the page load the first passkey needs the password.

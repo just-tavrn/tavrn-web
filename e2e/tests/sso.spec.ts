@@ -5,6 +5,7 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 import { ADULT_DOB, NODE, adminAccount, completeDateOfBirth, confirmRecoveryKey, confirmWithPassword, createRoomViaApi, enrollTotp, loginAs, nextTotpCode, registerViaApi, tokenOf, uniqueName } from "./helpers";
 import { createRole, openMembers } from "./menu-helpers";
 import { logoutViaUi, openNavIfMobile } from "./helpers";
+import { scaled } from "./timeouts";
 
 const WEB = `http://localhost:${process.env.E2E_WEB_PORT ?? "5173"}`;
 const DATA = resolve(dirname(new URL(import.meta.url).pathname), "../../data-dev");
@@ -93,7 +94,7 @@ test.describe("Single Sign-on (APPLICATIONS.md §8)", () => {
   });
 
   test("An SSO account sets up the recovery key like password accounts and has an identity afterwards (design note 4.13 item 10)", async ({ page, browser, request }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(scaled(90_000));
     const username = uniqueName("ssoid");
     await firstSsoLogin(page, username);
     // The same recovery key step as for password accounts (helpers.registerViaUi): 24 words, the finish
@@ -209,6 +210,10 @@ test.describe("TAVRN_OIDC_ONLY", () => {
   }
 
   test("SSO only: password form for administrators only (emergency access)", async ({ page, browser, request }) => {
+    // The break-glass account is one account for every run (both projects, retries, --repeat-each): the node takes each
+    // TOTP step once, so a sign-in may wait up to 30 s for the next step, and the other worker waits for the lock
+    // meanwhile. The default 30 s budget left no room for that.
+    test.setTimeout(scaled(120_000));
     // Registration is closed for everybody but the break-glass names.
     const refused = await request.post(`${SSO_NODE}/api/v1/auth/register`, { data: { username: uniqueName("nope"), password: "passwort-nope-12345" } });
     expect(refused.status()).toBe(403);

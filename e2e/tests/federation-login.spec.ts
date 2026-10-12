@@ -2,6 +2,7 @@
 import { expect, test } from "@playwright/test";
 import { ADULT_DOB, addVirtualAuthenticator, confirmRecoveryCodes, confirmRecoveryKey, nextTotpCode, openNavIfMobile, registerViaApi, uniqueName, logoutViaUi } from "./helpers";
 import { A, B, FEDERATION_BROWSER, NODE_A, WEB_A, WEB_B, chromiumOnly } from "./federation-helpers";
+import { scaled } from "./timeouts";
 
 test.use(FEDERATION_BROWSER);
 
@@ -12,7 +13,7 @@ test.describe("Signing in with an account of another node", () => {
   chromiumOnly();
 
   test("Direct: password and TOTP against the home node", async ({ page, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(scaled(120_000));
     const alice = await registerViaApi(request, "fdirect", NODE_A);
     await page.goto(`${WEB_B}/login`);
     await expect(page.getByTestId("node-name")).toContainText(`(${B})`);
@@ -47,7 +48,7 @@ test.describe("Signing in with an account of another node", () => {
   });
 
   test("Connect flow: passkey in the web client of the home node", async ({ page, request }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(scaled(150_000));
     const { prf } = await addVirtualAuthenticator(page);
     // An account on A with a passkey as its only factor, created in A's own web client.
     const username = uniqueName("fpk");

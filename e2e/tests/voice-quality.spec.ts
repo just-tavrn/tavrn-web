@@ -6,6 +6,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { createRoomViaApi, openNavIfMobile, tokenOf } from "./helpers";
 import { FAKE_MEDIA, closeOpened, hooks, voiceUser } from "./voice-helpers";
+import { scaled } from "./timeouts";
 
 test.use({ launchOptions: { args: FAKE_MEDIA }, permissions: ["microphone", "camera"] });
 test.afterEach(closeOpened);
@@ -61,7 +62,7 @@ async function join(page: Page, roomId: string) {
 }
 
 test("an owner picks a quality preset; the voice panel shows it and the microphone publishes with it", async ({ browser }) => {
-  test.setTimeout(240_000);
+  test.setTimeout(scaled(240_000));
   const owner = await voiceUser(browser, "vq");
   const page = owner.page;
   await page.context().addInitScript(recordCaptures);

@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { ADULT_DOB, type Account, createRoomViaApi, enrollTotp, ensureDateOfBirth, loginViaApi, registerViaApi, uniqueName } from "./helpers";
 import { A, B, FEDERATION_BROWSER, NODE_A, NODE_B, WEB_A, chromiumOnly, federatedSession, loginOn } from "./federation-helpers";
+import { scaled } from "./timeouts";
 
 test.use(FEDERATION_BROWSER);
 
@@ -104,7 +105,7 @@ test.describe("Conformance check of other nodes", () => {
   chromiumOnly();
 
   test("The admin checks b.test and c.test, blocks and unblocks c.test", async ({ page, request }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(scaled(240_000));
     const admin = await adminOfA(request);
     await openAdmin(page, admin);
 
@@ -148,7 +149,7 @@ test.describe("Conformance check of other nodes", () => {
   });
 
   test("Users report a node via Discover, the admin sees and handles the reports", async ({ page, request }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(scaled(180_000));
     // A discoverable room on b.test makes b.test announce itself to a.test.
     const bob = await registerViaApi(request, "frepb", NODE_B);
     const roomName = uniqueName("Gemeldet ");
@@ -210,7 +211,7 @@ test.describe("Conformance check of other nodes", () => {
   });
 
   test("The client warns about a failed node and blocks a blocked one", async ({ page, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(scaled(120_000));
     const alice = await registerViaApi(request, "fconf", NODE_A);
     const bob = await registerViaApi(request, "fconfb", NODE_B);
     const roomB = await createRoomViaApi(request, bob.token, uniqueName("geprüft "), "public", { base: NODE_B });

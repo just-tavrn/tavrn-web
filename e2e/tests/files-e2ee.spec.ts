@@ -2,13 +2,14 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { NODE, loginViaUi, openNavIfMobile, openRoomInvite, registerViaUi, tokenOf } from "./helpers";
+import { scaled } from "./timeouts";
 
 // End-to-end encrypted files channels (tavrn-protocol/FILES.md §8): Alice creates one (encrypted by default), uploads
 // a file and makes a folder; Bob, a second member, reads the names, downloads the file and finds it with the search on
 // his device; Bob's second device without keys sees "Your files" and deletes his upload by ownership; deleting the
 // channel needs the typed name and says what happens to the files. The node only ever holds ciphertext.
 
-const CRYPTO = { timeout: 30_000 };
+const CRYPTO = { timeout: scaled(30_000) };
 const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22a", "wcag22aa"];
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
 
@@ -34,7 +35,7 @@ async function api(page: Page, path: string) {
 
 test.describe("Encrypted files channels", () => {
   test("create encrypted, upload, folder, a member downloads and finds it, a locked device deletes own files, typed deletion", async ({ browser, page }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(scaled(240_000));
     const alice = await registerViaUi(page, { prefix: "fea" });
     // Alice's room (its text channel is encrypted) and an encrypted files channel created in the dialog.
     await openNavIfMobile(page);

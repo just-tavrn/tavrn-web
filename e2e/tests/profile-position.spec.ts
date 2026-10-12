@@ -2,13 +2,14 @@
 import { expect, test } from "@playwright/test";
 import { NODE, createRoomViaApi, loginAs, openNavIfMobile, registerViaApi } from "./helpers";
 import { expectInsideViewport, isTouch, joinRoom, openContextMenu, openMembers, postMessage } from "./menu-helpers";
+import { scaled } from "./timeouts";
 
 // The profile card used to be cut off when opened from the member list on desktop (design note 4.11): it is
 // now placed with collision handling. Desktop and tablet sizes run in the desktop project, phones in the
 // mobile project (bottom sheet).
 test.describe("Profile card stays inside the window", () => {
   test("from the member list, from the message author and from the DM list", async ({ page, request }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(scaled(90_000));
     const alice = await registerViaApi(request, "alice");
     const bob = await registerViaApi(request, "bob");
     const room = await createRoomViaApi(request, alice.token, "Profil-Raum");

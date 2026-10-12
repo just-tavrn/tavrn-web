@@ -3,6 +3,7 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 import { loginViaUi, openNavIfMobile, registerViaUi, tokenOf, type UiAccount, openRoomInvite } from "./helpers";
 import { freshIdentityKey } from "./crypto-helpers";
 import { A, B, BROWSER_API_A, FEDERATION_BROWSER, NODE_A, NODE_B, WEB_A, WEB_B, chromiumOnly, indexOf } from "./federation-helpers";
+import { scaled } from "./timeouts";
 
 test.use(FEDERATION_BROWSER);
 
@@ -10,7 +11,7 @@ test.use(FEDERATION_BROWSER);
 // encrypted room channel hosted on b.test, friends and DMs across the nodes, a group DM with members of
 // both, key changes of a user of the other node, and a new device that restores everything from the
 // conversation index and the backups. Crypto-heavy steps (MLS joins, Welcomes) get longer timeouts.
-const CRYPTO = { timeout: 20_000 };
+const CRYPTO = { timeout: scaled(20_000) };
 
 async function newPage(browser: Browser): Promise<Page> {
   const context = await browser.newContext({ ...test.info().project.use });
@@ -64,7 +65,7 @@ test.describe("Encryption across nodes", () => {
   chromiumOnly();
 
   test("Room on B: direct invite from the invite list, chat with a reaction and an edit, the node only sees ciphertext", async ({ browser, page }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(scaled(240_000));
     const alice = await registerViaUi(page, { prefix: "fea", web: WEB_A, domain: A });
     const bobPage = await newPage(browser);
     const bob = await registerViaUi(bobPage, { prefix: "feb", web: WEB_B, domain: B });
@@ -136,7 +137,7 @@ test.describe("Encryption across nodes", () => {
   });
 
   test("Friends across nodes, DM in both directions, group with three people, the DM's node unreachable", async ({ browser, page }) => {
-    test.setTimeout(300_000);
+    test.setTimeout(scaled(300_000));
     const alice = await registerViaUi(page, { prefix: "fda", web: WEB_A, domain: A });
     const bobPage = await newPage(browser);
     const bob = await registerViaUi(bobPage, { prefix: "fdb", web: WEB_B, domain: B });
@@ -219,7 +220,7 @@ test.describe("Encryption across nodes", () => {
   });
 
   test("A new device restores the room and the DM via the index and the backup; a key change of the B user locks the verified DM", async ({ browser, page }) => {
-    test.setTimeout(300_000);
+    test.setTimeout(scaled(300_000));
     const alice = await registerViaUi(page, { prefix: "fva", web: WEB_A, domain: A });
     const bobPage = await newPage(browser);
     const bob: UiAccount = await registerViaUi(bobPage, { prefix: "fvb", web: WEB_B, domain: B });

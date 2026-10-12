@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { expect, test } from "@playwright/test";
 import { createRoomViaApi, openNavIfMobile, registerViaApi, uniqueName } from "./helpers";
 import { A, B, FEDERATION_BROWSER, NODE_A, NODE_B, WEB_A, WEB_B, chromiumOnly, indexOf, loginOn } from "./federation-helpers";
+import { scaled } from "./timeouts";
 
 test.use(FEDERATION_BROWSER);
 
@@ -17,7 +18,7 @@ test.describe("Discovery across nodes", () => {
   chromiumOnly();
 
   test("List a room on B, discover and join it on A", async ({ page, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(scaled(120_000));
     const bob = await registerViaApi(request, "dbob", NODE_B);
     const alice = await registerViaApi(request, "dalice", NODE_A);
     const roomName = uniqueName("Brettspiele ");

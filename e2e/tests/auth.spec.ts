@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test } from "@playwright/test";
 import { ADULT_DOB, NODE, addVirtualAuthenticator, confirmRecoveryCodes, confirmRecoveryKey, confirmWithPassword, loginViaUi, nextTotpCode, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, uniqueName, logoutViaUi } from "./helpers";
+import { scaled } from "./timeouts";
 
 test.describe("Sign-in with a second factor", () => {
   test("Registration with TOTP: codes, recovery key, keys on the node", async ({ page, request }) => {
@@ -56,7 +57,7 @@ test.describe("Sign-in with a second factor", () => {
   });
 
   test("New device: unlock with the recovery key, without the key only restricted", async ({ browser, page, request }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(scaled(90_000));
     const account = await registerViaUi(page);
     const other = await browser.newContext({ ...test.info().project.use });
     const page2 = await other.newPage();
@@ -79,7 +80,7 @@ test.describe("Sign-in with a second factor", () => {
   });
 
   test("Reset the identity when the recovery key is lost", async ({ browser, page, request }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(scaled(90_000));
     const account = await registerViaUi(page);
     const before = (await (await request.get(`${NODE}/api/v1/users/${account.username}/keys`)).json()).identity_public_key;
     const other = await browser.newContext({ ...test.info().project.use });
@@ -99,7 +100,7 @@ test.describe("Sign-in with a second factor", () => {
   });
 
   test("Lock on close: a new tab asks for the recovery key", async ({ context, page }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(scaled(90_000));
     const account = await registerViaUi(page);
     await page.goto("/settings/security");
     await expect(page.getByTestId("e2ee-status")).toHaveText(/Entsperrt/);
@@ -152,7 +153,7 @@ test.describe("Sign-in with a second factor", () => {
 test.describe("Passkeys (Chromium, virtual authenticator)", () => {
   test("Registration with a passkey, sign-out, sign-in with the passkey only", async ({ page, request, browserName }) => {
     test.skip(browserName !== "chromium", "CDP virtual authenticator is Chromium only");
-    test.setTimeout(90_000);
+    test.setTimeout(scaled(90_000));
     const { prf: prfOption } = await addVirtualAuthenticator(page);
     const username = uniqueName("pk");
     const password = `passwort-${username}-xyz`;
@@ -204,7 +205,7 @@ test.describe("Passkeys (Chromium, virtual authenticator)", () => {
 
   test("Add a passkey in the settings and use it as the second factor after the password", async ({ page, request, browserName }) => {
     test.skip(browserName !== "chromium", "CDP virtual authenticator is Chromium only");
-    test.setTimeout(90_000);
+    test.setTimeout(scaled(90_000));
     await addVirtualAuthenticator(page);
     const account = await registerViaUi(page);
     await page.goto("/settings/security");

@@ -5,6 +5,7 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 import { NODE, createRoomViaApi, inviteCode, loginAs, openNavIfMobile, registerViaApi, registerViaUi, tokenOf } from "./helpers";
 import { freshIdentityKey } from "./crypto-helpers";
 import { openContextMenu } from "./menu-helpers";
+import { scaled } from "./timeouts";
 
 async function newPage(browser: Browser): Promise<Page> {
   const context = await browser.newContext({ ...test.info().project.use });
@@ -29,7 +30,7 @@ async function joinInUi(page: Page, code: string) {
 
 test.describe("Security log in the welcome channel", () => {
   test("shows joins, leaves and key changes; no override hides it", async ({ browser, page, request }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(scaled(180_000));
     const owner = await registerViaApi(request, "owner");
     const room = await createRoomViaApi(request, owner.token, "Protokoll");
     const wid = room.channels.find((c: { kind: string }) => c.kind === "system").id as string;

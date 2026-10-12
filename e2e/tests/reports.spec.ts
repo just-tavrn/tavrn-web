@@ -10,6 +10,7 @@ import { expect, test, type APIRequestContext } from "@playwright/test";
 import { NODE, adminAccount, createRoomViaApi, inviteCode, loginAs, openNavIfMobile, registerViaApi, registerViaUi, uniqueName } from "./helpers";
 import { createGroup, cryptoAccountViaApi, sendEncrypted, type CryptoAccount } from "./crypto-helpers";
 import { joinRoom, openContextMenu } from "./menu-helpers";
+import { scaled } from "./timeouts";
 
 const auth = (token: string) => ({ headers: { Authorization: `Bearer ${token}` } });
 
@@ -33,7 +34,7 @@ async function catchUp(request: APIRequestContext, account: CryptoAccount, conve
 
 test.describe("Reports", () => {
   test("an encrypted message is reported with released plaintext; the moderator times the author out", async ({ browser, page, request }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(scaled(180_000));
     const owner = await registerViaApi(request, "owner");
     const room = await createRoomViaApi(request, owner.token, uniqueName("Meldestelle"), "invite", { encrypted: true });
     const channel = room.channels.find((c: { kind: string }) => c.kind === "text").id as string;
@@ -142,7 +143,7 @@ test.describe("Reports", () => {
   });
 
   test("a room reported from its header menu reaches the node admins, who dismiss it", async ({ browser, page, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(scaled(120_000));
     const owner = await registerViaApi(request, "owner");
     const member = await registerViaApi(request, "member");
     const name = uniqueName("Zwielicht");

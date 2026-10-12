@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test, type Page } from "@playwright/test";
 import { NODE, createRoomViaApi, loginAs, openNavIfMobile, registerViaApi, registerViaUi, tokenOf } from "./helpers";
+import { scaled } from "./timeouts";
 
 // Feature round 3 (design note 4.13 items 6 and 7): metadata removal before upload, click-to-play embeds and
 // sender-generated link previews. No test reaches the internet: provider thumbnails, players and the
@@ -185,7 +186,7 @@ test.describe("Embeds and link previews (design note 4.13 item 7)", () => {
   });
 
   test("Encrypted channel: no preview while typing by default; when switched on it travels encrypted inside the content", async ({ page }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(scaled(90_000));
     let unfurls = 0;
     await page.route("**/api/v1/unfurl?**", (route) => {
       unfurls++;

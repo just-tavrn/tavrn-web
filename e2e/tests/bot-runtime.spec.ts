@@ -3,6 +3,7 @@ import type { ChildProcess } from "node:child_process";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { startExampleBot } from "./bot-helpers";
 import { NODE, createRoomViaApi, registerViaUi, tokenOf, uniqueName } from "./helpers";
+import { scaled } from "./timeouts";
 
 // The SDK bot runtime, phase 5 step 5 (tavrn-protocol/APPLICATIONS.md §3, §5, §11): the example bot
 // (fixtures/echo-bot.ts, the echo-weather example of tavrn-js on the installed @tavrn/bot) runs as a child process against the e2e node, is installed through the add link's
@@ -46,7 +47,7 @@ test.describe("Bot runtime (APPLICATIONS.md §11 step 5)", () => {
   test.afterEach(() => stop(bot));
 
   test("the example bot echoes in an encrypted channel and answers /weather from the palette", async ({ page, request }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(scaled(180_000));
     const user = await registerViaUi(page, { prefix: "botfan" });
     const token = await tokenOf(page);
     const app = await createApp(request, token);

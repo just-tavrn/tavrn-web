@@ -11,6 +11,7 @@ import { expect, test, type APIRequestContext, type Browser, type BrowserContext
 import { NODE, createRoomViaApi, inviteCode, loginAs, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, type Account } from "./helpers";
 import { hideDeviceNamesUntilAsked } from "./voice-helpers";
 import { openContextMenu } from "./menu-helpers";
+import { scaled } from "./timeouts";
 
 /** An animated GIF (profile.spec.ts fixture) for the avatar animation on the stage. */
 const ANIMATED_GIF = resolve(dirname(new URL(import.meta.url).pathname), "../fixtures/animated.gif");
@@ -180,7 +181,7 @@ async function uploadSound(request: APIRequestContext, owner: Account, roomId: s
 
 test.describe("Voice channels", () => {
   test("two people: tiles, encryption, speaking, mute, deafen, screen, soundboard, server mute, leave", async ({ browser, request }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(scaled(240_000));
     const { owner, roomId, voiceId, code } = await setup(request);
     await uploadSound(request, owner, roomId, "Tusch");
     const alice = await voiceUser(browser, "valice");
@@ -385,7 +386,7 @@ test.describe("Voice channels", () => {
   });
 
   test("Connection problems: plug icon, reconnecting without duplicates, removal after the grace period", async ({ browser, request }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(scaled(180_000));
     const { roomId, voiceId, code } = await setup(request);
     // Alice switched all notification sounds off.
     const alice = await voiceUser(browser, "valice", { cuesOff: true });
@@ -429,7 +430,7 @@ test.describe("Voice channels", () => {
   });
 
   test("Screen wake lock: requested after joining, released after leaving", async ({ browser, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(scaled(120_000));
     const { roomId, code } = await setup(request);
     const alice = await voiceUser(browser, "valice", { cuesOff: true });
     // A fake Screen Wake Lock API that counts requests and releases (installed before the client loads).
@@ -466,7 +467,7 @@ test.describe("Voice channels", () => {
   });
 
   test("full channel: user_limit 1 is reported with the limit", async ({ browser, request }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(scaled(150_000));
     const { roomId, code } = await setup(request, { userLimit: 1 });
     const alice = await voiceUser(browser, "valice");
     const bob = await voiceUser(browser, "vbob");
@@ -482,7 +483,7 @@ test.describe("Voice channels", () => {
   });
 
   test("Voice & video settings: devices, levels, voice activation/push-to-talk, noise suppression; manage the soundboard", async ({ page, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(scaled(120_000));
     const { owner, roomId } = await setup(request);
     await loginAs(page, owner);
     const errors: string[] = [];
@@ -581,7 +582,7 @@ test.describe("Voice channels", () => {
   });
 
   test("Quick menus on mute and deafen: devices, push-to-talk and sliders, applied live (right-click, long press on phones)", async ({ browser, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(scaled(120_000));
     const { roomId, code } = await setup(request);
     const alice = await voiceUser(browser, "vmenu", { cuesOff: true });
     const page = alice.page;
@@ -644,7 +645,7 @@ test.describe("Voice channels", () => {
   });
 
   test("Hear yourself: the live loopback starts, shows its timer and stops next to record and play back; leaving the settings ends it", async ({ page, request }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(scaled(90_000));
     const { owner } = await setup(request);
     await loginAs(page, owner);
     const errors: string[] = [];
@@ -684,7 +685,7 @@ test.describe("Voice channels", () => {
   });
 
   test("Moving: drag onto another channel, move everyone with confirmation; animated avatar only while speaking", async ({ browser, request }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(scaled(240_000));
     const { owner, roomId, voiceId, code } = await setup(request);
     const raid = await request.post(`${NODE}/api/v1/rooms/${roomId}/channels`, { headers: { Authorization: `Bearer ${owner.token}` }, data: { kind: "voice", name: "Raid" } });
     expect(raid.ok(), await raid.text()).toBeTruthy();
@@ -754,7 +755,7 @@ test.describe("Voice channels", () => {
   });
 
   test("Moved into a channel the member may neither view nor join: shown while connected, gone after leaving", async ({ browser, request }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(scaled(180_000));
     const { owner, roomId, voiceId, code } = await setup(request);
     const auth = { Authorization: `Bearer ${owner.token}` };
     const created = await request.post(`${NODE}/api/v1/rooms/${roomId}/channels`, { headers: auth, data: { kind: "voice", name: "Bühne" } });
@@ -793,7 +794,7 @@ test.describe("Voice channels", () => {
   });
 
   test("Connection test and background: every path to the media server, blur strength and quality", async ({ page, request }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(scaled(180_000));
     const { owner } = await setup(request);
     await loginAs(page, owner);
     const errors: string[] = [];

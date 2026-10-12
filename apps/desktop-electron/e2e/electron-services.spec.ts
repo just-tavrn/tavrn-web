@@ -17,6 +17,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import { scaled } from "../../../e2e/tests/timeouts.ts";
 import { nodeUrl } from "./harness.ts";
 import { startApp, type ElectronApp } from "./launch.ts";
 
@@ -76,9 +77,11 @@ async function start(configHome: string, extra: Record<string, string> = {}): Pr
   return running;
 }
 
+/** Ends the app and waits until none of its processes is left (also after it quit by itself). */
 async function stop(): Promise<void> {
-  await running?.app.close().catch(() => undefined);
+  const app = running?.app;
   running = null;
+  await app?.close();
 }
 
 test.afterEach(async () => {
@@ -141,7 +144,7 @@ test("tray: the client's voice state and texts reach the tray; close to tray hid
   const home = profile();
   const { app, page } = await start(home);
   // The client settles on its login page first (leaving its app layout resets the tray to "disconnected").
-  await expect(page.locator('input[name="username"]')).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('input[name="username"]')).toBeVisible({ timeout: scaled(30_000) });
   const labels = { tooltip: "tavrn · Lounge (Gaming) · Muted", show: "Show tavrn", hide: "Hide tavrn", mute: "Mute microphone", deafen: "Deafen", leave: "Leave voice channel", quit: "Quit tavrn" };
   await page.evaluate((l) => window.tavrnShell.tray.traySet("muted", l), labels);
   const status = await page.evaluate(() => window.tavrnShell.tray.trayStatus());
@@ -158,11 +161,15 @@ test("tray: the client's voice state and texts reach the tray; close to tray hid
   expect((await page.evaluate(() => window.tavrnShell.tray.trayStatus())).close_to_tray).toBe(false);
   await page.evaluate(() => window.tavrnShell.tray.setCloseToTray(true));
 
-  // Quit really ends the app, even with close to tray on.
-  const exited = new Promise<void>((done) => app.process().once("exit", () => done()));
-  await page.evaluate(() => void window.tavrnShell.tray.quitApp().catch(() => undefined));
-  await exited;
-  running = null;
+  // Quit really ends the app, even with close to tray on. The quit closes the page that asked for it, so the call that
+  // triggers it may or may not get its answer back first: only the app's exit is awaited. The test then still ends
+  // through stop(), which closes the DevTools connection: Playwright's own teardown (trace, screenshot) must never
+  // meet the connection of an app that is already gone ("Target page, context or browser has been closed").
+  const exited = app.exited(scaled(30_000));
+  await page.evaluate(() => void window.tavrnShell.tray.quitApp().catch(() => undefined)).catch((e: unknown) => {
+    if (!String(e).includes("has been closed")) throw e;
+  });
+  expect(await exited, "the app exits after Quit").toBe(true);
 });
 
 test("downloads: a save goes into the test directory byte for byte, 'show in folder' names it, the page's own download is caught", async () => {
@@ -200,5 +207,5 @@ test("downloads: a save goes into the test directory byte for byte, 'show in fol
     a.click();
     a.remove();
   });
-  await expect.poll(() => existsSync(join(saveDir, "page.txt")) && readFileSync(join(saveDir, "page.txt"), "utf8"), { timeout: 15_000 }).toBe("from the page");
+  await expect.poll(() => existsSync(join(saveDir, "page.txt")) && readFileSync(join(saveDir, "page.txt"), "utf8"), { timeout: scaled(15_000) }).toBe("from the page");
 });

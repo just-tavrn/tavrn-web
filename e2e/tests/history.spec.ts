@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { NODE, createRoomViaApi, inviteCode, loginAs, openNavIfMobile, registerViaApi } from "./helpers";
+import { scaled } from "./timeouts";
 
 // Lazy history and unread counts (design note 4.4): badges from the node's counts, live updates, read
 // markers, and paging older messages in.
@@ -70,7 +71,7 @@ test.describe("History and unread", () => {
   });
 
   test("load older messages without the view jumping", async ({ page, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(scaled(120_000));
     const alice = await registerViaApi(request, "alice");
     const bob = await registerViaApi(request, "bob");
     const room = await createRoomViaApi(request, alice.token, "Archiv");

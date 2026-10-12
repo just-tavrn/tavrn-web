@@ -22,6 +22,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import { scaled } from "../../../e2e/tests/timeouts.ts";
 import { appDir, appEnv } from "./harness.ts";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -157,13 +158,15 @@ export async function startApp(options: StartOptions = {}): Promise<ElectronApp>
   const found = (re: RegExp) => re.exec(output.join(""))?.[1] ?? null;
   let endpoint: string | null = null;
   let inspectorUrl: string | null = null;
-  for (let i = 0; i < 240 && !(endpoint && (packaged || inspectorUrl)); i++) {
+  // The endpoints this app printed (its own output only: a previous app's lines can never be taken).
+  const started = scaled(60_000);
+  for (const until = Date.now() + started; Date.now() < until && !(endpoint && (packaged || inspectorUrl)); ) {
     if (ended(child)) throw new Error(`the app exited (${child.exitCode ?? child.signalCode}) before it opened its window:\n${output.join("").slice(-3000)}`);
     endpoint ??= found(/DevTools listening on (ws:\/\/127\.0\.0\.1:\d+\/\S+)/);
     inspectorUrl ??= found(/Debugger listening on (ws:\/\/127\.0\.0\.1:\d+\/\S+)/);
     if (!(endpoint && (packaged || inspectorUrl))) await sleep(250);
   }
-  if (!endpoint) throw new Error(`no DevTools endpoint after 60 s:\n${output.join("").slice(-3000)}`);
+  if (!endpoint) throw new Error(`no DevTools endpoint after ${started / 1000} s:\n${output.join("").slice(-3000)}`);
   inspector = !packaged && inspectorUrl ? await Inspector.connect(inspectorUrl) : null;
   const browser: Browser = await chromium.connectOverCDP(endpoint);
   // Playwright takes over the downloads of a browser it connects to; the app's own handling (the save dialog, the test
@@ -173,7 +176,7 @@ export async function startApp(options: StartOptions = {}): Promise<ElectronApp>
   const context: BrowserContext = browser.contexts()[0]!;
   const isMain = (p: Page) => p.url().startsWith("app://tavrn/");
   let page = context.pages().find(isMain);
-  for (let i = 0; i < 120 && !page; i++) {
+  for (const until = Date.now() + scaled(30_000); !page && Date.now() < until; ) {
     await sleep(250);
     page = context.pages().find(isMain);
   }
@@ -190,17 +193,20 @@ export async function startApp(options: StartOptions = {}): Promise<ElectronApp>
     if (!inspector) throw new Error("the main process is reachable in the development build only (the packages keep --inspect off)");
     return (await inspector.evaluate(`(async () => { const fn = (${fn.toString()}); return await fn(require("electron"), ${JSON.stringify(arg ?? null)}); })()`)) as R;
   };
+  // Fully awaited: when it returns, no process of this app is left (the next test starts on a clean slate). Also right
+  // for an app that already exited by itself (Quit in the tray): the connections are closed and the group is swept.
   const quit = async () => {
     await browser.close().catch(() => undefined);
     if (!ended(child) && inspector) await inspector.evaluate(`require("electron").app.quit()`).catch(() => undefined);
     inspector?.close();
     if (!ended(child)) {
-      if ((await waitExit(child, inspector ? 10_000 : 0)) === null) group("SIGTERM");
-      if ((await waitExit(child, 10_000)) === null) group("SIGKILL");
+      if ((await waitExit(child, inspector ? scaled(10_000) : 0)) === null) group("SIGTERM");
+      if ((await waitExit(child, scaled(10_000))) === null) group("SIGKILL");
     }
-    // Electron's processes may outlive an AppImage's runtime: a last sweep of the group.
-    await sleep(300);
+    // Electron's processes (zygote, GPU, renderers) may outlive the main process or an AppImage's runtime: end the
+    // group and wait until it is gone.
     group("SIGKILL");
+    if (!(await groupGone(child.pid!, scaled(10_000)))) throw new Error(`processes of the app's group ${child.pid} survived SIGKILL`);
   };
   return {
     mode,
@@ -209,10 +215,10 @@ export async function startApp(options: StartOptions = {}): Promise<ElectronApp>
     output,
     process: () => child,
     windows: () => context.pages(),
-    waitForWindow: (timeoutMs = 30_000) => context.waitForEvent("page", { timeout: timeoutMs }),
+    waitForWindow: (timeoutMs = scaled(30_000)) => context.waitForEvent("page", { timeout: timeoutMs }),
     nextWindow: (timeoutMs) => context.waitForEvent("page", { timeout: timeoutMs }).catch(() => null),
     evaluate,
-    secondStart: () => waitExit(spawn(file, args, { cwd: appDir, env, stdio: "ignore" }), 60_000),
+    secondStart: () => waitExit(spawn(file, args, { cwd: appDir, env, stdio: "ignore" }), scaled(60_000)),
     exited: async (timeoutMs) => (await waitExit(child, timeoutMs)) !== null,
     quit,
     close: async () => {
@@ -223,6 +229,18 @@ export async function startApp(options: StartOptions = {}): Promise<ElectronApp>
 }
 
 const ended = (child: ChildProcess) => child.exitCode !== null || child.signalCode !== null;
+
+/** Whether no process of the group `pgid` is left within `timeoutMs` (signal 0 only asks). */
+async function groupGone(pgid: number, timeoutMs: number): Promise<boolean> {
+  for (const until = Date.now() + timeoutMs; ; await sleep(50)) {
+    try {
+      process.kill(-pgid, 0);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ESRCH") return true;
+    }
+    if (Date.now() >= until) return false;
+  }
+}
 
 /** The exit code of `child` once it ended (-1 for a signal), null when it still runs after `timeoutMs`. */
 function waitExit(child: ChildProcess, timeoutMs: number): Promise<number | null> {

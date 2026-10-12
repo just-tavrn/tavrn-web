@@ -7,6 +7,7 @@ import { expect, test, type APIRequestContext } from "@playwright/test";
 import { Permission } from "@tavrn/sdk";
 import { NODE, createRoomViaApi, inviteCode, loginAs, registerViaApi, type Account } from "./helpers";
 import { openContextMenu } from "./menu-helpers";
+import { scaled } from "./timeouts";
 
 const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22a", "wcag22aa"];
 const auth = (a: Account) => ({ Authorization: `Bearer ${a.token}` });
@@ -20,7 +21,7 @@ async function befriend(request: APIRequestContext, a: Account, b: Account) {
 
 test.describe("Invite a friend to a room", () => {
   test("from the friends menu: only rooms with create_invites, Bob sees the invite live and joins", async ({ browser, page, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(scaled(120_000));
     const alice = await registerViaApi(request, "fialice");
     const bob = await registerViaApi(request, "fibob");
     const carol = await registerViaApi(request, "ficarol");
