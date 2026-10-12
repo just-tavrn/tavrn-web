@@ -238,8 +238,11 @@ export function WhiteboardSession(p: WhiteboardSessionProps) {
     );
   }
 
+  // The full page keeps the header and the canvas's toolbars out of the system bars and notches (the Android app
+  // draws edge to edge, docs/ANDROID.md "System bars"), like the other full-screen views.
+  const frame = p.layout === "embedded" ? "relative h-full w-full" : "fixed inset-0 z-40 pt-[var(--safe-top)] pr-[var(--safe-right)] pb-[var(--safe-bottom)] pl-[var(--safe-left)]";
   return (
-    <div className={`${p.layout === "embedded" ? "relative h-full w-full" : "fixed inset-0 z-40"} flex flex-col bg-bg-0`} data-testid="whiteboard">
+    <div className={`${frame} flex flex-col bg-bg-0`} data-testid="whiteboard">
       {header}
       {body}
       {panel === "permissions" && <PermissionsPanel c={c} members={p.members} nameOf={nameOf} onClose={() => setPanel(null)} />}
