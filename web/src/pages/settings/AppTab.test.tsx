@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppTab } from "./AppTab";
 import { resetPlatform, setPlatform } from "../../platform";
-import type { AvailableUpdate, Platform } from "../../platform";
+import type { Platform } from "../../platform";
 import { renderWithProviders } from "../../test/render";
 import { cryptoStore } from "../../crypto";
 import type { KeyProtection } from "../../crypto/store";
