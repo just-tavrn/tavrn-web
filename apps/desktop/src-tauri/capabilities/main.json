@@ -44,6 +44,8 @@
     "allow-voice-set-deafened",
     "allow-voice-set-ptt",
     "allow-voice-configure",
-    "allow-voice-set-volumes"
+    "allow-voice-set-volumes",
+    "allow-passkey-create",
+    "allow-passkey-get"
   ]
 }

@@ -36,6 +36,8 @@ rustls = { version = "0.23", default-features = false, features = ["ring"] }
 hickory-resolver = { version = "0.26", default-features = false, features = ["tokio", "system-config"] }
 # The Android app's check for a newer release (src/release.rs); already in the tree through Tauri.
 semver = "1"
+# base64url of the native passkeys' WebAuthn JSON (src/passkey.rs).
+base64 = "0.23"
 
 # Desktop only (Windows, macOS, Linux): the Android app (docs/ANDROID.md) has no tray, hotkeys, keychain, updater, save
 # dialog or native voice engine; its platform pieces are Kotlin (src-tauri/gen/android) behind src/android.rs.
@@ -70,6 +72,9 @@ webkit2gtk = { version = "2.0", features = ["v2_40"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-native-keyring-store = { version = "1", default-features = false }
+# Passkeys through the Windows WebAuthn API (src/passkey.rs): the types of webauthn.h and the loader of webauthn.dll;
+# the version Tauri's Windows runtime already uses.
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Networking_WindowsWebServices", "Win32_System_LibraryLoader"] }
 
 [target.'cfg(any(windows, target_os = "linux"))'.dependencies]
 # Close to tray: a second start (launcher, Start menu, a notification click) shows the running app.
@@ -81,7 +86,9 @@ apple-native-keyring-store = { version = "1", features = ["keychain"] }
 [dev-dependencies]
 # The voice integration test (tests/voice_livekit.rs) signs LiveKit tokens itself (HS256).
 ring = "0.17"
-base64 = "0.23"
+# The native passkeys' JSON must be what tavrn-node's webauthn-rs reads (src/passkey.rs tests).
+webauthn-rs-proto = "0.5.5"
+base64urlsafedata = "0.5.5"
 
 [lints.clippy]
 unwrap_used = "deny"

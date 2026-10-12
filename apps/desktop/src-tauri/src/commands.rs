@@ -34,6 +34,9 @@ pub struct AppInfo {
     pub updater: bool,
     /// The operating system (`linux`, `windows`, `macos`, `android`): the client loads the Android members for `android`.
     pub os: &'static str,
+    /// Passkeys run natively (`passkey.rs`: Windows with its WebAuthn API); the client then uses `passkey_create` and
+    /// `passkey_get` instead of the node's page.
+    pub passkeys: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -88,7 +91,7 @@ pub fn update_config(settings: &Settings, change: impl FnOnce(&mut config::Confi
 pub fn app_info<R: Runtime>(app: AppHandle<R>) -> AppInfo {
     // Android: no updater (Tauri's updater does not support it; the client checks the release feed, docs/ANDROID.md).
     let updater = cfg!(desktop) && updater::configured(app.config().plugins.0.get("updater"));
-    AppInfo { version: app.package_info().version.to_string(), updater, os: std::env::consts::OS }
+    AppInfo { version: app.package_info().version.to_string(), updater, os: std::env::consts::OS, passkeys: crate::passkey::available() }
 }
 
 /// Opens a web link (http, https, mailto) in the system browser (Android: `android.rs`).
