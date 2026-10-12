@@ -30,6 +30,7 @@ import { execFileSync } from "node:child_process";
 import { AxeBuilder } from "@axe-core/playwright";
 import { chromium, expect, test, type Browser, type BrowserServer, type Page, type TestInfo } from "@playwright/test";
 import { createRoomViaApi, inviteCode, nextTotpCode, registerViaApi, registerViaUi, tokenOf, type Account } from "../../../e2e/tests/helpers.ts";
+import { scaled } from "../../../e2e/tests/timeouts.ts";
 import { FAKE_MEDIA } from "../../../e2e/tests/voice-helpers.ts";
 import { nodeUrl } from "./harness.ts";
 import { packagedApp, smokePackaged, startApp, type ElectronApp } from "./launch.ts";
@@ -122,7 +123,7 @@ const windowsOf = (pid: number) => xwindows(["--pid", String(pid)]);
 const windowsNamed = (pattern: string) => xwindows(["--name", pattern]);
 
 test("the Linux app end to end: picker, sign-in, encrypted chat, media, voice, camera, screen share, hotkey, tray, quit", async ({ request }, info) => {
-  test.setTimeout(15 * 60_000);
+  test.setTimeout(scaled(15 * 60_000));
   const started = Date.now();
 
   // The account of the app, registered over the API with TOTP (another device of the same user).
@@ -369,7 +370,10 @@ test("the Linux app end to end: picker, sign-in, encrypted chat, media, voice, c
       lacking("quitApp");
       await app!.close();
     }
-    expect(await app!.exited(20_000), "the app exited").toBe(true);
+    expect(await app!.exited(scaled(20_000)), "the app exited").toBe(true);
+    // Close the DevTools connection and sweep the process group now: Playwright's teardown of the test (trace,
+    // screenshot) must never meet the connection of an app that is already gone.
+    await app!.close();
     app = null;
   });
 
