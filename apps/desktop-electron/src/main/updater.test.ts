@@ -7,7 +7,25 @@ import { join } from "node:path";
 import { IpcRegistry, type IpcEventLike } from "./ipc.ts";
 import { parsePublicKey } from "./minisign.ts";
 import { minisignKeyPair } from "./minisign.fixture.ts";
-import { channelFile, feedSource, notesText, parseFeed, registerUpdaterHandlers, updaterSetup, verifyFeed, type FeedCheck } from "./updater.ts";
+import { Settings } from "./config.ts";
+import {
+  FAILED,
+  NO_RELEASE,
+  UNREACHABLE,
+  channelFile,
+  channelSetting,
+  defaultChannel,
+  effectiveChannel,
+  feedSource,
+  feedUrl,
+  notesText,
+  parseFeed,
+  registerUpdaterHandlers,
+  updateErrorCode,
+  updaterSetup,
+  verifyFeed,
+  type FeedCheck,
+} from "./updater.ts";
 
 const me: IpcEventLike = { sender: "main", senderFrame: { url: "app://tavrn/" } };
 
@@ -193,17 +211,23 @@ test("release notes become plain text", () => {
   assert.equal(notesText(""), null);
 });
 
-function fakeUpdater(available: boolean, info: Record<string, unknown> = { version: "0.3.0", releaseNotes: "<p>New</p>" }) {
+function fakeUpdater(available: boolean, info: Record<string, unknown> = { version: "0.3.0", releaseNotes: "<p>New</p>" }, fail: unknown = null) {
   const calls: string[] = [];
+  const feeds: string[] = [];
   const updater = {
+    setFeedURL: (o: { provider: string; url: string }) => void feeds.push(`${o.provider} ${o.url}`),
     autoDownload: true,
     autoInstallOnAppQuit: true,
     disableWebInstaller: false,
-    checkForUpdates: async () => (calls.push("check"), { isUpdateAvailable: available, updateInfo: info as { version: string } }),
+    checkForUpdates: async () => {
+      calls.push("check");
+      if (fail) throw fail;
+      return { isUpdateAvailable: available, updateInfo: info as { version: string } };
+    },
     downloadUpdate: async () => void calls.push("download"),
     quitAndInstall: () => void calls.push("install"),
   };
-  return { calls, updater, load: async () => updater };
+  return { calls, feeds, updater, load: async () => updater };
 }
 
 test("checkUpdate and installUpdate as the Tauri commands answer, after the feed's signature", async () => {
@@ -245,3 +269,68 @@ test("a refused signature offers nothing and never downloads", async () => {
   assert.deepEqual(u.calls, ["check", "check"], "no download, no install");
   assert.equal(logs.length, 2);
 });
+
+test("the channel: beta by default for a pre-release, stable for a release, a choice sticks", (t) => {
+  assert.equal(defaultChannel("0.4.0-rc.4"), "beta");
+  assert.equal(defaultChannel("0.5.0-beta.1"), "beta");
+  assert.equal(defaultChannel("0.4.0"), "stable");
+  assert.equal(effectiveChannel(undefined, "0.4.0-rc.4"), "beta");
+  assert.equal(effectiveChannel("stable", "0.4.0-rc.4"), "stable");
+  assert.equal(effectiveChannel("nightly", "0.4.0"), "stable");
+  assert.equal(feedUrl("stable"), "https://tavrn.org/updates/desktop/stable/");
+  assert.equal(feedUrl("beta", "http://127.0.0.1:18089/updates/desktop/"), "http://127.0.0.1:18089/updates/desktop/beta/");
+
+  const dir = mkdtempSync(join(tmpdir(), "tavrn-electron-channel-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const settings = new Settings(join(dir, "settings.json"));
+  const channel = channelSetting(settings, "0.4.0-rc.4");
+  assert.equal(channel.get(), "beta");
+  channel.set("stable");
+  assert.equal(channel.get(), "stable", "the choice sticks on a pre-release");
+  assert.equal(new Settings(settings.path).get().update_channel, "stable", "persisted");
+});
+
+test("checks ask the website's feed of the chosen channel; the channel commands", async (t) => {
+  const key = minisignKeyPair();
+  const goodFiles = { [`${BASE}/latest-linux.yml`]: LINUX_FEED, [`${BASE}/latest-linux.yml.minisig`]: signed(key, LINUX_FEED) };
+  const dir = mkdtempSync(join(tmpdir(), "tavrn-electron-channel-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const channel = channelSetting(new Settings(join(dir, "settings.json")), "0.2.0-rc.1");
+  const u = fakeUpdater(true, { ...INFO, releaseNotes: null });
+  const registry = new IpcRegistry((e) => e === me);
+  registerUpdaterHandlers(registry, feedCheck(key, goodFiles), u.load, channel);
+  assert.deepEqual(await registry.dispatch("tavrn:updater.getUpdateChannel", "getUpdateChannel", me, []), { ok: true, value: "beta" });
+  assert.deepEqual(await registry.dispatch("tavrn:updater.checkUpdate", "checkUpdate", me, []), { ok: true, value: { version: "0.3.0", notes: null } });
+  assert.deepEqual(await registry.dispatch("tavrn:updater.setUpdateChannel", "setUpdateChannel", me, ["stable"]), { ok: true, value: undefined });
+  assert.deepEqual(await registry.dispatch("tavrn:updater.getUpdateChannel", "getUpdateChannel", me, []), { ok: true, value: "stable" });
+  await registry.dispatch("tavrn:updater.checkUpdate", "checkUpdate", me, []);
+  assert.deepEqual(u.feeds, ["generic https://tavrn.org/updates/desktop/beta/", "generic https://tavrn.org/updates/desktop/stable/"]);
+  for (const bad of [["nightly"], [], ["beta", "x"], [1]]) {
+    assert.deepEqual(await registry.dispatch("tavrn:updater.setUpdateChannel", "setUpdateChannel", me, bad), { ok: false, error: "ipc.invalid_arguments" });
+  }
+  assert.deepEqual(await registry.dispatch("tavrn:updater.getUpdateChannel", "getUpdateChannel", me, []), { ok: true, value: "stable" });
+});
+
+test("failures become the client's four codes, with the reason logged", async () => {
+  const notFound = Object.assign(new Error('Cannot find channel "latest-linux.yml" update info: HttpError: 404'), { code: "ERR_UPDATER_CHANNEL_FILE_NOT_FOUND" });
+  assert.equal(updateErrorCode(notFound), NO_RELEASE);
+  assert.equal(updateErrorCode(Object.assign(new Error("HttpError: 404"), { statusCode: 404 })), NO_RELEASE);
+  assert.equal(updateErrorCode(Object.assign(new Error("HttpError: 503"), { statusCode: 503 })), UNREACHABLE, "the website without a release list");
+  assert.equal(updateErrorCode(new Error("net::ERR_INTERNET_DISCONNECTED")), UNREACHABLE);
+  assert.equal(updateErrorCode(new Error("net::ERR_NAME_NOT_RESOLVED")), UNREACHABLE);
+  assert.equal(updateErrorCode(Object.assign(new Error("connect"), { code: "ECONNREFUSED" })), UNREACHABLE);
+  assert.equal(updateErrorCode("update.signature_invalid"), "update.signature_invalid");
+  assert.equal(updateErrorCode("update.none"), "update.none");
+  assert.equal(updateErrorCode(new Error("sha512 checksum mismatch")), FAILED);
+  assert.equal(updateErrorCode(undefined), FAILED);
+
+  const key = minisignKeyPair();
+  const logs: string[] = [];
+  const registry = new IpcRegistry((e) => e === me);
+  registerUpdaterHandlers(registry, feedCheck(key, {}, logs), fakeUpdater(true, INFO, notFound).load);
+  assert.deepEqual(await registry.dispatch("tavrn:updater.checkUpdate", "checkUpdate", me, []), { ok: false, error: NO_RELEASE });
+  assert.deepEqual(await registry.dispatch("tavrn:updater.installUpdate", "installUpdate", me, []), { ok: false, error: NO_RELEASE });
+  assert.equal(logs.length, 2);
+  assert.match(logs[0]!, /update\.no_release.*Cannot find channel/);
+});
+

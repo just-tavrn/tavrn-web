@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
- * Updates (docs/DESKTOP.md "Updates"): electron-updater against the GitHub releases of tavrn-web, with the feed signed
- * by the same key as the Tauri updater. electron-builder writes the feed's settings into the package
- * (`resources/app-update.yml`, from the `publish` entry of electron-builder.config.mjs) and the release carries the feed
+ * Updates (docs/DESKTOP.md "Updates"): electron-updater against the website's per-channel feed
+ * (`https://tavrn.org/updates/desktop/<channel>/`, electron-updater's generic provider, set before every check), which
+ * redirects `latest-linux.yml` / `latest.yml` and the packages next to them to the right GitHub release of tavrn-web
+ * (GitHub's own "latest" never points at a pre-release). The channel is a setting (`config.ts` `update_channel`): beta
+ * by default when this version is a pre-release (`-rc.`, `-beta.`), else stable; an explicit choice sticks, and
+ * electron-updater only offers a higher version (0.4.0 > 0.4.0-rc.4), so stable from an rc waits for the release.
+ * The feed is signed by the same key as the Tauri updater. electron-builder writes the package's repository into
+ * `resources/app-update.yml` (the `publish` entry of electron-builder.config.mjs), and the release carries the feed
  * (`latest-linux.yml` on Linux, `latest.yml` on Windows) with the SHA-512 of every package, which electron-updater
  * checks after the download. electron-updater has no signature of its own on Linux (and the Windows build is not
  * code-signed yet), so the release also carries `<feed>.minisig`, a minisign signature of the feed made with the
@@ -18,16 +23,19 @@
  *   (size, block map size, …); only the release name and notes the GitHub provider adds are exempt (shown as text).
  *   A feed with web-installer `packages` is refused outright, and electron-updater's web installer is switched off.
  *
- * That check runs before an update is offered and again right before the download, so electron-updater downloads and
- * installs only files whose SHA-512 the key vouches for. A refusal is logged with its reason and answers
- * `update.signature_invalid` (Settings → App shows it). A development run, a package without the feed's settings and a
- * build whose key is missing or the placeholder offer no updates (`updater: false` in `appInfo`). While the repository
- * is private the check fails (GitHub answers 404) and the client stays quiet, as with the Tauri updater. The AppImage
+ * That check reads the feed and its signature straight from the release of the found version on GitHub
+ * (`releases/download/v<version>/`), independent of the website. It runs before an update is offered and again right
+ * before the download, so electron-updater downloads and installs only files whose SHA-512 the key vouches for. A
+ * refusal is logged with its reason and answers `update.signature_invalid` (Settings → App shows it); other failures
+ * answer `update.unreachable` (no network, the website's 503), `update.no_release` (the website's 404: no release in
+ * this channel) or `update.failed` ({@link updateErrorCode}). A development run, a package without the feed's settings
+ * and a build whose key is missing or the placeholder offer no updates (`updater: false` in `appInfo`). The AppImage
  * replaces itself; the `.deb` is installed with the system's package tools (an administrator password is asked); on
  * Windows the NSIS installer runs.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { Settings } from "./config.ts";
 import { check, type IpcRegistry } from "./ipc.ts";
 import { MinisignError, parsePublicKey, verifyMinisign, type MinisignPublicKey } from "./minisign.ts";
 
@@ -38,6 +46,62 @@ export interface UpdateInfo {
 
 /** The error code of a refused update (the client: `errors.update.signature_invalid`). */
 export const SIGNATURE_INVALID = "update.signature_invalid";
+/** The update server could not be reached, or has no release list right now. */
+export const UNREACHABLE = "update.unreachable";
+/** The chosen channel has no release (the website's 404 `no_release`). */
+export const NO_RELEASE = "update.no_release";
+/** Anything else (logged with its reason). */
+export const FAILED = "update.failed";
+
+/** Where the website serves the update feeds, one directory per channel. */
+export const FEED_BASE = "https://tavrn.org/updates/desktop";
+
+/** `stable` offers releases only, `beta` pre-releases too. */
+export type UpdateChannel = "stable" | "beta";
+export const UPDATE_CHANNELS: readonly UpdateChannel[] = ["stable", "beta"];
+
+/** Without a choice: a pre-release (`-rc.`, `-beta.`) follows beta, a release stable (the Tauri shell's rule). */
+export function defaultChannel(version: string): UpdateChannel {
+  return version.includes("-rc.") || version.includes("-beta.") ? "beta" : "stable";
+}
+
+/** The stored choice when it is a channel, else the default for this version. */
+export function effectiveChannel(stored: unknown, version: string): UpdateChannel {
+  return stored === "stable" || stored === "beta" ? stored : defaultChannel(version);
+}
+
+/** The generic provider's URL of a channel: electron-updater reads `<url>latest-linux.yml` (or `latest.yml`) there. */
+export function feedUrl(channel: UpdateChannel, base: string = FEED_BASE): string {
+  return `${base.replace(/\/+$/, "")}/${channel}/`;
+}
+
+/** The update channel in the settings file, with the default of this version. */
+export interface ChannelSetting {
+  get(): UpdateChannel;
+  set(channel: UpdateChannel): void;
+}
+
+export function channelSetting(settings: Settings, version: string): ChannelSetting {
+  return {
+    get: () => effectiveChannel(settings.get().update_channel, version),
+    set: (channel) => settings.update((c) => ({ ...c, update_channel: channel })),
+  };
+}
+
+const NETWORK_CODES = /^(ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENETUNREACH|EHOSTUNREACH|EPIPE|ERR_NETWORK)/;
+
+/** The client's code for a failed check or download (electron-updater's errors, Chromium's network errors). */
+export function updateErrorCode(e: unknown): string {
+  if (typeof e === "string" && e.startsWith("update.")) return e;
+  const err = (e ?? {}) as { code?: unknown; statusCode?: unknown; message?: unknown };
+  const code = typeof err.code === "string" ? err.code : "";
+  const status = typeof err.statusCode === "number" ? err.statusCode : 0;
+  const message = typeof err.message === "string" ? err.message : String(e);
+  // The website's 404 (no release in the channel): electron-updater's generic provider names it like this.
+  if (code === "ERR_UPDATER_CHANNEL_FILE_NOT_FOUND" || status === 404) return NO_RELEASE;
+  if (status >= 500 || NETWORK_CODES.test(code) || /net::ERR_|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|socket hang up/.test(message)) return UNREACHABLE;
+  return FAILED;
+}
 
 /** A response of `fetch` as the check reads it (Electron's `net.fetch` in the app). */
 export interface FeedResponse {
@@ -263,6 +327,8 @@ export function notesText(notes: unknown): string | null {
 
 interface AutoUpdater {
   autoDownload: boolean;
+  /** The feed of the chosen channel (the generic provider replaces the package's `app-update.yml` settings). */
+  setFeedURL(options: { provider: "generic"; url: string }): void;
   autoInstallOnAppQuit: boolean;
   /** NSIS web installer packages (`packages` in the feed): never used by this app. */
   disableWebInstaller?: boolean;
@@ -287,11 +353,29 @@ function configure(updater: AutoUpdater): AutoUpdater {
   return updater;
 }
 
-/** The `updater` namespace of the bridge (the Tauri shell's `check_update` and `install_update`). */
-export function registerUpdaterHandlers(registry: IpcRegistry, feed: FeedCheck | null, load: () => Promise<AutoUpdater> = autoUpdater): void {
+/** A failure as the client receives it: one of the codes, the reason logged. */
+function failure(e: unknown, log: (message: string) => void): never {
+  const code = updateErrorCode(e);
+  if (code !== SIGNATURE_INVALID && code !== "update.none" && code !== "update.not_configured") log(`tavrn: the update failed (${code}): ${e instanceof Error ? e.message : String(e)}`);
+  throw code;
+}
+
+/**
+ * The `updater` namespace of the bridge (the Tauri shell's `check_update`, `install_update`, `get_update_channel` and
+ * `set_update_channel`).
+ */
+export function registerUpdaterHandlers(
+  registry: IpcRegistry,
+  feed: FeedCheck | null,
+  load: () => Promise<AutoUpdater> = autoUpdater,
+  channel: ChannelSetting = { get: () => "stable", set: () => undefined },
+  base: string = FEED_BASE,
+): void {
+  const log = feed?.log ?? ((m: string) => console.error(m));
   const newer = async () => {
     if (!feed) throw "update.not_configured";
     const updater = configure(await load());
+    updater.setFeedURL({ provider: "generic", url: feedUrl(channel.get(), base) });
     const found = await updater.checkForUpdates();
     const info = found?.isUpdateAvailable ? found.updateInfo : null;
     // Before anything is offered or downloaded: the feed must be signed with the app's key and match.
@@ -299,13 +383,23 @@ export function registerUpdaterHandlers(registry: IpcRegistry, feed: FeedCheck |
     return { updater, found: info };
   };
   registry.handle("updater", "checkUpdate", check.args([]), async (): Promise<UpdateInfo | null> => {
-    const { found } = await newer();
-    return found ? { version: found.version, notes: notesText(found.releaseNotes) } : null;
+    try {
+      const { found } = await newer();
+      return found ? { version: found.version, notes: notesText(found.releaseNotes) } : null;
+    } catch (e) {
+      failure(e, log);
+    }
   });
   registry.handle("updater", "installUpdate", check.args([]), async () => {
-    const { updater, found } = await newer();
-    if (!found) throw "update.none";
-    await updater.downloadUpdate();
-    updater.quitAndInstall(false, true);
+    try {
+      const { updater, found } = await newer();
+      if (!found) throw "update.none";
+      await updater.downloadUpdate();
+      updater.quitAndInstall(false, true);
+    } catch (e) {
+      failure(e, log);
+    }
   });
+  registry.handle("updater", "getUpdateChannel", check.args([]), (): UpdateChannel => channel.get());
+  registry.handle("updater", "setUpdateChannel", check.args([check.oneOf(...UPDATE_CHANNELS)]), (next: UpdateChannel) => channel.set(next));
 }

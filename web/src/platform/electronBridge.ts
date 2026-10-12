@@ -74,6 +74,9 @@ export interface ShellAppInfo {
   updater: boolean;
 }
 
+/** The update channel (`stable`: releases only, `beta`: pre-releases too). */
+export type UpdateChannel = "stable" | "beta";
+
 export interface ShellUpdateInfo {
   version: string;
   notes?: string | null;
@@ -124,6 +127,9 @@ export interface TavrnShellBridge {
     checkUpdate(): Promise<ShellUpdateInfo | null>;
     /** Downloads, verifies and installs the newest release, then restarts the app. */
     installUpdate(): Promise<void>;
+    /** The update channel in effect (the choice, else the default for this version). */
+    getUpdateChannel(): Promise<UpdateChannel>;
+    setUpdateChannel(channel: UpdateChannel): Promise<void>;
   };
   readonly files: {
     /** Shows the save dialog; at most 8 saves at once. */

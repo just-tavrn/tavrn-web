@@ -135,3 +135,20 @@ test("switching shells: an invalid or corrupt Tauri settings file imports nothin
     assert.ok(!existsSync(settingsPath(d)), text);
   }
 });
+
+test("the update channel is kept only when it is known, like the Tauri shell's config.json", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "tavrn-electron-channel-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const path = join(dir, "settings.json");
+  writeFileSync(path, JSON.stringify({ node: "https://tavrn.example", update_channel: "stable" }));
+  assert.equal(loadConfig(path).update_channel, "stable");
+  writeFileSync(path, JSON.stringify({ node: "https://tavrn.example", update_channel: "nightly" }));
+  assert.equal(loadConfig(path).update_channel, undefined, "an unknown channel is dropped");
+  assert.equal(loadConfig(path).node, "https://tavrn.example");
+  writeFileSync(path, JSON.stringify({ update_channel: 3 }));
+  assert.deepEqual(loadConfig(path), { node: null, web: null, domain: null }, "a wrong type makes the file unreadable, as serde does");
+  saveConfig(path, { node: null, web: null, domain: null, update_channel: "beta" });
+  assert.equal(JSON.parse(readFileSync(path, "utf8")).update_channel, "beta");
+  saveConfig(path, { node: null, web: null, domain: null });
+  assert.equal("update_channel" in JSON.parse(readFileSync(path, "utf8")), false, "no choice, no field");
+});
