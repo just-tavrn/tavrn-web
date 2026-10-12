@@ -9,7 +9,8 @@
  * rejoin after a broken connection and the follow of a moderator's move.
  *
  * Audio only: camera, screen sharing, soundboard clips and the priority speaker stay with the browser engine; the
- * controls say so instead of failing. Security rules as in the browser engine: the shell publishes only once the frame
+ * controls say so instead of failing. Others' screen shares are never received (the shell does not subscribe them,
+ * as the browser engine only does after "Join stream"); joining one shows a hint. Security rules as in the browser engine: the shell publishes only once the frame
  * cryptor of the own track is active (`e2ee_failed` otherwise) and has no unencrypted path.
  */
 import { cleanupConversation } from "../lib/leafCleanup";
@@ -470,3 +471,13 @@ export function pushToTalk(pressed: boolean): void {
 export function attachVideo(_identity: string, _source: "camera" | "screen", _el: HTMLVideoElement): () => void {
   return () => undefined;
 }
+
+/**
+ * Streams (screen shares) cannot be watched with this engine: the shell plays audio only and never subscribes a
+ * screen share's video or audio (`src-tauri/src/voice/engine.rs`, opt-in like the browser engine). Joining one says so.
+ */
+export function joinStream(_identity: string): void {
+  useToasts.getState().push({ kind: "info", title: t("voice.stream.native_unavailable"), testId: "stream-native-hint" });
+}
+
+export function leaveStream(_identity: string): void {}

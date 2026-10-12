@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
  * Web push on this device (tavrn-protocol PROTOCOL.md §6d). The home node pushes while no tab of the client is
- * connected; this store keeps the browser's push subscription and its registration on the home node in step:
+ * connected (call rings also while one is; the service worker skips them while a page is visible); this store keeps the browser's push subscription and its registration on the home node in step:
  *
  * - `init` (after sign-in): learns whether the node pushes, re-registers an enabled device (a replaced VAPID key
  *   or a lost subscription is renewed) and hands the service worker its texts.

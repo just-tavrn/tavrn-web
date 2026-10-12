@@ -34,6 +34,9 @@
     report_node: "A report for the node admins",
   };
 
+  /** Vibration of a ringing call where the platform honours it (on, off, on, off, on in milliseconds). */
+  var RING_VIBRATION = [500, 300, 500, 300, 500];
+
   var DB_NAME = "tavrn-push";
   var STORE = "config";
 
@@ -108,6 +111,7 @@
         // A newer push of the same conversation replaces the shown one; important ones alert again.
         renotify: important,
         requireInteraction: p.type === "call",
+        vibrate: p.type === "call" ? RING_VIBRATION : undefined,
         icon: "/icon-192.png",
         badge: "/icon-64.png",
         timestamp: Date.now(),
@@ -138,9 +142,11 @@
           var get = db.transaction(STORE, "readonly").objectStore(STORE).get("config");
           get.onsuccess = function () {
             resolve(get.result || null);
+            db.close();
           };
           get.onerror = function () {
             resolve(null);
+            db.close();
           };
         });
       })
@@ -155,8 +161,10 @@
         return new Promise(function (resolve) {
           var tx = db.transaction(STORE, "readwrite");
           tx.objectStore(STORE).put(config, "config");
-          tx.oncomplete = resolve;
-          tx.onerror = resolve;
+          tx.oncomplete = tx.onerror = function () {
+            db.close();
+            resolve();
+          };
         });
       })
       .catch(function () {
@@ -174,12 +182,51 @@
     }
   }
 
+  /** Whether a page of the client is visible (it got the event over its WebSocket and handles it itself). */
+  function pageVisible() {
+    return scope.clients.matchAll({ type: "window", includeUncontrolled: true }).then(
+      function (windows) {
+        return windows.some(function (w) {
+          return w.visibilityState === "visible" && new URL(w.url).origin === scope.location.origin;
+        });
+      },
+      function () {
+        return false;
+      },
+    );
+  }
+
+  /** Whether a notification with `tag` is shown already (the page showed this call's ring itself). */
+  function alreadyShown(tag) {
+    if (typeof scope.registration.getNotifications !== "function") return Promise.resolve(false);
+    return scope.registration.getNotifications({ tag: tag }).then(
+      function (list) {
+        return list.length > 0;
+      },
+      function () {
+        return false;
+      },
+    );
+  }
+
+  /**
+   * Call rings are pushed even while the user is connected (a background tab on a phone may be frozen with its
+   * WebSocket still open): a visible page rings by itself, so the push stays silent there; a ring the page already
+   * showed is replaced without a second alert.
+   */
   function onPush(event) {
     var payload = parse(event.data);
+    var ring = !!payload && payload.type === "call";
     event.waitUntil(
-      readConfig().then(function (config) {
+      Promise.all([readConfig(), ring ? pageVisible() : false]).then(function (r) {
+        var config = r[0];
+        if (r[1]) return undefined;
         var n = notificationFor(payload, config && config.strings, config && config.homeNode);
-        return scope.registration.showNotification(n.title, n.options);
+        if (!ring) return scope.registration.showNotification(n.title, n.options);
+        return alreadyShown(n.options.tag).then(function (shown) {
+          if (shown) n.options.renotify = false;
+          return scope.registration.showNotification(n.title, n.options);
+        });
       }),
     );
   }

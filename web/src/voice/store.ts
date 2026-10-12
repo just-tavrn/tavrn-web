@@ -26,7 +26,10 @@ export interface VoiceTarget {
 /** What a participant publishes as LiveKit reports it (identity = `<address>/<device>`). */
 export interface ParticipantMedia {
   camera: boolean;
+  /** Shares the screen (a remote share counts before this viewer joined it: the stream tile offers joining). */
   screen: boolean;
+  /** The screen share's video is here to show: the own share, or a joined stream whose track arrived. */
+  screenVideo?: boolean;
   /** Microphone track muted (LiveKit's view; the node's `muted` flag is reported by the client). */
   micMuted: boolean;
   /** The screen share carries audio (its own volume, issue #20). */
@@ -61,6 +64,13 @@ export interface VoiceState {
   e2eeBlocked: boolean;
   /** Screen share in focus (identity) on the stage. */
   focus: string | null;
+  /**
+   * The streams (screen shares) this device joined, by identity: only those are received (`streams.ts`); every
+   * other share is a placeholder tile with "Join stream".
+   */
+  streams: Record<string, true>;
+  /** The own screen share's preview tile is shown (the sharer can hide it and reopen it from the indicator). */
+  selfPreview: boolean;
   /** The background effect was turned off because frames were dropped: what the detector measured. */
   backgroundAutoOff: SlowFrames | null;
   /** This device holds the priority key or toggle (and may: `priority_speaker`, design note 4.13 item 3). */
@@ -88,6 +98,8 @@ export const IDLE: VoiceState = {
   error: null,
   e2eeBlocked: false,
   focus: null,
+  streams: {},
+  selfPreview: true,
   backgroundAutoOff: null,
   prioritySelf: false,
   priority: {},

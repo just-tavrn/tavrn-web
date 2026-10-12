@@ -44,6 +44,11 @@ DMs); a new session never uses federated sessions of another account or device. 
 [PROTOCOL.md](https://github.com/just-tavrn/tavrn-protocol/blob/main/PROTOCOL.md) §5a,
 [ENCRYPTION.md](https://github.com/just-tavrn/tavrn-protocol/blob/main/ENCRYPTION.md) §2.4.
 
+The registration form follows the node's e-mail policy (`email` of the discovery document `/.well-known/tavrn`,
+`TAVRN_EMAIL`): `required` shows a mandatory "Email" field that the form checks before it sends anything, `optional`
+shows "Email (optional)", `none` shows no field. A refused registration keeps every entered value, including the
+invite code, so the person corrects only what the node named.
+
 ### Date of birth and age gates
 
 Nodes with `age.v1` (PROTOCOL.md §5e) ask every account for its date of birth.
@@ -581,10 +586,15 @@ Tauri app uses its native voice engine ("The desktop app" below).
 ### Voice channels
 
 Clicking a voice channel joins it. While connected, the voice channel shows the stage: one tile per participant with
-avatar or camera, a glowing border and level meter while someone speaks, screen shares as large tiles (enlarge,
-picture-in-picture); phones get a swipeable grid of four and a bottom control bar. Screen shares, camera tiles, the
-whiteboard and the whole stage can go full screen ("F" toggles, Escape leaves) with mute, deafen, leave and exit at
-hand; iOS uses its native video full screen. The voice bar at the bottom of the sidebar keeps mute, deafen, leave and
+avatar or camera, a glowing border and level meter while someone speaks, screen shares as large tiles that are
+joined on demand ("Streams are joined" below; enlarge, picture-in-picture); phones get a swipeable grid of four and a
+bottom control bar. Joined streams, camera tiles, the whiteboard and the whole stage can go full screen ("F" toggles,
+Escape leaves) with mute, deafen, leave and exit at hand; iOS uses its native video full screen. On phones and
+tablets a stream wider than tall turns the screen to landscape in full screen (Screen Orientation API; browsers
+without it, like iOS Safari, simply rotate with the device) and the lock ends with full screen; the full screen view
+follows every rotation and fills the screen (the whole width and height, the video contained, no scrolling); the
+stage keeps its layout while something is in full screen, so turning a phone past the phone breakpoint does not
+drop the stream out of full screen. The voice bar at the bottom of the sidebar keeps mute, deafen, leave and
 the connection quality at hand while you read text channels: its first line is the signal bars with a small padlock
 (voice is always end-to-end encrypted; the tooltip names both, for example "Encrypted · connection good"), a short
 status ("Connected") and the quality, the second line the channel and room. Joining the same account's voice on
@@ -601,6 +611,28 @@ cannot rejoin by themselves. Everybody can set a per-person volume there. A drop
 default); others see an amber plug on your avatar meanwhile
 instead of you vanishing.
 
+### Streams are joined
+
+A screen share is opt-in: nobody receives it until they join it. A participant who shares shows up as a stream tile
+with their name, the red LIVE badge and **Join stream**; until then nothing of the stream (video or its audio) is
+transferred to this device. Joining (the button, a double-click on the tile, or a double-click or Enter on the member
+marked LIVE in the voice channel's member list in the sidebar, which also opens the stage) receives the video and the
+stream's audio; **Leave stream** (on the tile, or in the full screen controls) stops receiving it and the tile is a
+placeholder again. Joining and leaving work any number of times without reconnecting. Several streams are separate:
+joining one joins none of the others. The member list only joins from inside the same voice channel; elsewhere a
+double-click says "Join the voice channel to watch the stream.". A stream that ends is forgotten: the next share of
+the same person is joined anew. Cameras are not affected: a camera still replaces the participant's avatar by itself.
+
+The sharer has no permanent self view: their share shows as a preview tile they can hide (and a double-click on
+themselves in the member list brings it back), and a small "You are streaming" bar on the stage offers **Show
+preview** / **Hide preview** and **Stop**.
+
+In the browser engine (`web/src/voice/streams.ts`, `session.ts`) the room connects without LiveKit's auto-subscription;
+microphones, cameras and every other track are subscribed as they are published, a screen share's video and audio
+(`screen_share`, `screen_share_audio`) only while the stream is joined. The desktop app's native voice engine plays no
+video and never subscribes screen shares at all; joining a stream there says that streams cannot be watched with the
+native voice engine (docs/DESKTOP.md "Voice").
+
 ### Quick menus on mute and deafen
 
 A right-click (the context-menu key, a long press on touch) on the microphone button of the voice bar or of the stage
@@ -613,6 +645,17 @@ the sliders. While the browser hides the device names the menu offers **Show dev
 device selection (`setSinkId`, missing in some Firefox builds and WebKitGTK) say so instead of listing speakers. A
 click keeps muting and deafening.
 
+### Mute and the microphone capture
+
+A mute (also through deafen or a server mute) releases the microphone capture two seconds later: the browser's
+recording indicator goes off, and on Android the phone leaves the call audio mode that an open capture with echo
+cancellation keeps (Chromium plays remote voices as call audio then, often far quieter than media). A quick mute and
+unmute keeps the capture; an unmute opens it again with the same device and settings before the microphone is
+unmuted (if that fails, for example the device was unplugged, the microphone stays muted with a warning). Push-to-talk
+closes only the gate between key presses, never the capture: a new `getUserMedia` per press would take hundreds of
+milliseconds and cut off the first syllable. While unmuted (voice activation or push-to-talk) with echo cancellation
+on, Android stays in the call audio mode: the volume keys set the call volume during a call.
+
 ### Voice and stream audio
 
 A participant's voice (microphone) and their screen share's audio each have their own volume (0–200 %, kept per
@@ -620,7 +663,7 @@ device): the voice volume in the participant's menu, the stream volume behind th
 and, while they stream, in the menu next to the voice volume; Settings → Voice & video → "Volumes of other people"
 lists them with Reset. The output volume of the settings multiplies with both; the priority speaker still ducks the
 others' voices and streams. Deafen mutes voices and the notification sounds about others, but a stream you are
-watching (its tile is on screen) keeps playing: the tile shows a speaker badge and the voice bar says "Voices muted,
+watching (joined, and its tile is on screen) keeps playing: the tile shows a speaker badge and the voice bar says "Voices muted,
 the stream keeps playing". A stream that is not on screen (you opened a text channel or the settings) goes silent
 while deafened. The switch "Streams stay audible while deafened" in the voice settings (on by default) turns this
 off, so that deafen silences everything.
@@ -632,6 +675,14 @@ devices, also across nodes; direct calls and group calls have different ringtone
 accepting opens the call view with the same tiles and controls as voice channels, end-to-end encrypted with the
 conversation's keys. Nobody answering within 45 seconds or a declined DM call leaves a "missed call" entry, a finished
 call one with its duration. Calls in DMs use 64 kbps.
+
+Phones and other browsers that start audio only after a user gesture: the first tap or key press after signing in
+unlocks the sound (a silent one-sample buffer in the gesture), so a call can ring later without one. While the
+browser still blocks it, the banner says "tap the page to hear the ringtone", and the ring shows a system
+notification through the service worker (also when the tab is hidden) if push or browser notifications are on for
+this device; the notification closes when the ring ends. Phones vibrate while it rings (browsers allow it after the
+first tap). The node also pushes call rings while a tab is connected, because a phone may keep a frozen background
+tab's connection open; the service worker shows them only while no page of the client is visible.
 
 ### Screen sharing, the priority speaker and the soundboard
 
@@ -756,7 +807,8 @@ text). The settings are stored on the home node and fall back to this browser on
 **Push notifications on this device** turns on web push for this browser or installed app (PROTOCOL.md §6d): the
 client registers a service worker (`public/sw.js`, push and notification clicks only: it caches nothing and there is
 no offline mode), subscribes with the home node's VAPID key and registers the subscription with the home node, which
-pushes while no tab of the client is connected and follows the notification settings (rooms on other nodes push
+pushes while no tab of the client is connected (call rings also while one is: the service worker shows them only
+while no page of the client is visible) and follows the notification settings (rooms on other nodes push
 through the home node for DMs, mentions and calls). Pushes of encrypted conversations only name the conversation and
 the sender; "Show message text in push notifications" adds a preview of unencrypted messages. A click opens or focuses
 the conversation; a test button sends a push. Signing out removes the subscription; on iPhone and iPad push works only

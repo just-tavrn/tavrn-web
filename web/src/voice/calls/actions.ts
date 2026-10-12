@@ -16,7 +16,7 @@ import { voiceErrorMessage } from "../errors";
 import { joinVoice, leaveVoice } from "../index";
 import { useVoicePresence } from "../presence";
 import { useVoice, type VoiceTarget } from "../store";
-import { callKey, onEnd, onRing, onUpdate, useCalls } from "./state";
+import { callKey, onEnd, onRing, onUpdate, useCalls, type Ring } from "./state";
 import { viaOf } from "../../components/ViaNode";
 
 const me = () => useAuth.getState().user?.address ?? null;
@@ -76,14 +76,21 @@ export function onRingEvent(socketDomain: string, d: { conversation_id: string; 
     onRing(s, { domain, conversationId: d.conversation_id, from: d.from, startedAt: d.started_at, group: !!d.group, receivedAt: Date.now(), ...(via ? { via } : {}) }, { inCall: inCall(domain, d.conversation_id), now: Date.now(), declined }),
   );
   // A new ring (not the same call announced again by another node) goes into the notification center.
-  if (!before && useCalls.getState().ringing[key]) {
-    const name = d.from.split("@")[0] ?? d.from;
-    const caller = via ? `${d.from} ${t("invites.via", { node: via })}` : d.from;
-    const entry = { title: t("calls.incoming_from", { name }), body: d.group ? t("calls.notify_group") : caller, path: conversationPath(domain, d.conversation_id) };
+  const ring = useCalls.getState().ringing[key];
+  if (!before && ring) {
+    const { tag, ...entry } = ringNotice(ring);
     useNotifications.getState().push({ kind: "call", ...entry });
-    // The desktop app in the background: a native notification (the browser's calls reach it through web push).
-    systemNotify({ ...entry, tag: key }, { browser: false });
+    // The desktop app in the background: a native notification. Browsers: the call UI shows one through the service
+    // worker when the ring cannot be heard (`notify.ts`), and the node's push rings a frozen or closed tab.
+    systemNotify({ ...entry, tag }, { browser: false });
   }
+}
+
+/** Title, text, route and tag (the push's `<node>|<conversation>`) of a ring's notifications. */
+export function ringNotice(r: Ring): { tag: string; title: string; body: string; path: string } {
+  const name = r.from.split("@")[0] || r.from;
+  const caller = r.via ? `${r.from} ${t("invites.via", { node: r.via })}` : r.from;
+  return { tag: callKey(r.domain, r.conversationId), title: t("calls.incoming_from", { name }), body: r.group ? t("calls.notify_group") : caller, path: conversationPath(r.domain, r.conversationId) };
 }
 
 export function onUpdateEvent(socketDomain: string, d: { conversation_id: string; node?: string; call: CallState }): void {

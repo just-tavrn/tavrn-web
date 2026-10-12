@@ -426,6 +426,10 @@ unencrypted (`voice.invalid_url` otherwise). The shell (`src-tauri/src/voice`):
   the input volume, then the gate (`gate.rs`, the same DSP as `web/src/voice/gate.ts`: threshold, 6 dB hysteresis,
   hold, 5 ms attack, 40 ms release) for voice activation, the noise gate and push-to-talk with its release delay.
   Opus with DTX and without RED, the channel's bitrate, as in the browser.
+- **Subscriptions**: the room connects without auto-subscription; microphones (and every other track) are subscribed
+  as they are published, screen shares never (`wants_subscription` in `engine.rs`). Screen shares are opt-in in tavrn
+  (a viewer receives a stream only after joining it, docs/CLIENT.md "Streams are joined"), and this engine has no video
+  to join one with; joining a stream in the client says so.
 - **Playback** (`mix.rs`): every subscribed remote audio track is decoded (and decrypted) by libwebrtc and mixed with
   the per-participant gain the client computes (`volume.ts`: per-user volume × output volume, 0 while deafened); the
   mix is also the echo canceller's reference. The loudest 10 ms RMS of each participant goes to the webview every
@@ -438,7 +442,7 @@ unencrypted (`voice.invalid_url` otherwise). The shell (`src-tauri/src/voice`):
   as `disconnected` with LiveKit's reason, and the webview rejoins or stops as the browser engine does. Server mutes
   arrive as permission changes.
 
-**Not in this version:** camera, screen sharing, soundboard clips and the priority speaker (the buttons are shown as
+**Not in this version:** camera, screen sharing (sharing and watching streams), soundboard clips and the priority speaker (the buttons are shown as
 not available with the native engine, focusable and with the reason in their name), the microphone test of the
 settings (it runs in the webview, `getUserMedia` exists there), macOS. Video in this engine was prototyped and not
 pursued ([Video in the native engine, a design note](#video-in-the-native-engine-a-design-note)).

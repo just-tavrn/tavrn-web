@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CueEngine, RINGTONES, RING_LOOP, ringtonePlaying, scheduleRingLoop, startRingtone, stopRingtone } from "./cues";
+import { CueEngine, RINGTONES, RING_LOOP, RING_VIBRATION, ringtonePlaying, scheduleRingLoop, startRingtone, stopRingtone } from "./cues";
 import { mockEngineContext } from "../test/audio";
 
 const PENTATONIC = ["C", "D", "E", "G", "A"];
@@ -112,5 +112,43 @@ describe("ringtone (design note 4.11)", () => {
     startRingtone("direct", { ringVolume: 0, outputDeviceId: "" }, silent.engine);
     await vi.advanceTimersByTimeAsync(600);
     expect(silent.starts.length).toBe(0);
+  });
+
+  it("tells whether it can be heard: blocked by the autoplay policy until a gesture unlocks the context", async () => {
+    const opts = { state: "suspended", now: 0, resumeWorks: false };
+    const m = mockEngineContext(opts);
+    const engine = new CueEngine(() => m.ctx, { idleMs: 1000, resumeTimeoutMs: 200 });
+    const audible: boolean[] = [];
+    startRingtone("direct", { ringVolume: 60, outputDeviceId: "" }, engine, { onAudible: (a) => audible.push(a), vibrate: null });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(audible).toEqual([false]);
+    // Still blocked on the next tick: reported once, not on every tick.
+    await vi.advanceTimersByTimeAsync(500);
+    expect(audible).toEqual([false]);
+    expect(m.starts).toHaveLength(0);
+    // The user taps: the context runs and the next tick rings.
+    opts.resumeWorks = true;
+    await engine.unlock();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(audible).toEqual([false, true]);
+    expect(m.starts.length).toBeGreaterThan(0);
+  });
+
+  it("vibrates on phones once per loop while it rings and stops the vibration with it", async () => {
+    const m = setup();
+    const vibrate = vi.fn((_: number | number[]) => true);
+    const stop = startRingtone("direct", { ringVolume: 60, outputDeviceId: "" }, m.engine, { vibrate });
+    expect(vibrate).toHaveBeenCalledWith(RING_VIBRATION);
+    await vi.advanceTimersByTimeAsync(RING_LOOP * 1000);
+    expect(vibrate.mock.calls.filter(([p]) => p === RING_VIBRATION)).toHaveLength(2);
+    stop();
+    expect(vibrate).toHaveBeenLastCalledWith(0);
+    await vi.advanceTimersByTimeAsync(RING_LOOP * 3000);
+    expect(vibrate.mock.calls.filter(([p]) => p === RING_VIBRATION)).toHaveLength(2);
+    // The vibration fits into one loop; a silent ring (volume 0) does not vibrate either.
+    expect((RING_VIBRATION as number[]).reduce((a, b) => a + b, 0)).toBeLessThan(RING_LOOP * 1000);
+    const quiet = vi.fn(() => true);
+    startRingtone("direct", { ringVolume: 0, outputDeviceId: "" }, setup().engine, { vibrate: quiet });
+    expect(quiet).not.toHaveBeenCalled();
   });
 });

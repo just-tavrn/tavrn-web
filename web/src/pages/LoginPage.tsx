@@ -149,6 +149,11 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
   const captchaNeeded = !!captcha && (mode === "login" ? captcha.login : captcha.register);
   // Published terms are accepted at registration, in the version shown (design note 4.14 item 2).
   const terms = node.data?.legal?.pages?.terms ?? null;
+  // The node's e-mail policy (`email` of the discovery document, TAVRN_EMAIL): `none` hides the field, `required`
+  // makes it mandatory. Unknown (document unavailable) behaves as `optional`; the node checks it anyway.
+  const wellKnown = useQuery({ queryKey: ["node", "well-known"], queryFn: () => publicApi.node.wellKnown(), retry: false, staleTime: 60_000 });
+  const emailPolicy = wellKnown.data?.email === "none" || wellKnown.data?.email === "required" ? wellKnown.data.email : "optional";
+  const [emailError, setEmailError] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -161,6 +166,11 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
       const problem = dateOfBirthError(dateOfBirth, node.data?.age?.minimum_age ?? 16, t);
       setDobError(problem);
       if (problem) return;
+    }
+    if (mode === "register" && emailPolicy === "required" && !email.trim()) {
+      setEmailError(true);
+      setError(t("errors.auth.email_required"));
+      return;
     }
     if (mode === "register" && terms && !acceptTerms) {
       setError(t("legal.terms.required_register"));
@@ -200,7 +210,7 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
       const resp =
         mode === "login"
           ? await publicApi.auth.login({ username: name, password, device_name: deviceName(), captcha_token: captchaToken, device })
-          : await publicApi.auth.register({ username: name, password, display_name: displayName || null, email: email || null, device_name: deviceName(), captcha_token: captchaToken, invite: invite.trim() || null, accept_terms: terms ? terms.version : null, date_of_birth: dateOfBirth });
+          : await publicApi.auth.register({ username: name, password, display_name: displayName || null, email: emailPolicy !== "none" && email.trim() ? email.trim() : null, device_name: deviceName(), captcha_token: captchaToken, invite: invite.trim() || null, accept_terms: terms ? terms.version : null, date_of_birth: dateOfBirth });
       setPassword("");
       setPasswordRepeat("");
       onPreauth(resp, mode, name);
@@ -375,9 +385,21 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
             <Field label={t("auth.display_name")}>
               <Input name="display_name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
             </Field>
-            <Field label={t("auth.email")}>
-              <Input name="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-            </Field>
+            {emailPolicy !== "none" && (
+              <Field label={emailPolicy === "required" ? t("auth.email") : t("auth.email_optional")} errorId={emailError ? "auth-error" : undefined}>
+                <Input
+                  name="email"
+                  type="email"
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    setEmailError(false);
+                  }}
+                  required={emailPolicy === "required"}
+                />
+              </Field>
+            )}
             {(inviteMode || invite) && (
               <Field label={t("auth.invite_code")} hint={inviteMode ? t("auth.invite_hint") : undefined}>
                 <Input name="invite" value={invite} onChange={(e) => setInvite(e.target.value)} required={inviteMode} />
