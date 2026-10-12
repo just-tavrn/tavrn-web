@@ -35,6 +35,9 @@ function linuxWebview(): boolean {
   return /Linux/.test(ua) && !/Android/.test(ua);
 }
 
+/** The Linux hint: the Electron app runs passkeys on security keys itself (docs/DESKTOP.md "Passkeys on Linux"). */
+const linuxHint = () => (platform().passkeys?.securityKeys ? "handoff.linux_key" : "handoff.linux");
+
 /** The Android app shows the node's page in the browser (a Custom Tab), not in a window: its own texts. */
 const inBrowser = (key: string) => (platform().android ? `${key}_android` : key);
 
@@ -103,7 +106,7 @@ export function useNodePageHandoff({ next, onSession }: { next: string; onSessio
       <p className="mt-2 text-sm text-fg-1">{t(inBrowser(run.method === "passkey" ? "handoff.waiting_passkey" : run.method === "sso" ? "handoff.waiting_sso" : "handoff.waiting"))}</p>
       {linuxWebview() && (
         <p className="mt-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-fg-1" data-testid="handoff-linux">
-          {t("handoff.linux")}
+          {t(linuxHint())}
         </p>
       )}
       <div className="mt-3">
@@ -210,7 +213,7 @@ export function useNodePageUnlock(): NodePageUnlock {
       <p className="text-sm text-fg-1">{t(inBrowser("handoff.unlock_waiting"))}</p>
       {linuxWebview() && (
         <p className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-fg-1" data-testid="handoff-linux">
-          {t("handoff.linux")}
+          {t(linuxHint())}
         </p>
       )}
       <div className="flex flex-col gap-2">

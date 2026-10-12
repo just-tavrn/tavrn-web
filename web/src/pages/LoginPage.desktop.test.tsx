@@ -316,4 +316,43 @@ describe("app login: passkeys in the app itself", () => {
     expect(calls.some((c) => c.url.endsWith("/webauthn/login/finish"))).toBe(true);
     expect(takePrf()).toEqual({ credentialId: "Y3JlZA", prf: new Uint8Array(32).fill(6) });
   });
+
+  /** The Linux app: native passkeys with a security key; `keys` answers what is plugged in. */
+  function linux(keys: { present: number; usable: number }) {
+    vi.stubGlobal("navigator", { ...navigator, userAgent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/150.0 Electron/44.7.0" });
+    const fake = desktop();
+    const nativeGet = vi.fn(async () => ({
+      credential: { id: "Y3JlZA", rawId: "Y3JlZA", type: "public-key", authenticatorAttachment: "cross-platform", response: { clientDataJSON: "AQ", authenticatorData: "Ag", signature: "Aw", userHandle: "BA" }, clientExtensionResults: {} },
+      prf: new Uint8Array(32).fill(7),
+    }));
+    const securityKeys = vi.fn(async () => keys);
+    setPlatform({ ...fake.platform, passkeys: { create: vi.fn(), get: nativeGet, securityKeys } });
+    return { fake, nativeGet, securityKeys };
+  }
+
+  it("Linux: with a security key plugged in the shell's native passkey signs in", async () => {
+    const { fake, nativeGet, securityKeys } = linux({ present: 1, usable: 1 });
+    mockFetch(passkeyRoutes(null));
+    renderLogin();
+    const u = userEvent.setup();
+    await waitFor(() => expect(securityKeys).toHaveBeenCalled());
+    await u.click(await screen.findByRole("button", { name: "Mit Passkey anmelden" }));
+    expect(await screen.findByText("Verschlüsselungsseite")).toBeInTheDocument();
+    expect(nativeGet).toHaveBeenCalledWith({ publicKey: expect.objectContaining({ challenge: "AAAA", rpId: "t.local" }) });
+    expect(fake.signIn).not.toHaveBeenCalled();
+    expect(takePrf()).toEqual({ credentialId: "Y3JlZA", prf: new Uint8Array(32).fill(7) });
+  });
+
+  it("Linux: without a security key the passkey goes to the node's page, which says the app takes security keys", async () => {
+    const { fake, nativeGet, securityKeys } = linux({ present: 0, usable: 0 });
+    mockFetch(passkeyRoutes(null));
+    renderLogin();
+    const u = userEvent.setup();
+    await waitFor(() => expect(securityKeys).toHaveBeenCalled());
+    await u.click(await screen.findByRole("button", { name: "Mit Passkey anmelden" }));
+    await waitFor(() => expect(fake.signIn).toHaveBeenCalledTimes(1));
+    expect((fake.signIn.mock.calls[0] as unknown as [NodePageSignIn])[0].method).toBe("passkey");
+    expect(await screen.findByTestId("handoff-linux")).toHaveTextContent("Sicherheitsschlüssel");
+    expect(nativeGet).not.toHaveBeenCalled();
+  });
 });

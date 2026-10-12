@@ -27,8 +27,10 @@ export default {
     "dist/main/**/*.js",
     "dist/shared/**/*.js",
     "dist/preload/*.cjs",
-    // The key listener (native/keywatch, docs/DESKTOP.md "Hotkeys (Electron)"): a native module is loaded from outside the archive.
+    // The key listener (native/keywatch, docs/DESKTOP.md "Hotkeys (Electron)") and, on Linux, the passkeys
+    // (native/passkeys, "Passkeys on Linux"): a native module is loaded from outside the archive.
     "dist/native/keywatch.node",
+    "dist/native/passkeys.node",
     "!**/*.map",
     { from: "../../web/dist", to: "web", filter: ["**/*", "!**/*.map"] },
     { from: "../desktop/src-tauri/icons", to: "icons", filter: ["icon.png", "128x128@2x.png"] },
@@ -60,8 +62,9 @@ export default {
   extraResources: [{ from: "../desktop/LICENSE.txt", to: "LICENSE.txt" }],
   deb: {
     packageName: "tavrn",
-    // electron-builder's list plus what Electron's binary links that minimal systems lack (ALSA, GBM).
-    depends: ["libgtk-3-0", "libnotify4", "libnss3", "libxss1", "libxtst6", "xdg-utils", "libatspi2.0-0", "libuuid1", "libsecret-1-0", "libasound2t64 | libasound2", "libgbm1"],
+    // electron-builder's list plus what Electron's binary links that minimal systems lack (ALSA, GBM), and libudev for
+    // the passkeys module (it finds the security keys through udev).
+    depends: ["libgtk-3-0", "libnotify4", "libnss3", "libxss1", "libxtst6", "xdg-utils", "libatspi2.0-0", "libuuid1", "libsecret-1-0", "libasound2t64 | libasound2", "libgbm1", "libudev1"],
     fpm: ["../desktop/LICENSE.txt=/usr/share/doc/tavrn/LICENSE.txt"],
   },
   // The Windows fallback for machines where WebView2 causes trouble (the Tauri installer stays the recommended one): an

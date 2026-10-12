@@ -20,7 +20,7 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test \"src/**/*.test.ts\" \"scripts/*.test.mjs\"",
     "e2e": "playwright test --config e2e/playwright.config.ts",
-    "native": "pnpm --filter @tavrn/keywatch-native build"
+    "native": "pnpm --filter @tavrn/keywatch-native --filter @tavrn/passkeys-native build"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",

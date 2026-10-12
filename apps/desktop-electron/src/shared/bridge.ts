@@ -14,6 +14,7 @@ export const BRIDGE_METHODS = {
   notify: ["notify"],
   tray: ["traySet", "trayStatus", "setCloseToTray", "quitApp"],
   hotkeys: ["registerHotkey", "unregisterHotkey", "setHotkeysEnabled"],
+  passkeys: ["passkeyCreate", "passkeyGet", "passkeyStatus"],
 } as const;
 
 export type BridgeNamespaceName = keyof typeof BRIDGE_METHODS;

@@ -2,7 +2,7 @@
 import "fake-indexeddb/auto";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { Route, Routes } from "react-router";
 import { UserSettingsPage } from "../UserSettingsPage";
 import { useAuth } from "../../stores/auth";
@@ -13,6 +13,8 @@ import { initCryptoForTests } from "../../test/wasm";
 import { MasterSecret, verifyContinuity } from "@tavrn/crypto";
 import { b64urlDecode, b64urlEncode } from "@tavrn/sdk";
 import { ownIdentityPublicKey } from "@tavrn/e2ee";
+import { resetPlatform, setPlatform } from "../../platform";
+import { resetNodeWebauthn } from "../../lib/passkeys";
 
 const DEV = "01J9ZK3G5M8Q2W4E6R8T0Y2VA1";
 const user = { id: "u1", username: "sec", domain: "t.local", address: "sec@t.local", display_name: "S", kind: "user", is_node_admin: false, avatar_blob_id: null, created_at: "", email: null, email_verified: false, has_identity_key: true };
@@ -197,5 +199,39 @@ describe("Security settings: single sign-on (APPLICATIONS.md §8.3)", () => {
     await screen.findByTestId("passkey-list");
     expect(screen.queryByTestId("sso-section")).toBeNull();
     expect(screen.getByText("Passwort ändern")).toBeInTheDocument();
+  });
+});
+
+describe("Security settings in the Linux app (passkeys on a security key)", () => {
+  afterEach(() => {
+    resetPlatform();
+    resetNodeWebauthn();
+  });
+
+  it("asks to plug in a security key and offers the passkey form once one is there", async () => {
+    let keys = { present: 0, usable: 0 };
+    const node = "https://t.local";
+    setPlatform({
+      kind: "desktop",
+      isDesktop: true,
+      nodeBase: () => node,
+      webOrigin: () => node,
+      openExternal: vi.fn(async () => {}),
+      appVersion: async () => "0.4.0",
+      node: { current: () => node, set: vi.fn(async () => {}), resolve: vi.fn(), domain: () => null },
+      passkeys: { create: vi.fn(), get: vi.fn(), securityKeys: vi.fn(async () => keys) },
+    });
+    mockFetch({ "/auth/factors": { body: factors } });
+    renderSecurity();
+    const u = userEvent.setup();
+    await u.click(await screen.findByRole("button", { name: "Passkey hinzufügen" }));
+    expect(await screen.findByTestId("passkey-insert-key")).toHaveTextContent("Sicherheitsschlüssel");
+    keys = { present: 1, usable: 0 };
+    window.dispatchEvent(new Event("focus"));
+    expect(await screen.findByTestId("passkey-insert-key")).toHaveTextContent("udev");
+    keys = { present: 1, usable: 1 };
+    window.dispatchEvent(new Event("focus"));
+    expect(await screen.findByLabelText("Name des Passkeys")).toBeInTheDocument();
+    expect(screen.queryByTestId("passkey-insert-key")).toBeNull();
   });
 });

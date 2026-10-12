@@ -18,8 +18,9 @@ export function ReauthDialog() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  // The browser, the Windows app (natively) and the Android app when the node accepts its origin.
-  const inAppPasskey = usePasskeyBlocker() === null;
+  // The browser, the Windows app (natively), the Linux app with a security key plugged in (looked for while the dialog
+  // is open) and the Android app when the node accepts its origin.
+  const inAppPasskey = usePasskeyBlocker(!!pending) === null;
   if (!pending) return null;
   const methods = pending.methods;
   const close = (ok: boolean) => {

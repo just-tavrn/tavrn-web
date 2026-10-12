@@ -91,6 +91,23 @@ export function PasskeyEnroll({ api, onDone, onCancel, submitLabel }: { api: Tav
   const blocker = usePasskeyBlocker();
   if (blocker === "pending") return <p className="text-sm text-fg-2">{t("common.loading")}</p>;
   if (blocker === "node") return <ErrorText>{t("passkey.app_origin_refused")}</ErrorText>;
+  // The Linux app: passkeys on a security key only; the view switches as soon as one is plugged in.
+  if (blocker === "key" || blocker === "key_access") {
+    return (
+      <div className="space-y-3">
+        <p className="text-sm text-fg-1" role="status" data-testid="passkey-insert-key">
+          {t(blocker === "key" ? "passkey.insert_key" : "passkey.key_no_access")}
+        </p>
+        {onCancel && (
+          <div className="flex justify-end">
+            <Button type="button" variant="ghost" onClick={onCancel}>
+              {t("common.cancel")}
+            </Button>
+          </div>
+        )}
+      </div>
+    );
+  }
   if (blocker) return <ErrorText>{t("passkey.error.unsupported")}</ErrorText>;
   return (
     <form
