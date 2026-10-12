@@ -29,10 +29,7 @@ export async function acknowledgeGhosts(q: string, mls: MlsManager | null, ghost
   useMlsUi.setState((s) => ({ ghostAck: { ...s.ghostAck, [q]: [...new Set([...(s.ghostAck[q] ?? []), ...ids])] } }));
 }
 
-/** Whether an error is the session manager refusing content because of an unacknowledged ghost. */
-export function isGhostRefusal(e: unknown): boolean {
-  return !!e && typeof e === "object" && (e as { name?: string }).name === "MlsError" && (e as { code?: string }).code === "ghost";
-}
+export { isGhostRefusal } from "../lib/leafCleanup";
 
 /** After a refusal: the view shows the warning again (a device joined that nobody was shown yet). */
 export function forgetGhostAck(q: string): void {

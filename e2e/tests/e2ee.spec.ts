@@ -251,6 +251,69 @@ test.describe("Direct messages and groups", () => {
   });
 });
 
+test.describe("Leaving a group", () => {
+  // Issue #86: right after a member left, the first message stayed in the composer. Until a removal commit takes the
+  // departed member's leaf out of the group, the ghost check refuses to encrypt (ENCRYPTION.md §4.6); the device that
+  // may commit the removal first is elected (the lowest device id) and every other one waits ten seconds (§4.7). The
+  // send has to bring the removal about itself and go through, not fail while the elected device is away.
+  test("the first message after a member left goes out at once, without the departed member", async ({ browser, page }) => {
+    test.setTimeout(scaled(180_000));
+    // Bob registers first: his device id is the lowest, so he is elected to commit the removal, and he is away.
+    const bobPage = await newPage(browser);
+    const bob = await registerViaUi(bobPage, { prefix: "bob" });
+    const alice = await registerViaUi(page, { prefix: "alice" });
+    const carolPage = await newPage(browser);
+    const carol = await registerViaUi(carolPage, { prefix: "carol" });
+    const deviceOf = (p: Page) => p.evaluate(() => JSON.parse(localStorage.getItem("tavrn.auth") ?? "{}").deviceId as string);
+    expect(await deviceOf(bobPage) < (await deviceOf(page))).toBe(true);
+    await befriendViaApi(page, bob);
+    await acceptViaApi(bobPage);
+    await befriendViaApi(page, carol);
+    await acceptViaApi(carolPage);
+
+    await page.goto("/");
+    await openNavIfMobile(page);
+    await page.getByRole("button", { name: "Neue Gruppe" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Gruppenname (optional)").fill("Dreieck");
+    await dialog.getByTestId("dm-friend-picker").locator("label").filter({ hasText: bob.address }).getByRole("checkbox").check();
+    await dialog.getByTestId("dm-friend-picker").locator("label").filter({ hasText: carol.address }).getByRole("checkbox").check();
+    await dialog.getByRole("button", { name: "Gruppe erstellen" }).click();
+    await expect(page.getByTestId("conversation-name")).toHaveText("Dreieck");
+    // The first message adds Bob's and Carol's devices to the group.
+    await send(page, "Hallo Dreieck");
+    const conversationId = new URL(page.url()).pathname.split("/").pop()!;
+    // Bob is away (no socket): he cannot commit the removal.
+    const bobContext = bobPage.context();
+    await bobPage.close();
+
+    // Carol leaves; Alice writes as soon as her member list no longer shows Carol.
+    const left = await carolPage.request.delete(`${NODE}/api/v1/conversations/${conversationId}/members/${encodeURIComponent(carol.address)}`, { headers: { Authorization: `Bearer ${await tokenOf(carolPage)}` } });
+    expect(left.ok(), await left.text()).toBeTruthy();
+    await openMembers(page);
+    await expect(page.getByTestId("conversation-members")).not.toContainText(carol.address);
+    await closeDrawers(page);
+    const box = page.getByLabel("Nachricht", { exact: true });
+    await expect(box).toBeEnabled();
+    await box.fill("Ohne Carol");
+    await page.keyboard.press("Enter");
+    // Well within the ten seconds an unelected device waits before it removes the leaf on its own.
+    await expect(box).toHaveValue("", { timeout: scaled(5_000) });
+    await expect(message(page, "Ohne Carol")).toBeVisible();
+    await expect(page.getByTestId("ghost-warning")).toHaveCount(0);
+
+    // Bob comes back and reads it.
+    const bobAgain = await bobContext.newPage();
+    await bobAgain.goto(`/conversations/${conversationId}`);
+    await expect(message(bobAgain, "Ohne Carol")).toBeVisible({ timeout: scaled(30_000) });
+    // Carol's leaf is gone: the node has no pending removal left.
+    const pending = await page.request.get(`${NODE}/api/v1/conversations/${conversationId}/mls/pending-removals`, { headers: { Authorization: `Bearer ${await tokenOf(page)}` } });
+    expect((await pending.json()).items).toEqual([]);
+    await bobContext.close();
+    await carolPage.context().close();
+  });
+});
+
 test.describe("Trust and devices", () => {
   test("Security key changed after a contact resets their identity", async ({ browser, page }) => {
     test.setTimeout(scaled(150_000));

@@ -80,6 +80,10 @@ First public release of the web client and the desktop apps.
   every voice join then failed with "The commit is not from this device" (#83). The client now says that the device
   lost its keys and offers "Sign in again" (a new device, unlocked with the recovery key as usual); a device left in
   that state by an earlier version is found on the next start and asked the same.
+- The first message after a member left a group stayed in the composer ("ghost"): the departed member's device stays
+  in the encryption group until a removal goes through, the member elected to remove it may be away and everyone else
+  waited ten seconds before doing it, and the message was refused meanwhile. Sending now removes the device at once and
+  goes through (#86).
 - The registration form follows the node's e-mail policy: "Email" and required when the node requires an address,
   "Email (optional)" when it is optional, no field when the node accepts none.
 - Voice on phones: a mute now releases the microphone capture after two seconds and an unmute opens it again with the

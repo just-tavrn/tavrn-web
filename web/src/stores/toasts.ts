@@ -36,7 +36,9 @@ export const useToasts = create<ToastState>((set) => ({
 export function toastError(e: unknown, fallbackTitle?: string) {
   const err = e as { problem?: { code?: string; title?: string; detail?: string; request_id?: string }; message?: string };
   const title = fallbackTitle ?? err.problem?.title ?? t("common.error");
-  const detail = errorMessage(err.problem?.code, err.problem?.detail || err.message);
+  // Encryption refusals carry a code as their message: their readable text comes from describeError.
+  const named = (e as { name?: string } | null)?.name;
+  const detail = named === "MlsError" || named === "E2eeError" ? describeError(e) : errorMessage(err.problem?.code, err.problem?.detail || err.message);
   useToasts.getState().push({ kind: "error", title, detail: err.problem?.request_id ? `${detail} (${t("common.request", { id: err.problem.request_id })})` : detail });
 }
 
