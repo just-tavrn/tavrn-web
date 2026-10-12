@@ -7,12 +7,13 @@
 import { expect, test } from "@playwright/test";
 import { NODE, createRoomViaApi, loginAs, registerViaApi, uniqueName } from "./helpers";
 import { joinRoom } from "./menu-helpers";
+import { scaled } from "./timeouts";
 
 const auth = (token: string) => ({ headers: { Authorization: `Bearer ${token}` } });
 
 test.describe("Auto-moderation", () => {
   test("rules block words with an explanation in the composer and remove links of blocked domains", async ({ browser, page, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(scaled(120_000));
     const owner = await registerViaApi(request, "owner");
     const member = await registerViaApi(request, "member");
     const room = await createRoomViaApi(request, owner.token, uniqueName("Filterraum"));

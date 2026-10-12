@@ -3,6 +3,7 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 import { NODE, createRoomViaApi, inviteCode, openNavIfMobile, registerViaUi } from "./helpers";
 import { createGroup, cryptoAccountViaApi, sendEncrypted, type CryptoAccount } from "./crypto-helpers";
 import { openContextMenu } from "./menu-helpers";
+import { scaled } from "./timeouts";
 
 // "Keep the full history on this device" (design note 4.4): the client pages the whole history of an encrypted
 // channel in the background into the local encrypted index; turned off, the bounded window applies again.
@@ -56,7 +57,7 @@ async function search(page: Page, query: string) {
 }
 
 test("keep the full history: the background sync finds an old message; when off, the budget applies", async ({ page, request }) => {
-  test.setTimeout(240_000);
+  test.setTimeout(scaled(240_000));
   await page.addInitScript((days) => localStorage.setItem("tavrn.dev.searchWindowDays", String(days)), WINDOW_SECONDS / 86_400);
 
   // Alice (owner, crypto in the test process) creates the encrypted channel; Bob joins in the browser.
@@ -110,7 +111,7 @@ test("keep the full history: the background sync finds an old message; when off,
 });
 
 test("keep the full history: decrypted messages stay on this device for reading without the node; off deletes them", async ({ page, request }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(scaled(180_000));
   const alice = await cryptoAccountViaApi(request, "alice");
   const room = await createRoomViaApi(request, alice.token, "Offlineraum", "invite", { encrypted: true });
   const channel = room.channels.find((c: { kind: string }) => c.kind === "text").id as string;

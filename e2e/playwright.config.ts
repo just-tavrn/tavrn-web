@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig, devices } from "@playwright/test";
 // The @tavrn packages ship TypeScript sources: module hooks for this process and every worker (ts-packages.mjs).
 import "./ts-packages.mjs";
+import { TIMEOUT_FACTOR, scaled } from "./tests/timeouts.ts";
 
 // Starts tavrn nodes in development mode (main, single sign-on, legal and two federated ones), a fake OpenID
 // provider and a Vite dev server per node, then runs the tests in Chromium, Firefox and WebKit plus phone/tablet
@@ -172,21 +173,31 @@ function fedWeb(nodePortOf: string, port: string) {
   };
 }
 
+// Every limit the suite waits for is scaled by TAVRN_TEST_TIMEOUT_FACTOR (tests/timeouts.ts; the self-hosted runners set 3).
+if (TIMEOUT_FACTOR !== 1) console.log(`TAVRN_TEST_TIMEOUT_FACTOR=${TIMEOUT_FACTOR}: test and expect timeouts scaled`);
+
 export default defineConfig({
   testDir: "./tests",
+  // The specs only: tests/*.test.ts are unit tests of the helpers (node --test, `pnpm test`).
+  testMatch: "*.spec.ts",
   fullyParallel: true,
   // The suite starts real crypto (Argon2id, MLS) per test; more workers than this make it flaky on a loaded machine.
   workers: ci ? 2 : 4,
   forbidOnly: ci,
-  retries: ci ? 2 : 0,
-  reporter: ci ? [["github"], ["html", { open: "never" }]] : "list",
+  // One retry in CI as a safety net, never as the fix: a test that passes only on its retry is reported as flaky (the
+  // HTML report marks it, the JSON report feeds the workflow's job summary line "N flaky" and an annotation per test).
+  retries: ci ? 1 : 0,
+  reporter: ci ? [["github"], ["html", { open: "never" }], ["json", { outputFile: "test-results/results.json" }]] : "list",
+  // 30 s per test unless a spec sets its own (scaled as well).
+  timeout: scaled(30_000),
   // Assertions wait up to 10 s (default 5 s): on a loaded machine Argon2id, MLS joins and passkey
-  // ceremonies take longer; the crypto-heavy steps of the specs wait up to 20 s explicitly.
-  expect: { timeout: 10_000 },
+  // ceremonies take longer; the crypto-heavy steps of the specs wait longer explicitly (CRYPTO).
+  expect: { timeout: scaled(10_000) },
   use: {
     baseURL: webOrigin,
     locale: "de-DE",
-    trace: "retain-on-failure",
+    // CI: the trace of the retry (the attempt after a failure); locally there are no retries, so every failure keeps one.
+    trace: ci ? "on-first-retry" : "retain-on-failure",
     screenshot: "only-on-failure",
   },
   projects: [

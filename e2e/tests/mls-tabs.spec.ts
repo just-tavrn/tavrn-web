@@ -6,6 +6,7 @@
 // browser's own lock list.
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { NODE, openNavIfMobile, registerViaUi, tokenOf, type UiAccount } from "./helpers";
+import { scaled } from "./timeouts";
 
 async function newPage(browser: Browser): Promise<Page> {
   const context = await browser.newContext({ ...test.info().project.use });
@@ -50,7 +51,7 @@ async function noTrouble(...pages: Page[]) {
 
 test.describe("Several tabs of one browser", () => {
   test("two tabs share the MLS state of a DM: both send and read, no rejoin, the second takes over when the first closes", async ({ browser, page }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(scaled(180_000));
     await registerViaUi(page, { prefix: "alice" });
     const bobPage = await newPage(browser);
     const bob = await registerViaUi(bobPage, { prefix: "bob" });

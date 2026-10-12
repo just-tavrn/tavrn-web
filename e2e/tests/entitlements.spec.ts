@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test } from "@playwright/test";
 import { NODE, adminAccount, createRoomViaApi, loginAs, registerViaApi, uniqueName } from "./helpers";
+import { scaled } from "./timeouts";
 
 // Entitlements and admin API tokens (design note 4.13 item 1) and the room's attachment retention (item 2).
 test.describe("Quotas and admin API tokens", () => {
   test("Create a plan, grant it with an expiry, edit and delete the grant", async ({ page, request }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(scaled(90_000));
     const admin = await adminAccount(request);
     const user = await registerViaApi(request, "abo");
     await loginAs(page, admin);
@@ -76,7 +77,7 @@ test.describe("Quotas and admin API tokens", () => {
   });
 
   test("Create an API token, see the secret once, use it for admin routes only, revoke it", async ({ page, request }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(scaled(90_000));
     const admin = await adminAccount(request);
     await loginAs(page, admin);
     await page.goto("/admin/tokens");

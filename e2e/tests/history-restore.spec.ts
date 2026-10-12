@@ -6,8 +6,9 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { NODE, confirmRecoveryKey, loginViaUi, openNavIfMobile, openRoomInvite, registerViaUi, tokenOf, type UiAccount } from "./helpers";
+import { scaled } from "./timeouts";
 
-const CRYPTO = { timeout: 30_000 };
+const CRYPTO = { timeout: scaled(30_000) };
 const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22a", "wcag22aa"];
 
 async function newPage(browser: Browser): Promise<Page> {
@@ -107,7 +108,7 @@ async function welcomeEntries(page: Page, roomId: string) {
 
 test.describe("History restore after a key reset", () => {
   test("the member asks, the owner verifies and approves, the member reads the old messages again", async ({ browser, page }) => {
-    test.setTimeout(300_000);
+    test.setTimeout(scaled(300_000));
     const { roomId, bob, bob2 } = await resetScenario(browser, page, "Archiv");
 
     // Nothing from before the reset comes back by itself: the banner explains it and offers the request.
@@ -152,7 +153,7 @@ test.describe("History restore after a key reset", () => {
   });
 
   test("a denied request keeps the history locked and tells the member why", async ({ browser, page }) => {
-    test.setTimeout(300_000);
+    test.setTimeout(scaled(300_000));
     const { url, roomId, bob2 } = await resetScenario(browser, page, "Tresor");
     const banner = bob2.getByTestId("history-restore-banner");
     await banner.getByTestId("history-restore-ask").click();

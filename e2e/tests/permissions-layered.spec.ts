@@ -5,6 +5,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { NODE, createRoomViaApi, loginAs, openNavIfMobile, registerViaApi } from "./helpers";
+import { scaled } from "./timeouts";
 
 async function axe(page: Page, selector: string) {
   await page.waitForTimeout(300);
@@ -13,7 +14,7 @@ async function axe(page: Page, selector: string) {
 }
 
 test("deny view on @everyone, allow it on one channel: a member sees exactly that channel and its category", async ({ browser, page, request }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(scaled(120_000));
   const owner = await registerViaApi(request, "own");
   const member = await registerViaApi(request, "mem");
   const room = await createRoomViaApi(request, owner.token, "Schichten");

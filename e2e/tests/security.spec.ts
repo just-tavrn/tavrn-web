@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test } from "@playwright/test";
 import { NODE, addVirtualAuthenticator, confirmRecoveryKey, confirmWithPassword, loginViaUi, nextTotpCode, registerViaUi, tokenOf } from "./helpers";
+import { scaled } from "./timeouts";
 
 test.describe("Security settings", () => {
   test("Factors, passkey with a name, protection of the last factor, codes and recovery key", async ({ browser, page, request, browserName }) => {
     test.skip(browserName !== "chromium", "adding a passkey needs the CDP virtual authenticator");
-    test.setTimeout(120_000);
+    test.setTimeout(scaled(120_000));
     await addVirtualAuthenticator(page);
     const account = await registerViaUi(page);
     await page.goto("/settings/security");

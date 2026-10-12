@@ -3,6 +3,7 @@
 // change in DMs, and device signatures on plaintext messages.
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { NODE, confirmRecoveryKey, createRoomViaApi, inviteCode, loginViaUi, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, type UiAccount } from "./helpers";
+import { scaled } from "./timeouts";
 
 async function newPage(browser: Browser): Promise<Page> {
   const context = await browser.newContext({ ...test.info().project.use });
@@ -40,7 +41,7 @@ async function openVerify(page: Page, address: string) {
 
 test.describe("Identity verification", () => {
   test("Compare safety numbers, verify; after a key change the DM is locked until the new key is accepted", async ({ browser, page }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(scaled(240_000));
     const alice = await registerViaUi(page, { prefix: "alice" });
     const bobPage = await newPage(browser);
     const bob = await registerViaUi(bobPage, { prefix: "bob" });
@@ -110,7 +111,7 @@ test.describe("Identity verification", () => {
   });
 
   test("Plaintext messages: signed by the device, marked as unverified without a signature (API account)", async ({ page, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(scaled(120_000));
     // An API-only account has no device key: its messages are unsigned.
     const owner = await registerViaApi(request, "apiown");
     const room = await createRoomViaApi(request, owner.token, "Offener Raum");

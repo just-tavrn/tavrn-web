@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
 // With its extension: the Electron shell's smoke test (apps/desktop-electron, module resolution "nodenext") imports this file.
 import { NODE, openNavIfMobile, registerViaUi, tokenOf } from "./helpers.ts";
+import { scaled } from "./timeouts.ts";
 
 /** A short 16-bit mono WAV (a 440 Hz tone). */
 export function toneWav(seconds = 0.5, rate = 16000): Buffer {
@@ -68,7 +69,7 @@ export async function befriend(a: VoiceUser, b: VoiceUser): Promise<void> {
 
 export async function send(page: Page, text: string): Promise<void> {
   const box = page.getByLabel("Nachricht", { exact: true });
-  await expect(box).toBeEnabled({ timeout: 20_000 });
+  await expect(box).toBeEnabled({ timeout: scaled(20_000) });
   await box.fill(text);
   await page.keyboard.press("Enter");
   await expect(box).toHaveValue("");
@@ -96,7 +97,7 @@ export interface HookState {
 
 /** LiveKit's view of the call (the hooks appear once the session finished connecting). */
 export async function hooks(page: Page): Promise<HookState> {
-  await expect.poll(() => page.evaluate(() => !!(window as unknown as { __tavrnVoice?: unknown }).__tavrnVoice), { timeout: 30_000 }).toBe(true);
+  await expect.poll(() => page.evaluate(() => !!(window as unknown as { __tavrnVoice?: unknown }).__tavrnVoice), { timeout: scaled(30_000) }).toBe(true);
   return page.evaluate(() => (window as unknown as { __tavrnVoice: { state: () => unknown } }).__tavrnVoice.state() as HookState);
 }
 

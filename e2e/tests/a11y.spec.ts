@@ -10,6 +10,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import { NODE, adminAccount, createRoomViaApi, inviteCode, loginAs, openNavIfMobile, registerViaApi, registerViaUi, tokenOf } from "./helpers";
 import { openContextMenu, openMembers, postAttachment, postMessage } from "./menu-helpers";
+import { scaled } from "./timeouts";
 
 const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22a", "wcag22aa", "best-practice"];
 const FAILING = new Set(["serious", "critical"]);
@@ -113,7 +114,7 @@ test.describe("Accessibility (axe, WCAG 2.2 AA)", () => {
   });
 
   test("room view, composer, pickers, menus, dialogs, settings and search", async ({ page, request }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(scaled(180_000));
     const owner = await registerViaApi(request, "a11y");
     const member = await registerViaApi(request, "a11ym");
     const room = await createRoomViaApi(request, owner.token, "Lesbar", "public");
@@ -242,7 +243,7 @@ test.describe("Accessibility (axe, WCAG 2.2 AA)", () => {
   });
 
   test("friends, direct messages and the voice channel", async ({ page, request }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(scaled(180_000));
     // The voice channel and DMs need encryption keys: a full registration through the UI.
     const me = await registerViaUi(page, { prefix: "a11yv" });
     const friend = await registerViaApi(request, "a11yf");
@@ -380,7 +381,7 @@ test.describe("Accessibility (axe, WCAG 2.2 AA)", () => {
 
   test("admin page", async ({ page, request }) => {
     // Nine admin tabs plus the account menu and the settings navigation: more than the default 30 s on phones.
-    test.setTimeout(90_000);
+    test.setTimeout(scaled(90_000));
     const admin = await adminAccount(request);
     await loginAs(page, admin);
     // The account menu of a node admin (with the node administration) and the settings navigation with its link.

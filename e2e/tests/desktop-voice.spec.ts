@@ -15,6 +15,7 @@ import { expect, test } from "@playwright/test";
 import { NODE, createRoomViaApi, inviteCode, nextTotpCode, registerViaApi, tokenOf } from "./helpers";
 import { FAKE_MEDIA, closeOpened, hooks, inboundPeak, voiceUser } from "./voice-helpers";
 import { DesktopApp, until } from "./desktop-driver";
+import { scaled } from "./timeouts";
 
 const app = process.env.E2E_DESKTOP_APP;
 
@@ -74,7 +75,7 @@ function appProcesses(binary: string): { shell: number; webkit: number[] } {
 
 test("the browser and the desktop app's native engine hear each other end-to-end encrypted", async ({ browser, request, browserName }, info) => {
   test.skip(browserName !== "chromium" || info.project.name !== "chromium", "one Chromium participant is enough");
-  test.setTimeout(300_000);
+  test.setTimeout(scaled(300_000));
   const owner = await registerViaApi(request, "dvowner");
   const room = await createRoomViaApi(request, owner.token, "Desktop voice");
   const voice = room.channels.find((c: { kind: string }) => c.kind === "voice") as { id: string };

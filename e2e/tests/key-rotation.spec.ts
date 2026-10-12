@@ -5,6 +5,7 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { NODE, confirmWithPassword, loginViaUi, registerViaUi, tokenOf, type UiAccount } from "./helpers";
 import { freshIdentityKey } from "./crypto-helpers";
+import { scaled } from "./timeouts";
 
 async function newPage(browser: Browser): Promise<Page> {
   const context = await browser.newContext({ ...test.info().project.use });
@@ -38,7 +39,7 @@ async function dm(a: Page, b: Page, bUser: UiAccount): Promise<string> {
 
 test.describe("Renewing the security key", () => {
   test("Renew with confirmation: the second browser carries on, the contact only sees a subtle notice; a reset warns", async ({ browser, page }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(scaled(240_000));
     const alice = await registerViaUi(page, { prefix: "alice" });
     const bobPage = await newPage(browser);
     const bob = await registerViaUi(bobPage, { prefix: "bob" });

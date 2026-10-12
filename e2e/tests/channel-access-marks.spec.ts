@@ -6,6 +6,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { NODE, createRoomViaApi, loginAs, openNavIfMobile, registerViaApi } from "./helpers";
+import { scaled } from "./timeouts";
 
 async function axe(page: Page, selector: string) {
   await page.waitForTimeout(300);
@@ -14,7 +15,7 @@ async function axe(page: Page, selector: string) {
 }
 
 test("private and restricted channel marks for a member and the owner", async ({ browser, page, request }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(scaled(120_000));
   const owner = await registerViaApi(request, "own");
   const bob = await registerViaApi(request, "bob");
   const room = await createRoomViaApi(request, owner.token, "Zugang");

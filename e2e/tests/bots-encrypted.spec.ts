@@ -3,6 +3,7 @@ import type { ChildProcess } from "node:child_process";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { startExampleBot } from "./bot-helpers";
 import { NODE, createRoomViaApi, registerViaUi, tokenOf, uniqueName } from "./helpers";
+import { scaled } from "./timeouts";
 
 // Bots and encrypted channels (design note 4.7, decided 2026-10-06; APPLICATIONS.md §3.5, §3.6): in a new room the example
 // bot stays out of the encrypted channel until the channel's settings allow bots, then joins on its own; switching it
@@ -51,7 +52,7 @@ test.describe("Bots in encrypted channels (design note 4.7)", () => {
   });
 
   test("a new room keeps the bot out of the encrypted channel until the channel allows bots; the security log shows it", async ({ page, request }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(scaled(180_000));
     await registerViaUi(page, { prefix: "botwave" });
     const token = await tokenOf(page);
     const app = await createApp(request, token);

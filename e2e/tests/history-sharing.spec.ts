@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { NODE, loginViaUi, openNavIfMobile, registerViaUi, tokenOf, openRoomInvite, type UiAccount } from "./helpers";
+import { scaled } from "./timeouts";
 
 // History for new members of encrypted channels (design note 4.13 item 11, ENCRYPTION.md §7b): the channel policy
 // decides what the node serves from before a member's join, members' devices share the keys of older epochs
 // through `…/history-keys` (never as messages), the new member checks them and keeps them in its key store.
 
-const CRYPTO = { timeout: 30_000 };
+const CRYPTO = { timeout: scaled(30_000) };
 
 async function newPage(browser: Browser): Promise<Page> {
   const context = await browser.newContext({ ...test.info().project.use });
@@ -88,7 +89,7 @@ async function getJson(page: Page, path: string) {
 
 test.describe("History for new members", () => {
   test("all: Bob reads older messages, the node only sees ciphertext, the keys stay in local storage", async ({ browser, page }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(scaled(240_000));
     await registerViaUi(page, { prefix: "alice" });
     const { url, roomId, channelId } = await roomWithHistory(page, "Archiv");
 
@@ -148,7 +149,7 @@ test.describe("History for new members", () => {
   });
 
   test("Sharing person offline: notice for the new member, the keys arrive once they are back", async ({ browser, page }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(scaled(240_000));
     await registerViaUi(page, { prefix: "alice" });
     const { url, roomId, channelId } = await roomWithHistory(page, "Später");
     await setPolicy(page, roomId, channelId, "all");
@@ -172,7 +173,7 @@ test.describe("History for new members", () => {
   });
 
   test("sealed per device: Bob's second device opens its own box and reads the older messages", async ({ browser, page }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(scaled(240_000));
     await registerViaUi(page, { prefix: "alice" });
     const { url, roomId, channelId } = await roomWithHistory(page, "Zwei Geräte");
     await setPolicy(page, roomId, channelId, "all");
@@ -206,7 +207,7 @@ test.describe("History for new members", () => {
   });
 
   test("since joining: what was posted after Bob's join in channels he never opened reaches him (text and forum title)", async ({ browser, page }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(scaled(240_000));
     await registerViaUi(page, { prefix: "alice" });
     const { url, roomId } = await roomWithHistory(page, "Später geöffnet");
     const link = await inviteLink(page);
@@ -254,7 +255,7 @@ test.describe("History for new members", () => {
   });
 
   test("since joining shows nothing older, one day shows the recent messages", async ({ browser, page }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(scaled(240_000));
     await registerViaUi(page, { prefix: "alice" });
     const { roomId, channelId } = await roomWithHistory(page, "Grenzen");
     const link = await inviteLink(page);

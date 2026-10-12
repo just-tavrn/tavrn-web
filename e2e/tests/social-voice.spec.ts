@@ -9,6 +9,7 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 import { NODE, createRoomViaApi, inviteCode, openNavIfMobile, tokenOf } from "./helpers";
 import { isTouch, longPress } from "./menu-helpers";
 import { FAKE_MEDIA, befriend, closeOpened, voiceUser } from "./voice-helpers";
+import { scaled } from "./timeouts";
 
 test.use({ launchOptions: { args: FAKE_MEDIA }, permissions: ["microphone", "camera"] });
 test.afterEach(closeOpened);
@@ -39,7 +40,7 @@ async function joinFromSidebar(page: Page, roomId: string, channel: string) {
 
 test.describe("Voice activity in the rail and the friends list", () => {
   test("rail badge and room card, friends list with Join, nothing for a hidden channel", async ({ browser, request }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(scaled(240_000));
     const bob = await voiceUser(browser, "svbob");
     const alice = await voiceUser(browser, "svalice");
     await befriend(alice, bob);

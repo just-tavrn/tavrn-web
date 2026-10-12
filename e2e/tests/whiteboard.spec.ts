@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { openNavIfMobile, registerViaUi, openRoomInvite } from "./helpers";
+import { scaled } from "./timeouts";
 
 // Whiteboard (design note 4.10, tavrn-protocol/WHITEBOARD.md): two users in an encrypted channel. The board is
 // state-synced through encrypted ephemeral events; the owner's device is the source of truth.
@@ -85,7 +86,7 @@ async function action(page: Page, name: string) {
 test.describe("Whiteboard", () => {
   test("presents live, gates editing, keeps scenes, takes a background, exports, shares and closes", async ({ browser, page }) => {
     test.skip(test.info().project.name !== "chromium", "the full flow runs on the desktop; phones are covered below");
-    test.setTimeout(300_000);
+    test.setTimeout(scaled(300_000));
     const { bob, channelUrl } = await twoInARoom(browser, page);
 
     // Alice opens the board from the channel header; Bob sees that a board is live and joins on demand.
@@ -178,7 +179,7 @@ test.describe("Whiteboard", () => {
 
   test("phones: open a board, join it, pan and zoom, view only", async ({ browser, page }) => {
     test.skip(test.info().project.name !== "mobile-android", "phone layout");
-    test.setTimeout(240_000);
+    test.setTimeout(scaled(240_000));
     const { bob, channelUrl } = await twoInARoom(browser, page);
     await page.goto(`${channelUrl}/whiteboard`);
     await page.getByRole("button", { name: "Whiteboard öffnen" }).click();

@@ -6,6 +6,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
 import { NODE, createRoomViaApi, loginAs, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, type Account, openRoomInvite } from "./helpers";
 import { joinRoom, openContextMenu, postMessage } from "./menu-helpers";
+import { scaled } from "./timeouts";
 
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 
@@ -64,7 +65,7 @@ async function channel(request: import("@playwright/test").APIRequestContext, ow
 
 test.describe("Threads", () => {
   test("encrypted channel: reply in a thread, the second member reads and answers; the node sees only ciphertext", async ({ browser, page }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(scaled(180_000));
     await registerViaUi(page, { prefix: "alice" });
     const roomUrl = await createRoomInUi(page, "Fadenraum");
     const link = await inviteLink(page);
@@ -131,7 +132,7 @@ test.describe("Threads", () => {
   });
 
   test("followed threads of rooms not opened since the start notify from the start", async ({ page, request }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(scaled(90_000));
     const bob = await registerViaApi(request, "tfb");
     const alice = await registerViaApi(request, "tfa");
     const room = await createRoomViaApi(request, bob.token, "Folgeraum");
@@ -159,7 +160,7 @@ test.describe("Threads", () => {
   });
 
   test("forum: a post with title, message and tags; the tag filter and the post card", async ({ page, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(scaled(120_000));
     const alice = await registerViaApi(request, "alice");
     const room = await createRoomViaApi(request, alice.token, "Forumraum");
     const forum = await channel(request, alice, room.id, { kind: "forum", name: "hilfe" });
@@ -202,7 +203,7 @@ test.describe("Threads", () => {
   });
 
   test("forum: the first message of a post is signed by the device (the client picks the post's id)", async ({ page, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(scaled(120_000));
     await registerViaUi(page, { prefix: "signer" });
     const token = await tokenOf(page);
     const owner = { token } as Account;
@@ -232,7 +233,7 @@ test.describe("Threads", () => {
   });
 
   test("announcement channel: members cannot post, but react and reply in threads", async ({ page, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(scaled(120_000));
     const alice = await registerViaApi(request, "alice");
     const bob = await registerViaApi(request, "bob");
     const room = await createRoomViaApi(request, alice.token, "Neuigkeiten");

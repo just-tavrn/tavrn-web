@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { NODE, createRoomViaApi, inviteCode, loginAs, registerViaApi } from "./helpers";
+import { scaled } from "./timeouts";
 
 // Rich presence (APPLICATIONS.md §7.2/§7.3): an activity with details, state, end and application shows
 // "via <application>" in the member list and the profile card; the privacy settings list the decisions of
@@ -23,7 +24,7 @@ async function openMembers(page: Page) {
 
 test.describe("Game activity", () => {
   test('Room members see details, state and "via <application>"', async ({ browser, page, request }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(scaled(90_000));
     const alice = await registerViaApi(request, "act");
     const bob = await registerViaApi(request, "actb");
     const room = await createRoomViaApi(request, alice.token, "Spieleabend");

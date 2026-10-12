@@ -6,12 +6,13 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import { NODE, adminAccount, confirmWithPassword, createRoomViaApi, inviteCode, loginAs, registerViaApi, uniqueName } from "./helpers";
+import { scaled } from "./timeouts";
 
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 
 test.describe("My data and deleting the account", () => {
   test('Download the data, delete the account with the phrase, "Gelöschter Nutzer" in the room, the admin undoes it', async ({ browser, page, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(scaled(120_000));
     const owner = await registerViaApi(request, "owner");
     const leaver = await registerViaApi(request, "leaver");
     const room = await createRoomViaApi(request, owner.token, "Abschied");
@@ -82,7 +83,7 @@ test.describe("My data and deleting the account", () => {
   });
 
   test("an owner hands the room over from the deletion dialog, then the account goes (MODERATION.md §4)", async ({ page, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(scaled(120_000));
     const owner = await registerViaApi(request, "owner");
     const heir = await registerViaApi(request, "heir");
     const name = uniqueName("Erbe");

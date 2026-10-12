@@ -8,6 +8,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { ADULT_DOB, confirmRecoveryCodes, confirmRecoveryKey, enrollTotpInUi, openNavIfMobile, uniqueName } from "./helpers";
 import { LEGAL_NODE, LEGAL_WEB, acceptTerms, acceptTermsDialogIfShown, legalAdmin, loginOnLegal, publish, registerOnLegal, termsVersion } from "./legal-helpers";
+import { scaled } from "./timeouts";
 
 /** Admin tabs scroll sideways on phones: open one by its test id. */
 async function openAdminTab(page: Page, tab: string) {
@@ -16,7 +17,7 @@ async function openAdminTab(page: Page, tab: string) {
 
 test.describe("Legal", () => {
   test("The admin writes the imprint and the terms; the imprint is two clicks from the sign-in page", async ({ browser, page, request }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(scaled(90_000));
     const admin = await legalAdmin(request);
     await acceptTerms(request, admin);
     const marker = uniqueName("betreiber");
@@ -52,7 +53,7 @@ test.describe("Legal", () => {
   });
 
   test("Registration requires the terms; a new version is asked for once", async ({ page, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(scaled(120_000));
     const admin = await legalAdmin(request);
     if (!(await termsVersion(request))) await publish(request, admin, "terms", "# Nutzungsbedingungen\n\nSei nett.");
     const username = uniqueName("terms");
@@ -106,7 +107,7 @@ test.describe("Legal", () => {
   });
 
   test("Report via the form, the admin removes the content, the uploader sees the reason and objects", async ({ browser, page, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(scaled(120_000));
     const admin = await legalAdmin(request);
     const uploader = await registerOnLegal(request, "uploader");
     const room = await (await request.post(`${LEGAL_NODE}/api/v1/rooms`, { headers: { Authorization: `Bearer ${uploader.token}` }, data: { name: "Fotos" } })).json();

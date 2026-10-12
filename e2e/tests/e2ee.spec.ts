@@ -2,6 +2,7 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { NODE, createRoomViaApi, inviteCode, loginAs, loginViaUi, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, type UiAccount, openRoomInvite } from "./helpers";
 import { createGroup, cryptoAccountViaApi, externalJoin, freshIdentityKey, resetAndReattest, sendEncrypted } from "./crypto-helpers";
+import { scaled } from "./timeouts";
 
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
 
@@ -53,7 +54,7 @@ async function closeDrawers(page: Page) {
 
 test.describe("End-to-end encryption", () => {
   test("encrypted channel: two people, reactions, pins, editing, image, reload, new device via the backup", async ({ browser, page }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(scaled(180_000));
     const alice = await registerViaUi(page, { prefix: "alice" });
     const roomUrl = await createRoomInUi(page, "Geheimbund");
     await expect(page.getByTestId("encrypted-marker")).toBeVisible();
@@ -151,7 +152,7 @@ async function openMembers(page: Page) {
 
 test.describe("Direct messages and groups", () => {
   test("Friend request, DM in both directions, group with three people, leaving", async ({ browser, page }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(scaled(240_000));
     const alice = await registerViaUi(page, { prefix: "alice" });
     const bobPage = await newPage(browser);
     // Bob has a display name: the DM shows it in the header, the member list and on his messages alike.
@@ -252,7 +253,7 @@ test.describe("Direct messages and groups", () => {
 
 test.describe("Trust and devices", () => {
   test("Security key changed after a contact resets their identity", async ({ browser, page }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(scaled(150_000));
     await registerViaUi(page, { prefix: "alice" });
     const roomUrl = await createRoomInUi(page, "Vertrauen");
     const link = await inviteLink(page);
@@ -282,7 +283,7 @@ test.describe("Trust and devices", () => {
   });
 
   test("A changed security key holds the contact's device back until it is acknowledged", async ({ page, request }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(scaled(150_000));
     // Bob runs his encryption in the test process; Alice uses the browser.
     const bob = await cryptoAccountViaApi(request, "bob");
     const room = await createRoomViaApi(request, bob.token, "Schluesselwechsel", "invite", { encrypted: true });
@@ -321,7 +322,7 @@ test.describe("Trust and devices", () => {
   });
 
   test("Ghost check: a device of a non-member in the group blocks sending until confirmed", async ({ page, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(scaled(120_000));
     // Alice (owner) and Mallory run their encryption in the test process; Bob uses the browser.
     const alice = await cryptoAccountViaApi(request, "alice");
     const room = await createRoomViaApi(request, alice.token, "Geisterhaus", "invite", { encrypted: true });

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test, type Page } from "@playwright/test";
 import { NODE, loginViaUi, openNavIfMobile, registerViaUi, tokenOf } from "./helpers";
+import { scaled } from "./timeouts";
 
 // Sessions (PROTOCOL.md §5b): expired access tokens are refreshed once per node and shared across tabs, a refused
 // token never logs out on its own, and a new login on the same browser continues the same device.
@@ -17,7 +18,7 @@ const stored = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getIt
 
 test.describe("Sessions", () => {
   test("expired access tokens: two tabs stay signed in, one refresh for both", async ({ context, page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(scaled(120_000));
     const account = await registerViaUi(page, { prefix: "tabs" });
     const second = await context.newPage();
     await second.goto("/settings/devices");
@@ -64,7 +65,7 @@ test.describe("Sessions", () => {
   });
 
   test("Network errors during the refresh do not sign out", async ({ page }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(scaled(90_000));
     await registerViaUi(page, { prefix: "offline" });
     await expireAccessTokens(page);
     // The refresh route is unreachable for a while: requests fail, the session stays.
@@ -82,7 +83,7 @@ test.describe("Sessions", () => {
   });
 
   test("signing in again in the same browser keeps the device", async ({ page }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(scaled(150_000));
     const account = await registerViaUi(page, { prefix: "same" });
     const first = (await stored(page)).deviceId;
     for (let i = 0; i < 2; i++) {

@@ -7,6 +7,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { NODE, createRoomViaApi, inviteCode, tokenOf } from "./helpers";
 import { FAKE_MEDIA, closeOpened, voiceUser } from "./voice-helpers";
+import { scaled } from "./timeouts";
 
 test.use({ launchOptions: { args: FAKE_MEDIA }, permissions: ["microphone", "camera"] });
 test.afterEach(closeOpened);
@@ -59,7 +60,7 @@ async function navigate(page: Page, path: string) {
 
 test.describe("Stream audio", () => {
   test("own stream volume, voice volume apart, a watched stream stays audible while deafened; no loopback while connected", async ({ browser, request }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(scaled(240_000));
     const alice = await voiceUser(browser, "stali");
     const bob = await voiceUser(browser, "stbob");
     await bob.page.context().addInitScript(fakeScreenWithAudio);

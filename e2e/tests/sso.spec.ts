@@ -5,6 +5,7 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 import { ADULT_DOB, NODE, adminAccount, completeDateOfBirth, confirmRecoveryKey, confirmWithPassword, createRoomViaApi, enrollTotp, loginAs, nextTotpCode, registerViaApi, tokenOf, uniqueName } from "./helpers";
 import { createRole, openMembers } from "./menu-helpers";
 import { logoutViaUi, openNavIfMobile } from "./helpers";
+import { scaled } from "./timeouts";
 
 const WEB = `http://localhost:${process.env.E2E_WEB_PORT ?? "5173"}`;
 const DATA = resolve(dirname(new URL(import.meta.url).pathname), "../../data-dev");
@@ -93,7 +94,7 @@ test.describe("Single Sign-on (APPLICATIONS.md §8)", () => {
   });
 
   test("An SSO account sets up the recovery key like password accounts and has an identity afterwards (design note 4.13 item 10)", async ({ page, browser, request }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(scaled(90_000));
     const username = uniqueName("ssoid");
     await firstSsoLogin(page, username);
     // The same recovery key step as for password accounts (helpers.registerViaUi): 24 words, the finish

@@ -8,6 +8,7 @@
 import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
 import { NODE, addVirtualAuthenticator, confirmWithPassword, createRoomViaApi, loginAs, logoutViaUi, nextTotpCode, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, type Account } from "./helpers";
 import { FAKE_MEDIA, cues, hideDeviceNamesUntilAsked } from "./voice-helpers";
+import { scaled } from "./timeouts";
 
 // The hotkey test joins a voice channel: Chromium's fake microphone, no permission prompts.
 test.use({ launchOptions: { args: FAKE_MEDIA }, permissions: ["microphone", "camera"] });
@@ -191,7 +192,7 @@ test.describe("Desktop app (simulated shell)", () => {
   });
 
   test("sign-in on the node's page: the app waits, the page confirms, the app continues signed in", async ({ page, request, browser }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(scaled(90_000));
     const account = await registerViaApi(request, "hand");
     await asDesktopApp(page, NODE);
     await page.goto("/login");
@@ -213,7 +214,7 @@ test.describe("Desktop app (simulated shell)", () => {
   });
 
   test("sign-in in the app's sign-in window: the page signs itself out afterwards, no extra device stays", async ({ page, request, browser }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(scaled(90_000));
     const account = await registerViaApi(request, "handw");
     await asDesktopApp(page, NODE);
     await page.goto("/login");
@@ -243,7 +244,7 @@ test.describe("Desktop app: hotkeys (simulated shell)", () => {
   const hotkeyLog = (page: Page) => page.evaluate(() => JSON.parse(sessionStorage.getItem("e2e.desktop.hotkeys") ?? "[]") as string[]);
 
   test("one binding per action: lone modifiers and plain keys, conflict check, restored at start, presses of the shell and of the window", async ({ page, request }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(scaled(180_000));
     await asDesktopApp(page, NODE);
     // Device names stay hidden until the page asks for the microphone (as outside Chromium's test flags).
     await page.addInitScript(hideDeviceNamesUntilAsked);
@@ -366,7 +367,7 @@ test.describe("Desktop app: passkeys on the node's page unlock the app (simulate
 
   test("Unlock with a passkey on the unlock screen, then a passkey sign-in that unlocks right away", async ({ page, browser, browserName, request }) => {
     test.skip(browserName !== "chromium", "CDP virtual authenticator is Chromium only");
-    test.setTimeout(180_000);
+    test.setTimeout(scaled(180_000));
     // The node's page in a window of its own (its own storage, like the shell's second webview) with the passkey.
     const context = await browser.newContext({ locale: "de-DE" });
     const nodePage = await context.newPage();

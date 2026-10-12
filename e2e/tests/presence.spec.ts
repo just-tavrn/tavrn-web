@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { NODE, createRoomViaApi, inviteCode, loginAs, openNavIfMobile, registerViaApi, type Account } from "./helpers";
+import { scaled } from "./timeouts";
 
 async function newPage(browser: Browser): Promise<Page> {
   const context = await browser.newContext({ ...test.info().project.use });
@@ -27,7 +28,7 @@ async function choose(page: Page, status: "online" | "dnd" | "invisible") {
 
 test.describe("Presence", () => {
   test("Status, custom status and invisible are visible live to friends and room members", async ({ browser, page, request }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(scaled(90_000));
     const alice = await registerViaApi(request, "alice");
     const bob = await registerViaApi(request, "bob");
     await befriend(request, alice, bob);

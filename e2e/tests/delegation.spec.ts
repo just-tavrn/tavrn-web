@@ -2,6 +2,7 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { ADULT_DOB, confirmRecoveryCodes, confirmRecoveryKey, logoutViaUi, openNavIfMobile, registerViaUi, tokenOf, uniqueName, openRoomInvite } from "./helpers";
 import { A, B, BROWSER_API_A, FEDERATION_BROWSER, NODE_A, NODE_B, NODE_PORT_A, WEB_A, WEB_B, chromiumOnly } from "./federation-helpers";
+import { scaled } from "./timeouts";
 
 test.use(FEDERATION_BROWSER);
 
@@ -9,7 +10,7 @@ test.use(FEDERATION_BROWSER);
 // another host (`TAVRN_PUBLIC_URL=http://127.0.0.1:<port>`, see playwright.config.ts). Clients and b.test
 // resolve a.test through its well-known and talk to the delegated endpoint; addresses keep `@a.test` and
 // passkeys keep the relying party id a.test.
-const CRYPTO = { timeout: 20_000 };
+const CRYPTO = { timeout: scaled(20_000) };
 
 /** A virtual authenticator whose credentials the test can read (relying party ids). */
 async function authenticator(page: Page): Promise<() => Promise<Array<{ rpId?: string }>>> {
@@ -85,7 +86,7 @@ test.describe("Identity domain and node host (delegation)", () => {
   });
 
   test("Connect flow with the identity domain, passkey with RP ID a.test", async ({ page }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(scaled(150_000));
     const credentials = await authenticator(page);
     // An account on a.test with a passkey as its only factor, created in a.test's web client.
     const username = uniqueName("dpk");
@@ -146,7 +147,7 @@ test.describe("Identity domain and node host (delegation)", () => {
   });
 
   test("Room and DM on the delegated node from b.test", async ({ browser, page }) => {
-    test.setTimeout(300_000);
+    test.setTimeout(scaled(300_000));
     const alice = await registerViaUi(page, { prefix: "dla", web: WEB_A, domain: A });
     const bobPage = await newPage(browser);
     const bob = await registerViaUi(bobPage, { prefix: "dlb", web: WEB_B, domain: B });

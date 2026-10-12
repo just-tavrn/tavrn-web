@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { NODE, createRoomViaApi, inviteCode, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, type Account } from "./helpers";
+import { scaled } from "./timeouts";
 
 async function newPage(browser: Browser): Promise<Page> {
   const context = await browser.newContext({ ...test.info().project.use });
@@ -39,7 +40,7 @@ async function join(request: Page["request"], token: string, code: string) {
 
 test.describe("Message requests", () => {
   test("Non-friend from a shared room: request, read, accept, regular DM; decline with block and note", async ({ browser, page, request }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(scaled(240_000));
     const alice = await registerViaUi(page, { prefix: "alice" });
     const bobPage = await newPage(browser);
     const bob = await registerViaUi(bobPage, { prefix: "bob" });
@@ -89,7 +90,7 @@ test.describe("Message requests", () => {
   });
 
   test("Friends only: notice with a friend request including a message, a regular DM after accepting", async ({ page, request }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(scaled(180_000));
     const alice = await registerViaUi(page, { prefix: "alice" });
     const dave: Account = await registerViaApi(request, "dave");
     const auth = { Authorization: `Bearer ${dave.token}` };

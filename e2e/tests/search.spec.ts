@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { NODE, createRoomViaApi, inviteCode, loginAs, openNavIfMobile, registerViaApi, registerViaUi, tokenOf } from "./helpers";
+import { scaled } from "./timeouts";
 
 // Search (design note 4.4): one search box over the node (unencrypted channels) and the local encrypted index
 // (encrypted channels), snippets with highlights, filters, the honest status line, and jumping to a result.
@@ -39,7 +40,7 @@ async function send(page: Page, text: string) {
 
 test.describe("Search", () => {
   test("unencrypted channel: hits with highlighting, jump into the history and back", async ({ page, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(scaled(120_000));
     const alice = await registerViaApi(request, "alice");
     const room = await createRoomViaApi(request, alice.token, "Suchraum");
     const channel = room.channels.find((c: { kind: string }) => c.kind === "text");
@@ -124,7 +125,7 @@ test.describe("Search", () => {
   });
 
   test("encrypted channel: read messages in the local index, honest status line, jump", async ({ page, request }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(scaled(150_000));
     await registerViaUi(page, { prefix: "alice" });
     await openNavIfMobile(page);
     await page.getByRole("button", { name: "Raum erstellen" }).click();

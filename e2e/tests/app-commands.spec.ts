@@ -3,6 +3,7 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 import { Client, MasterSecret } from "@tavrn/crypto";
 import { CommandArgsVerifier, ensureCrypto } from "@tavrn/e2ee";
 import { NODE, createRoomViaApi, loginAs, registerViaApi, registerViaUi, tokenOf, uniqueName, type Account } from "./helpers";
+import { scaled } from "./timeouts";
 
 // Application commands, phase 5 step 3 (tavrn-protocol/APPLICATIONS.md §5): the `/` palette with an installed bot's
 // commands, a pick-list argument, the bot's reply, an ephemeral reply and "thinking…" for a deferred one, in an
@@ -184,7 +185,7 @@ async function ephemeralAndDeferred(page: Page) {
 
 test.describe("Application commands (APPLICATIONS.md §5, phase 5 step 3)", () => {
   test("palette, pick list, reply, ephemeral reply and thinking in an unencrypted channel; room settings", async ({ page, request }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(scaled(90_000));
     const owner = await registerViaApi(request, "cmdown");
     const carol = await registerViaApi(request, "cmdroom");
     const app = await createApp(request, owner);
@@ -232,7 +233,7 @@ test.describe("Application commands (APPLICATIONS.md §5, phase 5 step 3)", () =
   });
 
   test("encrypted channel: the arguments and the answers are ciphertext between the browser and the bot", async ({ page, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(scaled(120_000));
     await ensureCrypto();
     const owner = await registerViaApi(request, "cmdown");
     const app = await createApp(request, owner);

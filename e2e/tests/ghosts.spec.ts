@@ -2,6 +2,7 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { NODE, createRoomViaApi, inviteCode, loginViaApi, loginViaUi, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, type UiAccount } from "./helpers";
 import { FAKE_MEDIA, closeOpened, opened } from "./voice-helpers";
+import { scaled } from "./timeouts";
 
 // Ghost leaves and retired devices (ENCRYPTION.md §4.7, §5.2): a deleted device's leaf is removed by the user's next
 // device (also when it joins a voice channel), and the messages the deleted device wrote stay readable.
@@ -64,7 +65,7 @@ test.afterEach(() => closeOpened());
 test.describe("Ghost leaves in the voice channel", () => {
   test("Delete a device in the settings: the voice channel cleans up its leaf on join", async ({ browser, request, browserName }) => {
     test.skip(browserName !== "chromium" || process.env.E2E_VOICE === "false", "voice needs Chromium fake media and livekit-server");
-    test.setTimeout(240_000);
+    test.setTimeout(scaled(240_000));
     const owner = await registerViaApi(request, "gowner");
     const room = await createRoomViaApi(request, owner.token, "Geisterkanal");
     const voiceId = room.channels.find((c: { kind: string }) => c.kind === "voice").id as string;
@@ -98,7 +99,7 @@ test.describe("Ghost leaves in the voice channel", () => {
 
 test.describe("Removed devices", () => {
   test("Messages of a deleted device stay readable, also after a reload", async ({ browser, page }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(scaled(180_000));
     const alice = await registerViaUi(page, { prefix: "hist" });
     const deviceA = await deviceIdOf(page);
     await openNavIfMobile(page);
@@ -130,7 +131,7 @@ test.describe("Removed devices", () => {
   });
 
   test("Device deleted while the other one was offline: it confirms the old device afterwards and keeps reading", async ({ browser, page, request }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(scaled(180_000));
     const alice = await registerViaUi(page, { prefix: "late" });
     const deviceA = await deviceIdOf(page);
     await openNavIfMobile(page);

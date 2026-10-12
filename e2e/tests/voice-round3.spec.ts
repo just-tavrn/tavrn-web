@@ -7,6 +7,7 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 import { NODE, createRoomViaApi, inviteCode, loginAs, openNavIfMobile, registerViaApi, tokenOf } from "./helpers";
 import { isTouch, longPress, openContextMenu, openMembers, postMessage } from "./menu-helpers";
 import { FAKE_MEDIA, closeOpened, toneWav, voiceUser } from "./voice-helpers";
+import { scaled } from "./timeouts";
 
 test.use({ launchOptions: { args: FAKE_MEDIA }, permissions: ["microphone", "camera"] });
 test.afterEach(closeOpened);
@@ -48,7 +49,7 @@ async function joinVoice(page: Page, roomId: string, voiceId: string) {
 
 test.describe("Voice, round 3", () => {
   test("Participant menu on row and tile, priority speaker only with the permission, role colour and order, soundboard emoji, speaking ring", async ({ browser, request }) => {
-    test.setTimeout(300_000);
+    test.setTimeout(scaled(300_000));
     const owner = await voiceUser(browser, "r3own");
     const alice = await voiceUser(browser, "r3ali");
     const bob = await voiceUser(browser, "r3bob");
