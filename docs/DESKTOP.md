@@ -383,7 +383,7 @@ take it away, and the system refuses grabs of a modifier alone).
 | Platform | How | Notes |
 |---|---|---|
 | Windows | a low-level keyboard hook (`SetWindowsHookExW(WH_KEYBOARD_LL)`) on a thread of its own, which always passes the key on (`CallNextHookEx`); the scan code tells the physical key | Keys going to a window of a program that runs elevated (as administrator) are not seen by an app that is not elevated (UIPI): push-to-talk does not react in such a game. A release the hook misses (Ctrl+Alt+Del, an elevated window in front) is caught by a check every 500 ms (`GetAsyncKeyState`), so push-to-talk cannot stay open. |
-| Linux, X11 | the X RECORD extension on two X connections of its own ([x11rb](https://crates.io/crates/x11rb), pure Rust); the keycode tells the physical key | The releases of X11's key repeat are dropped (the key is still down in the server's key map). |
+| Linux, X11 | the X RECORD extension on two X connections of its own ([x11rb](https://crates.io/crates/x11rb), pure Rust); the keycode tells the physical key | The releases of X11's key repeat are dropped (the key is still down in the server's key map). The connections go to `DISPLAY` through its file socket or TCP and else, as libxcb does, through its Linux abstract socket (an X server that cannot create `/tmp/.X11-unix/X<n>`, such as Xvfb under WSLg, listens there only). |
 | Linux, Wayland | the same through XWayland | Only keys going to X11 programs (many games, Wine and Proton) are seen, not those of native Wayland windows; without an X display the settings say that the keys work while the window has focus. |
 | macOS | not yet | the keys work while the window has focus |
 
@@ -990,8 +990,10 @@ picker accepts `http://127.0.0.1:8080`).
   engines with the fake audio backend join one room end-to-end encrypted with a fixed key and hear each other, a third
   engine with another key hears nothing, the voice keeps flowing after a key change, mute and deafen stop it.
   `cargo test -- --ignored os_keychain` writes, reads and deletes an entry in the real keychain of the machine;
-  desktop.yml runs it with gnome-keyring in a D-Bus session. `xvfb-run -a cargo test -- --ignored x11_` drives the X11
-  key listener with `xdotool` (a lone modifier, an unwatched key, key repeat).
+  desktop.yml runs it with gnome-keyring in a D-Bus session. `xvfb-run -a cargo test` in `apps/desktop/crates/keywatch`
+  drives the X11 key listener with `xdotool` (a lone modifier, an unwatched key, key repeat) and connects to the display
+  (its file socket or else its abstract socket) and to its abstract socket with the Xauthority cookie; without
+  `xvfb-run` these tests are skipped.
 - Vitest, with the other tests of the client (`just test`): the platform detection and both implementations (Tauri
   mocked with `@tauri-apps/api/mocks`), the node picker, Settings → App, the API base plumbing, the flows the app
   does not offer, the key store with the keychain (migration, fallback, lock on close, sign-out), the routing of
