@@ -49,8 +49,18 @@ First public release of the web client and the desktop apps.
   The voice member list marks the presenter with a board badge next to LIVE; a double-click or Enter joins the board
   from inside the channel. A whiteboard and a focused stream sit side by side (stacked on phones), and a board wider
   than tall turns a phone to landscape in full screen like a stream.
+- The camera button has a quick menu (a long press on touch, a right-click): **Front camera** and **Back camera** on
+  phones and tablets (the front one by default, remembered on the device), the cameras and **Settings…** on desktops.
+  A switch while the camera is on swaps the video without leaving the call; the back camera's preview is not mirrored.
+- Android app: an audio output switch in the voice controls (**Speaker**, **Earpiece**, **Wired headset**, **Bluetooth
+  headset**, the one in use shown). A connected headset plays the call, otherwise the speaker (also in voice channels:
+  a group call is not held to the ear); the choice holds while its device is connected and with the screen off.
 
 ### Fixed
+
+- Android app: the full screen button of streams and cameras did nothing (the app's webview refused the Fullscreen
+  API). Full screen now fills the screen with the system bars hidden (a swipe shows them for a moment), a wide video
+  turns the phone to landscape, and the back gesture leaves full screen first (issue #74).
 
 - The registration form follows the node's e-mail policy: "Email" and required when the node requires an address,
   "Email (optional)" when it is optional, no field when the node accepts none.
