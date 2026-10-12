@@ -303,6 +303,10 @@ pub fn run() {
             android::android_unlock_store,
             android::android_unlock_get,
             android::android_unlock_clear,
+            android::android_screen_share_start,
+            android::android_screen_share_key,
+            android::android_screen_share_stop,
+            android::android_screen_share_status,
         ])
         .setup(|app| {
             let handle = app.handle();

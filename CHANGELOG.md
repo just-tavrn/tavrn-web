@@ -40,6 +40,13 @@ First public release of the web client and the desktop apps.
   (`tavrn://connect`, checked against the waiting sign-in's session and state) brings the app back at once. The
   Android app's earlier `tavrn://<host>/invite/<code>` form is replaced by these ([docs/DESKTOP.md](docs/DESKTOP.md)
   "Links into the app").
+- **Screen sharing in the Android app** (protocol VOICE.md §4b, docs/ANDROID.md "Screen sharing"): the screen share
+  button asks Android's consent and shares the whole screen through the LiveKit Android SDK as the device's screen
+  publisher, end-to-end encrypted with the device's frame key, which the client hands to the native side over the
+  app's bridge; optionally with the sound of other apps (Android 10+, off by default). It stops from the "You are
+  streaming" bar, the voice controls or the notification's **Stop sharing**, and with the voice session. Everybody
+  else sees it as the sharer's stream, joined on demand like every screen share; the client lists screen publishers
+  of any device as their owner's stream (`screen_of`), never as a person.
 
 ### Changed
 

@@ -301,6 +301,111 @@ pub enum OrientationLock {
     PortraitSecondary,
 }
 
+// ---- Screen sharing (docs/ANDROID.md "Screen sharing", VOICE.md §4b; `ScreenShare.kt`) ----
+
+/// Voice frame keys are 32 bytes (the MLS exporter output, ENCRYPTION.md §5a), at index `epoch mod 256`.
+pub const SCREEN_KEY_LEN: usize = 32;
+const MAX_LIVEKIT_TOKEN: usize = 4096;
+
+/// What the client hands the native screen publisher: the node's join answer for this device's screen publisher
+/// (`role: "screen"`), this device's frame key of `epoch`, the capture and the notification's texts.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ScreenShareStart {
+    pub url: String,
+    pub token: String,
+    pub key: Vec<u8>,
+    pub epoch: u64,
+    /// The capture's longer side in pixels (the resolution's box; the screen keeps its aspect ratio).
+    pub max_side: u32,
+    pub fps: u32,
+    pub max_bitrate: u32,
+    /// The sound of other apps too (Android 10+).
+    #[serde(default)]
+    pub audio: bool,
+    pub title: String,
+    pub text: String,
+    pub stop: String,
+}
+
+impl ScreenShareStart {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        let texts = [&self.title, &self.text, &self.stop].iter().all(|s| text_ok(s, MAX_TEXT));
+        let ok = screen_url(&self.url)
+            && livekit_token(&self.token)
+            && self.key.len() == SCREEN_KEY_LEN
+            && (320..=3840).contains(&self.max_side)
+            && (1..=60).contains(&self.fps)
+            && (100_000..=8_000_000).contains(&self.max_bitrate)
+            && texts;
+        if ok { Ok(()) } else { Err("screen.invalid") }
+    }
+}
+
+/// The media server's URL of a join answer (VOICE.md §3: the node's origin with `wss`): `wss` on any host, plain `ws`
+/// only for a development node on this device (the app allows no other plain connections); no credentials, query
+/// or fragment.
+pub fn screen_url(url: &str) -> bool {
+    if url.len() > MAX_LINK {
+        return false;
+    }
+    let Ok(u) = Url::parse(url) else { return false };
+    let loopback = matches!(u.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"));
+    let scheme_ok = u.scheme() == "wss" || (u.scheme() == "ws" && loopback);
+    scheme_ok && u.host_str().is_some() && u.username().is_empty() && u.password().is_none() && u.query().is_none() && u.fragment().is_none()
+}
+
+/// A LiveKit access token (a JWT: three base64url parts).
+pub fn livekit_token(token: &str) -> bool {
+    token.len() <= MAX_LIVEKIT_TOKEN
+        && token.split('.').count() == 3
+        && token.split('.').all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'))
+}
+
+/// The key for the Kotlin side (standard base64) with its key index, or an error for anything but 32 bytes.
+pub fn screen_key_out(key: &[u8], epoch: u64) -> Result<(String, u32), &'static str> {
+    use base64::Engine;
+    if key.len() != SCREEN_KEY_LEN {
+        return Err("screen.invalid");
+    }
+    // The remainder is below 256.
+    Ok((b64().encode(key), u32::try_from(epoch % 256).unwrap_or(0)))
+}
+
+/// The screen share's state on the Kotlin side.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScreenState {
+    Idle,
+    Starting,
+    Live,
+}
+
+/// `android_screen_share_status`: the state and whether the sound of other apps can be shared (Android 10+).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScreenShareStatus {
+    pub state: ScreenState,
+    pub audio: bool,
+}
+
+/// Why a screen share stopped: the client's stop, the notification's button, Android (the projection was revoked,
+/// e.g. by the system's own stop), or a failure (the connection broke for good).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScreenStopReason {
+    Stopped,
+    Notification,
+    Revoked,
+    Failed,
+}
+
+/// A screen share event for the client.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum ScreenEvent {
+    Live,
+    Stopped { reason: ScreenStopReason },
+}
+
 /// What the Kotlin side reports (`ShellPlugin.kt`, JSON with a `kind`).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -326,6 +431,12 @@ pub enum NativeEvent {
     PushUnregistered,
     /// The call's audio routes changed (a headset came or went, the user or the system moved the audio).
     AudioRoutes(AudioRoutes),
+    /// The screen share went live or stopped (`ScreenShare.kt`).
+    ScreenShare {
+        state: String,
+        #[serde(default)]
+        reason: Option<String>,
+    },
 }
 
 /// The event for the client, or none when the Kotlin side reported something invalid.
@@ -343,6 +454,19 @@ pub fn shell_event(event: NativeEvent) -> Option<ShellEvent> {
         NativeEvent::PushEndpoint(endpoint) => endpoint.valid().then_some(ShellEvent::PushEndpoint(endpoint)),
         NativeEvent::PushUnregistered => Some(ShellEvent::PushUnregistered),
         NativeEvent::AudioRoutes(routes) => routes.valid().then_some(ShellEvent::AudioRoutes(routes)),
+        NativeEvent::ScreenShare { state, reason } => match state.as_str() {
+            "live" => Some(ShellEvent::ScreenShare(ScreenEvent::Live)),
+            "stopped" => {
+                let reason = match reason.as_deref() {
+                    Some("notification") => ScreenStopReason::Notification,
+                    Some("revoked") => ScreenStopReason::Revoked,
+                    Some("failed") => ScreenStopReason::Failed,
+                    _ => ScreenStopReason::Stopped,
+                };
+                Some(ShellEvent::ScreenShare(ScreenEvent::Stopped { reason }))
+            }
+            _ => None,
+        },
     }
 }
 
@@ -676,6 +800,78 @@ mod tests {
             }))?,
             r#"{"kind":"audio_routes","available":["speaker","wired"],"current":"wired"}"#
         );
+        Ok(())
+    }
+
+    fn screen_share(over: serde_json::Value) -> ScreenShareStart {
+        let mut v = json!({
+            "url": "wss://node.example", "token": "fake-header.fake-claims.fake-signature", "key": vec![7u8; 32], "epoch": 300,
+            "max_side": 1920, "fps": 30, "max_bitrate": 3_110_400, "audio": false,
+            "title": "Sharing your screen", "text": "Everyone who joins your stream sees your screen.", "stop": "Stop sharing"
+        });
+        if let (Some(base), Some(extra)) = (v.as_object_mut(), over.as_object()) {
+            for (k, x) in extra {
+                base.insert(k.clone(), x.clone());
+            }
+        }
+        serde_json::from_value(v).unwrap_or_else(|e| unreachable!("{e}"))
+    }
+
+    #[test]
+    fn a_screen_share_takes_a_media_server_url_a_token_and_a_32_byte_key() {
+        assert_eq!(screen_share(json!({})).validate(), Ok(()));
+        assert_eq!(screen_share(json!({ "url": "ws://localhost:8350" })).validate(), Ok(()), "a development node on this device");
+        for bad in [
+            json!({ "url": "ws://node.example" }),
+            json!({ "url": "https://node.example" }),
+            json!({ "url": "wss://user:pw@node.example" }),
+            json!({ "url": "wss://node.example/?x=1" }),
+            json!({ "url": "not a url" }),
+            json!({ "token": "a.b" }),
+            json!({ "token": "a.b.c d" }),
+            json!({ "token": "a..c" }),
+            json!({ "key": vec![7u8; 31] }),
+            json!({ "key": [] }),
+            json!({ "max_side": 100 }),
+            json!({ "max_side": 7680 }),
+            json!({ "fps": 0 }),
+            json!({ "fps": 120 }),
+            json!({ "max_bitrate": 50_000_000 }),
+            json!({ "title": "" }),
+            json!({ "stop": "a\nb" }),
+            json!({ "text": "x".repeat(201) }),
+        ] {
+            assert_eq!(screen_share(bad.clone()).validate(), Err("screen.invalid"), "{bad}");
+        }
+        assert!(!livekit_token(&format!("{}.b.c", "a".repeat(4096))));
+    }
+
+    #[test]
+    fn the_screen_key_crosses_as_base64_at_the_epochs_index() {
+        assert_eq!(screen_key_out(&[1u8; 32], 300), Ok(("AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=".to_string(), 44)));
+        assert_eq!(screen_key_out(&[1u8; 32], 255).map(|k| k.1), Ok(255));
+        assert_eq!(screen_key_out(&[1u8; 16], 1), Err("screen.invalid"));
+    }
+
+    #[test]
+    fn screen_share_events_are_checked_and_reach_the_client_in_its_shape() -> serde_json::Result<()> {
+        assert_eq!(parse_native(r#"{"kind":"screen_share","state":"live"}"#), Some(ShellEvent::ScreenShare(ScreenEvent::Live)));
+        assert_eq!(
+            parse_native(r#"{"kind":"screen_share","state":"stopped","reason":"notification"}"#),
+            Some(ShellEvent::ScreenShare(ScreenEvent::Stopped { reason: ScreenStopReason::Notification }))
+        );
+        assert_eq!(
+            parse_native(r#"{"kind":"screen_share","state":"stopped","reason":"<script>"}"#),
+            Some(ShellEvent::ScreenShare(ScreenEvent::Stopped { reason: ScreenStopReason::Stopped }))
+        );
+        assert_eq!(parse_native(r#"{"kind":"screen_share","state":"paused"}"#), None);
+        assert_eq!(serde_json::to_string(&ShellEvent::ScreenShare(ScreenEvent::Live))?, r#"{"kind":"screen_share","state":"live"}"#);
+        assert_eq!(
+            serde_json::to_string(&ShellEvent::ScreenShare(ScreenEvent::Stopped { reason: ScreenStopReason::Revoked }))?,
+            r#"{"kind":"screen_share","state":"stopped","reason":"revoked"}"#
+        );
+        assert_eq!(serde_json::from_str::<ScreenShareStatus>(r#"{"state":"live","audio":true}"#)?, ScreenShareStatus { state: ScreenState::Live, audio: true });
+        assert!(serde_json::from_str::<ScreenShareStatus>(r#"{"state":"paused","audio":true}"#).is_err());
         Ok(())
     }
 

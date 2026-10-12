@@ -18,23 +18,30 @@ import { useVoiceDeviceMenu } from "./VoiceDeviceMenu";
 import { AudioRouteButton } from "./AudioRouteButton";
 import { WhiteboardControl } from "../../whiteboard/WhiteboardStage";
 import { beforeScreenShare } from "../../whiteboard/stage";
+import { platform } from "../../platform";
 import { GearIcon, HeadphonesIcon, HeadphonesOffIcon, LeaveIcon, MicIcon, MicOffIcon, ScreenIcon, SoundboardIcon, VideoIcon } from "./icons";
 
 const SCREEN_RESOLUTIONS = ["720p", "1080p", "1440p", "4k"];
 const FRAME_RATES = [5, 15, 30, 60];
 
-/** Screen share options before the browser's own source picker (screen, window or tab). */
+/**
+ * Screen share options before the browser's own source picker (screen, window or tab). In the Android app the whole
+ * screen is shared after Android's own consent dialog (VOICE.md §4b); the sound of other apps is off by default there
+ * and needs Android 10 or newer.
+ */
 export function ScreenShareDialog({ open, onClose, maxResolution, maxFps }: { open: boolean; onClose: () => void; maxResolution: string; maxFps: number }) {
   const t = useT();
+  const android = platform().android?.screenShare;
   const allowed = SCREEN_RESOLUTIONS.slice(0, Math.max(1, SCREEN_RESOLUTIONS.indexOf(maxResolution) + 1));
   const rates = FRAME_RATES.filter((f) => f <= maxFps);
   const [resolution, setResolution] = useState(allowed.includes("1080p") ? "1080p" : allowed.at(-1)!);
   const [fps, setFps] = useState(rates.includes(30) ? 30 : (rates.at(-1) ?? maxFps));
-  const [audio, setAudio] = useState(true);
+  const [audio, setAudio] = useState(!android);
+  const audioAvailable = !android || android.audio;
   return (
     <Dialog title={t("voice.screen.title")} open={open} onClose={onClose}>
-      <div className="space-y-3 text-sm">
-        <p className="text-xs text-fg-2">{t("voice.screen.hint")}</p>
+      <div className="space-y-3 text-sm" data-testid="screen-share-dialog" data-native={android ? "android" : undefined}>
+        <p className="text-xs text-fg-2">{t(android ? "voice.screen.hint_android" : "voice.screen.hint")}</p>
         <label className="block space-y-1">
           <span className="text-fg-1">{t("voice.screen.resolution")}</span>
           <select value={resolution} onChange={(e) => setResolution(e.target.value)} className="min-h-10 w-full rounded-md border border-line-strong bg-bg-0 px-3" aria-label={t("voice.screen.resolution")}>
@@ -56,9 +63,14 @@ export function ScreenShareDialog({ open, onClose, maxResolution, maxFps }: { op
           </select>
         </label>
         <label className="flex min-h-9 items-center gap-2">
-          <input type="checkbox" checked={audio} onChange={(e) => setAudio(e.target.checked)} className="h-4 w-4" />
-          {t("voice.screen.audio")}
+          <input type="checkbox" checked={audio && audioAvailable} disabled={!audioAvailable} onChange={(e) => setAudio(e.target.checked)} className="h-4 w-4" aria-describedby={audioAvailable ? undefined : "screen-audio-unavailable"} data-testid="screen-share-audio" />
+          {t(android ? "voice.screen.audio_android" : "voice.screen.audio")}
         </label>
+        {!audioAvailable && (
+          <p id="screen-audio-unavailable" className="text-xs text-fg-2">
+            {t("voice.screen.audio_android_unavailable")}
+          </p>
+        )}
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
             {t("common.cancel")}
@@ -67,10 +79,10 @@ export function ScreenShareDialog({ open, onClose, maxResolution, maxFps }: { op
             data-testid="screen-share-start"
             onClick={() => {
               onClose();
-              void startScreenShare({ audio, resolution, fps });
+              void startScreenShare({ audio: audio && audioAvailable, resolution, fps });
             }}
           >
-            {t("voice.screen.start")}
+            {t(android ? "voice.screen.start_android" : "voice.screen.start")}
           </Button>
         </div>
       </div>
@@ -150,7 +162,8 @@ export function VoiceControls({ room, channel, perms }: { room: RoomDetail; chan
   const muted = useVoice((s) => s.muted);
   const deafened = useVoice((s) => s.deafened);
   const camera = useVoice((s) => s.camera);
-  const screen = useVoice((s) => s.screen);
+  // The webview's own share, or the Android app's through the shell (starting counts: a second tap stops it).
+  const screen = useVoice((s) => s.screen || s.nativeScreen !== null);
   const limits = useVoice((s) => s.limits);
   const canSpeak = useVoice((s) => s.canSpeak);
   const transmitting = useVoice((s) => s.transmitting);

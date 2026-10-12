@@ -148,21 +148,25 @@ function StreamView({ tile, focused, onFocus }: { tile: Tile; focused: boolean; 
 
 /**
  * The sharer's indicator while their screen share runs: "You are streaming", the preview toggle (the preview tile
- * can be hidden and reopened here) and Stop.
+ * can be hidden and reopened here) and Stop. The Android app's share (VOICE.md §4b) has no preview (the sharer looks
+ * at the shared screen itself): the indicator shows while it is live, with Stop.
  */
 export function StreamingIndicator() {
   const t = useT();
-  const sharing = useVoice((s) => s.screen);
+  const own = useVoice((s) => s.screen);
+  const native = useVoice((s) => !s.screen && s.nativeScreen === "live");
   const preview = useVoice((s) => s.selfPreview);
-  if (!sharing) return null;
+  if (!own && !native) return null;
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-lg border border-line bg-bg-1 px-2 py-1 text-xs" data-testid="streaming-indicator">
+    <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-lg border border-line bg-bg-1 px-2 py-1 text-xs" data-testid="streaming-indicator" data-native={native || undefined}>
       <LiveBadge />
       <span className="font-medium text-fg-0">{t("voice.stream.you")}</span>
       <span className="flex-1" />
-      <Button variant="ghost" className="min-h-8 px-2 text-xs" onClick={() => setSelfPreview(!preview)} data-testid="stream-preview-toggle">
-        {preview ? t("voice.stream.preview_hide") : t("voice.stream.preview_show")}
-      </Button>
+      {own && (
+        <Button variant="ghost" className="min-h-8 px-2 text-xs" onClick={() => setSelfPreview(!preview)} data-testid="stream-preview-toggle">
+          {preview ? t("voice.stream.preview_hide") : t("voice.stream.preview_show")}
+        </Button>
+      )}
       <Button variant="danger" className="min-h-8 px-2 text-xs" onClick={() => void stopScreenShare()} aria-label={t("voice.screen_off")} data-testid="stream-stop">
         {t("voice.stream.stop")}
       </Button>

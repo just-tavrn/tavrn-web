@@ -15,7 +15,8 @@ use tauri::{Manager, Runtime, State, Wry};
 
 use crate::commands::Settings;
 use crate::mobile::{
-    self, AudioRoute, AudioRoutes, Insets, OrientationLock, Permission, PushConfig, PushEndpoint, SettingsPage, UnlockPrompt, UnlockStatus, VoiceNotice,
+    self, AudioRoute, AudioRoutes, Insets, OrientationLock, Permission, PushConfig, PushEndpoint, ScreenShareStart, ScreenShareStatus, SettingsPage,
+    UnlockPrompt, UnlockStatus, VoiceNotice,
 };
 use crate::{events, guard, notify};
 
@@ -154,6 +155,46 @@ pub async fn android_audio_route(android: State<'_, Android<Wry>>, route: AudioR
 #[tauri::command]
 pub async fn android_orientation(android: State<'_, Android<Wry>>, lock: Option<OrientationLock>) -> Result<(), String> {
     android.call("orientation", json!({ "lock": lock })).await
+}
+
+// ---- Screen sharing (docs/ANDROID.md "Screen sharing", VOICE.md §4b; the client: web/src/voice/nativeScreen.ts) ----
+
+/// Shares the screen as this device's screen publisher: Android's consent dialog, the foreground service of type
+/// media projection with its notification, the native LiveKit connection with the node's token for the screen
+/// publisher, encrypted with this device's frame key. Resolves once the screen is published.
+#[tauri::command]
+pub async fn android_screen_share_start(android: State<'_, Android<Wry>>, share: ScreenShareStart) -> Result<(), String> {
+    share.validate().map_err(str::to_string)?;
+    let (key, key_index) = mobile::screen_key_out(&share.key, share.epoch).map_err(str::to_string)?;
+    android
+        .call(
+            "screenShareStart",
+            json!({
+                "url": share.url, "token": share.token, "key": key, "keyIndex": key_index, "maxSide": share.max_side,
+                "fps": share.fps, "maxBitrate": share.max_bitrate, "audio": share.audio,
+                "title": share.title, "text": share.text, "stop": share.stop,
+            }),
+        )
+        .await
+}
+
+/// The frame key of a new epoch for the running screen share (ENCRYPTION.md §5a).
+#[tauri::command]
+pub async fn android_screen_share_key(android: State<'_, Android<Wry>>, key: Vec<u8>, epoch: u64) -> Result<(), String> {
+    let (key, key_index) = mobile::screen_key_out(&key, epoch).map_err(str::to_string)?;
+    android.call("screenShareKey", json!({ "key": key, "keyIndex": key_index })).await
+}
+
+/// Stops the screen share (nothing happens when none runs).
+#[tauri::command]
+pub async fn android_screen_share_stop(android: State<'_, Android<Wry>>) -> Result<(), String> {
+    android.call("screenShareStop", json!({})).await
+}
+
+/// Whether a screen share runs and whether the sound of other apps can be shared.
+#[tauri::command]
+pub async fn android_screen_share_status(android: State<'_, Android<Wry>>) -> Result<ScreenShareStatus, String> {
+    android.call("screenShareStatus", json!({})).await
 }
 
 /// The back gesture on the client's first page: the app goes to the background instead of closing.

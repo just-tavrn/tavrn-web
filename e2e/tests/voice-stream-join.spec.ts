@@ -6,9 +6,13 @@
 // the fullscreen controls. The sharer has no permanent self view (a preview that can be hidden, an indicator with Stop).
 // Several streams are joined one by one. On phones a wide stream in fullscreen turns the screen to landscape and fills
 // it after the rotation. Subscriptions are read from LiveKit through the development hooks (`window.__tavrnVoice`).
+// The Android app shares its screen as the device's screen publisher (VOICE.md §4b): a second participant
+// `<identity>#screen` that is the sharer's stream (simulated shell, `android-helpers.ts`), stopped from the notification.
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
+import { fileURLToPath } from "node:url";
 import { NODE, createRoomViaApi, inviteCode, openNavIfMobile, tokenOf } from "./helpers";
+import { androidRecord, asAndroidShell, stopFromNotification } from "./android-helpers";
 import { FAKE_MEDIA, closeOpened, hooks, voiceUser, type VoiceUser } from "./voice-helpers";
 import { scaled } from "./timeouts";
 
@@ -220,5 +224,83 @@ test.describe("Screen shares are joined", () => {
     await expect(carol.page.getByTestId("streaming-indicator")).toHaveCount(0);
     await share(carol);
     await expect(carols).toHaveAttribute("data-state", "available", { timeout: 30_000 });
+  });
+
+  test("the Android app's screen publisher is its owner's stream; stopped from the notification", async ({ browser, request }) => {
+    test.setTimeout(scaled(300_000));
+    const project = test.info().project.name;
+    const shots = (name: string) => fileURLToPath(new URL(`../../test-results/screenshare/${project}-${name}.png`, import.meta.url));
+    // Alice uses the Android app (the shell simulated, its native screen publisher played in the page); Bob a browser.
+    const alice = await voiceUser(browser, "sjapp");
+    const bob = await voiceUser(browser, "sjweb");
+    await asAndroidShell(alice.page, { node: NODE });
+    await alice.page.reload();
+    const token = await tokenOf(bob.page);
+    const room = await createRoomViaApi(request, token, "Handyabend");
+    const roomId = room.id as string;
+    const voiceId = (room.channels as { id: string; kind: string }[]).find((c) => c.kind === "voice")!.id;
+    const code = await inviteCode(request, token, roomId);
+    const join = await request.post(`${NODE}/api/v1/invites/${code}/join`, { headers: { Authorization: `Bearer ${await tokenOf(alice.page)}` }, data: {} });
+    expect(join.ok(), await join.text()).toBeTruthy();
+    await joinVoice(bob, roomId, voiceId);
+    await joinVoice(alice, roomId, voiceId);
+
+    // The app's dialog: the whole screen after Android's consent, the sound of other apps off by default.
+    await alice.page.getByTestId("voice-screen").click();
+    await expect(alice.page.getByTestId("screen-share-dialog")).toHaveAttribute("data-native", "android");
+    await expect(alice.page.getByTestId("screen-share-audio")).not.toBeChecked();
+    await alice.page.getByTestId("screen-share-start").click();
+    const indicator = alice.page.getByTestId("streaming-indicator");
+    await expect(indicator).toHaveAttribute("data-native", "true", { timeout: 30_000 });
+    await expect(indicator.getByTestId("stream-preview-toggle")).toHaveCount(0);
+    const started = (await androidRecord(alice.page)).starts;
+    expect(started).toHaveLength(1);
+    expect(started[0]).toMatchObject({ tokenParts: 3, keyLength: 32, max_side: 1920, fps: 30, audio: false });
+    // The sharer gets no tile of her own publisher.
+    await expect(alice.page.getByTestId("screen-tile")).toHaveCount(0);
+    await axeStage(alice.page);
+
+    // Bob: one stream under Alice's name, Alice listed once (streaming), nothing received before he joins.
+    const alices = streamTile(bob.page, alice.address);
+    await expect(alices).toHaveAttribute("data-state", "available", { timeout: 30_000 });
+    await expect(alices).toHaveAttribute("data-identity", /#screen$/);
+    await expect(row(bob.page, alice.address)).toHaveCount(1);
+    await expect(row(bob.page, alice.address).getByTestId("flag-streaming")).toBeAttached({ timeout: 15_000 });
+    await expect(bob.page.locator('[data-testid="voice-tile"][data-identity$="#screen"]')).toHaveCount(0);
+    await axeStage(bob.page);
+    await alices.getByTestId("stream-join").click();
+    await expect(alices).toHaveAttribute("data-state", "watching");
+    await expect(alices.getByTestId("video-screen")).toBeVisible({ timeout: 30_000 });
+    // The frames decrypt: they were encrypted with the frame key Alice's client handed the publisher.
+    await expect.poll(async () => (await alices.locator("video").evaluate((v: HTMLVideoElement) => v.videoWidth)) > 0, { timeout: 30_000 }).toBe(true);
+    await bob.page.screenshot({ path: shots("01-browser-watches-app-stream") });
+    await alice.page.screenshot({ path: shots("02-app-streaming") });
+
+    // A new epoch (Bob joins again: a self update) reaches the publisher as a new key; the stream still decrypts.
+    const keysBefore = (await androidRecord(alice.page)).keys.length;
+    await bob.page.getByTestId("voice-leave").click();
+    await joinVoice(bob, roomId, voiceId);
+    await expect.poll(async () => (await androidRecord(alice.page)).keys.length, { timeout: 30_000 }).toBeGreaterThan(keysBefore);
+    await expect(alices).toHaveAttribute("data-state", "available", { timeout: 30_000 });
+    await alices.getByTestId("stream-join").click();
+    await expect.poll(async () => (await alices.locator("video").evaluate((v: HTMLVideoElement) => v.videoWidth)) > 0, { timeout: 30_000 }).toBe(true);
+
+    // Stopped from the notification: the bar goes, the stream ends for Bob, the node lets the publisher go.
+    await stopFromNotification(alice.page);
+    await expect(indicator).toHaveCount(0);
+    await expect(alices).toHaveCount(0, { timeout: 30_000 });
+    await expect
+      .poll(async () => {
+        const r = await request.get(`${NODE}/api/v1/rooms/${roomId}/voice`, { headers: { Authorization: `Bearer ${token}` } });
+        const items = (await r.json()).items as { participants: { identity: string; screen_of?: string }[] }[];
+        return items.flatMap((c) => c.participants).filter((p) => p.screen_of).length;
+      }, { timeout: 15_000 })
+      .toBe(0);
+    await bob.page.screenshot({ path: shots("03-browser-after-stop") });
+    // Alice can share again.
+    await alice.page.getByTestId("voice-screen").click();
+    await alice.page.getByTestId("screen-share-start").click();
+    await expect(indicator).toBeVisible({ timeout: 30_000 });
+    await expect(streamTile(bob.page, alice.address)).toHaveAttribute("data-state", "available", { timeout: 30_000 });
   });
 });

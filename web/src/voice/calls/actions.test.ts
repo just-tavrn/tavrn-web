@@ -2,8 +2,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { useNotifications } from "../../stores/notifications";
 import { formatCallDuration } from "../../components/MessageList";
-import { onEndEvent, onRingEvent } from "./actions";
-import { useCalls } from "./state";
+import { applyCall, onEndEvent, onRingEvent } from "./actions";
+import { callKey, useCalls } from "./state";
+import { participantsOf, screensOf, useVoicePresence } from "../presence";
 
 const ring = (over: Record<string, unknown> = {}) => ({ conversation_id: "01J9ZZZZZZZZZZZZZZZZZZZZZZ", node: "a.test", from: "alice@a.test", started_at: new Date().toISOString(), group: false, ...over });
 
@@ -34,5 +35,16 @@ describe("incoming calls (VOICE.md §11.2)", () => {
     expect(formatCallDuration(725)).toBe("12:05");
     expect(formatCallDuration(3729)).toBe("1:02:09");
     expect(formatCallDuration(-5)).toBe("0:00");
+  });
+
+  it("counts a call's people without screen publishers, whose streams go to the stage (VOICE.md §4b)", () => {
+    const id = "01J9ZZZZZZZZZZZZZZZZZZZZZZ";
+    const person = (user: string, extra: Record<string, unknown> = {}) => ({ user, user_id: `U-${user}`, device_id: "D", identity: `${user}/D`, muted: false, deafened: false, streaming: false, camera: false, server_muted: false, joined_at: "2026-10-12T12:00:00.000Z", connection: "connected" as const, ...extra });
+    const alice = person("alice@a.test", { streaming: true });
+    const screen = person("alice@a.test", { identity: "alice@a.test/D#screen", screen_of: "alice@a.test/D", muted: true, streaming: true });
+    applyCall("a.test", { conversation_id: id, active: true, started_by: "alice@a.test", started_at: new Date().toISOString(), group: false, participants: [alice, screen, person("bob@b.test")], ringing: [] });
+    expect(useCalls.getState().calls[callKey("a.test", id)]?.participants.map((p) => p.identity)).toEqual(["alice@a.test/D", "bob@b.test/D"]);
+    expect(participantsOf(useVoicePresence.getState(), "a.test", id)).toHaveLength(2);
+    expect(screensOf(useVoicePresence.getState(), "a.test", id).map((p) => p.identity)).toEqual(["alice@a.test/D#screen"]);
   });
 });

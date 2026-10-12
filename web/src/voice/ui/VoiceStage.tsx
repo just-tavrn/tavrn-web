@@ -14,7 +14,8 @@ import { channelName } from "../../lib/names";
 import { channelPermissions, useRoomMembers } from "../../pages/ChannelPage";
 import { getMls, useMlsUi } from "../../stores/mls";
 import { qualify, splitIdentity, type GhostViolation } from "@tavrn/e2ee";
-import { participantsOf, useVoicePresence } from "../presence";
+import { participantsOf, screensOf, useVoicePresence } from "../presence";
+import { publisherStreams, screenOwner } from "../streams";
 import { phoneCameras, useVoiceSettings } from "../settings";
 import { ownVoiceChannel, useVoice } from "../store";
 import { joinVoice } from "../index";
@@ -47,6 +48,30 @@ export interface Tile {
   user?: User | null;
   /** Role colour of the name (rooms, design note 4.13 item 3). */
   color?: string | null;
+}
+
+/**
+ * The stream tiles of other devices' screen publishers (VOICE.md §4b, the Android app): under the owner's user and
+ * name, never a participant tile of their own. `nodeScreens` are the node's (`screen_of`), `connected` LiveKit's
+ * identities, `self` this device's identity (its own publisher is no tile: the sharer sees the indicator).
+ */
+export function publisherTiles(nodeScreens: VoiceParticipant[], connected: string[], self: string | null, look: (address: string) => { name: string; color?: string | null; user?: User | null }): Tile[] {
+  return publisherStreams(nodeScreens, connected, self).map(({ identity, owner }) => {
+    const address = splitIdentity(owner).address;
+    const l = look(address);
+    return {
+      identity,
+      address,
+      name: l.name,
+      color: l.color,
+      user: l.user,
+      self: false,
+      camera: false,
+      flags: { muted: true, deafened: false, server_muted: false, streaming: true, camera: false },
+      connection: "connected",
+      participant: null,
+    };
+  });
 }
 
 /** Tiles per swipe page on phones (VOICE.md §9). */
@@ -180,6 +205,7 @@ export function VoiceStage({ room, channel }: { room: RoomDetail; channel: Chann
   const focus = useVoice((s) => s.focus);
   const self = useVoice(useShallow((s) => ({ muted: s.muted, deafened: s.deafened, serverMuted: s.serverMuted, camera: s.camera, screen: s.screen })));
   const participants = useVoicePresence((s) => participantsOf(s, domain, channel.id));
+  const screenPublishers = useVoicePresence((s) => screensOf(s, domain, channel.id));
   const { look, version: looksVersion } = useMemberLooks(room);
   const locale = useLocale((s) => s.locale);
   const members = useRoomMembers(room.id);
@@ -215,9 +241,9 @@ export function VoiceStage({ room, channel }: { room: RoomDetail; channel: Chann
         participant: p,
       });
     }
-    // Connected in LiveKit but not (yet) reported by the node, the own device included.
+    // Connected in LiveKit but not (yet) reported by the node, the own device included (screen publishers are streams).
     for (const id of Object.keys(media)) {
-      if (seen.has(id)) continue;
+      if (seen.has(id) || screenOwner(id)) continue;
       const address = splitIdentity(id).address;
       const isSelf = id === identity;
       const l = look(address);
@@ -256,9 +282,16 @@ export function VoiceStage({ room, channel }: { room: RoomDetail; channel: Chann
     return order.current!.map((id) => byId.get(id)!).filter(Boolean);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tiles, order.current]);
+  // Screen publishers of other devices (the Android app, VOICE.md §4b): streams under their owner's name.
+  const publishers = useMemo(
+    () => publisherTiles(screenPublishers, Object.keys(media), identity, look),
+    // `look` changes identity on every render; the member list and the roles are what matter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [screenPublishers, media, identity, looksVersion],
+  );
   // Every running share is a stream tile (a placeholder until joined); the own one only while its preview is shown.
   const selfPreview = useVoice((s) => s.selfPreview);
-  const screens = tiles.filter((x) => media[x.identity]?.screen && (!x.self || selfPreview));
+  const screens = [...tiles, ...publishers].filter((x) => media[x.identity]?.screen && (!x.self || selfPreview));
   // The channel's whiteboard: a tile of its own like a screen share (a placeholder until joined, then a large tile);
   // the camera tiles stay as they are (design note 4.10, docs/CLIENT.md "Streams are joined").
   const board = useStageBoard(channel.id, tiles.map((x) => x.identity));

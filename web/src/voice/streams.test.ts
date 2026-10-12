@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it, vi } from "vitest";
-import { StreamSubscriptions, isStreamSource, rowStreamAction, type StreamParticipant, type SubscribablePublication } from "./streams";
+import { StreamSubscriptions, isStreamSource, publisherStreams, rowStreamAction, screenOwner, streamIdentity, type StreamParticipant, type SubscribablePublication } from "./streams";
 
 /** A LiveKit remote publication as the browser engine connects (`autoSubscribe: false`: nothing desired yet). */
 function publication(source: string, desired = false) {
@@ -144,5 +144,40 @@ describe("joining a stream from the voice member list (double-click, Enter)", ()
     expect(rowStreamAction({ identity: "bob/1", streaming: true }, { ...viewer, target: { ...viewer.target, channelId: "other" } }, here)).toBe("hint");
     expect(rowStreamAction({ identity: "bob/1", streaming: true }, { ...viewer, target: { ...viewer.target, domain: "b.test" } }, here)).toBe("hint");
     expect(rowStreamAction({ identity: "bob/1", streaming: true }, { ...viewer, target: { ...viewer.target, call: true } }, here)).toBe("hint");
+  });
+});
+
+describe("screen publishers are their device's stream (VOICE.md §4b)", () => {
+  const alice = "alice@n.example/01J9AAAAAAAAAAAAAAAAAAAAAA";
+  const bob = "bob@n.example/01J9BBBBBBBBBBBBBBBBBBBBBB";
+
+  it("names the owning device by the suffix", () => {
+    expect(screenOwner(`${alice}#screen`)).toBe(alice);
+    expect(screenOwner(alice)).toBeNull();
+    expect(screenOwner("#screen")).toBeNull();
+    expect(screenOwner(`${alice}#cam`)).toBeNull();
+  });
+
+  it("maps the node's screen_of and LiveKit's identities to one stream per publisher, never the own device's", () => {
+    const node = [{ identity: `${bob}#screen`, screen_of: bob }];
+    // LiveKit connected alice's publisher before the node reported it; bob's appears in both.
+    expect(publisherStreams(node, [`${bob}#screen`, `${alice}#screen`, alice, bob], null)).toEqual([
+      { identity: `${bob}#screen`, owner: bob },
+      { identity: `${alice}#screen`, owner: alice },
+    ]);
+    // The sharer's own publisher is no stream tile on its own device.
+    expect(publisherStreams(node, [`${alice}#screen`], alice)).toEqual([{ identity: `${bob}#screen`, owner: bob }]);
+    expect(publisherStreams([{ identity: `${alice}#screen`, screen_of: alice }], [], alice)).toEqual([]);
+    expect(publisherStreams([], [alice, bob], null)).toEqual([]);
+  });
+
+  it("joins a member's stream on the device itself or on its screen publisher", () => {
+    const sharing = new Set([`${bob}#screen`, alice]);
+    const has = (id: string) => sharing.has(id);
+    expect(streamIdentity(bob, has)).toBe(`${bob}#screen`);
+    // The browser's own share comes first.
+    expect(streamIdentity(alice, has)).toBe(alice);
+    expect(streamIdentity(`${bob}#screen`, has)).toBe(`${bob}#screen`);
+    expect(streamIdentity("carol@n.example/01J9CCCCCCCCCCCCCCCCCCCCCC", has)).toBe("carol@n.example/01J9CCCCCCCCCCCCCCCCCCCCCC");
   });
 });

@@ -46,6 +46,12 @@ export interface VoiceState {
   serverMuted: boolean;
   camera: boolean;
   screen: boolean;
+  /**
+   * The Android app's screen share through the shell (VOICE.md §4b, `nativeScreen.ts`): `starting` from the start
+   * until it is live (Android's consent dialog, the connection), then `live`; null otherwise. `screen` stays the
+   * webview's own share.
+   */
+  nativeScreen: "starting" | "live" | null;
   /** May publish the microphone (`speak`, not server-muted). */
   canSpeak: boolean;
   limits: VoiceLimits | null;
@@ -88,6 +94,7 @@ export const IDLE: VoiceState = {
   serverMuted: false,
   camera: false,
   screen: false,
+  nativeScreen: null,
   canSpeak: true,
   limits: null,
   quality: "unknown",

@@ -71,6 +71,11 @@ fn main() {
         "android_unlock_store",
         "android_unlock_get",
         "android_unlock_clear",
+        // Screen sharing (src/android.rs → ScreenShare.kt, VOICE.md §4b).
+        "android_screen_share_start",
+        "android_screen_share_key",
+        "android_screen_share_stop",
+        "android_screen_share_status",
     ];
     // Windows: the whole C runtime is linked statically (+crt-static in .cargo/config.toml, for the prebuilt libwebrtc
     // of the native voice engine), so Tauri's own hybrid runtime (static vcruntime, dynamic ucrt) must stay out.

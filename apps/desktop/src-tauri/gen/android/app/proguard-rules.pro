@@ -19,3 +19,8 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+# Screen sharing (ScreenShare.kt): a new epoch's key becomes the sending key of the published screen tracks through
+# the frame cryptors the LiveKit SDK keeps (it sets a track's key index only when publishing).
+-keepclassmembers class io.livekit.android.e2ee.E2EEManager {
+    private java.util.Map frameCryptors;
+}

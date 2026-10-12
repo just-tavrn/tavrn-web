@@ -38,6 +38,10 @@
     "allow-android-unlock-store",
     "allow-android-unlock-get",
     "allow-android-unlock-clear",
+    "allow-android-screen-share-start",
+    "allow-android-screen-share-key",
+    "allow-android-screen-share-stop",
+    "allow-android-screen-share-status",
     "allow-passkey-create",
     "allow-passkey-get"
   ]

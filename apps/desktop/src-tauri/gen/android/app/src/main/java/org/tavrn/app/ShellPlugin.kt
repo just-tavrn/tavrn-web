@@ -49,6 +49,20 @@ import org.unifiedpush.android.connector.UnifiedPush
 @InvokeArg class UnlockEntryArgs { var entry: String? = null }
 @InvokeArg class UnlockStoreArgs { lateinit var entry: String; lateinit var secret: String; lateinit var title: String; lateinit var subtitle: String }
 @InvokeArg class UnlockGetArgs { lateinit var entry: String; lateinit var title: String; lateinit var subtitle: String }
+@InvokeArg class ScreenStartArgs {
+  lateinit var url: String
+  lateinit var token: String
+  lateinit var key: String
+  var keyIndex: Int = -1
+  var maxSide: Int = 0
+  var fps: Int = 0
+  var maxBitrate: Int = 0
+  var audio: Boolean = false
+  lateinit var title: String
+  lateinit var text: String
+  lateinit var stop: String
+}
+@InvokeArg class ScreenKeyArgs { lateinit var key: String; var keyIndex: Int = -1 }
 @InvokeArg class VoiceArgs {
   lateinit var state: String
   lateinit var title: String
@@ -322,6 +336,39 @@ class ShellPlugin(private val activity: Activity) : Plugin(activity) {
     val route = AudioRoutes.Route.of(invoke.parseArgs(RouteArgs::class.java).route) ?: return invoke.reject("unknown route", "android.invalid")
     val state = AudioRouter.choose(activity, route) ?: return invoke.reject("route not available", "audio.unavailable")
     invoke.resolve(state)
+  }
+
+  /**
+   * Shares the screen as this device's screen publisher (`ScreenShare.kt`): Android's consent, the foreground service,
+   * the native LiveKit connection; resolves once the screen is published.
+   */
+  @Command
+  fun screenShareStart(invoke: Invoke) {
+    val a = invoke.parseArgs(ScreenStartArgs::class.java)
+    val key = ScreenShareRules.key(a.key)
+    if (key == null || !ScreenShareRules.keyIndex(a.keyIndex)) return invoke.reject("bad key", "screen.invalid")
+    val start = ScreenShare.Start(a.url, a.token, key, a.keyIndex, a.maxSide, a.fps, a.maxBitrate, a.audio, a.title, a.text, a.stop)
+    ScreenShare.start(activity, start) { error -> if (error == null) invoke.resolve() else invoke.reject(error, error) }
+  }
+
+  /** The frame key of a new epoch for the running share. */
+  @Command
+  fun screenShareKey(invoke: Invoke) {
+    val a = invoke.parseArgs(ScreenKeyArgs::class.java)
+    val key = ScreenShareRules.key(a.key)
+    if (key == null || !ScreenShareRules.keyIndex(a.keyIndex)) return invoke.reject("bad key", "screen.invalid")
+    if (ScreenShare.setKey(key, a.keyIndex)) invoke.resolve() else invoke.reject("not sharing", "screen.not_running")
+  }
+
+  @Command
+  fun screenShareStop(invoke: Invoke) {
+    ScreenShare.stop(ScreenShareRules.Stop.STOPPED)
+    invoke.resolve()
+  }
+
+  @Command
+  fun screenShareStatus(invoke: Invoke) {
+    invoke.resolve(ScreenShare.status())
   }
 
   /** `screen.orientation.lock()` of the page, which the webview does not implement: only in fullscreen (null: unlock). */

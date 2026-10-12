@@ -46,6 +46,11 @@ function android(release: unknown = null, info: Record<string, unknown> = {}) {
       case "android_orientation":
         if (a.lock === "sideways") throw "android.invalid";
         return null;
+      case "android_screen_share_start":
+        if ((a.share as { token?: string }).token === "declined") throw "screen.cancelled";
+        return null;
+      case "android_screen_share_key":
+      case "android_screen_share_stop":
       case "android_voice":
       case "android_push_config":
       case "android_keep_connection":
@@ -160,6 +165,31 @@ describe("the Android app's platform", () => {
     await p.tray?.set("disconnected", labels, extra);
     expect(calls.filter((c) => c.cmd === "android_voice").map((c) => (c.args.notice as { state: string }).state)).toEqual(["connected", "muted", "disconnected"]);
     await expect(p.tray?.status()).resolves.toMatchObject({ available: false });
+  });
+
+  it("shares the screen through the shell with the frame key and passes its events on (VOICE.md §4b)", async () => {
+    const { calls, emit } = android();
+    const p = await createTauriPlatform(document.implementation.createHTMLDocument("app"));
+    const share = p.android!.screenShare!;
+    expect(share.audio).toBe(true);
+    const key = new Uint8Array(32).fill(9);
+    const notice = { title: "Sharing your screen", text: "Lounge", stop: "Stop sharing" };
+    await share.start({ url: "wss://n.example", token: "t.o.k", key, epoch: 7, maxSide: 1920, fps: 30, maxBitrate: 3_110_400, audio: false, notice });
+    expect(calls.find((c) => c.cmd === "android_screen_share_start")?.args).toEqual({
+      share: { url: "wss://n.example", token: "t.o.k", key: Array(32).fill(9), epoch: 7, max_side: 1920, fps: 30, max_bitrate: 3_110_400, audio: false, title: "Sharing your screen", text: "Lounge", stop: "Stop sharing" },
+    });
+    await expect(share.start({ url: "wss://n.example", token: "declined", key, epoch: 7, maxSide: 1920, fps: 30, maxBitrate: 1, audio: false, notice })).rejects.toBe("screen.cancelled");
+    await share.setKey(new Uint8Array(32).fill(1), 8);
+    expect(calls.find((c) => c.cmd === "android_screen_share_key")?.args).toEqual({ key: Array(32).fill(1), epoch: 8 });
+    await share.stop();
+    expect(calls.at(-1)?.cmd).toBe("android_screen_share_stop");
+    const seen: unknown[] = [];
+    share.onEvent((e) => seen.push(e));
+    emit({ kind: "screen_share", state: "live" });
+    emit({ kind: "screen_share", state: "stopped", reason: "notification" });
+    emit({ kind: "screen_share", state: "stopped", reason: "bogus" as "failed" });
+    emit({ kind: "back" });
+    expect(seen).toEqual([{ state: "live" }, { state: "stopped", reason: "notification" }, { state: "stopped", reason: "stopped" }]);
   });
 
   it("asks for permissions and registers push through the shell", async () => {
