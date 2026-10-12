@@ -32,6 +32,10 @@ import { useVoiceRealtime } from "../voice/useVoiceRealtime";
 import { originUrl, platform } from "../platform";
 import { announceUpdate } from "../platform/updates";
 import { startDesktopShell } from "../platform/desktopShell";
+import { startGameActivity } from "../games/activity";
+import { useGames, useGameSupport, watchList } from "../games/store";
+import { pushActivity } from "../lib/presence";
+import { usePresence } from "../stores/presence";
 import { restoreKeepConnection } from "../lib/androidConnection";
 import { useToasts } from "../stores/toasts";
 
@@ -124,6 +128,22 @@ function useDesktopShell(address: string | undefined) {
     if (!tray && !notifications) return;
     return startDesktopShell({ tray, notifications, queryClient, self: address ?? null, navigate: (path) => navigate(path) });
   }, [navigate, queryClient, address]);
+}
+
+/** Desktop app: "Playing <game>" while the opt-in setting is on (docs/DESKTOP.md "Game activity"). */
+function useGameActivity(signedIn: boolean) {
+  useEffect(() => {
+    const games = platform().games;
+    if (!games || !signedIn) return;
+    return startGameActivity({
+      games,
+      list: () => watchList(useGames.getState()),
+      onListChange: (fn) => useGames.subscribe(fn),
+      mine: () => usePresence.getState().mine,
+      publish: (activity) => pushActivity(activity),
+      onSupported: (supported) => useGameSupport.setState({ supported }),
+    });
+  }, [signedIn]);
 }
 
 function useNotificationSetup(token: string | null, address: string | undefined) {
@@ -228,6 +248,7 @@ export function AppLayout() {
   useNodeHousekeeping(token, address);
   useNotificationSetup(token, address);
   useDesktopShell(address);
+  useGameActivity(!!token);
   useUpdateAnnouncement();
   usePrivacySetup(token, address);
   const { node: nodeParam, roomId, conversationId } = useParams();

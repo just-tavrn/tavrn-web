@@ -14,7 +14,11 @@
 //!
 //! The listener runs only while it is needed (the shell's hotkeys: bindings exist and the client is signed in) and
 //! stops with [`Watcher`]'s drop.
+//!
+//! [`games`] answers the other question the shells ask the system: which game of the user's list runs in front (game
+//! activity, opt-in; process names only, never a window title).
 
+pub mod games;
 pub mod keys;
 
 #[cfg(target_os = "linux")]

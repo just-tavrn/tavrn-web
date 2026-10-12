@@ -11,8 +11,9 @@ import { EVENT_CHANNEL } from "../shared/bridge.ts";
 export type TrayAction = "mute" | "deafen" | "leave";
 export type HotkeyAction = "push_to_talk" | "priority" | "toggle_mute" | "toggle_deafen";
 
-/** The Tauri shell's `ShellEvent` (events.rs); `link` says that deep links wait (`shell.takeLinks`, `deeplink.ts`). */
-export type ShellEvent = { kind: "open"; path: string } | { kind: "tray"; action: TrayAction } | { kind: "link" };
+/** The Tauri shell's `ShellEvent` (events.rs); `link` says that deep links wait (`shell.takeLinks`, `deeplink.ts`); `game`:
+ * the listed game in front changed (`games.ts`). */
+export type ShellEvent = { kind: "open"; path: string } | { kind: "tray"; action: TrayAction } | { kind: "link" } | { kind: "game"; name: string | null };
 
 /** `BridgeEvent` of the client's `electronBridge.ts`. */
 export type BridgeEvent = { channel: "shell_events"; event: ShellEvent } | { channel: "hotkeys"; event: { action: HotkeyAction; pressed: boolean } };

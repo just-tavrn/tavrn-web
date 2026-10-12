@@ -47,6 +47,8 @@ fn main() {
         // Passkeys through the Windows WebAuthn API (src/passkey.rs).
         "passkey_create",
         "passkey_get",
+        // Game activity (src/games.rs).
+        "games_watch",
         // The Android app (src/android.rs).
         "android_info",
         "android_permission",

@@ -135,6 +135,7 @@ fn the_capability_grants_only_the_app_commands_to_the_main_window() {
             "allow-voice-set-volumes",
             "allow-passkey-create",
             "allow-passkey-get",
+            "allow-games-watch",
         ]
     );
     // Downloads: the shell opens the save dialog and writes the file itself; the dialog, opener and fs plugins stay

@@ -1001,6 +1001,13 @@ which shows what the link opens and the link itself and goes there only on **Ope
 offers the node picker with the link's node first. After the sign-in on the node's page in a browser, **Open the tavrn
 app** on that page brings the app to the front and lets it continue at once (DESKTOP.md "Links into the app").
 
+**Game activity (privacy):** Settings → App → **Show the game I am playing** is off by default. While it is on, the
+app compares the process name of the program in front with a list of games shown right there (built-in entries can
+be switched off, own ones added) and sets "Playing \<game>" for the people who may see your status; it sends only the
+game's name from that list, never window titles or other programs, and clears it when the game closes or the setting
+goes off. With "Hide my activity" (Privacy & safety) nothing is published. The setting stays on the device
+(DESKTOP.md "Game activity").
+
 **Downloads** in the app open the system's save dialog; the app writes the file and says where it went ("Saved to
 Downloads", with **Show in folder**); DESKTOP.md "Downloads".
 

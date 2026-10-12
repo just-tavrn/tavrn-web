@@ -41,6 +41,8 @@ pub enum ShellEvent {
     AudioRoutes(crate::mobile::AudioRoutes),
     /// Android: the screen share went live or stopped (`mobile::ScreenEvent`, VOICE.md §4b).
     ScreenShare(crate::mobile::ScreenEvent),
+    /// Desktop: the game of the user's list in front changed (`games.rs`; `None`: none any more). Only its display name.
+    Game { name: Option<String> },
 }
 
 /// Links and notification clicks kept while the client has not subscribed yet (the one that started the app).
@@ -129,6 +131,8 @@ mod tests {
     fn events_serialize_as_the_client_expects() -> serde_json::Result<()> {
         assert_eq!(serde_json::to_string(&ShellEvent::Open { path: "/rooms/1/channels/2".into() })?, r#"{"kind":"open","path":"/rooms/1/channels/2"}"#);
         assert_eq!(serde_json::to_string(&ShellEvent::Tray { action: TrayAction::Deafen })?, r#"{"kind":"tray","action":"deafen"}"#);
+        assert_eq!(serde_json::to_string(&ShellEvent::Game { name: Some("Factorio".into()) })?, r#"{"kind":"game","name":"Factorio"}"#);
+        assert_eq!(serde_json::to_string(&ShellEvent::Game { name: None })?, r#"{"kind":"game","name":null}"#);
         Ok(())
     }
 

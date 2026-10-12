@@ -114,10 +114,18 @@ export interface NativePasskeyAnswer {
 }
 
 /**
- * Events of the Tauri shell's `shell_events` channel: a notification click, a tray menu action; `link`: deep links
- * wait for the client (`shell.takeLinks`).
+ * Events of the Tauri shell's `shell_events` channel: a notification click, a tray menu action, the game in front;
+ * `link`: deep links wait for the client (`shell.takeLinks`).
  */
-export type ShellEvent = { kind: "open"; path: string } | { kind: "tray"; action: TrayAction } | { kind: "link" };
+export type ShellEvent = { kind: "open"; path: string } | { kind: "tray"; action: TrayAction } | { kind: "link" } | { kind: "game"; name: string | null };
+
+/** An entry of the game list (game activity, docs/DESKTOP.md "Game activity"). */
+export interface GameEntry {
+  /** The process name to look for (`eldenring.exe`, `factorio`). */
+  process: string;
+  /** The name others see ("Playing <name>"). */
+  name: string;
+}
 
 /**
  * What `events.subscribe` delivers: the Tauri shell's channels in one stream, each with its own payloads
@@ -193,6 +201,10 @@ export interface TavrnShellBridge {
     passkeyCreate(options: { [key: string]: unknown }): Promise<NativePasskeyAnswer>;
     passkeyGet(options: { [key: string]: unknown }): Promise<NativePasskeyAnswer>;
     passkeyStatus(): Promise<PasskeyStatus>;
+  };
+  readonly games: {
+    /** Watches for the listed games in front (an empty list stops); answers whether this system can tell at all. */
+    gamesWatch(entries: GameEntry[]): Promise<boolean>;
   };
   readonly events: {
     /** Every event of the shell for this window; returns the unsubscriber. */

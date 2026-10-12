@@ -14,6 +14,7 @@ import { Button, ErrorText, Field } from "../../components/ui";
 import { Section, Select } from "./common";
 import { cryptoStore } from "../../crypto";
 import { useAuth } from "../../stores/auth";
+import { GamesSection } from "./GamesSection";
 import { useE2ee } from "../../stores/e2ee";
 import { unlockErrorCode } from "../../platform/unlockError";
 
@@ -105,6 +106,7 @@ export function AppTab() {
       <KeysSection />
       <BiometricSection />
       <TraySection />
+      <GamesSection />
     </div>
   );
 }

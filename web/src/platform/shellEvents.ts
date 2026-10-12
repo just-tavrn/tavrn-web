@@ -16,7 +16,8 @@ export type ShellEvent =
   | ({ kind: "push_endpoint" } & PushEndpointKeys)
   | { kind: "push_unregistered" }
   | ({ kind: "audio_routes" } & AudioRoutes)
-  | { kind: "screen_share"; state: "live" | "stopped"; reason?: AndroidScreenStopReason };
+  | { kind: "screen_share"; state: "live" | "stopped"; reason?: AndroidScreenStopReason }
+  | { kind: "game"; name: string | null };
 
 export interface ShellEvents {
   /** Listens to every event; returns the unsubscriber. */

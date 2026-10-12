@@ -69,3 +69,12 @@ test("reports presses and releases of the watched keys only", { skip: (!built &&
   ]);
   assert.equal(keywatch.isRunning(), false);
 });
+
+test("game activity: a checked list, and no game without a window manager's active window", { skip: !built && "not built" }, () => {
+  assert.throws(() => keywatch.foregroundGame([{ process: "/usr/bin/x", name: "X" }]), /games\.invalid/);
+  assert.throws(() => keywatch.foregroundGame([{ process: "x", name: "" }]), /games\.invalid/);
+  assert.throws(() => keywatch.foregroundGame(Array(301).fill({ process: "x", name: "X" })), /games\.invalid/);
+  assert.equal(keywatch.foregroundGame([]), null);
+  // xvfb has no window manager (no _NET_ACTIVE_WINDOW), and without a display nothing is in front either.
+  assert.equal(keywatch.foregroundGame([{ process: "node", name: "Node" }]), null);
+});

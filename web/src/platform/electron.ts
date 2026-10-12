@@ -38,10 +38,12 @@ function eventHub(bridge: TavrnShellBridge) {
       })
       .catch(() => undefined);
   };
+  const games = new Set<(name: string | null) => void>();
   bridge.events.subscribe((e: BridgeEvent) => {
     if (e?.channel === "shell_events") {
       const ev = e.event;
       if (ev?.kind === "link") takeLinks();
+      if (ev?.kind === "game") for (const fn of games) fn(typeof ev.name === "string" ? ev.name : null);
       if (ev?.kind === "open" && isClientPath(ev.path)) for (const fn of opens) fn(ev.path);
       if (ev?.kind === "tray" && TRAY_ACTIONS.includes(ev.action)) for (const fn of actions) fn(ev.action);
     }
@@ -61,7 +63,7 @@ function eventHub(bridge: TavrnShellBridge) {
     if (first) takeLinks();
     return () => void links.delete(fn);
   };
-  return { onOpen: add(opens), onTray: add(actions), onHotkey: add(hotkeys), onLink };
+  return { onOpen: add(opens), onTray: add(actions), onHotkey: add(hotkeys), onLink, onGame: add(games) };
 }
 
 /**
@@ -141,6 +143,7 @@ export async function createElectronPlatform(bridge: TavrnShellBridge | null = e
     kind: "desktop",
     isDesktop: true,
     links: { subscribe: events.onLink },
+    games: { watch: (entries) => bridge.games.gamesWatch(entries), onGame: events.onGame },
     nodeBase: () => node ?? "",
     // A node serves its web client on the URL the user picked (where links shared with others point to), unless its
     // document names another origin.
