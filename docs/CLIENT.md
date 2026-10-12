@@ -519,6 +519,11 @@ configure it (*Manage channels* and *Manage files*) and a plain note for everybo
 why. The storage settings start on WebDAV and offer "This node" disabled with the reason; once a store is saved the
 upload button appears.
 
+The storage settings of an external store have "Limit on the store (GB)": how much the channel may keep there (empty
+or 0 = no limit, a comma or a point as decimal separator; anything else blocks saving with the reason). It is sent as
+`max_bytes` with the store (FILES.md §5), and the channel's meter shows it as the limit; the node's own quota never
+applies to external stores.
+
 ### End-to-end encrypted files channels
 
 Files channels are end-to-end encrypted by default (FILES.md §8): the "Create channel" dialog has "End-to-end
