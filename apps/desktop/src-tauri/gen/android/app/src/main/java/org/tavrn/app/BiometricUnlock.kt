@@ -155,7 +155,7 @@ object BiometricUnlock {
   /** A BiometricPrompt error as the client's code. */
   fun error(code: Int): String = when (code) {
     BiometricPrompt.BIOMETRIC_ERROR_USER_CANCELED, BiometricPrompt.BIOMETRIC_ERROR_CANCELED,
-    BiometricPrompt.BIOMETRIC_ERROR_NEGATIVE_BUTTON, BiometricPrompt.BIOMETRIC_ERROR_TIMEOUT -> CANCELLED
+    BiometricPrompt.BIOMETRIC_ERROR_TIMEOUT -> CANCELLED
     BiometricPrompt.BIOMETRIC_ERROR_LOCKOUT, BiometricPrompt.BIOMETRIC_ERROR_LOCKOUT_PERMANENT -> LOCKOUT
     BiometricPrompt.BIOMETRIC_ERROR_NO_BIOMETRICS, BiometricPrompt.BIOMETRIC_ERROR_HW_NOT_PRESENT,
     BiometricPrompt.BIOMETRIC_ERROR_HW_UNAVAILABLE, BiometricPrompt.BIOMETRIC_ERROR_NO_DEVICE_CREDENTIAL,
