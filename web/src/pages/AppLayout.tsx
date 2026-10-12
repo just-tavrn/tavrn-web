@@ -14,7 +14,7 @@ import { useNotifications } from "../stores/notifications";
 import { usePush } from "../stores/push";
 import { usePrivacy } from "../stores/privacy";
 import { setNotificationNavigator } from "../lib/notify";
-import { useE2ee } from "../stores/e2ee";
+import { signOut, useE2ee } from "../stores/e2ee";
 import { startSearchSync } from "../search/sync";
 import { NodeBanner, NodeScope, NodeSessionBanner, useNode, useNodeUnreachable } from "../components/NodeScope";
 import { skipUnlockChosen } from "./EncryptionPage";
@@ -42,8 +42,20 @@ const RENEW_CHECK_MS = 10 * 60_000;
 function E2eeBanner() {
   const t = useT();
   const status = useE2ee((s) => s.status);
+  const deviceLost = useE2ee((s) => s.deviceLost);
   const user = useAuth((s) => s.user);
   const location = useLocation();
+  // The device's key is gone (tavrn-web#83): only signing in again (a new device) brings encryption back.
+  if (user && deviceLost) {
+    return (
+      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-warn/40 bg-warn/10 px-3 py-2 text-xs text-fg-1" data-testid="e2ee-banner" data-device-lost="true">
+        <span className="min-w-0 flex-1">{t("e2ee.banner_device_lost")}</span>
+        <button type="button" onClick={() => void signOut()} className="min-h-6 font-medium text-accent underline underline-offset-2 hover:text-accent-hover" data-testid="device-lost-sign-in">
+          {t("e2ee.sign_in_again")}
+        </button>
+      </div>
+    );
+  }
   if (!user || status === null || status === "unlocked") return null;
   const setup = !user.has_identity_key;
   return (

@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import { api, quietApi } from "../lib/api";
 import { beginSignOut, useAuth } from "./auth";
-import { ensureDevice, localStatus, syncIdentity, wipeLocal, type E2eeContext } from "../crypto/e2ee";
+import { ensureDevice, localDeviceLost, localStatus, syncIdentity, wipeLocal, type E2eeContext } from "../crypto/e2ee";
 import { cryptoStore, type CryptoStatus } from "../crypto/store";
 import { useAuthFlow } from "./authFlow";
 import { flushMls, getMls, ownIdentityRotated, resetMls } from "./mls";
@@ -18,14 +18,32 @@ import { forgetThumbnails } from "../files/e2ee";
 interface E2eeState {
   /** null until checked. */
   status: CryptoStatus | null;
+  /**
+   * This session's device lost its key (tavrn-web#83): its local key store is gone while the session lives on, and a
+   * device key is immutable (ENCRYPTION.md §3.1). No unlock helps; encryption needs a new device (sign in again).
+   */
+  deviceLost: boolean;
   refresh: () => Promise<CryptoStatus>;
   /** Attests this device and tops up KeyPackages if needed (best effort, when unlocked). */
   ensureDevice: () => Promise<void>;
   set: (status: CryptoStatus) => void;
 }
 
+/** Whether an error is `@tavrn/e2ee`'s `device_key_lost`. */
+export function isDeviceKeyLost(e: unknown): boolean {
+  const named = e as { name?: string; code?: string } | null;
+  return named?.name === "E2eeError" && named.code === "device_key_lost";
+}
+
+/** Marks this session's device as lost; the open session manager goes (its client state was dropped). */
+export function markDeviceLost(): void {
+  resetMls();
+  useE2ee.setState({ deviceLost: true });
+}
+
 export const useE2ee = create<E2eeState>((set) => ({
   status: null,
+  deviceLost: false,
   refresh: async () => {
     const { user, deviceId } = useAuth.getState();
     let status: CryptoStatus = "none";
@@ -43,7 +61,11 @@ export const useE2ee = create<E2eeState>((set) => ({
         status = "none"; // IndexedDB unavailable (private mode): degraded, like an empty store
       }
     }
-    set({ status });
+    // Nothing local, yet the node holds a key for this session's device: the local data was lost, an unlock cannot
+    // bring the key back (best effort; an unlocked device finds out in `ensureDevice`).
+    let deviceLost = false;
+    if (user && status === "none") deviceLost = await e2eeContext().then(localDeviceLost).catch(() => false);
+    set({ status, deviceLost });
     return status;
   },
   ensureDevice: async () => {
@@ -53,8 +75,10 @@ export const useE2ee = create<E2eeState>((set) => ({
       if ((await syncIdentity(ctx)) === "rotated") await ownIdentityRotated();
       // KeyPackages are created in the open session manager's state (in the tab that owns it), not next to it.
       await ensureDevice({ ...ctx, keyPackages: async (n) => (await getMls())?.createKeyPackages(n) ?? null });
-    } catch {
-      /* best effort: retried on the next start */
+    } catch (e) {
+      // A device that lost its key (or kept a foreign one from earlier versions) signs nothing more.
+      if (isDeviceKeyLost(e)) markDeviceLost();
+      /* otherwise best effort: retried on the next start */
     }
   },
   set: (status) => set({ status }),
@@ -105,7 +129,7 @@ export async function signOut(): Promise<void> {
       cryptoStore.lock();
       useAuthFlow.getState().clearPreauth();
       useAuthFlow.getState().setSetup(null);
-      useE2ee.setState({ status: null });
+      useE2ee.setState({ status: null, deviceLost: false });
     } finally {
       endSignOut();
     }

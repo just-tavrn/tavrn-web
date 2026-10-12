@@ -19,8 +19,8 @@ allowBuilds:
 # WebAssembly module for the client and @tavrn/e2ee). Once the packages are on npm these become version ranges.
 blockExoticSubdeps: false
 overrides:
-  "@tavrn/sdk": "github:just-tavrn/tavrn-js#8c1a0666191cdd2f49ab9c85d84b8f7e6437d398&path:sdk"
-  "@tavrn/e2ee": "github:just-tavrn/tavrn-js#8c1a0666191cdd2f49ab9c85d84b8f7e6437d398&path:e2ee"
+  "@tavrn/sdk": "github:just-tavrn/tavrn-js#058e48dfb0380d8854893aa12ef3f75056958fae&path:sdk"
+  "@tavrn/e2ee": "github:just-tavrn/tavrn-js#058e48dfb0380d8854893aa12ef3f75056958fae&path:e2ee"
   "@tavrn/crypto": "github:just-tavrn/tavrn-crypto#19ac87b4b42b13ec07e0eec5f8c17a2b47f70f37&path:pkg"
   # Security overrides for @excalidraw/excalidraw 0.18.1 (the newest release; `pnpm audit` must stay clean).
   # Drop each one once Excalidraw ships a release without the problem.

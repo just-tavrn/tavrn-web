@@ -36,7 +36,11 @@ extension can do the same (the client's own PRF assertions name the relying part
 in IndexedDB, encrypted under a device key derived from the master secret; the security settings manage factors,
 recovery codes, the recovery key and the optional lock **Require the recovery key or a passkey every time**. Without
 the recovery key the client offers a degraded mode (plaintext channels only, encrypted conversations stay locked) or
-an identity reset (old encrypted history is lost). **Signing out** (by choice, or because the home node refused the
+an identity reset (old encrypted history is lost). A device whose local keys are gone while its session lives on (the
+browser's or app's storage was cleared, or did not survive the process being killed) cannot be unlocked again: a
+device key never changes (ENCRYPTION.md §3.1), so instead of the recovery key the banner and the encryption page say
+that the device lost its keys and offer **Sign in again**, which signs out and forgets that device; the next sign-in
+is a new device that unlocks with the recovery key as usual (its old leaves go as ghosts). **Signing out** (by choice, or because the home node refused the
 session, for example after the device was removed elsewhere, or because another tab signed in with another account)
 ends the account's sessions on other nodes and forgets them, empties the client's cache of rooms, DMs and contacts and
 removes the account's per-browser data (room rail folders, notification entries, push record, terms state, closed

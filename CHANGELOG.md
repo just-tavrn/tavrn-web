@@ -61,7 +61,11 @@ First public release of the web client and the desktop apps.
 - Android app: the full screen button of streams and cameras did nothing (the app's webview refused the Fullscreen
   API). Full screen now fills the screen with the system bars hidden (a swipe shows them for a moment), a wide video
   turns the phone to landscape, and the back gesture leaves full screen first (issue #74).
-
+- A device whose local key store was lost while its session lived on (the Android app killed during a call, cleared
+  browser storage) no longer creates a second key for the same device when it is unlocked with the recovery key;
+  every voice join then failed with "The commit is not from this device" (#83). The client now says that the device
+  lost its keys and offers "Sign in again" (a new device, unlocked with the recovery key as usual); a device left in
+  that state by an earlier version is found on the next start and asked the same.
 - The registration form follows the node's e-mail policy: "Email" and required when the node requires an address,
   "Email (optional)" when it is optional, no field when the node accepts none.
 - Voice on phones: a mute now releases the microphone capture after two seconds and an unmute opens it again with the

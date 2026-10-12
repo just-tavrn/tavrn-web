@@ -9,6 +9,8 @@ import { b64urlEncode } from "@tavrn/sdk";
 import { EncryptionPage } from "./EncryptionPage";
 import { useAuth } from "../stores/auth";
 import { useAuthFlow } from "../stores/authFlow";
+import { useE2ee } from "../stores/e2ee";
+import { CLIENT_STATE } from "../crypto/e2ee";
 import { cryptoStore } from "../crypto/store";
 import { mockFetch, renderWithProviders } from "../test/render";
 import { initCryptoForTests } from "../test/wasm";
@@ -137,6 +139,49 @@ describe("EncryptionPage", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("bereits eingerichtet");
     expect(calls.filter((c) => c.init.method === "PUT" || c.init.method === "POST").map((c) => c.url)).toEqual([]);
     expect(await cryptoStore.status(user.address)).toBe("none");
+  });
+
+  // tavrn-web#83: the local key store is gone while the session (and its device) lives on.
+  function lostDevice(listedFrom: number) {
+    const user = signIn(true);
+    const master = MasterSecret.generate();
+    const recovery = RecoveryKey.generate();
+    const wrapped = b64urlEncode(wrapMasterSecret(master, recovery.wrappingKey(), user.address, "recovery"));
+    const identity = b64urlEncode(master.identityPublicKey());
+    const lost = { device_id: DEV, device_public_key: b64urlEncode(new Uint8Array(32).fill(7)), identity_signature: "sig", created_at: "" };
+    let keyDocs = 0;
+    const calls = mockFetch({
+      "/users/me/secret-storage": { body: { items: [{ method: "recovery", wrapped, params: {}, updated_at: "" }] } },
+      [`/users/me/devices/${DEV}/key`]: { status: 409, body: { code: "e2ee.device_key_exists", status: 409, title: "x", detail: "", type: "x" } },
+      [`/users/${user.username}/keys`]: () => ({ body: { user: user.address, identity_public_key: identity, devices: ++keyDocs >= listedFrom ? [lost] : [] } }),
+      "/auth/logout": { body: {} },
+      "/api/v1/users/me": { body: user },
+    });
+    return { user, recovery, calls };
+  }
+
+  it("a device that lost its key asks to sign in again instead of for the recovery key, and forgets the device", async () => {
+    const { calls } = lostDevice(1);
+    renderPage();
+    expect(await screen.findByRole("heading", { name: "Dieses Gerät hat seine Schlüssel verloren" })).toBeInTheDocument();
+    expect(screen.queryByTestId("recovery-key-input")).toBeNull();
+    expect(screen.getByTestId("device-lost")).toHaveTextContent("Wiederherstellungsschlüssel");
+    await userEvent.setup().click(screen.getByTestId("device-lost-sign-in"));
+    await vi.waitFor(() => expect(useAuth.getState().token).toBeNull());
+    expect(calls.some((c) => c.url.includes("/auth/logout") && c.url.includes("forget_device=true"))).toBe(true);
+    expect(useE2ee.getState().deviceLost).toBe(false);
+  });
+
+  it("an unlock that finds this device's key gone switches to signing in again and keeps no foreign key", async () => {
+    const { user, recovery } = lostDevice(2);
+    renderPage();
+    const u = userEvent.setup();
+    await u.type(await screen.findByTestId("recovery-key-input"), recovery.toWords());
+    await u.click(screen.getByRole("button", { name: "Entsperren" }));
+    expect(await screen.findByTestId("device-lost")).toBeInTheDocument();
+    expect(useE2ee.getState().deviceLost).toBe(true);
+    expect(await cryptoStore.getSecret(CLIENT_STATE)).toBeNull();
+    expect(await cryptoStore.deviceIdOf(user.address)).toBe(DEV);
   });
 
   it("offers the degraded mode and the identity reset with a warning", async () => {

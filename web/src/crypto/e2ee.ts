@@ -60,6 +60,14 @@ export function localStatus(address: string, deviceId: string | null, opts: { on
 }
 
 /**
+ * Whether this session's device lost its key (`@tavrn/e2ee` `localDeviceLost`, tavrn-web#83): the node lists the
+ * device with a key this browser does not hold. No unlock helps; the session has to sign in again as a new device.
+ */
+export function localDeviceLost(ctx: E2eeContext): Promise<boolean> {
+  return shared.localDeviceLost(bind(ctx));
+}
+
+/**
  * Device proof for a login (PROTOCOL.md §5b): signs a nonce of `api`'s node with the key of the device this browser
  * holds for `address`, so the new session continues that device. Null (a new device follows) when there is none,
  * the store is locked (lock on close) or anything fails.
