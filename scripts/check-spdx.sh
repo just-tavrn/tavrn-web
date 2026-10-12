@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Checks that every hand-written source file starts with the SPDX header of its directory:
-# `// SPDX-License-Identifier: <id>` (Rust, TypeScript, JavaScript) or `# SPDX-License-Identifier: <id>`
+# `// SPDX-License-Identifier: <id>` (Rust, TypeScript, JavaScript, Kotlin and Gradle's Kotlin scripts) or `# SPDX-License-Identifier: <id>`
 # (shell) as the first line, or the second line after a shebang. Dependencies and build output are not checked.
 # Keep the map in sync with LICENSE.md.
 # Usage: scripts/check-spdx.sh [--fix]   (--fix inserts missing headers; wrong ones are only reported)
@@ -62,7 +62,7 @@ while IFS= read -r -d '' file; do
     echo "$file: missing '$header'" >&2
     missing=$((missing + 1))
   fi
-done < <(git ls-files -z --cached --others --exclude-standard -- '*.rs' '*.ts' '*.tsx' '*.mjs' '*.js' '*.sh')
+done < <(git ls-files -z --cached --others --exclude-standard -- '*.rs' '*.ts' '*.tsx' '*.mjs' '*.js' '*.sh' '*.kt' '*.kts')
 
 [ "$fixed" -gt 0 ] && echo "inserted $fixed SPDX headers"
 if [ "$missing" -gt 0 ] || [ "$wrong" -gt 0 ]; then

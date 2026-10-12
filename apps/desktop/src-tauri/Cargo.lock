@@ -5609,6 +5609,7 @@ dependencies = [
  "tavrn-keywatch",
  "tokio",
  "webkit2gtk",
+ "webpki-roots 1.0.9",
  "windows-native-keyring-store",
  "zbus-secret-service-keyring-store",
 ]

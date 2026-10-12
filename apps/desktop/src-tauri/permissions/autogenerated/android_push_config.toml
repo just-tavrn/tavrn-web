@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-android-push-config"
+description = "Enables the android_push_config command without any pre-configured scope."
+commands.allow = ["android_push_config"]
+
+[[permission]]
+identifier = "deny-android-push-config"
+description = "Denies the android_push_config command without any pre-configured scope."
+commands.deny = ["android_push_config"]

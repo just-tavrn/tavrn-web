@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-android-battery-exemption"
+description = "Enables the android_battery_exemption command without any pre-configured scope."
+commands.allow = ["android_battery_exemption"]
+
+[[permission]]
+identifier = "deny-android-battery-exemption"
+description = "Denies the android_battery_exemption command without any pre-configured scope."
+commands.deny = ["android_battery_exemption"]

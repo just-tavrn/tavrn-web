@@ -256,7 +256,7 @@ impl HttpFetcher {
             let same_host = attempt.previous().first().and_then(|u| u.host_str()) == attempt.url().host_str();
             if attempt.previous().len() > 3 || attempt.url().scheme() != "https" || !same_host { attempt.error("redirect refused") } else { attempt.follow() }
         });
-        let client = reqwest::Client::builder()
+        let client = client_builder()
             .redirect(policy)
             .connect_timeout(Duration::from_secs(5))
             .timeout(Duration::from_secs(10))
@@ -265,6 +265,21 @@ impl HttpFetcher {
             .map_err(|e| e.to_string())?;
         Ok(Self { client, user_agent: format!("tavrn-desktop/{version}"), roots: None, target_override: None })
     }
+}
+
+/// The HTTP client of the discovery: the platform's certificate verifier on the desktop; on Android Mozilla's root
+/// certificates (reqwest's platform verifier needs a Kotlin component there; docs/ANDROID.md "Limits").
+fn client_builder() -> reqwest::ClientBuilder {
+    #[cfg(target_os = "android")]
+    {
+        let roots = rustls::RootCertStore { roots: webpki_roots::TLS_SERVER_ROOTS.to_vec() };
+        let provider = std::sync::Arc::new(rustls::crypto::ring::default_provider());
+        if let Ok(config) = rustls::ClientConfig::builder_with_provider(provider).with_safe_default_protocol_versions() {
+            let tls = config.with_root_certificates(roots).with_no_client_auth();
+            return reqwest::Client::builder().tls_backend_preconfigured(tls);
+        }
+    }
+    reqwest::Client::builder()
 }
 
 async fn read_capped(mut resp: reqwest::Response) -> Result<Fetched, FetchError> {
@@ -307,7 +322,7 @@ impl Fetcher for HttpFetcher {
             if addrs.is_empty() {
                 return Err(FetchError::Transport);
             }
-            let mut builder = reqwest::Client::builder()
+            let mut builder = client_builder()
                 .redirect(reqwest::redirect::Policy::none())
                 .connect_timeout(Duration::from_secs(5))
                 .timeout(Duration::from_secs(10))
