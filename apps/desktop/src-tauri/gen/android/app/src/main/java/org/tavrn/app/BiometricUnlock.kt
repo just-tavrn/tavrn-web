@@ -22,8 +22,9 @@ import javax.crypto.SecretKey
  * Unlock with fingerprint, face or PIN (docs/ANDROID.md): the Android half of [UnlockVault]. Its keys live in the
  * Android Keystore (StrongBox when the phone has one, else the TEE), AES-256-GCM, usable only for one operation right
  * after the user authenticated with a strong biometric or the device's PIN, pattern or password
- * (`setUserAuthenticationParameters(0, …)`), and invalidated by Android when biometrics are enrolled or the screen
- * lock is removed. The prompt is the framework's BiometricPrompt with the device credential as the alternative, which
+ * (`setUserAuthenticationParameters(0, …)`), and invalidated by Android when the screen lock is removed. It asks for
+ * invalidation on new biometrics too, which Android 16 does not apply to a key that also takes the device credential
+ * (docs/ANDROID.md: harmless, enrolling needs that credential). The prompt is the framework's BiometricPrompt with the device credential as the alternative, which
  * needs Android 11 (API 30) for a key of one operation: older systems do not offer the biometric unlock.
  *
  * Reached only from Rust (`src/android.rs`), which built the entry from the home node and the account and checked the

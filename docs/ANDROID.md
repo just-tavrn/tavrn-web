@@ -140,10 +140,15 @@ authentication, as the desktop app keeps it in the OS keychain ([DESKTOP.md](DES
   deletes the sealed key and its keystore key at once; the key of the store goes back to the app's storage (as in a
   browser), or, with "every time", nowhere. Signing out, "Sign in again" of a lost device, an identity reset and the
   stale data of an older device delete it too.
-- **New fingerprints, a removed screen lock.** Android invalidates the keystore key when a biometric is enrolled or
-  the screen lock is removed. The app then deletes the sealed key, the unlock screen says why ("The fingerprints, face
-  or screen lock of this phone changed…") and asks for the recovery key or a passkey once, and offers to turn the
-  unlock on again with a fresh key.
+- **A removed screen lock, an invalidated key.** Android deletes or invalidates the keystore key when the screen lock
+  is removed (and, on systems that apply `setInvalidatedByBiometricEnrollment` to such keys, when a biometric is
+  enrolled). The app then deletes the sealed key, the unlock screen says why ("The fingerprints, face or screen lock
+  of this phone changed…") and asks for the recovery key or a passkey once, and offers to turn the unlock on again
+  with a fresh key once the phone has a screen lock again.
+- **A newly enrolled fingerprint keeps working.** Measured on Android 16 (emulator): a key that also accepts the
+  device credential is *not* invalidated by a new enrollment, although the app asks for it; Android applies that
+  invalidation only to keys bound to biometrics alone. This takes nothing away: enrolling a finger needs the screen
+  lock's PIN, pattern or password, which opens the key by itself anyway.
 
 How it works (`BiometricUnlock.kt`, `UnlockVault.kt`; the bridge `android_unlock_status`, `android_unlock_store`,
 `android_unlock_get`, `android_unlock_clear` in `src/android.rs`, checked in `src/mobile.rs`; the client in
@@ -173,7 +178,8 @@ What it protects against, and what not:
   the keystore releases its use only after the user's fingerprint, face or credential. Other apps cannot use the
   key (keystore keys belong to the app's uid). The node is not involved and never sees the key or the blob.
 - **It does not protect** against anyone who knows the phone's PIN, pattern or password (the device credential is an
-  accepted alternative by design, so the unlock is as strong as the screen lock), against code running in the app
+  accepted alternative by design, so the unlock is as strong as the screen lock; whoever knows it can also enrol a
+  finger of their own), against code running in the app
   while it is unlocked (the key is in the webview's memory then, as in the browser), against a compromised system
   (root, a malicious ROM, a keystore without hardware backing such as the emulator's), or against forced use of a
   finger. A weak face unlock is not accepted, the PIN is asked instead. Without a screen lock the unlock cannot be
@@ -181,7 +187,8 @@ What it protects against, and what not:
 - **Not a replacement for the recovery key:** the sealed key opens only this phone's local store. A new phone, a
   reinstall, cleared app data or an invalidated key need the recovery key or a passkey; keep the recovery key.
 
-The emulator check: set a screen lock (`adb shell locksettings set-pin 1234`), enrol a fingerprint in Settings →
+The system's prompt is a secure window: screenshots show it black, `uiautomator dump` lists its texts. The emulator
+check: set a screen lock (`adb shell locksettings set-pin 1234`), enrol a fingerprint in Settings →
 Security & privacy → Device unlock → Fingerprint and touch the sensor with `adb -e emu finger touch 1` (also in the
 prompt); `adb -e emu finger touch 2` is a finger that does not match.
 

@@ -1015,8 +1015,8 @@ of a window ("Sign in on \<node>'s page"). What is different in the client:
 - **Unlock with fingerprint, face or PIN** (Android 11+, a screen lock set): after an unlock with the recovery key or
   a passkey the unlock screen offers it ("Unlock faster next time?"); then the key of the local key store is sealed in
   Android's keystore, and the next start opens the system's prompt by itself, with the recovery key or a passkey as
-  the alternative. Settings → App turns it off (the sealed key is deleted); new fingerprints or a removed screen lock
-  invalidate it, which the unlock screen explains (ANDROID.md "Unlock with fingerprint, face or PIN").
+  the alternative. Settings → App turns it off (the sealed key is deleted); a removed screen lock invalidates it, which
+  the unlock screen explains (ANDROID.md "Unlock with fingerprint, face or PIN").
 
 ## Translations
 
