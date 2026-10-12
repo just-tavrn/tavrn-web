@@ -169,15 +169,21 @@ fn the_android_capability_grants_only_the_app_commands_of_the_android_app() {
             "allow-android-push-unregister",
             "allow-android-push-config",
             "allow-android-keep-connection",
+            "allow-android-check-update",
+            "allow-android-save-begin",
+            "allow-android-save-chunk",
+            "allow-android-save-end",
+            "allow-android-save-abort",
         ]
     );
     // Only the app's own commands: the Kotlin plugin (`plugin:tavrn-android|…`) and every other plugin stay out of
     // the webview's reach, so the Kotlin side is reached only through android.rs's checked commands.
     assert!(granted.iter().all(|p| p.starts_with("allow-") && !p.contains(':')));
     // No desktop-only command (keychain, tray, hotkeys, downloads, native voice, updater) on Android.
-    for desktop_only in ["keychain", "tray", "hotkey", "save-file", "voice-", "update", "quit"] {
+    for desktop_only in ["keychain", "tray", "hotkey", "save-file", "allow-voice-", "install-update", "quit"] {
         assert!(!granted.iter().any(|p| p.contains(desktop_only)), "{desktop_only} granted on Android");
     }
+    assert!(!granted.contains(&"allow-check-update"), "Tauri's updater has no Android support");
 }
 
 #[test]

@@ -159,6 +159,68 @@ pub async fn notify(android: State<'_, Android<Wry>>, notice: notify::Notice) ->
     android.call("notify", json!({ "title": notice.title, "body": notice.body, "path": notice.path })).await
 }
 
+/// The answer of `android_save_begin`: the picker's document, or the user closed it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum SaveBegin {
+    Ready { id: String },
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Saved {
+    /// The saved document's name as the provider shows it.
+    pub name: String,
+}
+
+/// Downloads (docs/ANDROID.md "Downloads"): Android's document picker ("Save to"), as the desktop's save dialog; the
+/// Kotlin side writes the content to the document the user picked, the webview never names a place.
+#[tauri::command]
+pub async fn android_save_begin(android: State<'_, Android<Wry>>, name: String, mime: String, size: u64) -> Result<SaveBegin, String> {
+    let begin: SaveBegin = android.call("saveBegin", json!({ "name": mobile::save_name(&name), "mime": mobile::save_mime(&mime), "size": size })).await?;
+    if let SaveBegin::Ready { id } = &begin
+        && !mobile::save_id(id)
+    {
+        return Err("download.failed".into());
+    }
+    Ok(begin)
+}
+
+/// Appends a raw IPC body (header `x-tavrn-save: <id>`, at most 4 MiB) to the save.
+#[tauri::command]
+pub async fn android_save_chunk(request: tauri::ipc::Request<'_>, android: State<'_, Android<Wry>>) -> Result<(), String> {
+    use base64::Engine as _;
+    let id = request.headers().get("x-tavrn-save").and_then(|v| v.to_str().ok()).filter(|id| mobile::save_id(id)).ok_or("download.invalid")?.to_string();
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else { return Err("download.invalid".into()) };
+    if bytes.len() > 4 * 1024 * 1024 {
+        return Err("download.invalid".into());
+    }
+    let data = base64::engine::general_purpose::STANDARD.encode(bytes);
+    android.call("saveChunk", json!({ "id": id, "data": data })).await
+}
+
+#[tauri::command]
+pub async fn android_save_end(android: State<'_, Android<Wry>>, id: String) -> Result<Saved, String> {
+    if !mobile::save_id(&id) {
+        return Err("download.invalid".into());
+    }
+    android.call("saveEnd", json!({ "id": id })).await
+}
+
+#[tauri::command]
+pub async fn android_save_abort(android: State<'_, Android<Wry>>, id: String) -> Result<(), String> {
+    if !mobile::save_id(&id) {
+        return Err("download.invalid".into());
+    }
+    android.call("saveAbort", json!({ "id": id })).await
+}
+
+/// A newer release with an APK (`release.rs`), or none.
+#[tauri::command]
+pub async fn android_check_update(app: tauri::AppHandle) -> Result<Option<crate::release::AvailableRelease>, String> {
+    crate::release::fetch(&app.package_info().version.to_string()).await
+}
+
 /// Opens a web link (http, https, mailto) in the browser.
 #[tauri::command]
 pub async fn open_external(android: State<'_, Android<Wry>>, url: String) -> Result<(), String> {

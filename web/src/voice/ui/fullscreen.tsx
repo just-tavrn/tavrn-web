@@ -265,7 +265,7 @@ export function FullscreenControls({ onExit, onLeaveStream }: { onExit: () => vo
   return (
     <div
       ref={ref}
-      className={`absolute inset-x-0 bottom-0 z-20 flex justify-center bg-gradient-to-t from-black/70 to-transparent px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-8 transition-opacity duration-200 focus-within:pointer-events-auto focus-within:opacity-100 ${shown ? "opacity-100" : "pointer-events-none opacity-0"}`}
+      className={`absolute inset-x-0 bottom-0 z-20 flex justify-center bg-gradient-to-t from-black/70 to-transparent px-4 pb-[max(1rem,var(--safe-bottom))] pt-8 transition-opacity duration-200 focus-within:pointer-events-auto focus-within:opacity-100 ${shown ? "opacity-100" : "pointer-events-none opacity-0"}`}
       data-testid="fullscreen-controls"
       data-shown={shown || undefined}
     >

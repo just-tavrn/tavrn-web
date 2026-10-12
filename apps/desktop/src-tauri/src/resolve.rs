@@ -282,16 +282,29 @@ fn client_builder() -> reqwest::ClientBuilder {
     reqwest::Client::builder()
 }
 
-async fn read_capped(mut resp: reqwest::Response) -> Result<Fetched, FetchError> {
+async fn read_capped(resp: reqwest::Response) -> Result<Fetched, FetchError> {
+    read_at_most(resp, MAX_DOCUMENT).await
+}
+
+async fn read_at_most(mut resp: reqwest::Response, max: usize) -> Result<Fetched, FetchError> {
     let status = resp.status().as_u16();
     let mut body = Vec::new();
     while let Some(chunk) = resp.chunk().await.map_err(|_| FetchError::Transport)? {
-        if body.len() + chunk.len() > MAX_DOCUMENT {
+        if body.len() + chunk.len() > max {
             return Err(FetchError::Refused);
         }
         body.extend_from_slice(&chunk);
     }
     Ok(Fetched { status, body })
+}
+
+impl HttpFetcher {
+    /// A JSON document of at most `max` bytes with status 200 (the release feed of `release.rs`).
+    pub async fn get_capped(&self, url: &str, max: usize) -> Result<Vec<u8>, FetchError> {
+        let resp = self.client.get(url).header("Accept", "application/json").send().await.map_err(|_| FetchError::Transport)?;
+        let fetched = read_at_most(resp, max).await?;
+        if fetched.status == 200 { Ok(fetched.body) } else { Err(FetchError::Refused) }
+    }
 }
 
 impl Fetcher for HttpFetcher {

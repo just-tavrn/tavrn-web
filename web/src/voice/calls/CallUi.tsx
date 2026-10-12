@@ -175,7 +175,7 @@ function IncomingCalls() {
   useCallNotices(rings, soundBlocked);
   if (!ringing) return null;
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-0 z-[60] flex flex-col items-center gap-2 p-3 pt-[max(0.75rem,env(safe-area-inset-top))]" data-testid="call-incoming-list">
+    <div className="pointer-events-none fixed inset-x-0 top-0 z-[60] flex flex-col items-center gap-2 p-3 pt-[max(0.75rem,var(--safe-top))]" data-testid="call-incoming-list">
       {rings.map((r) => (
         <IncomingCall key={callKey(r.domain, r.conversationId)} ring={r} soundBlocked={soundBlocked} />
       ))}
@@ -305,7 +305,7 @@ function ActiveCall() {
   if (!expanded) {
     // Phones: the voice bar sits in the hidden sidebar, so a small pill brings the call back.
     return phone ? (
-      <button type="button" className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-50 flex min-h-11 items-center gap-2 rounded-full bg-ok px-4 text-sm font-medium text-bg-0 shadow-xl" onClick={() => useCalls.setState({ expanded: true })} data-testid="call-pill">
+      <button type="button" className="fixed bottom-[max(1rem,var(--safe-bottom))] right-4 z-50 flex min-h-11 items-center gap-2 rounded-full bg-ok px-4 text-sm font-medium text-bg-0 shadow-xl" onClick={() => useCalls.setState({ expanded: true })} data-testid="call-pill">
         <PhoneIcon size={16} /> {duration || t("calls.in_call")}
       </button>
     ) : null;
@@ -322,7 +322,7 @@ function ActiveCall() {
       data-testid="call-view"
       data-status={status}
     >
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-3 pt-[env(safe-area-inset-top)]">
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-3 pt-[var(--safe-top)]">
         <PhoneIcon size={16} className="text-ok" />
         <h2 className="min-w-0 flex-1 truncate text-sm font-semibold" data-testid="call-title">
           {title}
@@ -367,7 +367,7 @@ function ActiveCall() {
           ))}
         </StageGrid>
       </div>
-      <div className="flex shrink-0 flex-wrap items-center justify-center gap-1 border-t border-line bg-bg-1 px-2 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] md:gap-2" data-testid="call-controls">
+      <div className="flex shrink-0 flex-wrap items-center justify-center gap-1 border-t border-line bg-bg-1 px-2 py-2 pb-[max(0.5rem,var(--safe-bottom))] md:gap-2" data-testid="call-controls">
         <ControlButton label={muted ? t("voice.unmute") : t("voice.mute")} active={muted} onClick={() => void toggleMute()} testid="voice-mute" className="min-h-11 min-w-11">
           {muted ? <MicOffIcon size={20} /> : <MicIcon size={20} />}
         </ControlButton>

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.tavrn.app
 
+import android.graphics.Color
 import android.os.Bundle
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 
 /**
@@ -10,7 +12,8 @@ import androidx.activity.enableEdgeToEdge
  */
 class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
-    enableEdgeToEdge()
+    // The client is dark in every system theme: light icons on transparent bars.
+    enableEdgeToEdge(SystemBarStyle.dark(Color.TRANSPARENT), SystemBarStyle.dark(Color.TRANSPARENT))
     super.onCreate(savedInstanceState)
   }
 }

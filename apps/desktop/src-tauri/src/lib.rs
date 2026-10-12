@@ -27,6 +27,7 @@ pub mod media;
 pub mod mobile;
 pub mod node_url;
 pub mod notify;
+pub mod release;
 pub mod resolve;
 #[cfg(desktop)]
 pub mod tray;
@@ -259,6 +260,11 @@ pub fn run() {
             android::android_push_unregister,
             android::android_push_config,
             android::android_keep_connection,
+            android::android_check_update,
+            android::android_save_begin,
+            android::android_save_chunk,
+            android::android_save_end,
+            android::android_save_abort,
         ])
         .setup(|app| {
             let handle = app.handle();

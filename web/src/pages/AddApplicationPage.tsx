@@ -92,7 +92,7 @@ export function AddApplicationPage() {
   if (!token) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
   const domain = domainParam ? domainParam.toLowerCase() : origin;
   return (
-    <div role="main" className="flex min-h-full items-start justify-center p-4 sm:items-center">
+    <div role="main" className="flex min-h-full items-start justify-center px-4 pb-[max(1rem,var(--safe-bottom))] pt-[max(1rem,var(--safe-top))] sm:items-center">
       <div className="w-full max-w-lg rounded-xl border border-line bg-bg-1 p-4 shadow-xl sm:p-6" data-testid="add-app">
         {!ULID.test(id) ? (
           <ErrorText>{t("addapp.invalid_link")}</ErrorText>

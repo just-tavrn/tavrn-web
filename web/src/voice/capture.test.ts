@@ -41,6 +41,16 @@ describe("microphone capture while muted (Android call audio mode)", () => {
     expect(m.capturing).toBe(true);
   });
 
+  it("the Android app keeps the capture while muted (its notification unmutes in the background)", async () => {
+    const m = mic();
+    const c = new CaptureRelease(m, CAPTURE_GRACE_MS, true);
+    await c.setMuted(true);
+    await vi.advanceTimersByTimeAsync(CAPTURE_GRACE_MS * 10);
+    await c.setMuted(false);
+    expect(m.calls).toEqual([]);
+    expect(m.capturing).toBe(true);
+  });
+
   it("keeps the capture for a quick mute and unmute (instant, no new getUserMedia)", async () => {
     const m = mic();
     const c = new CaptureRelease(m);

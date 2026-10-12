@@ -428,7 +428,7 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
         {mode === "login" && (
           <>
             {(passkeysSupported() || toNodePage) && (
-              <Button variant="ghost" className="w-full border border-line" disabled={busy} onClick={() => (desktop && passkeyOnNodePage ? passkeyOnNodePage() : void passkeyOnly())} data-testid="passkey-login">
+              <Button variant="ghost" className="w-full border border-line" disabled={busy} onClick={() => (desktop && passkeyOnNodePage && !passkeysSupported() ? passkeyOnNodePage() : void passkeyOnly())} data-testid="passkey-login">
                 {t("auth.passkey_login")}
               </Button>
             )}

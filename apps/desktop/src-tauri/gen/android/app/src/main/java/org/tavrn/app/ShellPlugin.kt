@@ -39,6 +39,9 @@ import org.unifiedpush.android.connector.UnifiedPush
 @InvokeArg class PushRegisterArgs { lateinit var vapid: String; var distributor: String? = null }
 @InvokeArg class PushConfigArgs { var strings: Map<String, String> = emptyMap(); var homeNode: String? = null }
 @InvokeArg class KeepArgs { var on: Boolean = false; var title: String = ""; var text: String = "" }
+@InvokeArg class SaveBeginArgs { lateinit var name: String; lateinit var mime: String; var size: Long = 0 }
+@InvokeArg class SaveChunkArgs { lateinit var id: String; lateinit var data: String }
+@InvokeArg class SaveIdArgs { lateinit var id: String }
 @InvokeArg class NotifyArgs { lateinit var title: String; lateinit var body: String; var path: String? = null }
 @InvokeArg class VoiceArgs {
   lateinit var state: String
@@ -313,6 +316,88 @@ class ShellPlugin(private val activity: Activity) : Plugin(activity) {
     val args = invoke.parseArgs(KeepArgs::class.java)
     if (args.on) ConnectionService.start(activity, args.title, args.text) else ConnectionService.stop(activity)
     invoke.resolve()
+  }
+
+  /** A save in progress: the picked document, its stream, the expected and the written size. */
+  private class Save(val uri: Uri, val out: java.io.OutputStream, val size: Long, var written: Long = 0)
+  private val saves = HashMap<String, Save>()
+
+  /**
+   * Downloads: Android's document picker ("Save to"), the desktop's save dialog. The content follows in chunks; at
+   * most 8 saves at once.
+   */
+  @Command
+  fun saveBegin(invoke: Invoke) {
+    val args = invoke.parseArgs(SaveBeginArgs::class.java)
+    if (saves.size >= 8 || args.size < 0) return invoke.reject("too many saves", "download.busy")
+    val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(args.mime).putExtra(Intent.EXTRA_TITLE, args.name)
+    try {
+      (activity as WryActivity).launchActivityForResult(intent) { result ->
+        val uri = result?.data?.data
+        if (result?.resultCode != Activity.RESULT_OK || uri == null) return@launchActivityForResult invoke.resolve(JSObject().put("status", "cancelled"))
+        val out = try { activity.contentResolver.openOutputStream(uri, "w") } catch (e: Exception) { null }
+          ?: return@launchActivityForResult invoke.reject("cannot write", "download.failed")
+        val id = java.util.UUID.randomUUID().toString()
+        saves[id] = Save(uri, out, args.size)
+        invoke.resolve(JSObject().put("status", "ready").put("id", id))
+      }
+    } catch (e: ActivityNotFoundException) {
+      invoke.reject("no document picker", "download.unsupported")
+    }
+  }
+
+  @Command
+  fun saveChunk(invoke: Invoke) {
+    val args = invoke.parseArgs(SaveChunkArgs::class.java)
+    val save = saves[args.id] ?: return invoke.reject("unknown save", "download.unknown")
+    val bytes = android.util.Base64.decode(args.data, android.util.Base64.DEFAULT)
+    if (save.written + bytes.size > save.size) return invoke.reject("more than announced", "download.too_large")
+    try {
+      save.out.write(bytes)
+      save.written += bytes.size
+      invoke.resolve()
+    } catch (e: Exception) {
+      invoke.reject("write failed", "download.failed")
+    }
+  }
+
+  @Command
+  fun saveEnd(invoke: Invoke) {
+    val id = invoke.parseArgs(SaveIdArgs::class.java).id
+    val save = saves.remove(id) ?: return invoke.reject("unknown save", "download.unknown")
+    try {
+      save.out.flush()
+      save.out.close()
+    } catch (e: Exception) {
+      return invoke.reject("write failed", "download.failed")
+    }
+    if (save.written != save.size) {
+      deleteDocument(save.uri)
+      return invoke.reject("incomplete", "download.incomplete")
+    }
+    invoke.resolve(JSObject().put("name", displayName(save.uri) ?: ""))
+  }
+
+  @Command
+  fun saveAbort(invoke: Invoke) {
+    val save = saves.remove(invoke.parseArgs(SaveIdArgs::class.java).id)
+    if (save != null) {
+      try { save.out.close() } catch (e: Exception) { }
+      deleteDocument(save.uri)
+    }
+    invoke.resolve()
+  }
+
+  private fun deleteDocument(uri: Uri) {
+    try { android.provider.DocumentsContract.deleteDocument(activity.contentResolver, uri) } catch (e: Exception) { }
+  }
+
+  private fun displayName(uri: Uri): String? = try {
+    activity.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+      if (c.moveToFirst()) c.getString(0) else null
+    }
+  } catch (e: Exception) {
+    null
   }
 
   /** A notification of the client (it runs in the background and decided to show one). */

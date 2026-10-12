@@ -115,7 +115,7 @@ export function NodePickerPage() {
   return (
     <AuthCard nodeInfo={false}>
       <h1 className="text-base font-semibold">{t("node_picker.title")}</h1>
-      <p className="mt-1 text-sm text-fg-2">{t("node_picker.intro")}</p>
+      <p className="mt-1 text-sm text-fg-2">{t(platform().android ? "node_picker.intro_android" : "node_picker.intro")}</p>
       {current && (
         <p className="mt-3 break-all text-xs text-fg-2" data-testid="node-picker-current">
           {t("node_picker.current", { url: current })}

@@ -35,6 +35,9 @@ function linuxWebview(): boolean {
   return /Linux/.test(ua) && !/Android/.test(ua);
 }
 
+/** The Android app shows the node's page in the browser (a Custom Tab), not in a window: its own texts. */
+const inBrowser = (key: string) => (platform().android ? `${key}_android` : key);
+
 export interface NodePageHandoff {
   /** The app can sign in on the node's page (desktop app, node with `connect.app`). */
   available: boolean;
@@ -97,7 +100,7 @@ export function useNodePageHandoff({ next, onSession }: { next: string; onSessio
   const view = run ? (
     <div data-testid="handoff-waiting">
       <h1 className="text-base font-semibold">{t(run.method === "passkey" ? "handoff.waiting_passkey_title" : run.method === "sso" ? "handoff.waiting_sso_title" : "handoff.waiting_title", { node: domain })}</h1>
-      <p className="mt-2 text-sm text-fg-1">{t(run.method === "passkey" ? "handoff.waiting_passkey" : run.method === "sso" ? "handoff.waiting_sso" : "handoff.waiting")}</p>
+      <p className="mt-2 text-sm text-fg-1">{t(inBrowser(run.method === "passkey" ? "handoff.waiting_passkey" : run.method === "sso" ? "handoff.waiting_sso" : "handoff.waiting"))}</p>
       {linuxWebview() && (
         <p className="mt-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-fg-1" data-testid="handoff-linux">
           {t("handoff.linux")}
@@ -134,9 +137,11 @@ function PageButtons({ url, onCancel }: { url: string | null; onCancel: () => vo
       <Button className="w-full" disabled={!url} onClick={() => url && void platform().auth?.reopen?.(url).catch(() => undefined)}>
         {t("handoff.reopen")}
       </Button>
-      <Button variant="ghost" className="w-full border border-line" disabled={!url} onClick={() => url && void platform().openExternal(url).catch(() => undefined)}>
+      {!platform().android && (
+        <Button variant="ghost" className="w-full border border-line" disabled={!url} onClick={() => url && void platform().openExternal(url).catch(() => undefined)}>
         {t("handoff.browser")}
       </Button>
+      )}
       <Button variant="ghost" className="w-full" onClick={onCancel}>
         {t("connect.cancel")}
       </Button>
@@ -202,7 +207,7 @@ export function useNodePageUnlock(): NodePageUnlock {
   const view = run ? (
     <div data-testid="unlock-waiting" className="space-y-3">
       <h2 className="text-sm font-semibold">{t("handoff.unlock_title", { node: domain })}</h2>
-      <p className="text-sm text-fg-1">{t("handoff.unlock_waiting")}</p>
+      <p className="text-sm text-fg-1">{t(inBrowser("handoff.unlock_waiting"))}</p>
       {linuxWebview() && (
         <p className="rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-fg-1" data-testid="handoff-linux">
           {t("handoff.linux")}

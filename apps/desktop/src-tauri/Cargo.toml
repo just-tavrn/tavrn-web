@@ -34,6 +34,8 @@ serde_json = "1"
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 hickory-resolver = { version = "0.26", default-features = false, features = ["tokio", "system-config"] }
+# The Android app's check for a newer release (src/release.rs); already in the tree through Tauri.
+semver = "1"
 
 # Desktop only (Windows, macOS, Linux): the Android app (docs/ANDROID.md) has no tray, hotkeys, keychain, updater, save
 # dialog or native voice engine; its platform pieces are Kotlin (src-tauri/gen/android) behind src/android.rs.
@@ -60,6 +62,8 @@ keywatch = { package = "tavrn-keywatch", path = "../crates/keywatch" }
 # a Kotlin component on Android), the same bundle the native voice engine uses on the desktop.
 [target.'cfg(target_os = "android")'.dependencies]
 webpki-roots = "1"
+# Downloads: the content goes to the Kotlin side as base64 (src/android.rs).
+base64 = "0.23"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] }

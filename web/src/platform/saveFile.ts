@@ -19,7 +19,8 @@ export async function saveFile(file: SaveFileRequest): Promise<SaveFileOutcome> 
     const reveal = out.reveal;
     useToasts.getState().push({
       kind: "info",
-      title: t("download.saved", { folder: out.folder }),
+      // The Android app's document picker names no folder: "Saved" with the file's name.
+      title: out.folder ? t("download.saved", { folder: out.folder }) : t("download.saved_plain"),
       detail: out.name,
       testId: "download-saved",
       ...(reveal ? { action: { label: t("download.show_in_folder"), run: () => void reveal().catch((e: unknown) => toastError(e)) } } : {}),

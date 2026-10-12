@@ -11,6 +11,10 @@
  * pipeline's own (`audio.ts`), so nothing is republished. Push-to-talk closes only the gate, never the capture:
  * opening the microphone on every key press would cost a `getUserMedia` round trip (often hundreds of milliseconds)
  * and cut off the first syllable, so in push-to-talk mode the capture stays open while unmuted.
+ *
+ * The Android app keeps the capture open while muted (`keep`): its voice notification unmutes while the app is in the
+ * background, where the webview opens no new capture until the app is on screen again (docs/ANDROID.md "Voice in
+ * the background").
  */
 
 /** A mute releases the capture this long after it (a quick mute and unmute keeps it). */
@@ -28,12 +32,13 @@ export class CaptureRelease {
   constructor(
     private readonly mic: Capture,
     private readonly graceMs = CAPTURE_GRACE_MS,
+    private readonly keep = false,
   ) {}
 
   /** Follows the mute state: releases after the grace period, re-acquires at once on unmute. */
   setMuted(muted: boolean): Promise<void> {
     if (muted) {
-      if (!this.timer && this.mic.capturing) {
+      if (!this.keep && !this.timer && this.mic.capturing) {
         this.timer = setTimeout(() => {
           this.timer = null;
           this.mic.releaseCapture();

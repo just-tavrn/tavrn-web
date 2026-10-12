@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-android-save-begin"
+description = "Enables the android_save_begin command without any pre-configured scope."
+commands.allow = ["android_save_begin"]
+
+[[permission]]
+identifier = "deny-android-save-begin"
+description = "Denies the android_save_begin command without any pre-configured scope."
+commands.deny = ["android_save_begin"]

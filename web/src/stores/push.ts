@@ -9,12 +9,19 @@
  * - `signOut`: removes the subscription before the session ends (the node also drops it with the device).
  *
  * Per account and browser, `localStorage` remembers the registration id and the key it was made with.
+ *
+ * The Android app has no service worker: its push comes through UnifiedPush (docs/ANDROID.md "Notifications without
+ * Google"). The user's distributor hands an endpoint with RFC 8291 keys, which is registered at the node exactly like
+ * a browser subscription; the app's native receiver decrypts and shows the pushes. Without a distributor the status is
+ * `no_distributor` (the settings explain where to get one and offer the connection service instead).
  */
 import { create } from "zustand";
 import { TavrnApiError, type TavrnApi } from "@tavrn/sdk";
-import { needsInstall, pushSupported, readyRegistration, sendWorkerConfig, subscribedWithKey, subscriptionRequest, base64UrlToBytes } from "../lib/push";
+import type { PushSubscriptionRequest } from "@tavrn/sdk";
+import { needsInstall, pushSupported, readyRegistration, sendWorkerConfig, subscribedWithKey, subscriptionRequest, base64UrlToBytes, workerStrings } from "../lib/push";
+import { platform, type PlatformAndroid, type PushEndpointKeys } from "../platform";
 
-export type PushStatus = "loading" | "unsupported" | "install" | "unavailable" | "denied" | "off" | "on";
+export type PushStatus = "loading" | "unsupported" | "install" | "unavailable" | "denied" | "no_distributor" | "off" | "on";
 
 type PushApi = Pick<TavrnApi, "push">;
 
@@ -46,6 +53,8 @@ export interface PushContext {
 
 const KEY = "tavrn.push";
 let ctxRef: PushContext | null = null;
+/** Android: the listener of renewed endpoints. */
+let stopEndpoints: (() => void) | null = null;
 
 function readRecord(account: string): Record_ | null {
   try {
@@ -97,6 +106,85 @@ async function register(ctx: PushContext, publicKey: string): Promise<Record_> {
   return record;
 }
 
+/** The node's request body from a UnifiedPush endpoint. */
+export function endpointRequest(keys: PushEndpointKeys, deviceId: string | null): PushSubscriptionRequest {
+  return { endpoint: keys.endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth }, ...(deviceId ? { device_id: deviceId } : {}), expiration_time: null };
+}
+
+/** Android: registers at the distributor with the node's key and the endpoint at the node. */
+async function registerAndroid(android: PlatformAndroid, ctx: PushContext, publicKey: string): Promise<Record_> {
+  let keys = await android.push.register(publicKey);
+  let saved;
+  try {
+    saved = await ctx.api.push.subscribe(endpointRequest(keys, ctx.deviceId));
+  } catch (e) {
+    // Another account of this device had the endpoint: a new registration gets a new one.
+    if (!(e instanceof TavrnApiError && e.code === "push.endpoint_taken")) throw e;
+    await android.push.unregister().catch(() => undefined);
+    keys = await android.push.register(publicKey);
+    saved = await ctx.api.push.subscribe(endpointRequest(keys, ctx.deviceId));
+  }
+  const record = { id: saved.id, key: publicKey };
+  writeRecord(ctx.account, record);
+  return record;
+}
+
+/** Android: the distributor renewed the endpoint while the app runs; the node gets it at once. */
+function followEndpoints(android: PlatformAndroid, ctx: PushContext) {
+  stopEndpoints?.();
+  const offEndpoint = android.push.onEndpoint((keys) => {
+    if (ctxRef !== ctx || !readRecord(ctx.account)) return;
+    void ctx.api.push
+      .subscribe(endpointRequest(keys, ctx.deviceId))
+      .then((saved) => {
+        const record = readRecord(ctx.account);
+        if (record) writeRecord(ctx.account, { ...record, id: saved.id });
+      })
+      .catch(() => undefined);
+  });
+  const offGone = android.push.onUnregistered(() => {
+    if (ctxRef !== ctx) return;
+    void unsubscribe(ctx).catch(() => undefined);
+    usePush.setState({ status: "off" });
+  });
+  stopEndpoints = () => {
+    offEndpoint();
+    offGone();
+  };
+}
+
+async function initAndroid(android: PlatformAndroid, ctx: PushContext, set: (s: Partial<PushState>) => void): Promise<void> {
+  const vapid = await ctx.api.push.vapid().catch(() => null);
+  if (ctxRef !== ctx) return;
+  if (!vapid?.enabled || !vapid.public_key) return set({ status: "unavailable" });
+  void android.push.configure(workerStrings(), ctx.homeNode).catch(() => undefined);
+  const status = await android.status().catch(() => null);
+  if (ctxRef !== ctx) return;
+  const record = readRecord(ctx.account);
+  if (!status?.distributors.length) return set({ status: "no_distributor" });
+  if (status.notifications === "denied" && record) return set({ status: "denied" });
+  if (!record) return set({ status: "off" });
+  followEndpoints(android, ctx);
+  try {
+    await registerAndroid(android, ctx, vapid.public_key);
+    if (ctxRef === ctx) set({ status: "on" });
+  } catch (e) {
+    if (ctxRef === ctx) set({ status: "on", error: message(e) });
+  }
+}
+
+async function enableAndroid(android: PlatformAndroid, ctx: PushContext, set: (s: Partial<PushState>) => void): Promise<void> {
+  // First, while the click still counts: the system's permission prompt (Android 13 and newer).
+  const answer = await android.requestPermission("notifications");
+  if (answer !== "granted") return set({ status: answer === "blocked" ? "denied" : "off" });
+  const vapid = await ctx.api.push.vapid();
+  if (!vapid.enabled || !vapid.public_key) return set({ status: "unavailable" });
+  await android.push.configure(workerStrings(), ctx.homeNode).catch(() => undefined);
+  followEndpoints(android, ctx);
+  await registerAndroid(android, ctx, vapid.public_key);
+  set({ status: "on" });
+}
+
 const message = (e: unknown) => (e instanceof TavrnApiError ? e.problem.code ?? e.message : e instanceof Error ? e.message : String(e));
 
 export const usePush = create<PushState>((set, get) => ({
@@ -106,6 +194,8 @@ export const usePush = create<PushState>((set, get) => ({
   init: async (ctx) => {
     ctxRef = ctx;
     set({ status: "loading", error: null });
+    const android = platform().android;
+    if (android) return initAndroid(android, ctx, set);
     if (!pushSupported()) return set({ status: needsInstall() ? "install" : "unsupported" });
     const vapid = await ctx.api.push.vapid().catch(() => null);
     if (ctxRef !== ctx) return;
@@ -127,6 +217,8 @@ export const usePush = create<PushState>((set, get) => ({
     if (!ctx || get().busy) return;
     set({ busy: true, error: null });
     try {
+      const android = platform().android;
+      if (android) return await enableAndroid(android, ctx, set);
       // First, while the click still counts as a user action: the browser's permission prompt.
       const result = permission() === "default" ? await Notification.requestPermission() : permission();
       if (result !== "granted") return set({ status: result === "denied" ? "denied" : "off" });
@@ -147,7 +239,7 @@ export const usePush = create<PushState>((set, get) => ({
     set({ busy: true, error: null });
     try {
       await unsubscribe(ctx);
-      set({ status: permission() === "denied" ? "denied" : "off" });
+      set({ status: !platform().android && permission() === "denied" ? "denied" : "off" });
     } catch (e) {
       set({ error: message(e) });
     } finally {
@@ -171,6 +263,8 @@ export const usePush = create<PushState>((set, get) => ({
   },
   reset: () => {
     ctxRef = null;
+    stopEndpoints?.();
+    stopEndpoints = null;
     set({ status: "loading", busy: false, error: null });
   },
 }));
@@ -185,6 +279,8 @@ async function unsubscribe(ctx: PushContext): Promise<void> {
       if (!(e instanceof TavrnApiError && e.status === 404)) throw e;
     });
   }
+  const android = platform().android;
+  if (android) return android.push.unregister();
   if (!pushSupported()) return;
   const registration = await navigator.serviceWorker.getRegistration("/").catch(() => undefined);
   const sub = await registration?.pushManager.getSubscription().catch(() => null);

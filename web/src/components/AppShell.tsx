@@ -65,9 +65,9 @@ export function AppShell({ rail, sidebar, children, aside, headerExtra }: { rail
       >
         {skipToMessages ? t("a11y.skip_to_messages") : t("a11y.skip_to_content")}
       </a>
-      <div className={`relative flex h-full flex-col md:grid md:grid-cols-[312px_1fr] ${hasAside ? "xl:grid-cols-[72px_240px_1fr_240px]" : "xl:grid-cols-[72px_240px_1fr]"}`} data-testid="app-shell" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+      <div className={`relative flex h-full flex-col md:grid md:grid-cols-[312px_1fr] ${hasAside ? "xl:grid-cols-[72px_240px_1fr_240px]" : "xl:grid-cols-[72px_240px_1fr]"}`} data-testid="app-shell" style={{ paddingTop: "var(--safe-top)" }}>
         <div
-          className={`fixed inset-y-0 left-0 z-40 flex w-[312px] max-w-[85vw] transform transition-transform md:static md:z-auto md:w-auto md:max-w-none md:translate-x-0 xl:contents ${navOpen ? "translate-x-0" : "-translate-x-full"}`}
+          className={`fixed bottom-[var(--safe-bottom)] left-0 top-[var(--safe-top)] z-40 flex w-[312px] max-w-[85vw] transform transition-transform md:static md:z-auto md:w-auto md:max-w-none md:translate-x-0 xl:contents ${navOpen ? "translate-x-0" : "-translate-x-full"}`}
           data-testid="nav-drawer"
           data-open={navOpen}
         >
@@ -99,7 +99,7 @@ export function AppShell({ rail, sidebar, children, aside, headerExtra }: { rail
 
         <aside
           aria-label={t("shell.members")}
-          className={`fixed inset-y-0 right-0 z-40 w-[240px] max-w-[85vw] transform overflow-y-auto border-l border-line bg-bg-1 p-3 transition-transform xl:static xl:z-auto xl:translate-x-0 ${membersOpen ? "translate-x-0" : "translate-x-full"} ${hasAside ? "" : "hidden"}`}
+          className={`fixed bottom-[var(--safe-bottom)] right-0 top-[var(--safe-top)] z-40 w-[240px] max-w-[85vw] transform overflow-y-auto border-l border-line bg-bg-1 p-3 transition-transform xl:static xl:z-auto xl:translate-x-0 ${membersOpen ? "translate-x-0" : "translate-x-full"} ${hasAside ? "" : "hidden"}`}
           data-testid="members-drawer"
           data-open={hasAside && membersOpen}
         >
@@ -110,6 +110,8 @@ export function AppShell({ rail, sidebar, children, aside, headerExtra }: { rail
           <button
             type="button"
             aria-label={t("shell.close_drawer")}
+            // The Android back gesture closes the open drawer first (platform/androidShell.ts).
+            data-back-close=""
             className="fixed inset-0 z-30 bg-black/50 xl:hidden"
             onClick={() => {
               setNavOpen(false);

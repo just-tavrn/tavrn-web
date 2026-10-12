@@ -6,6 +6,8 @@
 import { TavrnApiError } from "@tavrn/sdk";
 import { t } from "../i18n";
 import { describeError } from "../stores/toasts";
+import { platform } from "../platform";
+import { androidMediaBlocked } from "./androidMedia";
 
 export type VoiceErrorCode = "e2ee_unsupported" | "e2ee_failed" | "locked" | "no_group" | "connect_failed" | "busy" | "native_device" | "native_unavailable";
 
@@ -30,7 +32,7 @@ export function voiceErrorMessage(e: unknown): string {
   }
   const named = e as { name?: string; status?: number } | null;
   // getUserMedia: permission denied or no device.
-  if (named?.name === "NotAllowedError" || named?.name === "SecurityError") return t("voice.error.mic_denied");
+  if (named?.name === "NotAllowedError" || named?.name === "SecurityError") return t(platform().android ? (androidMediaBlocked() ? "voice.error.media_blocked_android" : "voice.error.mic_denied_android") : "voice.error.mic_denied");
   if (named?.name === "NotFoundError" || named?.name === "OverconstrainedError") return t("voice.error.mic_missing");
   if (named?.name === "NotReadableError") return t("voice.error.mic_busy");
   // livekit-client's ConnectionError carries the HTTP status of the failed validation request.

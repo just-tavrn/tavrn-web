@@ -36,7 +36,20 @@
   --radius-md: 0.5rem;
 }
 
+/*
+ * Safe areas (notches, system bars): the browser's env() values, which the Android app replaces with the system bars
+ * it reports (`platform/androidShell.ts`, docs/ANDROID.md); the layout pads itself with these variables only.
+ */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+}
+
 html, body, #root { height: 100%; }
+/* Landscape with a camera cutout or side navigation bar: nothing hides behind it. */
+#root { padding-left: var(--safe-left); padding-right: var(--safe-right); }
 html { color-scheme: dark; }
 body { @apply bg-bg-2 text-fg-0 font-sans antialiased; }
 

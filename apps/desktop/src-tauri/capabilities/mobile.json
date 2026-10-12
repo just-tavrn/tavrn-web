@@ -23,6 +23,11 @@
     "allow-android-push-register",
     "allow-android-push-unregister",
     "allow-android-push-config",
-    "allow-android-keep-connection"
+    "allow-android-keep-connection",
+    "allow-android-check-update",
+    "allow-android-save-begin",
+    "allow-android-save-chunk",
+    "allow-android-save-end",
+    "allow-android-save-abort"
   ]
 }

@@ -224,6 +224,29 @@ impl Insets {
     }
 }
 
+/// The name the save dialog suggests (Android's document picker): no path parts or control characters, at most 200
+/// characters, never empty.
+pub fn save_name(name: &str) -> String {
+    let base = name.rsplit(['/', '\\']).next().unwrap_or_default();
+    let clean: String = base.chars().filter(|c| !c.is_control()).take(200).collect();
+    let clean = clean.trim().trim_start_matches('.').to_string();
+    if clean.is_empty() { "download".into() } else { clean }
+}
+
+/// A save's id as the Kotlin side made it (a UUID).
+pub fn save_id(id: &str) -> bool {
+    id.len() == 36 && id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-')
+}
+
+/// A MIME type the picker may be given (`type/subtype`, no parameters).
+pub fn save_mime(mime: &str) -> String {
+    let ok = mime.len() <= 100
+        && mime
+            .split_once('/')
+            .is_some_and(|(t, s)| !t.is_empty() && !s.is_empty() && mime.bytes().all(|b| b.is_ascii_alphanumeric() || b"/.+-_".contains(&b)));
+    if ok { mime.to_ascii_lowercase() } else { "application/octet-stream".into() }
+}
+
 /// What the Kotlin side reports (`ShellPlugin.kt`, JSON with a `kind`).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -311,6 +334,23 @@ mod tests {
             assert_eq!(app_link(bad), None, "{bad}");
         }
         assert_eq!(app_link(&format!("https://app.tavrn.org/invite/{}", "a".repeat(600))), None);
+    }
+
+    #[test]
+    fn saves_suggest_plain_names_and_types() {
+        assert_eq!(save_name("tavrn-recovery-key.txt"), "tavrn-recovery-key.txt");
+        assert_eq!(save_name("../../etc/passwd"), "passwd");
+        assert_eq!(save_name("a\\b\u{0}c.pdf"), "bc.pdf");
+        assert_eq!(save_name(".."), "download");
+        assert_eq!(save_name(""), "download");
+        assert_eq!(save_name(&"x".repeat(500)).chars().count(), 200);
+        assert_eq!(save_mime("text/plain"), "text/plain");
+        assert_eq!(save_mime("image/svg+xml"), "image/svg+xml");
+        for bad in ["text", "text/plain; charset=utf-8", "*/*\n", ""] {
+            assert_eq!(save_mime(bad), "application/octet-stream", "{bad:?}");
+        }
+        assert!(save_id("0f8fad5b-d9cb-469f-a165-70867728950e"));
+        assert!(!save_id("../x"));
     }
 
     #[test]

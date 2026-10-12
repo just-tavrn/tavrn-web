@@ -5598,6 +5598,7 @@ dependencies = [
  "reqwest 0.13.5",
  "ring",
  "rustls",
+ "semver",
  "serde",
  "serde_json",
  "tauri",

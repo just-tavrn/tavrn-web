@@ -27,7 +27,7 @@ function VoiceDeviceMenu({ kind, anchor, trigger, onClose, beforeNavigate }: { k
   const native = useNativeVoice();
   const nativeDevices = useNativeDevices(native);
   // The desktop app's window holds the microphone permission: the device names come without a prompt.
-  const media = useMediaDevices({ source: native ? null : undefined, autoUnlock: platform().isDesktop });
+  const media = useMediaDevices({ source: native ? null : undefined, autoUnlock: platform().isDesktop && !platform().android });
   const settings = deviceView(stored, native);
   const ptt = settings.hotkeys.push_to_talk;
   const entries = voiceDeviceMenu(

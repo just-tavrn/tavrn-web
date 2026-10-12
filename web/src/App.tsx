@@ -25,6 +25,7 @@ import { TermsGate } from "./components/legal/TermsGate";
 import { DateOfBirthGate } from "./components/age/DateOfBirthGate";
 import { LegalDocumentPage, LegalIndexPage, NoticeFormPage, NoticeStatusPage } from "./pages/legal/LegalPages";
 import { NodePickerPage } from "./pages/NodePickerPage";
+import { AndroidShell } from "./components/AndroidShell";
 import { platform } from "./platform";
 
 // The whiteboard page (and with it the Excalidraw canvas) is loaded only when a board is opened.
@@ -41,6 +42,7 @@ export function App() {
   if (desktop && !platform().node?.current()) {
     return (
       <BrowserRouter>
+        <AndroidShell />
         <Routes>
           <Route path="*" element={<NodePickerPage />} />
         </Routes>
@@ -49,6 +51,7 @@ export function App() {
   }
   return (
     <BrowserRouter>
+      <AndroidShell />
       <Routes>
         {/* Desktop app: change the home node (Settings → App). */}
         {desktop && <Route path="/node" element={<NodePickerPage />} />}

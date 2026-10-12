@@ -24,7 +24,8 @@ function browserEnv(): WakeLockEnv {
   return {
     wakeLock: typeof navigator === "undefined" ? undefined : navigator.wakeLock,
     document,
-    desktop: platform().isDesktop,
+    // The Android app keeps the screen on like a phone browser does (its voice service keeps the call alive anyway).
+    desktop: platform().isDesktop && !platform().android,
   };
 }
 

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-android-check-update"
+description = "Enables the android_check_update command without any pre-configured scope."
+commands.allow = ["android_check_update"]
+
+[[permission]]
+identifier = "deny-android-check-update"
+description = "Denies the android_check_update command without any pre-configured scope."
+commands.deny = ["android_check_update"]

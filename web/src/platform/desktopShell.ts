@@ -3,6 +3,8 @@
  * The client's side of the desktop app's tray and notification clicks (docs/DESKTOP.md "Tray"): the voice store
  * drives `platform().tray` (state and texts, at most every 150 ms, so speaking does not make the tray flicker), the
  * tray's menu mutes, deafens and leaves through the voice client, and a clicked notification opens its conversation.
+ * In the Android app the same wiring drives the voice service's notification (docs/ANDROID.md "Voice in the
+ * background"): its title and buttons come from `extra`.
  * Platform-independent: it takes the members it needs, so the browser never runs it and tests pass fakes.
  */
 import type { QueryClient } from "@tanstack/react-query";
@@ -12,7 +14,7 @@ import { locate } from "../lib/notify";
 import { channelName } from "../lib/names";
 import { useVoice, type VoiceState } from "../voice/store";
 import { leaveVoice, toggleDeafen, toggleMute } from "../voice";
-import type { PlatformNotifications, PlatformTray, TrayLabels, TrayVoiceState } from "./types";
+import type { PlatformNotifications, PlatformTray, TrayLabels, TrayVoiceExtra, TrayVoiceState } from "./types";
 
 /** At most one tray update per this many milliseconds. */
 export const TRAY_INTERVAL_MS = 150;
@@ -51,6 +53,13 @@ function labels(state: TrayVoiceState, channel: string | null): TrayLabels {
   };
 }
 
+/** The Android voice notification's texts: "In voice channel Lounge (Gaming)" with the state, and the camera. */
+export function voiceExtra(state: TrayVoiceState, channel: string | null, call: boolean, camera: boolean): TrayVoiceExtra {
+  const title = !channel ? t("android.voice.idle") : call ? t("android.voice.call", { name: channel }) : t("android.voice.channel", { channel });
+  const text = state === "muted" || state === "deafened" ? t(`tray.state.${state}`) : t("android.voice.connected");
+  return { title, text, unmute: t("tray.unmute"), camera };
+}
+
 export interface DesktopShellOptions {
   tray?: PlatformTray;
   notifications?: PlatformNotifications;
@@ -71,12 +80,13 @@ export function startDesktopShell({ tray, notifications, queryClient, self, navi
       timer = null;
       const v = useVoice.getState();
       const state = trayVoiceState(v);
-      const next = { state, labels: labels(state, channelLabel(queryClient, v, self)) };
+      const channel = channelLabel(queryClient, v, self);
+      const next = { state, labels: labels(state, channel), extra: voiceExtra(state, channel, !!v.target?.call, v.camera) };
       const key = JSON.stringify(next);
       if (key === last) return;
       last = key;
       lastAt = Date.now();
-      void tray.set(next.state, next.labels).catch(() => undefined);
+      void tray.set(next.state, next.labels, next.extra).catch(() => undefined);
     };
     const schedule = () => {
       if (timer) return;
