@@ -89,6 +89,8 @@ export const cues = (page: Page) => page.evaluate(() => (window as unknown as { 
 export interface HookState {
   e2eeEnabled: boolean;
   localEncrypted: boolean;
+  /** The microphone capture is open (released a moment after a mute). */
+  capturing?: boolean;
   remote: { identity: string; isSpeaking: boolean; isEncrypted: boolean; tracks: { source: string; encrypted: boolean; subscribed: boolean }[] }[];
 }
 

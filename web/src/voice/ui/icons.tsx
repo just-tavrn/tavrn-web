@@ -47,6 +47,13 @@ export const ScreenIcon = (p: IconProps) => (
   </Svg>
 );
 
+/** Leaving a stream: the screen, crossed out. */
+export const ScreenOffIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M8 4h12a2 2 0 0 1 2 2v9a2 2 0 0 1-1 1.7M16 17H4a2 2 0 0 1-2-2V6a2 2 0 0 1 1.5-1.9M8 21h8M12 17v4M2 2l20 20" />
+  </Svg>
+);
+
 export const LeaveIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M10.7 13.3a16 16 0 0 0 3.4 2.6l1.3-1.3a2 2 0 0 1 2.1-.5c.8.3 1.6.5 2.4.6a2 2 0 0 1 1.7 2v3a2 2 0 0 1-2.2 2A19.8 19.8 0 0 1 2.3 4.2 2 2 0 0 1 4.3 2h3a2 2 0 0 1 2 1.7c.1.8.3 1.6.6 2.4a2 2 0 0 1-.5 2.1L8 9.6" />

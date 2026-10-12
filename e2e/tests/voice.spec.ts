@@ -289,12 +289,15 @@ test.describe("Voice channels", () => {
     await bob.page.getByTestId("voice-camera").click();
     await expect(tile(alice.page, bob.address).getByTestId("video-camera")).toHaveCount(0, { timeout: 15_000 });
 
-    // Screen share (a canvas capture track headless): a large tile on the other side, focusable.
+    // Screen share (a canvas capture track headless): a large tile on the other side, joined on demand
+    // (voice-stream-join.spec.ts), then focusable.
     await bob.page.getByTestId("voice-screen").click();
     await bob.page.getByTestId("screen-share-start").click();
     const screen = alice.page.getByTestId("screen-tile").and(alice.page.locator(`[data-user="${bob.address}"]`));
     await expect(screen).toBeVisible({ timeout: 30_000 });
     await expect(row(alice.page, bob.address).getByTestId("flag-streaming")).toBeAttached({ timeout: 15_000 });
+    await screen.getByTestId("stream-join").click();
+    await expect(screen.getByTestId("video-screen")).toBeVisible({ timeout: 30_000 });
     await screen.getByTestId("screen-focus").click();
     await expect(alice.page.locator('[data-testid="screen-tile"][data-focused]')).toBeVisible();
     // The focused share is one large 16:9 tile, the people a strip of small 16:9 tiles.
@@ -828,8 +831,9 @@ test.describe("Voice channels", () => {
       await page.waitForTimeout(3000);
       expect(warnings.filter((w) => w.includes("mask smoothing off"))).toEqual([]);
       await expect(page.getByText("background effects are not supported")).toHaveCount(0);
-      // The processor replaced the camera track with its own canvas output.
-      expect(await page.getByTestId("camera-preview").evaluate((v) => ((v as HTMLVideoElement).srcObject as MediaStream | null)?.getVideoTracks()[0]?.label ?? "")).not.toMatch(/fake/i);
+      // The processor replaced the camera track with its own canvas output (its model may still be loading on a busy
+      // machine: the raw camera shows until then).
+      await expect.poll(() => page.getByTestId("camera-preview").evaluate((v) => ((v as HTMLVideoElement).srcObject as MediaStream | null)?.getVideoTracks()[0]?.label ?? ""), { timeout: 15_000 }).not.toMatch(/fake/i);
     }
     await page.getByTestId("blur-strength").fill("20");
     await page.getByTestId("bg-quality").selectOption("fast");

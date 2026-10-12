@@ -145,6 +145,10 @@ export interface EngineContext extends CueContext {
   resume(): Promise<void>;
   suspend(): Promise<void>;
   setSinkId?: (id: string) => Promise<void>;
+  /** For the silent buffer that unlocks the context inside a gesture (WebKit). */
+  readonly sampleRate?: number;
+  createBuffer?(channels: number, length: number, sampleRate: number): AudioBuffer;
+  createBufferSource?(): AudioBufferSourceNode;
 }
 
 /** Resolves when the promise settles or after `ms`, whatever comes first (never rejects). */
@@ -200,6 +204,9 @@ export class CueEngine {
   private readonly live = new Set<OscillatorNode>();
   /** Ringtones holding the context awake. */
   private holds = 0;
+  /** Signed in: the first gesture creates and unlocks the context (`arm`). */
+  private armed = false;
+  private primed = false;
 
   constructor(
     private readonly make: () => EngineContext | null,
@@ -223,12 +230,32 @@ export class CueEngine {
   }
 
   /**
+   * Signed in: an incoming call must be able to ring without a gesture of its own (mobile browsers start audio only
+   * with user activation), so the next gesture creates and unlocks the context (`unlock`).
+   */
+  arm(): void {
+    this.armed = true;
+  }
+
+  /**
    * A user gesture: resume the context if the browser suspended it (autoplay policy: created before any
-   * gesture, or interrupted), not while it sleeps between cues on purpose unless a ringtone waits. Nothing is
-   * created here: pages that never play a cue never get an AudioContext.
+   * gesture, or interrupted), not while it sleeps between cues on purpose unless a ringtone waits. Before
+   * `arm` nothing is created here (the sign-in pages never get an AudioContext); after it, the first gesture
+   * creates the context, starts a one-sample silent buffer inside the gesture (WebKit unlocks a context only
+   * through a sound started in a gesture) and resumes it; then it sleeps until a cue or a ringtone needs it.
    */
   unlock(): Promise<void> {
-    const c = this.ctx;
+    let c = this.ctx;
+    if (!c && this.armed && !this.primed) c = this.context();
+    if (c && this.armed && !this.primed) {
+      this.primed = true;
+      silentBuffer(c);
+      if (c.state === "running") {
+        this.armIdle();
+        return Promise.resolve();
+      }
+      return within(c.resume(), this.opts.resumeTimeoutMs).then(() => this.armIdle());
+    }
     if (!c || c.state === "running" || this.suspending) return Promise.resolve();
     if (this.sleeping && this.holds === 0) return Promise.resolve();
     return within(c.resume(), this.opts.resumeTimeoutMs).then(() => {
@@ -318,6 +345,19 @@ export class CueEngine {
   }
 }
 
+/** Starts a one-sample silent buffer (unlocks the context in WebKit when called inside a gesture). */
+function silentBuffer(c: EngineContext): void {
+  try {
+    if (!c.createBuffer || !c.createBufferSource) return;
+    const src = c.createBufferSource();
+    src.buffer = c.createBuffer(1, 1, c.sampleRate ?? 48_000);
+    src.connect(c.destination);
+    src.start(0);
+  } catch {
+    /* no audio */
+  }
+}
+
 /** The engine of the app (one AudioContext on the chosen output device). */
 export const cueEngine = new CueEngine(() => (typeof AudioContext === "undefined" ? null : (new AudioContext({ latencyHint: "interactive" }) as unknown as EngineContext)));
 
@@ -356,6 +396,29 @@ export function previewCue(cue: Cue, s: Pick<VoiceSettings, "cueVolume" | "outpu
 
 /** Length of one loop of the ringtone in seconds (two bars of four beats at 100 bpm). */
 export const RING_LOOP = 2.4;
+
+/** Vibration of one ringtone loop on phones (on, off, on in milliseconds); the service worker uses its own copy. */
+export const RING_VIBRATION: number[] = [500, 300, 500];
+
+/** `navigator.vibrate` on touch devices (phones and tablets), null elsewhere. */
+export function deviceVibrate(): ((pattern: number | number[]) => boolean) | null {
+  if (typeof navigator === "undefined" || typeof navigator.vibrate !== "function") return null;
+  if (typeof matchMedia !== "function" || !matchMedia("(pointer: coarse)").matches) return null;
+  return (pattern) => {
+    try {
+      return navigator.vibrate(pattern);
+    } catch {
+      return false;
+    }
+  };
+}
+
+export interface RingtoneHooks {
+  /** Whether the ringtone can be heard (false: the browser blocks audio until a gesture); reported on changes. */
+  onAudible?: (audible: boolean) => void;
+  /** Vibrates once per loop (default: `deviceVibrate()`; null: never). Browsers allow it after a first tap only. */
+  vibrate?: ((pattern: number | number[]) => boolean) | null;
+}
 
 /**
  * The ringtone (design note 4.11): a friendly two-bar motif in C major pentatonic (no semitones, nothing
@@ -431,10 +494,19 @@ export function startRingtone(
   variant: "direct" | "group",
   s: Pick<VoiceSettings, "ringVolume" | "outputDeviceId"> = useVoiceSettings.getState().settings,
   engine: CueEngine = cueEngine,
+  hooks: RingtoneHooks = {},
 ): () => void {
   ringing?.stop();
   cueLog()?.played.push({ cue: "ringtone", own: false });
+  const vibrate = hooks.vibrate === undefined ? deviceVibrate() : hooks.vibrate;
+  let audibleNow: boolean | null = null;
+  const report = (a: boolean) => {
+    if (a === audibleNow) return;
+    audibleNow = a;
+    hooks.onAudible?.(a);
+  };
   let timer: ReturnType<typeof setInterval> | null = null;
+  let buzz: ReturnType<typeof setInterval> | null = null;
   let stopped = false;
   let bus: GainNode | null = null;
   let ctx: EngineContext | null = null;
@@ -446,6 +518,11 @@ export function startRingtone(
     stopped = true;
     if (timer) clearInterval(timer);
     timer = null;
+    if (buzz) {
+      clearInterval(buzz);
+      buzz = null;
+      vibrate?.(0);
+    }
     if (ctx && bus) {
       // A short fade instead of a click, then everything scheduled ahead is cancelled.
       const now = ctx.currentTime;
@@ -468,10 +545,16 @@ export function startRingtone(
   ringing = { stop };
   if (!audible) return stop;
   engine.hold();
+  if (vibrate) {
+    vibrate(RING_VIBRATION);
+    buzz = setInterval(() => vibrate(RING_VIBRATION), RING_LOOP * 1000);
+  }
   const loop = async () => {
     const c = await engine.ready(s.outputDeviceId);
+    if (stopped) return;
+    report(!!c);
     // Blocked until the next user gesture (autoplay policy): the next tick tries again.
-    if (!c || stopped) return;
+    if (!c) return;
     if (!bus) {
       ctx = c;
       bus = c.createGain();

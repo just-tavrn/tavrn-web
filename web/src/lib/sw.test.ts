@@ -21,7 +21,8 @@ const source = readFileSync(resolve(__dirname, "../../public/sw.js"), "utf8");
 function load() {
   const handlers: Record<string, Handler> = {};
   const shown: Shown[] = [];
-  const windows: Array<{ url: string; focus: ReturnType<typeof vi.fn>; postMessage: ReturnType<typeof vi.fn> }> = [];
+  const windows: Array<{ url: string; focus: ReturnType<typeof vi.fn>; postMessage: ReturnType<typeof vi.fn>; visibilityState?: string }> = [];
+  const existing: Array<{ tag: string }> = [];
   const scope = {
     addEventListener: (type: string, fn: Handler) => {
       handlers[type] = fn;
@@ -31,6 +32,7 @@ function load() {
       showNotification: vi.fn(async (title: string, options: Shown["options"]) => {
         shown.push({ title, options });
       }),
+      getNotifications: vi.fn(async (filter?: { tag?: string }) => existing.filter((n) => !filter?.tag || n.tag === filter.tag)),
     },
     clients: { matchAll: vi.fn(async () => windows), openWindow: vi.fn(async () => null), claim: vi.fn(async () => undefined) },
     location: { origin: "https://chat.example.org" },
@@ -43,7 +45,7 @@ function load() {
     handlers[type]!({ ...event, waitUntil: (p: Promise<unknown>) => pending.push(p) });
     await Promise.all(pending);
   };
-  return { scope, handlers, shown, windows, dispatch, helpers: scope.tavrnPush };
+  return { scope, handlers, shown, windows, existing, dispatch, helpers: scope.tavrnPush };
 }
 
 const push = (payload: unknown) => ({ data: { json: () => payload } });
@@ -134,5 +136,29 @@ describe("service worker", () => {
     expect(windows[0]!.postMessage).toHaveBeenCalledWith({ type: "tavrn.push.open", url: "/rooms/R1/channels/C1" });
     expect(windows[0]!.focus).toHaveBeenCalled();
     expect(scope.clients.openWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it("rings by push only where no page of the client is visible (a visible page rings itself)", async () => {
+    const { dispatch, shown, windows, existing } = load();
+    const home = "chat.example.org";
+    const ring = { v: 1, type: "call", node: home, local: true, conversation_id: "D1", conversation_kind: "dm", sender: "Alice", encrypted: true };
+    // A visible tab got `call.ring` over its WebSocket and rings (or shows the notification itself when sound is blocked).
+    windows.push({ url: `https://${home}/friends`, focus: vi.fn(), postMessage: vi.fn(), visibilityState: "visible" });
+    await dispatch("push", push(ring));
+    expect(shown).toHaveLength(0);
+    // Hidden or frozen (a background tab, the screen off): the push rings, vibrating where the platform allows it.
+    windows[0]!.visibilityState = "hidden";
+    await dispatch("push", push(ring));
+    expect(shown).toHaveLength(1);
+    expect(shown[0]!.options).toMatchObject({ tag: `${home}|D1`, renotify: true, requireInteraction: true });
+    expect((shown[0]!.options as { vibrate?: number[] }).vibrate?.length).toBeGreaterThan(0);
+    // The page already showed this call's notification: replaced silently, no second alert.
+    existing.push({ tag: `${home}|D1` });
+    await dispatch("push", push(ring));
+    expect(shown[1]!.options.renotify).toBe(false);
+    // Other pushes are unaffected by a visible page (the node sends them only without a connection anyway).
+    windows[0]!.visibilityState = "visible";
+    await dispatch("push", push({ v: 1, type: "test", node: home, local: true, encrypted: false }));
+    expect(shown).toHaveLength(3);
   });
 });
