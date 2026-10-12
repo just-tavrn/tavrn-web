@@ -598,6 +598,7 @@
   "messages.system.encryption_off": "{by} turned encryption off.",
   "composer.message": "Message",
   "composer.send": "Send",
+  "composer.pasted_image": "Image",
   "composer.attach": "Attach file",
   "composer.pick_file": "Choose file",
   "composer.remove": "Remove {name}",

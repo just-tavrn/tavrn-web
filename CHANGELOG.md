@@ -58,6 +58,9 @@ First public release of the web client and the desktop apps.
 
 ### Fixed
 
+- An image pasted from the clipboard no longer keeps the name the system made up (`image.png`, `{GUID}.png` on
+  Windows): it is named "Image <date> <time>.<ext>" (de: "Bild …"); a file copied from a file manager keeps its
+  real name, nobody is asked (#95).
 - The message composer's input row has one height again: the text field, the attach, spoiler, emoji, GIF and send
   buttons are all 40 px tall and centred, so the cursor of a single line sits in the middle of the row; the growth on
   line breaks and the focused overlay growth are unchanged (#93).
