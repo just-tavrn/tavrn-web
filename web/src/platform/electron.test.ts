@@ -14,7 +14,7 @@ const detached = () => document.implementation.createHTMLDocument("app");
 const notImplemented = (name: string) => () => Promise.reject(new Error(`not implemented: ${name}`));
 
 /** A bridge as the preload exposes it, with the shell's answers as fakes. */
-function fakeBridge(config: Partial<ShellConfig> = {}, updater = false) {
+function fakeBridge(config: Partial<ShellConfig> = {}, updater = false, passkeys = { available: true, present: 1, usable: 1 }) {
   let listener: ((e: BridgeEvent) => void) | null = null;
   const state = { node: config.node ?? null, web: config.web ?? null, domain: config.domain ?? null };
   const bridge = {
@@ -70,6 +70,11 @@ function fakeBridge(config: Partial<ShellConfig> = {}, updater = false) {
       }),
       unregisterHotkey: vi.fn(async () => {}),
       setHotkeysEnabled: vi.fn(async (enabled: boolean) => enabled),
+    },
+    passkeys: {
+      passkeyCreate: vi.fn(async (_options: { [key: string]: unknown }) => ({ credential: { id: "Y3JlZA", rawId: "Y3JlZA", type: "public-key" } as { [key: string]: unknown }, prf: null as string | null })),
+      passkeyGet: vi.fn(async (_options: { [key: string]: unknown }) => ({ credential: { id: "Y3JlZA" } as { [key: string]: unknown }, prf: "BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU" as string | null })),
+      passkeyStatus: vi.fn(async () => ({ ...passkeys })),
     },
     events: {
       subscribe: vi.fn((handler: (e: BridgeEvent) => void) => {
@@ -325,6 +330,31 @@ describe("the shell's other parts through the bridge", () => {
     expect(bridge.keychain.keychainSet).toHaveBeenCalledWith("alice@tavrn.example", new Uint8Array(32));
     await p.keystore!.delete("alice@tavrn.example");
     expect(bridge.keychain.keychainDelete).toHaveBeenCalledWith("alice@tavrn.example");
+  });
+
+  it("passkeys: the shell's native ceremonies with security keys, and the keys plugged in on demand", async () => {
+    const { bridge } = fakeBridge({ node: "https://tavrn.example" });
+    const p = await createElectronPlatform(bridge, detached());
+    const options = { publicKey: { challenge: "AAAA", rp: { id: "tavrn.example", name: "tavrn" } } };
+    await expect(p.passkeys!.create(options)).resolves.toMatchObject({ credential: { id: "Y3JlZA" }, prf: null });
+    expect(bridge.passkeys.passkeyCreate).toHaveBeenCalledWith(options);
+    const got = await p.passkeys!.get({ publicKey: { challenge: "AAAA" } });
+    expect(got.prf).toEqual(new Uint8Array(32).fill(5));
+    bridge.passkeys.passkeyGet.mockRejectedValueOnce("passkey.cancelled" as never);
+    await expect(p.passkeys!.get({ publicKey: { challenge: "AAAA" } })).rejects.toMatchObject({ name: "NotAllowedError" });
+    bridge.passkeys.passkeyStatus.mockResolvedValueOnce({ available: true, present: 2, usable: 1 });
+    await expect(p.passkeys!.securityKeys!()).resolves.toEqual({ present: 2, usable: 1 });
+  });
+
+  it("passkeys: none without the shell's native path, or in a shell older than it", async () => {
+    const { bridge } = fakeBridge({ node: "https://tavrn.example" }, false, { available: false, present: 0, usable: 0 });
+    expect((await createElectronPlatform(bridge, detached())).passkeys).toBeUndefined();
+    const { bridge: old } = fakeBridge({ node: "https://tavrn.example" });
+    const { passkeys: _, ...without } = old;
+    expect((await createElectronPlatform(without as unknown as TavrnShellBridge, detached())).passkeys).toBeUndefined();
+    const { bridge: broken } = fakeBridge({ node: "https://tavrn.example" });
+    broken.passkeys.passkeyStatus.mockRejectedValueOnce(new Error("not implemented: passkeyStatus") as never);
+    expect((await createElectronPlatform(broken, detached())).passkeys).toBeUndefined();
   });
 
   it("downloads: streamed to the shell in 4 MiB pieces, aborted when a piece fails", async () => {

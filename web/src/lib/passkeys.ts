@@ -3,7 +3,8 @@
  * Browser side of WebAuthn (PROTOCOL.md §5a.4): registration, second-factor and passkey-only login,
  * and evaluating the PRF for the secret storage (ENCRYPTION.md §2.4). The PRF output is returned to
  * the caller for local use only; the JSON sent to the node never contains it. The ceremonies run in the
- * browser (`navigator.credentials`), or natively in the Windows app (`platform().passkeys`).
+ * browser (`navigator.credentials`), or natively in the apps (`platform().passkeys`: Windows, Android, and the Linux
+ * app with a security key).
  */
 import { useEffect } from "react";
 import { create } from "zustand";
@@ -11,7 +12,7 @@ import { secretStoragePrfInput } from "@tavrn/crypto";
 import { b64urlDecode, b64urlEncode, credentialToJSON, parseCreationOptions, parseRequestOptions, prfEnabled, prfFirst, stripPrfResults, type AuthResponse, type ReauthToken, type TavrnApi, type WebauthnRegistered, type DeviceProof } from "@tavrn/sdk";
 import { ensureCrypto } from "@tavrn/e2ee";
 import { platform, type Platform } from "../platform";
-import type { WebauthnJson } from "../platform/types";
+import type { SecurityKeys, WebauthnJson } from "../platform/types";
 import { publicApi } from "./api";
 
 /** What the home node publishes about its relying party (`webauthn` of `GET /node`, PROTOCOL.md §5a.4). */
@@ -52,31 +53,56 @@ export function loadNodeWebauthn(): Promise<NodeWebauthn> {
   return nodeWebauthnPromise;
 }
 
-/** Tests: forget what the node published. */
+/** Tests: forget what the node published (and the security keys seen). */
 export function resetNodeWebauthn(): void {
   nodeWebauthnPromise = null;
   useNodeWebauthn.setState({ rpId: null, origins: null, loaded: false, answered: false });
+  useSecurityKeys.setState({ keys: null });
+}
+
+/** The security keys plugged in, for the Linux app (null until the shell answered). */
+export const useSecurityKeys = create<{ keys: SecurityKeys | null }>(() => ({ keys: null }));
+
+/** Asks the shell for the security keys plugged in now (the Linux app; elsewhere nothing happens). */
+export async function refreshSecurityKeys(p: Platform = platform()): Promise<SecurityKeys | null> {
+  const ask = p.passkeys?.securityKeys;
+  if (!ask) return null;
+  const keys = await ask().catch(() => null);
+  const old = useSecurityKeys.getState().keys;
+  if (keys?.present !== old?.present || keys?.usable !== old?.usable) useSecurityKeys.setState({ keys });
+  return keys;
 }
 
 /**
  * Why passkeys cannot run here, or null when they can:
- * - `platform`: no passkeys here (the Linux app, Android below 14, a browser without WebAuthn);
+ * - `platform`: no passkeys here (Android below 14, a browser without WebAuthn, an app without a native path);
  * - `pending`: the Android app does not know yet whether the node accepts its origin;
- * - `node`: the Android app could, but the node does not list the app's origin in `webauthn.origins`.
+ * - `node`: the Android app could, but the node does not list the app's origin in `webauthn.origins`;
+ * - `key`: the Linux app runs passkeys on a FIDO2 security key only, and none is plugged in;
+ * - `key_access`: a security key is plugged in, but this system does not let the app open it (udev).
  * In each case the apps sign in with a passkey on the node's page in the browser (the connect flow).
  */
-export type PasskeyBlocker = "platform" | "pending" | "node";
+export type PasskeyBlocker = "platform" | "pending" | "node" | "key" | "key_access";
 
 /**
- * Passkeys in the Windows app run natively (`p.passkeys`); the other desktop shells have none. The Android app runs
- * them through Android's Credential Manager (Android 14+), which signs with the app's origin: only while the home node
- * accepts that origin (docs/ANDROID.md "Passkeys"). Browsers need `navigator.credentials`.
+ * Passkeys in the Windows app run natively (`p.passkeys`), in the Linux app natively with a security key plugged in
+ * (`p.passkeys.securityKeys`, docs/DESKTOP.md "Passkeys on Linux"); the other desktop shells have none. The Android app
+ * runs them through Android's Credential Manager (Android 14+), which signs with the app's origin: only while the home
+ * node accepts that origin (docs/ANDROID.md "Passkeys"). Browsers need `navigator.credentials`.
  */
-export function passkeyBlocker(p: Platform = platform(), origins: readonly string[] | null = useNodeWebauthn.getState().origins): PasskeyBlocker | null {
+export function passkeyBlocker(
+  p: Platform = platform(),
+  origins: readonly string[] | null = useNodeWebauthn.getState().origins,
+  keys: SecurityKeys | null = useSecurityKeys.getState().keys,
+): PasskeyBlocker | null {
   if (p.android) {
     if (!p.passkeys || !p.android.origin) return "platform";
     if (!origins) return "pending";
     return origins.includes(p.android.origin) ? null : "node";
+  }
+  if (p.passkeys?.securityKeys) {
+    if (!keys?.present) return "key";
+    return keys.usable ? null : "key_access";
   }
   if (p.passkeys) return null;
   if (p.isDesktop) return "platform";
@@ -88,17 +114,36 @@ export function passkeysSupported(p: Platform = platform(), origins: readonly st
   return passkeyBlocker(p, origins) === null;
 }
 
-/** {@link passkeyBlocker} for components: asks the node in the Android app and renders again with its answer. */
-export function usePasskeyBlocker(): PasskeyBlocker | null {
+/** How often a mounted passkey view of the Linux app looks for a security key (it also looks when the window gets the focus). */
+export const SECURITY_KEY_POLL_MS = 2_000;
+
+/**
+ * {@link passkeyBlocker} for components: asks the node in the Android app, and in the Linux app looks for a security
+ * key while `active` (every {@link SECURITY_KEY_POLL_MS} and on focus), rendering again with the answers.
+ */
+export function usePasskeyBlocker(active = true): PasskeyBlocker | null {
   const origins = useNodeWebauthn((s) => s.origins);
   const loaded = useNodeWebauthn((s) => s.loaded);
   const answered = useNodeWebauthn((s) => s.answered);
+  const keys = useSecurityKeys((s) => s.keys);
   const p = platform();
   const asks = !!p.android && !!p.passkeys && !!p.android.origin;
   useEffect(() => {
     if (asks) void loadNodeWebauthn();
   }, [asks]);
-  const blocker = passkeyBlocker(p, origins);
+  const looksForKeys = active && !!p.passkeys?.securityKeys;
+  useEffect(() => {
+    if (!looksForKeys) return;
+    const look = () => void refreshSecurityKeys(p);
+    look();
+    const timer = setInterval(look, SECURITY_KEY_POLL_MS);
+    window.addEventListener("focus", look);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", look);
+    };
+  }, [looksForKeys, p]);
+  const blocker = passkeyBlocker(p, origins, keys);
   if (blocker !== "pending" || !loaded) return blocker;
   // An older node without the list does not accept the app; an unreachable one: the browser as before, no reason.
   return answered ? "node" : "platform";
@@ -118,7 +163,7 @@ interface Ceremony {
   prfEnabled: boolean;
 }
 
-/** `navigator.credentials.create`, or the Windows app's native registration. */
+/** `navigator.credentials.create`, or the apps' native registration. */
 async function createCredential(options: WebauthnJson): Promise<Ceremony> {
   const native = platform().passkeys;
   if (native) {
@@ -131,7 +176,7 @@ async function createCredential(options: WebauthnJson): Promise<Ceremony> {
   return { json: stripPrfResults(credentialToJSON(cred)), id: cred.id, prf: prfFirst(cred), prfEnabled: prfEnabled(cred) };
 }
 
-/** `navigator.credentials.get`, or the Windows app's native assertion. */
+/** `navigator.credentials.get`, or the apps' native assertion. */
 async function getAssertion(options: WebauthnJson): Promise<Ceremony> {
   const native = platform().passkeys;
   if (native) {

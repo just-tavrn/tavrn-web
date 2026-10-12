@@ -23,6 +23,9 @@ import { Hotkeys, nativeKeyListener, registerHotkeyHandlers } from "./hotkeys.ts
 import { IpcRegistry, fromMainPage, type IpcEventLike } from "./ipc.ts";
 import { BACKEND_ENV, Keychain, passwordStoreSwitch, registerKeychainHandlers, safeStorageCipher } from "./keychain.ts";
 import { Notifier, registerNotifyHandlers } from "./notify.ts";
+import { passkeyWindow } from "./passkey_window.ts";
+import { nativePasskeyModule, Passkeys, registerPasskeyHandlers, settingsOrigin } from "./passkeys.ts";
+import { softKeyFromEnv } from "./passkeys_mock.ts";
 import { APP_SCHEME, APP_SCHEME_PRIVILEGES, installAppProtocol } from "./protocol.ts";
 import { HttpFetcher, resolveNode, systemSrv } from "./resolve.ts";
 import { registerShellHandlers } from "./shell.ts";
@@ -173,6 +176,15 @@ function main(): void {
       const hotkeys = new Hotkeys(nativeKeyListener(join(here, "../native/keywatch.node")), (event) => void ctx.events.send({ channel: "hotkeys", event }));
       registerHotkeyHandlers(ctx.registry, { hotkeys });
       app.on("will-quit", () => hotkeys.shutdown());
+    },
+    // Passkeys with FIDO2 security keys over USB (Linux), the PIN and the touch prompt in the shell's own dialog; a
+    // development build takes the software key of the specs instead when TAVRN_DESKTOP_TEST_PASSKEYS asks for it.
+    (ctx) => {
+      const native = (!app.isPackaged ? softKeyFromEnv(process.env) : null) ?? nativePasskeyModule(join(here, "../native/passkeys.node"));
+      const prompt = passkeyWindow({ mainWindow: ctx.mainWindow, preload: join(here, "../preload/passkey.cjs"), locale: () => app.getLocale() });
+      const passkeys = new Passkeys({ native, origin: () => settingsOrigin(ctx.settings), prompt });
+      registerPasskeyHandlers(ctx.registry, { passkeys });
+      app.on("will-quit", () => passkeys.cancel());
     },
   ];
   for (const part of parts) part(context);

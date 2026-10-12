@@ -17,7 +17,10 @@ export interface VerifyResult {
 export function SecondFactorVerify({ api, preauthToken, methods, onSession, onCancel }: { api: TavrnApi; preauthToken: string; methods: string[]; onSession: (r: VerifyResult) => void; onCancel: () => void }) {
   const t = useT();
   const hasTotp = methods.includes("totp");
-  const hasPasskey = methods.includes("webauthn") && usePasskeyBlocker() === null;
+  const blocker = usePasskeyBlocker(methods.includes("webauthn"));
+  const hasPasskey = methods.includes("webauthn") && blocker === null;
+  // The Linux app: the passkey on a security key appears once the key is plugged in.
+  const keyHint = methods.includes("webauthn") && (blocker === "key" || blocker === "key_access") ? t(blocker === "key" ? "verify.insert_key" : "passkey.key_no_access") : null;
   const [mode, setMode] = useState<"totp" | "recovery">(hasTotp ? "totp" : "recovery");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +65,11 @@ export function SecondFactorVerify({ api, preauthToken, methods, onSession, onCa
         </Button>
       </form>
       <div className="flex flex-col items-center gap-1 text-sm">
+        {keyHint && (
+          <p className="text-center text-xs text-fg-2" role="status" data-testid="verify-insert-key">
+            {keyHint}
+          </p>
+        )}
         {hasPasskey && (
           <Button variant="ghost" disabled={busy} onClick={() => void run(async () => {
             const r = await passkeyLogin(api, { preauthToken });

@@ -12,8 +12,9 @@ import { electronBridge } from "./electronDetect";
 import type { BridgeEvent, TavrnShellBridge } from "./electronBridge";
 import { createElectronSaveFile } from "./electronFiles";
 import { externalUrl, installLinkHandler } from "./links";
+import { nativePasskeys } from "./tauriPasskeys";
 import { updateFailure } from "./updateErrors";
-import type { AppUpdater, HotkeyAction, HotkeyEvent, Platform, PlatformHotkeys, PlatformKeystore, PlatformNotifications, PlatformTray, TrayAction } from "./types";
+import type { AppUpdater, HotkeyAction, HotkeyEvent, Platform, PlatformHotkeys, PlatformKeystore, PlatformNotifications, PlatformPasskeys, PlatformTray, TrayAction } from "./types";
 
 const TRAY_ACTIONS: readonly string[] = ["mute", "deafen", "leave"] satisfies TrayAction[];
 const HOTKEY_ACTIONS: readonly string[] = ["push_to_talk", "priority", "toggle_mute", "toggle_deafen"] satisfies HotkeyAction[];
@@ -63,12 +64,34 @@ function eventHub(bridge: TavrnShellBridge) {
   return { onOpen: add(opens), onTray: add(actions), onHotkey: add(hotkeys), onLink };
 }
 
+/**
+ * The shell's native passkeys (Linux: FIDO2 security keys over USB, docs/DESKTOP.md "Passkeys on Linux"), when it has
+ * them: the Windows app's binding over the bridge's `passkeys` namespace, plus the keys plugged in (asked on demand).
+ */
+async function electronPasskeys(bridge: TavrnShellBridge): Promise<PlatformPasskeys | null> {
+  // Shells older than the feature have no `passkeys` namespace.
+  const native = (bridge as Partial<TavrnShellBridge>).passkeys;
+  if (!native) return null;
+  const status = await native.passkeyStatus().catch(() => null);
+  if (!status?.available) return null;
+  const call = (cmd: string, args: Record<string, unknown>) => {
+    const options = args.options as { [key: string]: unknown };
+    return cmd === "passkey_create" ? native.passkeyCreate(options) : native.passkeyGet(options);
+  };
+  return {
+    ...nativePasskeys(call),
+    securityKeys: async () => {
+      const s = await native.passkeyStatus();
+      return { present: s.present, usable: s.usable };
+    },
+  };
+}
 
 /** The desktop platform over the Electron shell's bridge; `doc` receives the link handler (tests pass a detached document). */
 export async function createElectronPlatform(bridge: TavrnShellBridge | null = electronBridge(), doc: Document = document): Promise<Platform> {
   if (!bridge) throw new Error("not inside the Electron shell");
   const { shell } = bridge;
-  const [config, info] = await Promise.all([shell.getConfig(), shell.appInfo()]);
+  const [config, info, passkeys] = await Promise.all([shell.getConfig(), shell.appInfo(), electronPasskeys(bridge)]);
   let node = config.node;
   let web = config.web ?? null;
   let domain = config.domain ?? null;
@@ -169,6 +192,7 @@ export async function createElectronPlatform(bridge: TavrnShellBridge | null = e
     notifications,
     tray,
     saveFile: createElectronSaveFile(bridge.files),
+    ...(passkeys ? { passkeys } : {}),
   };
   installLinkHandler(doc, openExternal, platform.webOrigin);
   return platform;

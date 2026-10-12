@@ -62,8 +62,9 @@ export interface Platform {
   readonly android?: PlatformAndroid;
   /**
    * The apps' native passkeys, because the webview's origin can never be under the node's relying party id: the
-   * Windows WebAuthn API (docs/DESKTOP.md "Passkeys on Windows") and Android's Credential Manager (docs/ANDROID.md
-   * "Passkeys", Android 14+). Absent elsewhere (the browser uses `navigator.credentials`; Linux has no native path yet).
+   * Windows WebAuthn API (docs/DESKTOP.md "Passkeys on Windows"), FIDO2 security keys over USB in the Linux app
+   * ("Passkeys on Linux", with {@link PlatformPasskeys.securityKeys}) and Android's Credential Manager (docs/ANDROID.md
+   * "Passkeys", Android 14+). Absent elsewhere (the browser uses `navigator.credentials`).
    */
   readonly passkeys?: PlatformPasskeys;
 }
@@ -94,6 +95,19 @@ export interface PlatformPasskeys {
   create(options: WebauthnJson): Promise<NativePasskeyResult>;
   /** Assertion: the node's `{ publicKey }` of `webauthn/login/start` (or a local one with the PRF input). */
   get(options: WebauthnJson): Promise<NativePasskeyResult>;
+  /**
+   * The Linux app: the native path reaches only FIDO2 security keys on USB, so passkeys run in the app while one is
+   * plugged in (any other passkey, a phone or a password manager, goes through the browser). Asked on demand: the keys
+   * plugged in now, and whether the app may open them. Absent where the native path covers every passkey.
+   */
+  securityKeys?(): Promise<SecurityKeys>;
+}
+
+/** The FIDO security keys plugged in (`PlatformPasskeys.securityKeys`). */
+export interface SecurityKeys {
+  present: number;
+  /** Of those, the ones the app may open (udev grants the user of the seat access). */
+  usable: number;
 }
 
 export interface NodeChoice {

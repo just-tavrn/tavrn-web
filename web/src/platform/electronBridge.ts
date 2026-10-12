@@ -97,6 +97,22 @@ export interface ShellTrayStatus {
   close_to_tray: boolean;
 }
 
+/** What `passkeyStatus` answers: whether the shell has native passkeys, and the FIDO security keys plugged in. */
+export interface PasskeyStatus {
+  available: boolean;
+  /** FIDO security keys plugged in. */
+  present: number;
+  /** Of those, the ones the app may open (udev grants the user of the seat access). */
+  usable: number;
+}
+
+/** A native ceremony's answer (the Windows app's): the credential as `PublicKeyCredential.toJSON()`, the PRF output apart. */
+export interface NativePasskeyAnswer {
+  credential: { [key: string]: unknown };
+  /** base64url, 32 bytes, for the key store only; null without PRF. */
+  prf: string | null;
+}
+
 /**
  * Events of the Tauri shell's `shell_events` channel: a notification click, a tray menu action; `link`: deep links
  * wait for the client (`shell.takeLinks`).
@@ -167,6 +183,16 @@ export interface TavrnShellBridge {
     unregisterHotkey(action: HotkeyAction): Promise<void>;
     /** Answers whether the key listener runs now. */
     setHotkeysEnabled(enabled: boolean): Promise<boolean>;
+  };
+  /**
+   * Native passkeys with FIDO2 security keys over USB (docs/DESKTOP.md "Passkeys on Linux"), the Windows app's
+   * `passkey_create` and `passkey_get`: the node's `{ publicKey }` options in; rejects with a `passkey.*` code. Absent in
+   * shells older than the feature.
+   */
+  readonly passkeys: {
+    passkeyCreate(options: { [key: string]: unknown }): Promise<NativePasskeyAnswer>;
+    passkeyGet(options: { [key: string]: unknown }): Promise<NativePasskeyAnswer>;
+    passkeyStatus(): Promise<PasskeyStatus>;
   };
   readonly events: {
     /** Every event of the shell for this window; returns the unsubscriber. */

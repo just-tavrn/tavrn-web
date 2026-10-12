@@ -48,7 +48,7 @@ const expectedSurface = {
   kind: "electron",
   window: "main",
   shell: ["appInfo", "closeConnect", "getConfig", "openConnect", "openExternal", "resolveNode", "setNode", "takeLinks"],
-  namespaces: ["events", "files", "hotkeys", "keychain", "kind", "notify", "shell", "tray", "updater", "window"],
+  namespaces: ["events", "files", "hotkeys", "keychain", "kind", "notify", "passkeys", "shell", "tray", "updater", "window"],
   node: "undefinedundefinedundefinedundefined",
   secure: true,
   origin: "app://tavrn",

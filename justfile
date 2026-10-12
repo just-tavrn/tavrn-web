@@ -95,15 +95,19 @@ electron-check: install
     scripts/check-spdx.sh
     node scripts/check-js-licenses.mjs
 
-# The Electron shell's system-wide key listener: the Node-API module around apps/desktop/crates/keywatch (needs Rust)
+# On Linux also the passkeys module around apps/desktop-electron/native/passkeys/fido (needs libudev-dev)
+# The Electron shell's native modules: the key listener (apps/desktop/crates/keywatch) as a Node-API module (needs Rust)
 electron-native: install
     pnpm --filter @tavrn/keywatch-native build
+    {{ if os() == "linux" { "pnpm --filter @tavrn/passkeys-native build" } else { "true" } }}
 
-# The key listener module: cargo fmt, clippy and cargo deny (and the crate's tests), its node test (key presses under xvfb-run)
+# The passkeys module (Linux): fmt, clippy, cargo deny, the mapping's tests (software authenticator, webauthn-rs), its node test
+# The native modules: cargo fmt, clippy and cargo deny (and the crates' tests), the node tests (key presses under xvfb-run)
 electron-native-check: electron-native
     cd apps/desktop/crates/keywatch && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked
     cd apps/desktop-electron/native/keywatch && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo deny check
     cd apps/desktop-electron/native/keywatch && env -u WAYLAND_DISPLAY xvfb-run -a pnpm test
+    {{ if os() == "linux" { "cd apps/desktop-electron/native/passkeys && cargo fmt --all --check && cargo clippy --workspace --all-targets --locked -- -D warnings && cargo test -p tavrn-fido --locked && cargo deny check && pnpm test" } else { "true" } }}
 
 # The Linux packages of the Electron shell (.AppImage and .deb in apps/desktop-electron/release/) from web/dist
 electron-package: build electron-native

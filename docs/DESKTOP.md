@@ -324,7 +324,8 @@ While it waits the app offers "Open the page again", **"Open in the browser inst
 browser; the app keeps polling) and "Cancel" instead of its own form. On Linux the sign-in window cannot use passkeys
 (WebKitGTK has no WebAuthn, and Electron offers no WebAuthn dialog of its own on Linux) and the app says so: passkeys
 work through the browser there (the key in the fragment goes along, so the passkey unlocks the app from the browser
-too); on Windows (WebView2) they work in the window. Nodes without `connect.app` keep password and TOTP in the app;
+too), unless they live on a security key, which the Linux app uses itself ([Passkeys on Linux](#passkeys-on-linux));
+on Windows (WebView2) they work in the window. Nodes without `connect.app` keep password and TOTP in the app;
 their passkeys, SSO and captcha need a browser.
 
 **The page's own session after the handoff.** Signing in on the node's page creates a session (a device) of the page
@@ -368,7 +369,72 @@ browser does on Windows (`src-tauri/src/passkey.rs`, the commands `passkey_creat
 - Errors become the browser's: cancelled, timed out or no matching passkey → "The passkey prompt was cancelled";
   an excluded authenticator → "already holds a passkey".
 
-On Linux (the Electron shell) passkeys keep going through the browser (no native path yet); macOS has no build.
+On Linux the Electron shell runs passkeys on FIDO2 security keys itself ([Passkeys on Linux](#passkeys-on-linux));
+macOS has no build.
+
+### Passkeys on Linux
+
+Linux has no system WebAuthn API, Electron offers no WebAuthn dialog there, and the app's window (`app://tavrn`) can
+never run a passkey of the node anyway. The Linux app (the Electron shell) therefore talks to **FIDO2 security keys
+over USB** itself, with the contract of the Windows app (`passkey_create`, `passkey_get`; on the bridge
+`passkeys.passkeyCreate`, `passkeys.passkeyGet`):
+
+- The client passes the node's options unchanged; the shell takes the **web origin of the node the app is connected
+  to** from its settings (`web`, else the node URL; never the page's), writes `clientDataJSON` with it as a browser
+  does and hands its SHA-256 to the key; a relying party id this origin's host is not equal to or a subdomain of is
+  refused (`passkey.refused`) before any key is asked. The node verifies the answer as a browser's; no node setting
+  is needed. The answer is `PublicKeyCredential.toJSON()` (the attestation replaced by `none`, as browsers do when the
+  node asks for none), the PRF output apart, for the key store only.
+- **CTAP2 over USB HID** through the native module `apps/desktop-electron/native/passkeys` (napi-rs, like the key
+  listener): its crate `fido/` maps the options to the requests of Mozilla's `authenticator` crate, a browser's CTAP
+  library on Linux, with its pure-Rust crypto (no OpenSSL, no NSS). It finds the keys through udev (`libudev.so.1`,
+  which every systemd distribution has; the `.deb` depends on `libudev1`), also keys plugged in while it waits, lets
+  the user pick one of several by touching it, and speaks the PIN protocol (versions 1 and 2) when the node asks for
+  user verification. Discoverable credentials (resident keys) where the key can store them, so "Sign in with a passkey"
+  works without a user name; the node asks for them as "preferred".
+- **The PRF (the key store unlock)** is WebAuthn's `prf` extension over the key's `hmac-secret`: the crate derives the
+  salt as WebAuthn does (SHA-256 of `"WebAuthn PRF"`, a zero byte and the input), so a security key gives the same PRF
+  output in the app as in a browser, and a passkey registered in either unlocks the encrypted messages in both. Keys
+  without `hmac-secret` (older FIDO2 keys, U2F-only keys) still sign in; the recovery key unlocks.
+- **The shell's dialog.** A ceremony opens a small modal window of the shell over the app (`src/main/passkey_window.ts`,
+  `passkey_dialog.ts`, its preload `src/preload/passkey.ts`; static page, no script, the screen-share picker's
+  hardening): "Plug in your security key and touch it", "Touch your security key", "touch the one you want to use"
+  for several keys, the choice between several passkeys of the site on one key, and **the key's PIN**. The PIN is
+  typed into that dialog, goes from there to the main process and the module, which hashes and encrypts it for the
+  key's PIN protocol; it never passes through the web page, and nothing stores or logs it. A wrong PIN is asked again
+  with the tries the key has left; a blocked PIN, too many wrong PINs, or a key without a PIN when the node requires
+  user verification end the ceremony with a message in the dialog (`passkey.failed` to the client). Cancel, Escape or
+  closing the dialog cancels (`passkey.cancelled`, the key stops blinking); the shell's timeout is the Windows app's
+  (the node's, 30 s to 10 min). English or German after the system's language.
+- **When the app offers it.** `passkeys.passkeyStatus` answers whether the module is there and how many FIDO keys are
+  plugged in (HID interfaces with the FIDO usage page 0xF1D0 in sysfs; the keys are not touched) and how many of them
+  the app may open. The client asks on demand: when a view with a passkey button appears, every 2 seconds while it is
+  shown and when the window gets the focus (`usePasskeyBlocker` in `web/src/lib/passkeys.ts`). With a key plugged in,
+  registration (Settings → Security and at registration), the passkey sign-in and second factor, re-authentication and
+  the PRF unlock run in the app. Without one the passkey goes through the node's page in the browser as before
+  ("Signing in"), and the app says that it takes security keys itself; the passkey form asks to plug one in.
+- **Access to the key (udev).** The key's device node `/dev/hidraw*` belongs to root; systemd (244 and newer) marks
+  FIDO keys (`60-fido-id.rules`) and gives the user of the local seat access (`70-uaccess.rules`), so on current
+  distributions (Ubuntu 20.04, Debian 11, Fedora 32 and newer) nothing has to be set up. Where a key is plugged in but
+  the app may not open it, Settings says so. On a system older than systemd 244, install the distribution's rules
+  for FIDO keys (`libu2f-udev` on Debian and Ubuntu, the `libfido2` package's `70-u2f.rules` on Fedora and others).
+  Where nobody holds a seat (no systemd-logind, so no `uaccess`), a rule gives a group access instead (as root; the
+  user joins the group, then unplug and plug in the key):
+
+  ```sh
+  cat > /etc/udev/rules.d/70-tavrn-fido.rules <<'RULE'
+  # FIDO security keys (HID usage page 0xF1D0, marked by systemd's fido_id): read and write for the group plugdev
+  KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ENV{ID_FIDO_TOKEN}=="1", GROUP="plugdev", MODE="0660"
+  RULE
+  udevadm control --reload-rules && udevadm trigger
+  ```
+
+  The `.deb` ships no rule of its own: systemd's covers every key on a desktop, and a rule of the app could only widen
+  the access.
+- **Not supported** (those passkeys keep going through the browser): platform authenticators such as fingerprint
+  readers through fprintd (they are not FIDO authenticators, and Linux has no system passkey store), passkeys on a
+  phone (hybrid over Bluetooth), password managers, keys over NFC readers or Bluetooth (the library has USB HID only).
+  The Windows fallback build of the Electron shell has no native passkeys (the Tauri app has the Windows API).
 
 ## Links into the app
 
@@ -604,7 +670,7 @@ What the browser gets from "the client is served by the node" and what the app d
 | Password with the second factor (TOTP, recovery code) | works | same | ordinary API calls with bearer tokens (the node allows every origin, without cookies) |
 | Registration, account settings, encryption, rooms, DMs, federation | work | same | same |
 | Sign-in with an account of another node | the app signs in at the account's own node instead: the address (`alice@home.example`) switches the app to that node; "Sign in with an account of another node" keeps password with TOTP or a recovery code | same | the origin connect flow returns the code to an `https://<domain>` origin, which the app does not have; the sign-in window is bound to the app's own node. |
-| Passkeys (WebAuthn) as second factor or sign-in | Windows: in the app through the Windows WebAuthn API ("Passkeys on Windows"), also registration and the PRF unlock; macOS: on the node's page in the sign-in window ("Signing in"), which also unlocks the encrypted messages (sealed unlock material) | through the system browser ("Open in the browser instead"), which unlocks the app as well | passkeys are bound to the node's domain; the app's origin is not the node's. On Linux the sign-in window has no WebAuthn (Electron offers no dialog of its own there, nor does the Tauri shell's WebKitGTK). Without `connect.app` on the node (and without the native path): not offered, TOTP or a recovery code is required. |
+| Passkeys (WebAuthn) as second factor or sign-in | Windows: in the app through the Windows WebAuthn API ("Passkeys on Windows"), also registration and the PRF unlock; macOS: on the node's page in the sign-in window ("Signing in"), which also unlocks the encrypted messages (sealed unlock material) | with a FIDO2 security key on USB in the app ("Passkeys on Linux"), also registration and the PRF unlock; any other passkey (a phone, a password manager) through the system browser ("Open in the browser instead"), which unlocks the app as well | passkeys are bound to the node's domain; the app's origin is not the node's. On Linux the sign-in window has no WebAuthn (Electron offers no dialog of its own there, nor does the Tauri shell's WebKitGTK). Without `connect.app` on the node (and without the native path): not offered, TOTP or a recovery code is required. |
 | Single sign-on (OpenID Connect) | on the node's page in the sign-in window | same | the node sends the browser back to its own web client (`<web>/sso/callback`), which is the page in the sign-in window. Without `connect.app`: not offered, an SSO-only node shows a notice. A later step may add an app-scheme callback (RFC 8252) as an accelerator. |
 | Captcha on login or registration | on the node's page in the sign-in window | same | the widget is a third-party script (CSP `script-src 'self'`) bound to the node's host name; the node's page loads it. Without `connect.app`: a notice, use the browser for that step. |
 | Web push | not offered | same | there is no service worker in the app (its pages are not served by the node). The app shows native notifications instead while it runs (also from the tray); nothing reaches a device where the app is not running. |
@@ -643,12 +709,14 @@ others (layout, bridge, profile, packages) exist for this shell only.
 | `src/main/downloads.ts` | the `files` namespace: the save dialog, chunked writes, the safety net ([Downloads (Electron)](#downloads-electron)) |
 | `src/main/tray.ts`, `tray_icon.ts` | the `tray` namespace, the tray icon and its menu, close to tray; the badged icons drawn from the logo ([Tray and close to tray (Electron)](#tray-and-close-to-tray-electron)) |
 | `src/main/hotkeys.ts` | the `hotkeys` namespace over the key listener module ([Hotkeys (Electron)](#hotkeys-electron)) |
+| `src/main/passkeys.ts`, `passkey_dialog.ts`, `passkey_window.ts` | the `passkeys` namespace over the passkeys module, the shell's dialog for the touch prompt, the PIN and the choices ([Passkeys on Linux](#passkeys-on-linux)); `passkeys_mock.ts` the software key of the specs |
 | `src/main/capture.ts`, `picker.ts` | screen sharing through the shell's own picker ([Voice, video and screen sharing (Electron)](#voice-video-and-screen-sharing-electron)) |
 | `src/main/updater.ts`, `minisign.ts` | updates: electron-updater, gated by the signed feed (minisign signatures verified with Node's Ed25519; [Updates](#updates)) |
-| `src/preload/` | `window.tavrnShell` (`index.ts` composes the namespaces, `invoke.ts` the calls, `events.ts` the subscription); `picker.ts`, the picker's preload |
+| `src/preload/` | `window.tavrnShell` (`index.ts` composes the namespaces, `invoke.ts` the calls, `events.ts` the subscription); `picker.ts`, the picker's preload; `passkey.ts`, the passkey dialog's |
 | `src/shared/bridge.ts` | the bridge's methods and channels, used by the preload and the main process |
 | `native/keywatch/` | `@tavrn/keywatch-native`: the system-wide key listener as a Node-API module |
-| `scripts/` | `dev.mjs` (`pnpm dev`), `copy-native.mjs` (the key listener module into `dist/native/`), `verify-feed.mjs` (the release's check of the signed feeds) |
+| `native/passkeys/` | `@tavrn/passkeys-native`: passkeys with FIDO2 security keys over USB as a Node-API module, around its crate `fido/` (Linux) |
+| `scripts/` | `dev.mjs` (`pnpm dev`), `copy-native.mjs` (the native modules into `dist/native/`), `verify-feed.mjs` (the release's check of the signed feeds) |
 | `e2e/` | the Playwright specs and `launch.ts`, which starts the app for them |
 | `electron-builder.config.mjs` | the `.AppImage` and `.deb` packages, the Windows fallback's NSIS installer, Electron's fuses, the update key in the package |
 
@@ -656,7 +724,8 @@ others (layout, bridge, profile, packages) exist for this shell only.
 
 The preload exposes one object to the bundled client, `window.tavrnShell`, with `kind: "electron"` and
 `window: "main"` (the only window with a preload) and the namespaces `shell`, `updater`, `files`, `keychain`, `notify`,
-`tray`, `hotkeys` and `events`. Its TypeScript shape is `TavrnShellBridge` in the client
+`tray`, `hotkeys`, `passkeys` (Linux; [Passkeys on Linux](#passkeys-on-linux)) and `events`. Its TypeScript shape is
+`TavrnShellBridge` in the client
 ([`web/src/platform/electronBridge.ts`](../web/src/platform/electronBridge.ts), types only, without imports); the
 preload type-checks against it through a path alias of its `tsconfig.json` (`@tavrn/web/electronBridge`), and a
 compile-time check keeps the method list of `src/shared/bridge.ts` equal to it. The method names are the Tauri
@@ -680,6 +749,7 @@ with `IpcRegistry.handle(namespace, method, argumentCheck, handler)`. The preloa
 | The renderer: `contextIsolation`, `sandbox`, no Node integration (also not in frames and workers), `webSecurity`, no insecure content, no `<webview>`, DevTools only in development; no application menu. The page never sees `ipcRenderer`, `require` or `process` (the smoke test checks). | `src/main/windows.ts`, `src/preload/` |
 | The bridge: only the main window's top frame showing the bundled client may call it (`event.sender` and `event.senderFrame` checked, its URL must be the app's), so the embeds cannot; every method's arguments are checked before its handler runs (hand-written guards: types, lengths, ranges, exact arity, no unknown fields; refused with `ipc.invalid_arguments`). Event subscribers get the payload only, never Electron's IPC event. | `src/main/ipc.ts`, `index.ts`, `src/preload/` |
 | Permissions: exactly these are granted, without a prompt and only to the main window's own origin (`app://tavrn`): the microphone and the camera (`media` with the types `audio` and `video`), `clipboard-sanitized-write` (the client's copy buttons), `fullscreen` (video) and `speaker-selection` (the output device); the Tauri shell's webviews allow the last three by default. Screen capture goes through the shell's picker (next row). Everything else is denied, for every page, and so are device permissions (HID, USB, serial). | `src/main/guard.ts`, `index.ts` |
+| Passkeys: the bridge's `passkeys` methods take the node's options (a plain object of at most 64 KiB) and run with the node's web origin from the settings, one ceremony at a time; the passkey dialog is static HTML without any script (`script-src 'none'`), filled by its own preload, which talks to its own window only (checked by sender); the PIN is typed there and never reaches a web page; the software key of the specs exists in development builds only. | `src/main/passkeys.ts`, `passkey_window.ts`, `src/preload/passkey.ts` |
 | Screen capture: `getDisplayMedia` of the main window's own page only, through the shell's picker window (screens and windows of other programs from `desktopCapturer`); the picker's page is static HTML without any script (`script-src 'none'`), filled by its own preload, which answers only one of the offered sources; Escape, Cancel or closing it refuses. | `src/main/capture.ts`, `picker.ts`, `src/preload/picker.ts` |
 | The sign-in window shows only the chosen node's `/connect?session=…` page (`openConnect` checks origin, path and parameters, as `guard.rs` does) and follows https pages from there (identity providers redirect), plain http only on this computer; it never loads the bundled client or `app:`, `file:`, `data:`, `javascript:` or `blob:` URLs, new windows go to the system browser. It has no preload and no IPC; its session (`persist:tavrn-connect`, apart from the app's) denies every permission, download and screen capture. | `src/main/connect.ts`, `guard.ts` |
 | The node URL is validated twice: in the client and again in the shell before it is stored. | `web/src/platform/nodeUrl.ts`, `src/main/node_url.ts` |
@@ -716,8 +786,9 @@ Signing in on the node's page works as in "Signing in", in the window of `connec
 by the marker `TavrnDesktopSignIn/1` that the window's session adds to the user agent (`inSignInWindow`,
 `web/src/platform/tauriDetect.ts` and `electronDetect.ts`; the Tauri shell names its window `connect` instead) and signs
 its own session out after the handoff. The window's storage is persistent (`persist:tavrn-connect`), kept apart from the
-app's profile. Passkeys: Electron offers no WebAuthn dialog of its own on Linux, so the client keeps saying that passkeys
-work through the browser there ("Open in the browser instead").
+app's profile. Passkeys: Electron offers no WebAuthn dialog of its own on Linux, so the window keeps saying that passkeys
+work through the browser there ("Open in the browser instead"); a passkey on a security key runs in the app itself
+([Passkeys on Linux](#passkeys-on-linux)), and the hint says so.
 
 ### Keys in the OS keychain (Electron)
 
@@ -855,7 +926,8 @@ valid key offer no updates (`updater: false`).
 `apps/desktop-electron/release/` (the app in `/opt/Tavrn`, the command `tavrn`, the menu entry `tavrn.desktop`, the
 licence and terms of "Licence and terms in the installers" as `resources/LICENSE.txt` and, in the `.deb`, as
 `/usr/share/doc/tavrn/LICENSE.txt`; Electron's and Chromium's licences ship next to the binary). The `.deb` depends on
-electron-builder's list plus ALSA and GBM (`libasound2t64 | libasound2`, `libgbm1`), which minimal systems lack.
+electron-builder's list plus ALSA and GBM (`libasound2t64 | libasound2`, `libgbm1`), which minimal systems lack, and
+`libudev1` for the passkeys module.
 
 Chromium's renderer sandbox needs unprivileged user namespaces, or a setuid `chrome-sandbox`. Ubuntu 24.04 and later
 restrict user namespaces with AppArmor; the `.deb`'s `postinst` therefore installs an AppArmor profile for
@@ -901,8 +973,8 @@ plain Node; the recipes and the launcher of the specs (`e2e/launch.ts`) remove i
 |---|---|
 | `just electron-dev` | the client's Vite dev server (`E2E_WEB_PORT`, default 5173) and the app in development mode on it (`TAVRN_DESKTOP_DEV_URL`); restart it after changing the shell |
 | `just electron-check` | `tsc` (main process, preload against the client's bridge types, harness), `node --test` of the main-process modules, SPDX headers and dependency licenses; typecheck and tests also run in `just check` |
-| `just electron-native` | the key listener module (`napi build --release`, a Rust toolchain; Cargo builds in `CARGO_TARGET_DIR` when set) |
-| `just electron-native-check` | the crate's and the module's `cargo fmt`, `clippy`, the crate's tests, `cargo deny check` of the module (licenses, advisories, bans, sources), its node test under `xvfb-run` |
+| `just electron-native` | the key listener module and, on Linux, the passkeys module (`napi build --release`, a Rust toolchain, for the passkeys `libudev-dev`; Cargo builds in `CARGO_TARGET_DIR` when set) |
+| `just electron-native-check` | the crates' and the modules' `cargo fmt`, `clippy`, the crates' tests (the passkeys crate's against a software authenticator and webauthn-rs, which build a vendored OpenSSL for the tests only: `perl` and `make`), `cargo deny check` of the modules (licenses, advisories, bans, sources), their node tests (the key listener's under `xvfb-run`) |
 | `just electron-package` | `web/dist`, the module, then `Tavrn-<version>.AppImage`, `tavrn_<version>_amd64.deb` and `latest-linux.yml` (electron-builder's update feed) in `apps/desktop-electron/release/`; on Windows `pnpm --filter @tavrn/desktop-electron package:win` writes the fallback's `tavrn-electron_<version>_x64-setup.exe` and `latest.yml` |
 | `just electron-e2e` | the Playwright specs under `xvfb-run` against the development build (`E2E_NODE_BIN` or `E2E_NODE_URL`, ports `E2E_NODE_PORT` and `E2E_WEB_PORT`, default 8300 and 5300); the packaged-app test takes the package from `E2E_ELECTRON_APP`, `TAVRN_DESKTOP_APP` or `release/linux-unpacked/tavrn` and is skipped without one |
 | `just electron-e2e-packaged` | every Playwright spec as CI runs them: the full smoke test and the packaged-app test against a package (`E2E_ELECTRON_APP`, default the AppImage of `release/`), the specs that reach the main process against the development build |
@@ -926,14 +998,27 @@ The tests:
   handlers) and its icons (the Tauri shell's drawing tests on the same logo, the PNG codec), downloads (the chunk
   writer, names that cannot leave the directory, the test hook, the safety net, 100 MB in 4 MiB pieces through the
   handlers with a fake dialog), the hotkeys (`src/main/hotkeys.test.ts`: the cases of `hotkeys.rs`, the key table
-  against `keys.rs`, the listener's life cycle with a fake listener, the bridge's handlers).
+  against `keys.rs`, the listener's life cycle with a fake listener, the bridge's handlers), the passkeys
+  (`passkeys.test.ts` with a fake module and a recording dialog: the origin from the settings, the steps in the
+  dialog, PIN and choices back to the module, cancel, one at a time, the codes, the handlers' argument checks;
+  `passkey_dialog.test.ts`: the page without script, the texts in both languages, the answers checked;
+  `passkeys_mock.test.ts`: the software key's signatures, PIN, choice and cancel).
+- The passkeys module (`native/passkeys`): the crate's tests (`cargo test -p tavrn-fido`: the options and their
+  bounds, the relying party rule and `clientDataJSON` with the Windows app's cases, the CTAP requests, the answers'
+  JSON with the PRF apart, the error codes, the PIN and choice plumbing, the FIDO report descriptors; and
+  `tests/soft_authenticator.rs`: tavrn-node's own options from webauthn-rs through the mapping to the software passkey
+  of `webauthn-authenticator-rs`, whose bytes are parsed as Mozilla's crate parses a key's, and back, accepted by
+  webauthn-rs exactly as the node verifies: registration, sign-in, the PRF request, another origin refused) and a node
+  test of the built module (refusals before any key is asked, one ceremony at a time, a cancel while it waits for a
+  key). A real key cannot be tested in CI.
 - The key listener: the crate's unit tests (and its X test, `xvfb-run -a cargo test -- --ignored`) and a node test of the
   built module (`native/keywatch/test/`: unknown keys refused, no X display, real key presses through xdotool under
   `xvfb-run` only).
 - Vitest (`web/src/platform/electron.test.ts`, `electronFiles.test.ts`, `index.test.ts`): the detection, the detection
   order, and the binding with a fake bridge (node choice, delegation, refusals, external links, updater and its refused
   signature, hotkeys,
-  events, keychain, tray, downloads in 4 MiB pieces); also the sign-in window's marker (`inSignInWindow` with and
+  events, keychain, tray, downloads in 4 MiB pieces, passkeys and the keys plugged in); `web/src/lib/passkeys.linux.test.ts`
+  (in-app passkeys while a security key is plugged in, asked on demand and on focus); also the sign-in window's marker (`inSignInWindow` with and
   without it).
 
 The Playwright specs (no WebDriver) all start the app through `e2e/launch.ts`: sandboxed, driven over the DevTools
@@ -956,6 +1041,13 @@ shows the client under test; the app gets its own `XDG_CONFIG_HOME`, always on x
   a screen is shared, Escape refuses. Last, the packaged app over CDP with `ELECTRON_RUN_AS_NODE=1` and `--inspect`
   (both ignored by the fuses) shows the bundled client and reaches the login page; it runs only when there is a package
   (`just electron-package` first).
+- `e2e/electron-passkeys.spec.ts`: passkeys with the software security key of a development build
+  (`TAVRN_DESKTOP_TEST_PASSKEYS=pin=<PIN>` or `nopin`; a package ignores it) in place of the native module, against the
+  node: the node's registration and sign-in options through the bridge, a wrong and the right PIN in the shell's dialog
+  (axe WCAG 2.2 AA on it), the node accepts both answers and the origin in `clientDataJSON` is the node's web client,
+  Escape cancels, a foreign relying party is refused without a dialog; then in the client: Settings → Security → Add
+  passkey (two touches with the PIN: the registration and the PRF), signing out, "Sign in with a passkey", and the
+  passkey's PRF unlocks the encrypted messages without the recovery key.
 - `e2e/electron-services.spec.ts`: a key survives a restart of the app in the real keyring (skipped without a Secret
   Service in the session, see below), a notification's click brings the hidden window back and the page receives its
   path (xvfb has no notification server: the test replaces `Notification` in the main process by a recorder and clicks

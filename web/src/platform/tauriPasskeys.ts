@@ -2,7 +2,8 @@
 /**
  * Passkeys of the Windows app (docs/DESKTOP.md "Passkeys"): the shell runs the ceremony through the Windows WebAuthn
  * API (`passkey_create`, `passkey_get` in `src-tauri/src/passkey.rs`) with the web origin of the node the app is
- * connected to, because the webview's own origin can never be under the node's relying party id. The shell answers
+ * connected to, because the webview's own origin can never be under the node's relying party id. The Linux app's
+ * shell answers the same commands with FIDO2 security keys over USB (`electron.ts`, "Passkeys on Linux"). The shell answers
  * with the credential as `PublicKeyCredential.toJSON()` and the PRF output apart (base64url); its error codes become
  * the DOMException names the client already explains (`describeError`).
  */
