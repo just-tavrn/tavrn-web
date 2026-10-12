@@ -58,6 +58,9 @@ First public release of the web client and the desktop apps.
 
 ### Fixed
 
+- The message composer's input row has one height again: the text field, the attach, spoiler, emoji, GIF and send
+  buttons are all 40 px tall and centred, so the cursor of a single line sits in the middle of the row; the growth on
+  line breaks and the focused overlay growth are unchanged (#93).
 - Android app: the full screen button of streams and cameras did nothing (the app's webview refused the Fullscreen
   API). Full screen now fills the screen with the system bars hidden (a swipe shows them for a moment), a wide video
   turns the phone to landscape, and the back gesture leaves full screen first (issue #74).

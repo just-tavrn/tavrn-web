@@ -343,7 +343,8 @@ function PickerPanel({ onPick, customEmojis }: { onPick: (emoji: string) => void
  * place computed on open stays right. Escape, a click outside, scrolling or resizing close it; focus moves
  * into the grid on open and back to the button on Escape.
  */
-export function EmojiPicker({ onPick, customEmojis = [], label }: { onPick: (emoji: string) => void; customEmojis?: CustomEmoji[]; label?: string }) {
+/** `triggerClassName` sizes the opening button (the composer's toolbar wants its 40 px squares; reactions keep 32 px). */
+export function EmojiPicker({ onPick, customEmojis = [], label, triggerClassName = "min-h-8 min-w-8" }: { onPick: (emoji: string) => void; customEmojis?: CustomEmoji[]; label?: string; triggerClassName?: string }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
@@ -399,7 +400,7 @@ export function EmojiPicker({ onPick, customEmojis = [], label }: { onPick: (emo
           setPos(null);
           setOpen((v) => !v);
         }}
-        className="min-h-8 min-w-8 rounded text-fg-2 hover:bg-bg-3 hover:text-fg-0"
+        className={`${triggerClassName} rounded text-fg-2 hover:bg-bg-3 hover:text-fg-0`}
       >
         🙂
       </button>
