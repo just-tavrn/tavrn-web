@@ -76,6 +76,12 @@ export const SpeakerIcon = (p: IconProps) => (
   </Svg>
 );
 
+export const BluetoothIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="m7 7 10 10-5 5V2l5 5L7 17" />
+  </Svg>
+);
+
 export const PipIcon = (p: IconProps) => (
   <Svg {...p}>
     <rect x="2" y="4" width="20" height="16" rx="2" />

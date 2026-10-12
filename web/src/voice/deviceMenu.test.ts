@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { findEntry, type MenuEntry, type MenuItem } from "../components/ContextMenu";
-import { voiceDeviceMenu, type DeviceMenuSlider, type VoiceDeviceMenuActions, type VoiceDeviceMenuContext } from "./deviceMenu";
-import { DEFAULT_SETTINGS, useVoiceSettings } from "./settings";
+import { cameraMenu, voiceDeviceMenu, type CameraMenuContext, type DeviceMenuSlider, type VoiceDeviceMenuActions, type VoiceDeviceMenuContext } from "./deviceMenu";
+import { DEFAULT_SETTINGS, SETTINGS_KEY, useVoiceSettings } from "./settings";
 
 const t = (key: string, params?: Record<string, string | number>) => (params ? `${key}:${JSON.stringify(params)}` : key);
 
@@ -182,5 +182,57 @@ describe("voiceDeviceMenu: sliders", () => {
       a.sliders["output-volume"]!.onChange(90);
       expect(useVoiceSettings.getState().settings.outputVolume).toBe(90);
     }
+  });
+});
+
+describe("cameraMenu", () => {
+  const cams = [...DEVICES, device("videoinput", "cam-2", "USB camera"), device("videoinput", "", "")];
+  const camCtx = (patch: Partial<CameraMenuContext> = {}): CameraMenuContext => ({ devices: cams, settings: { ...DEFAULT_SETTINGS }, phone: false, needsPermission: false, ...patch });
+
+  it("on a phone offers the front and the back camera, the front one by default", () => {
+    const a = actions();
+    const entries = cameraMenu(camCtx({ phone: true }), a, t);
+    expect(entries[0]).toEqual({ kind: "label", id: "label", label: "voice.menu.camera" });
+    expect(entries.filter((e): e is MenuItem => e.kind === "item").map((e) => [e.id, e.label, e.checked])).toEqual([
+      ["facing:user", "voice.menu.camera_front", true],
+      ["facing:environment", "voice.menu.camera_back", false],
+    ]);
+    // No device list and no settings link on a phone.
+    expect(devicesOf(entries)).toEqual([]);
+    expect(findEntry(entries, "settings")).toBeUndefined();
+  });
+
+  it("remembers the back camera per device and drops a chosen device for it", () => {
+    useVoiceSettings.getState().update({ cameraDeviceId: "cam-1" });
+    const a = actions();
+    item(cameraMenu(camCtx({ phone: true }), a, t), "facing:environment").onSelect?.();
+    expect(useVoiceSettings.getState().settings).toMatchObject({ cameraFacing: "environment", cameraDeviceId: "" });
+    expect(JSON.parse(localStorage.getItem(SETTINGS_KEY)!).cameraFacing).toBe("environment");
+    const again = cameraMenu(camCtx({ phone: true, settings: useVoiceSettings.getState().settings }), a, t);
+    expect(item(again, "facing:environment").checked).toBe(true);
+    expect(item(again, "facing:user").checked).toBe(false);
+  });
+
+  it("on a desktop lists the cameras like the settings page, plus “Settings…”", () => {
+    const a = actions();
+    const entries = cameraMenu(camCtx({ settings: { ...DEFAULT_SETTINGS, cameraDeviceId: "cam-2" } }), a, t);
+    expect(devicesOf(entries).map((e) => [e.id, e.label, e.checked])).toEqual([
+      ["device:", "voice.settings.default_device", false],
+      ["device:cam-1", "Webcam", false],
+      ["device:cam-2", "USB camera", true],
+    ]);
+    item(entries, "device:cam-1").onSelect?.();
+    expect(useVoiceSettings.getState().settings.cameraDeviceId).toBe("cam-1");
+    item(entries, "settings").onSelect?.();
+    expect(a.openSettings).toHaveBeenCalledTimes(1);
+    expect(findEntry(entries, "facing:user")).toBeUndefined();
+  });
+
+  it("offers “Show devices” while the camera names are hidden", () => {
+    const a = actions();
+    const entries = cameraMenu(camCtx({ devices: HIDDEN, needsPermission: true }), a, t);
+    expect(devicesOf(entries).map((e) => e.id)).toEqual(["device:"]);
+    item(entries, "show-devices").onSelect?.();
+    expect(a.unlock).toHaveBeenCalledTimes(1);
   });
 });

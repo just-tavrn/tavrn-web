@@ -60,6 +60,9 @@ fn main() {
         "android_save_chunk",
         "android_save_end",
         "android_save_abort",
+        "android_audio_routes",
+        "android_audio_route",
+        "android_orientation",
     ];
     // Windows: the whole C runtime is linked statically (+crt-static in .cargo/config.toml, for the prebuilt libwebrtc
     // of the native voice engine), so Tauri's own hybrid runtime (static vcruntime, dynamic ucrt) must stay out.

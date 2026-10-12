@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 /** The Android app's back gesture, app links and system bars (`androidShell.ts`), with a fake Android side. */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { applyInsets, canGoBack, closeTopLayer, linkRoute, onBackGesture, startAndroidShell } from "./androidShell";
+import { applyInsets, canGoBack, closeTopLayer, linkRoute, onBackGesture, routeOrientationLock, startAndroidShell } from "./androidShell";
 import { fakeAndroid } from "./androidTestPlatform";
 
 const home = { web: "https://app.tavrn.example", domain: "tavrn.example" };
@@ -87,6 +87,49 @@ describe("system bars", () => {
     expect(style.getPropertyValue("--safe-bottom")).toBe("48px");
     expect(style.getPropertyValue("--safe-left")).toBe("0px");
     expect(style.getPropertyValue("--keyboard")).toBe("300px");
+  });
+});
+
+/** A `screen.orientation` as Android's webview has it: `lock()` rejects (not implemented), `unlock()` does nothing. */
+function webviewOrientation(lock: (o: string) => Promise<void> = async () => Promise.reject(new DOMException("lockOrientation() is not available on this device.", "NotSupportedError"))) {
+  return { type: "portrait-primary", angle: 0, lock: vi.fn(lock), unlock: vi.fn(() => undefined) } as unknown as ScreenOrientation & { lock: (o: string) => Promise<void>; unlock: () => void };
+}
+
+describe("the Screen Orientation API in the app", () => {
+  it("locks natively what the webview refuses, and releases that lock again", async () => {
+    const android = fakeAndroid();
+    const orientation = webviewOrientation();
+    const stop = routeOrientationLock(android, orientation);
+    await orientation.lock("landscape");
+    expect(android.lockOrientation).toHaveBeenCalledWith("landscape");
+    orientation.unlock();
+    await vi.waitFor(() => expect(android.lockOrientation).toHaveBeenLastCalledWith(null));
+    stop();
+    // Stopped: the webview's own members again.
+    await expect(orientation.lock("landscape")).rejects.toThrow("not available");
+    expect(android.lockOrientation).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the webview's lock where it works", async () => {
+    const android = fakeAndroid();
+    const orientation = webviewOrientation(async () => undefined);
+    const stop = routeOrientationLock(android, orientation);
+    await orientation.lock("portrait");
+    orientation.unlock();
+    expect(android.lockOrientation).not.toHaveBeenCalled();
+    stop();
+  });
+
+  it("rejects as the standard API does when the app refuses too (not in fullscreen)", async () => {
+    const android = fakeAndroid();
+    vi.mocked(android.lockOrientation).mockRejectedValueOnce("orientation.refused");
+    const orientation = webviewOrientation();
+    const stop = routeOrientationLock(android, orientation);
+    await expect(orientation.lock("landscape")).rejects.toMatchObject({ name: "NotSupportedError" });
+    // Nothing was locked: unlocking does not call the app.
+    orientation.unlock();
+    expect(android.lockOrientation).toHaveBeenCalledTimes(1);
+    stop();
   });
 });
 

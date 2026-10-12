@@ -12,6 +12,8 @@ export type BackgroundMode = "none" | "blur" | "image";
 /** Segmentation quality of background effects (`background.ts`). */
 export type BackgroundQuality = "fast" | "balanced" | "high";
 export type Resolution = "360p" | "720p" | "1080p" | "1440p" | "4k";
+/** A phone's front (`user`) or back (`environment`) camera (`facingMode`). */
+export type CameraFacing = "user" | "environment";
 
 /** Notification sounds (`cues.ts`). */
 export const CUE_NAMES = ["join", "leave", "mute", "unmute", "deafen", "undeafen", "stream_on", "stream_off", "connection_lost", "connection_restored", "ptt_on", "ptt_off", "priority_on", "priority_off"] as const;
@@ -32,6 +34,8 @@ export interface VoiceSettings {
   inputDeviceId: string;
   outputDeviceId: string;
   cameraDeviceId: string;
+  /** Phones and tablets without a chosen camera: the front or the back one (the camera button's menu). */
+  cameraFacing: CameraFacing;
   /** Percent, 0–200. */
   inputVolume: number;
   outputVolume: number;
@@ -85,6 +89,7 @@ export const DEFAULT_SETTINGS: VoiceSettings = {
   inputDeviceId: "",
   outputDeviceId: "",
   cameraDeviceId: "",
+  cameraFacing: "user",
   inputVolume: 100,
   outputVolume: 100,
   autoGain: true,
@@ -193,6 +198,7 @@ export function normalizeSettings(raw: unknown): VoiceSettings {
     inputDeviceId: str(r.inputDeviceId, d.inputDeviceId),
     outputDeviceId: str(r.outputDeviceId, d.outputDeviceId),
     cameraDeviceId: str(r.cameraDeviceId, d.cameraDeviceId),
+    cameraFacing: oneOf(r.cameraFacing, ["user", "environment"] as const, d.cameraFacing),
     inputVolume: num(r.inputVolume, d.inputVolume, 0, 200),
     outputVolume: num(r.outputVolume, d.outputVolume, 0, 200),
     autoGain: bool(r.autoGain, d.autoGain),
@@ -303,8 +309,17 @@ export function resolutionSize(r: Resolution | string): { width: number; height:
   return SIZES[r as Resolution] ?? SIZES["720p"];
 }
 
-/** Camera capture options within the node's limits (VOICE.md §4). */
-export function cameraOptions(s: VoiceSettings, limit: { max_resolution: string; max_fps: number }): { deviceId?: string; width: number; height: number; frameRate: number } {
+/**
+ * Camera capture options within the node's limits (VOICE.md §4). `phone`: the front or back camera when no camera was
+ * chosen by id; desktops never name a facing (an integrated camera reporting `user` would win over the system's default).
+ */
+export function cameraOptions(s: VoiceSettings, limit: { max_resolution: string; max_fps: number }, phone = false): { deviceId?: string; facingMode?: CameraFacing; width: number; height: number; frameRate: number } {
   const size = resolutionSize(limitResolution(s.cameraResolution, limit.max_resolution));
-  return { ...(s.cameraDeviceId ? { deviceId: s.cameraDeviceId } : {}), ...size, frameRate: Math.min(s.cameraFps, limit.max_fps || 30) };
+  const pick = s.cameraDeviceId ? { deviceId: s.cameraDeviceId } : phone ? { facingMode: s.cameraFacing } : {};
+  return { ...pick, ...size, frameRate: Math.min(s.cameraFps, limit.max_fps || 30) };
+}
+
+/** Phones and tablets (touch first, or the Android app): their cameras are "front" and "back", not a device list. */
+export function phoneCameras(): boolean {
+  return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
 }

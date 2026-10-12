@@ -50,7 +50,7 @@ import { markWeakDevice } from "./frames";
 import { TavrnKeyProvider } from "./keyProvider";
 import { VoiceError, voiceErrorMessage } from "./errors";
 import { channelKey, participantsOf, useVoicePresence } from "./presence";
-import { cameraOptions, resolutionSize, useVoiceSettings, type VoiceSettings } from "./settings";
+import { cameraOptions, phoneCameras, resolutionSize, useVoiceSettings, type VoiceSettings } from "./settings";
 import { withEntitlementCaps } from "./entitlementCaps";
 import { IDLE, SpeakingBatcher, isWatched, useSoundOverlays, useVoice, useWatchedStreams, type ParticipantMedia, type Quality, type VoiceTarget } from "./store";
 import { participantVolumes, type Volumes } from "./volume";
@@ -97,6 +97,8 @@ interface Session {
   mutedBeforeDeafen: boolean;
   clips: Map<string, Promise<AudioBuffer>>;
   background: BackgroundHandle | null;
+  /** Which camera the camera track was opened with (`cameraKey`); re-enabling reuses the track, so a change since then restarts it. */
+  cameraKey: string | null;
   /** Playback context of the remote audio (LiveKit's Web Audio mix); null without Web Audio. */
   audio: AudioContext | null;
   /** Analyser and ducking nodes per remote audio track. */
@@ -551,13 +553,34 @@ async function applySettings(s: Session, next: VoiceSettings, prev: VoiceSetting
     }
     if (next.outputVolume !== prev.outputVolume || next.userVolumes !== prev.userVolumes || next.streamVolumes !== prev.streamVolumes || next.streamWhileDeafened !== prev.streamWhileDeafened) applyVolumes(s);
     if (useVoice.getState().camera) {
-      if (next.cameraDeviceId !== prev.cameraDeviceId && next.cameraDeviceId) await s.room.switchActiveDevice("videoinput", next.cameraDeviceId);
+      if (next.cameraDeviceId !== prev.cameraDeviceId || next.cameraFacing !== prev.cameraFacing) await switchCamera(s, next);
       if (next.background !== prev.background || next.backgroundImage !== prev.backgroundImage || next.backgroundQuality !== prev.backgroundQuality) await startBackground(s);
       else if (next.blurStrength !== prev.blurStrength) await s.background?.setBlur(next.blurStrength);
     }
   } catch (e) {
     useToasts.getState().push({ kind: "warning", title: voiceErrorMessage(e) });
   }
+}
+
+/** The camera the settings name: a device id, else (phones) the facing. */
+const cameraKey = (conf: VoiceSettings) => (conf.cameraDeviceId ? `id:${conf.cameraDeviceId}` : phoneCameras() ? `facing:${conf.cameraFacing}` : "default");
+
+/**
+ * The running camera follows the settings without leaving the call: a camera chosen by id (`switchActiveDevice`), else
+ * the default camera or, on phones, the front or back one (the track restarts with the `facingMode` constraint; a
+ * phone cannot open both cameras at once, LiveKit stops the old track first and keeps the background effect).
+ */
+async function switchCamera(s: Session, next: VoiceSettings) {
+  s.cameraKey = cameraKey(next);
+  if (next.cameraDeviceId) {
+    await s.room.switchActiveDevice("videoinput", next.cameraDeviceId);
+    return;
+  }
+  const track = s.room.localParticipant.getTrackPublication(Track.Source.Camera)?.track;
+  if (!(track instanceof LocalVideoTrack)) return;
+  const opts = cameraOptions(next, s.info.limits.camera, phoneCameras());
+  await track.restartTrack({ ...(opts.facingMode ? { facingMode: opts.facingMode } : {}), resolution: { width: opts.width, height: opts.height, frameRate: opts.frameRate } });
+  refreshMedia(s);
 }
 
 async function cleanup(s: Session) {
@@ -721,6 +744,7 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
       mutedBeforeDeafen: false,
       clips: new Map(),
       background: null,
+      cameraKey: null,
       audio,
       taps: new Map(),
       detector: withAnalysers ? new SpeakingDetector() : null,
@@ -924,12 +948,18 @@ export async function setCamera(on: boolean): Promise<void> {
   if (on && !s.info.limits.camera.enabled) return;
   try {
     if (on) {
-      const opts = cameraOptions(settings(), s.info.limits.camera);
+      const conf = settings();
+      const opts = cameraOptions(conf, s.info.limits.camera, phoneCameras());
+      // Turning the camera on again unmutes the earlier track with its old constraints: a camera chosen since then
+      // (the menu while the camera was off) restarts it.
+      const reused = !!s.room.localParticipant.getTrackPublication(Track.Source.Camera) && s.cameraKey !== null && s.cameraKey !== cameraKey(conf);
       await s.room.localParticipant.setCameraEnabled(
         true,
-        { ...(opts.deviceId ? { deviceId: opts.deviceId } : {}), resolution: { width: opts.width, height: opts.height, frameRate: opts.frameRate } },
+        { ...(opts.deviceId ? { deviceId: opts.deviceId } : {}), ...(opts.facingMode ? { facingMode: opts.facingMode } : {}), resolution: { width: opts.width, height: opts.height, frameRate: opts.frameRate } },
         { simulcast: true, videoCodec: "vp8", videoEncoding: { maxBitrate: bitrate(opts.width, opts.height, opts.frameRate, 0.06), maxFramerate: opts.frameRate } },
       );
+      if (reused) await switchCamera(s, conf);
+      s.cameraKey = cameraKey(conf);
       await startBackground(s);
     } else {
       await stopBackground(s);

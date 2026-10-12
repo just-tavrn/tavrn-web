@@ -15,6 +15,7 @@ import type {
   AppUpdater,
   AndroidInsets,
   AndroidStatus,
+  AudioRoutes,
   PlatformAndroid,
   PlatformNotifications,
   PlatformTray,
@@ -148,6 +149,12 @@ export function androidMembers(events: ShellEvents, initial: AndroidStatus): And
       onUnregistered: (fn) => on((e) => (e.kind === "push_unregistered" ? true : undefined), () => fn()),
     },
     keepConnection: (on, texts) => invoke<void>("android_keep_connection", { on, title: texts.title, text: texts.text }),
+    audio: {
+      routes: () => invoke<AudioRoutes>("android_audio_routes"),
+      setRoute: (route) => invoke<AudioRoutes>("android_audio_route", { route }),
+      onRoutes: (fn) => on((e) => (e.kind === "audio_routes" ? { available: e.available ?? [], current: e.current ?? null } : undefined), fn),
+    },
+    lockOrientation: (orientation) => invoke<void>("android_orientation", { lock: orientation }),
   };
 
   const notifications: PlatformNotifications = {

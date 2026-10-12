@@ -657,7 +657,7 @@ microphones, cameras and every other track are subscribed as they are published,
 video and never subscribes screen shares at all; joining a stream there says that streams cannot be watched with the
 native voice engine (docs/DESKTOP.md "Voice").
 
-### Quick menus on mute and deafen
+### Quick menus on mute, deafen and the camera
 
 A right-click (the context-menu key, a long press on touch) on the microphone button of the voice bar or of the stage
 controls lists the microphones (the current one checked), switches push-to-talk on or off (with the bound key as a
@@ -668,6 +668,21 @@ after a choice and closes on a click outside, Escape or a second right-click on 
 the sliders. While the browser hides the device names the menu offers **Show devices**; browsers without output
 device selection (`setSinkId`, missing in some Firefox builds and WebKitGTK) say so instead of listing speakers. A
 click keeps muting and deafening.
+
+The camera button of the stage controls and of the call view has the same kind of menu (`cameraMenu` in
+`web/src/voice/deviceMenu.ts`). On phones and tablets (a coarse pointer) it offers **Front camera** and **Back camera**
+(the front one by default; the choice is a voice setting, `cameraFacing`, so it is remembered on the device and drops a
+camera chosen by id in the settings); the camera opens with the `facingMode` constraint. Desktops list the cameras as
+Settings → Voice & video does, plus **Settings…**; desktops never send a facing, which would prefer an integrated
+camera over the system default. A switch while the camera is on restarts the camera track with the new camera
+(`switchActiveDevice` for a device, a restart with the new facing otherwise; a phone cannot open both cameras at once)
+without leaving the call, the background effect stays on; a camera chosen while the camera is off applies when it
+is turned on again. The back camera's own preview is not mirrored. A click keeps turning the camera on and off.
+
+In the Android app the controls also have the **audio output** button (`web/src/voice/ui/AudioRouteButton.tsx`): its
+icon and name show the route in use (speaker, earpiece, wired or Bluetooth headset), a tap opens the menu of the
+connected outputs. The app decides the defaults and keeps the choice (docs/ANDROID.md "Audio output"); browsers and the
+desktop choose the output device in the headphones menu instead.
 
 ### Mute and the microphone capture
 

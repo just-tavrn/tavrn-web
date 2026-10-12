@@ -13,7 +13,7 @@ use tauri::plugin::{Builder, PluginHandle, TauriPlugin};
 use tauri::{Manager, Runtime, State, Wry};
 
 use crate::commands::Settings;
-use crate::mobile::{self, Insets, Permission, PushConfig, PushEndpoint, SettingsPage, VoiceNotice};
+use crate::mobile::{self, AudioRoute, AudioRoutes, Insets, OrientationLock, Permission, PushConfig, PushEndpoint, SettingsPage, VoiceNotice};
 use crate::{events, guard, notify};
 
 /// Package and class of the Kotlin plugin.
@@ -111,6 +111,27 @@ pub async fn android_voice(android: State<'_, Android<Wry>>, notice: VoiceNotice
     notice.validate().map_err(str::to_string)?;
     let shown = VoiceNotice { state: notice.shown_state(), ..notice };
     android.call("voice", serde_json::to_value(shown).map_err(|e| e.to_string())?).await
+}
+
+/// The call's audio routes (docs/ANDROID.md "Audio output"): what is connected and what plays.
+#[tauri::command]
+pub async fn android_audio_routes(android: State<'_, Android<Wry>>) -> Result<AudioRoutes, String> {
+    let routes: AudioRoutes = android.call("audioRoutes", json!({})).await?;
+    if routes.valid() { Ok(routes) } else { Err("android.failed".into()) }
+}
+
+/// Moves the call's audio to `route` (it stays there while the device is connected); the routes afterwards.
+#[tauri::command]
+pub async fn android_audio_route(android: State<'_, Android<Wry>>, route: AudioRoute) -> Result<AudioRoutes, String> {
+    let routes: AudioRoutes = android.call("audioRoute", json!({ "route": route })).await?;
+    if routes.valid() { Ok(routes) } else { Err("android.failed".into()) }
+}
+
+/// `screen.orientation.lock()` for the page, which Android's webview does not implement (docs/ANDROID.md
+/// "Fullscreen"): the Kotlin side allows it only while an element is in fullscreen; `None` releases it.
+#[tauri::command]
+pub async fn android_orientation(android: State<'_, Android<Wry>>, lock: Option<OrientationLock>) -> Result<(), String> {
+    android.call("orientation", json!({ "lock": lock })).await
 }
 
 /// The back gesture on the client's first page: the app goes to the background instead of closing.

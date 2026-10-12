@@ -2,8 +2,10 @@
 /**
  * The client's side of the Android app (docs/ANDROID.md): the back gesture (close the open dialog or menu, else go
  * back in the client's history, else send the app to the background from its first page instead of closing it), app
- * links (invites and add links open in the app), and the system bars (CSS variables the layout pads itself with:
- * `--safe-top`, `--safe-right`, `--safe-bottom`, `--safe-left`, styles.css). Platform-independent: it takes the
+ * links (invites and add links open in the app), the system bars (CSS variables the layout pads itself with:
+ * `--safe-top`, `--safe-right`, `--safe-bottom`, `--safe-left`, styles.css), and the Screen Orientation API, which
+ * Android's webview does not implement (the shell locks natively; fullscreen itself is the webview's own Fullscreen
+ * API since the shell's chrome client shows it, docs/ANDROID.md "Fullscreen"). Platform-independent: it takes the
  * Android member, so tests pass a fake.
  */
 import { identityOfHost } from "@tavrn/sdk";
@@ -93,6 +95,56 @@ export function applyInsets(insets: AndroidInsets, root: HTMLElement = document.
   root.style.setProperty("--keyboard", `${Math.max(0, insets.keyboard)}px`);
 }
 
+type LockableOrientation = ScreenOrientation & { lock?: (orientation: string) => Promise<void>; unlock?: () => void };
+
+/**
+ * `screen.orientation.lock()` and `unlock()` through the app where the webview refuses them (Android's webview has no
+ * Screen Orientation lock): the client's fullscreen code (`voice/ui/fullscreen.tsx`) keeps using the standard API. The
+ * app allows a lock only in fullscreen, as browsers do; a refusal rejects like the standard API. Returns the restorer.
+ */
+export function routeOrientationLock(android: Pick<PlatformAndroid, "lockOrientation">, orientation: LockableOrientation | undefined = typeof window === "undefined" ? undefined : (window.screen?.orientation as LockableOrientation | undefined)): () => void {
+  if (!orientation) return () => {};
+  const target = orientation;
+  const saved = { lock: Object.getOwnPropertyDescriptor(target, "lock"), unlock: Object.getOwnPropertyDescriptor(target, "unlock") };
+  const ownLock = target.lock?.bind(target);
+  const ownUnlock = target.unlock?.bind(target);
+  let native = false;
+  const lock = async (wanted: string) => {
+    try {
+      if (!ownLock) throw new DOMException("No orientation lock.", "NotSupportedError");
+      await ownLock(wanted);
+      return;
+    } catch (refused) {
+      try {
+        await android.lockOrientation(wanted);
+        native = true;
+      } catch {
+        throw refused instanceof DOMException ? refused : new DOMException("The orientation cannot be locked here.", "NotSupportedError");
+      }
+    }
+  };
+  const unlock = () => {
+    try {
+      ownUnlock?.();
+    } catch {
+      /* not locked */
+    }
+    if (!native) return;
+    native = false;
+    void android.lockOrientation(null).catch(() => undefined);
+  };
+  Object.defineProperty(target, "lock", { configurable: true, writable: true, value: lock });
+  Object.defineProperty(target, "unlock", { configurable: true, writable: true, value: unlock });
+  return () => {
+    // The instance's own members again, or the prototype's, which these shadowed.
+    for (const key of ["lock", "unlock"] as const) {
+      const before = saved[key];
+      if (before) Object.defineProperty(target, key, before);
+      else Reflect.deleteProperty(target, key);
+    }
+  };
+}
+
 export interface AndroidShellOptions {
   android: PlatformAndroid;
   navigate: (path: string) => void;
@@ -104,6 +156,7 @@ export interface AndroidShellOptions {
 export function startAndroidShell({ android, navigate, back, home }: AndroidShellOptions): () => void {
   applyInsets(android.insets());
   const stops = [
+    routeOrientationLock(android),
     android.onInsets((insets) => applyInsets(insets)),
     android.onBack(() => void onBackGesture(android, { back })),
     android.onLink((url) => {

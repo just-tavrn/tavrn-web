@@ -5,7 +5,7 @@
  * the shell keeps the newest), subscribed on the first listener and shared by every member of the platform.
  */
 import { Channel, invoke } from "@tauri-apps/api/core";
-import type { AndroidInsets, PushEndpointKeys, TrayAction } from "./types";
+import type { AndroidInsets, AudioRoutes, PushEndpointKeys, TrayAction } from "./types";
 
 export type ShellEvent =
   | { kind: "open"; path: string }
@@ -14,7 +14,8 @@ export type ShellEvent =
   | { kind: "link"; url: string }
   | ({ kind: "insets" } & AndroidInsets)
   | ({ kind: "push_endpoint" } & PushEndpointKeys)
-  | { kind: "push_unregistered" };
+  | { kind: "push_unregistered" }
+  | ({ kind: "audio_routes" } & AudioRoutes);
 
 export interface ShellEvents {
   /** Listens to every event; returns the unsubscriber. */

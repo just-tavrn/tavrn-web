@@ -30,6 +30,9 @@
     "allow-android-save-begin",
     "allow-android-save-chunk",
     "allow-android-save-end",
-    "allow-android-save-abort"
+    "allow-android-save-abort",
+    "allow-android-audio-routes",
+    "allow-android-audio-route",
+    "allow-android-orientation"
   ]
 }

@@ -10,7 +10,8 @@ import { dirname, join, resolve } from "node:path";
 import { expect, test, type APIRequestContext, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { NODE, createRoomViaApi, inviteCode, loginAs, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, type Account } from "./helpers";
 import { hideDeviceNamesUntilAsked } from "./voice-helpers";
-import { openContextMenu } from "./menu-helpers";
+import AxeBuilder from "@axe-core/playwright";
+import { isTouch, openContextMenu } from "./menu-helpers";
 import { scaled } from "./timeouts";
 
 /** An animated GIF (profile.spec.ts fixture) for the avatar animation on the stage. */
@@ -581,7 +582,7 @@ test.describe("Voice channels", () => {
     await expect(page.getByTestId("mic-meter")).toHaveAttribute("data-level", "-100");
   });
 
-  test("Quick menus on mute and deafen: devices, push-to-talk and sliders, applied live (right-click, long press on phones)", async ({ browser, request }) => {
+  test("Quick menus on mute, deafen and the camera: devices, push-to-talk and sliders, front/back camera, applied live (right-click, long press on phones)", async ({ browser, request }) => {
     test.setTimeout(scaled(120_000));
     const { roomId, code } = await setup(request);
     const alice = await voiceUser(browser, "vmenu", { cuesOff: true });
@@ -606,6 +607,53 @@ test.describe("Voice channels", () => {
     await expect(deafen).toHaveAttribute("aria-pressed", "false");
     await page.keyboard.press("Escape");
     await expect(output).toHaveCount(0);
+
+    // The camera button (issue #75): phones choose the front or the back camera, desktops a camera of the list and
+    // "Settings…". Opening the menu does not turn the camera on; a switch while it runs keeps the call and the video.
+    const camera = page.getByTestId("voice-camera");
+    await openContextMenu(page, camera);
+    const cameraMenu = page.getByTestId("voice-camera-menu");
+    if (isTouch()) {
+      await expect(cameraMenu.getByRole("menuitemcheckbox", { name: "Frontkamera" })).toHaveAttribute("aria-checked", "true");
+      await expect(cameraMenu.getByRole("menuitemcheckbox", { name: "Rückkamera" })).toHaveAttribute("aria-checked", "false");
+      await expect(cameraMenu.getByRole("menuitem", { name: "Einstellungen…" })).toHaveCount(0);
+    } else {
+      await expect(cameraMenu.getByRole("menuitemcheckbox", { name: "Systemstandard" })).toHaveAttribute("aria-checked", "true");
+      await expect(cameraMenu.getByRole("menuitemcheckbox", { name: /fake_device/ }).first()).toBeVisible();
+      await expect(cameraMenu.getByRole("menuitem", { name: "Einstellungen…" })).toBeVisible();
+    }
+    const axe = await new AxeBuilder({ page }).include('[data-testid="voice-camera-menu"]').withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();
+    expect(axe.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => v.id)).toEqual([]);
+    await page.keyboard.press("Escape");
+    await expect(cameraMenu).toHaveCount(0);
+    await expect(camera).toHaveAttribute("aria-pressed", "false");
+    // The click a long press leaves behind is swallowed for 400 ms after the finger lifts (useContextMenu); a person's
+    // next tap comes later than this test's.
+    if (isTouch()) await page.waitForTimeout(500);
+    await camera.click();
+    await expect(camera).toHaveAttribute("aria-pressed", "true");
+    const ownVideo = tile(page, alice.address).getByTestId("video-camera");
+    await expect(ownVideo).toBeVisible({ timeout: 30_000 });
+    await openContextMenu(page, camera);
+    const other = isTouch() ? cameraMenu.getByRole("menuitemcheckbox", { name: "Rückkamera" }) : cameraMenu.getByRole("menuitemcheckbox", { name: /fake_device/ }).first();
+    await other.click();
+    await expect(other).toHaveAttribute("aria-checked", "true");
+    await page.keyboard.press("Escape");
+    // The track restarted with the new camera (the facing on phones, the device on desktops), the call goes on.
+    const cameraConstraints = () =>
+      page.evaluate(() => {
+        const room = (window as unknown as { __tavrnVoice?: { room: { localParticipant: { getTrackPublication: (s: string) => { track?: { constraints: MediaTrackConstraints } } | undefined } } } }).__tavrnVoice?.room;
+        const c = room?.localParticipant.getTrackPublication("camera")?.track?.constraints;
+        return { facingMode: c?.facingMode ?? null, deviceId: typeof c?.deviceId === "string" ? c.deviceId : ((c?.deviceId as ConstrainDOMStringParameters | undefined)?.exact ?? null) };
+      });
+    if (isTouch()) await expect.poll(async () => (await cameraConstraints()).facingMode, { timeout: 15_000 }).toBe("environment");
+    else await expect.poll(async () => (await cameraConstraints()).deviceId, { timeout: 15_000 }).toMatch(/.+/);
+    await expect(camera).toHaveAttribute("aria-pressed", "true");
+    await expect(ownVideo).toBeVisible();
+    await expect(page.getByTestId("voice-bar")).toHaveAttribute("data-status", "connected");
+    if (isTouch()) await page.waitForTimeout(500);
+    await camera.click();
+    await expect(camera).toHaveAttribute("aria-pressed", "false");
 
     // The voice bar's microphone button: the fake microphones and push-to-talk, which brings up the stage's hold button.
     await openNavIfMobile(page);

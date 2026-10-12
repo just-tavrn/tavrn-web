@@ -258,6 +258,45 @@ pub fn save_mime(mime: &str) -> String {
     if ok { mime.to_ascii_lowercase() } else { "application/octet-stream".into() }
 }
 
+/// An output of the call's audio (docs/ANDROID.md "Audio output", `AudioRoutes.kt`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AudioRoute {
+    Speaker,
+    Earpiece,
+    Bluetooth,
+    Wired,
+}
+
+/// The routes the call can use now and the one in use (none while no voice runs).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AudioRoutes {
+    pub available: Vec<AudioRoute>,
+    #[serde(default)]
+    pub current: Option<AudioRoute>,
+}
+
+impl AudioRoutes {
+    /// Each route at most once.
+    pub fn valid(&self) -> bool {
+        self.available.len() <= 4 && self.available.iter().enumerate().all(|(i, r)| !self.available[..i].contains(r))
+    }
+}
+
+/// An orientation of the Screen Orientation API (`OrientationLockType`) the page may lock to in fullscreen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OrientationLock {
+    Any,
+    Natural,
+    Landscape,
+    Portrait,
+    LandscapePrimary,
+    LandscapeSecondary,
+    PortraitPrimary,
+    PortraitSecondary,
+}
+
 /// What the Kotlin side reports (`ShellPlugin.kt`, JSON with a `kind`).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -281,6 +320,8 @@ pub enum NativeEvent {
     PushEndpoint(PushEndpoint),
     /// The distributor dropped the registration.
     PushUnregistered,
+    /// The call's audio routes changed (a headset came or went, the user or the system moved the audio).
+    AudioRoutes(AudioRoutes),
 }
 
 /// The event for the client, or none when the Kotlin side reported something invalid.
@@ -297,6 +338,7 @@ pub fn shell_event(event: NativeEvent) -> Option<ShellEvent> {
         NativeEvent::Insets(insets) => insets.valid().then_some(ShellEvent::Insets(insets)),
         NativeEvent::PushEndpoint(endpoint) => endpoint.valid().then_some(ShellEvent::PushEndpoint(endpoint)),
         NativeEvent::PushUnregistered => Some(ShellEvent::PushUnregistered),
+        NativeEvent::AudioRoutes(routes) => routes.valid().then_some(ShellEvent::AudioRoutes(routes)),
     }
 }
 
@@ -440,6 +482,20 @@ mod tests {
         let plain = json!({ "kind": "push_endpoint", "endpoint": "http://ntfy.example/up", "p256dh": "B".repeat(87), "auth": "a".repeat(22) }).to_string();
         assert_eq!(parse_native(&plain), None);
         assert_eq!(parse_native(r#"{"kind":"push_unregistered"}"#), Some(ShellEvent::PushUnregistered));
+        assert_eq!(
+            parse_native(r#"{"kind":"audio_routes","available":["speaker","earpiece","bluetooth"],"current":"bluetooth"}"#),
+            Some(ShellEvent::AudioRoutes(AudioRoutes {
+                available: vec![AudioRoute::Speaker, AudioRoute::Earpiece, AudioRoute::Bluetooth],
+                current: Some(AudioRoute::Bluetooth)
+            }))
+        );
+        // No voice running: no route in use (the Kotlin side leaves `current` out).
+        assert_eq!(
+            parse_native(r#"{"kind":"audio_routes","available":["speaker"]}"#),
+            Some(ShellEvent::AudioRoutes(AudioRoutes { available: vec![AudioRoute::Speaker], current: None }))
+        );
+        assert_eq!(parse_native(r#"{"kind":"audio_routes","available":["speaker","speaker"]}"#), None);
+        assert_eq!(parse_native(r#"{"kind":"audio_routes","available":["hdmi"]}"#), None);
         assert_eq!(parse_native(r#"{"kind":"unknown"}"#), None);
         assert_eq!(parse_native("not json"), None);
     }
@@ -456,6 +512,23 @@ mod tests {
             r#"{"kind":"insets","top":1.0,"right":0.0,"bottom":0.0,"left":0.0,"keyboard":0.0}"#
         );
         assert_eq!(serde_json::to_string(&ShellEvent::PushUnregistered)?, r#"{"kind":"push_unregistered"}"#);
+        assert_eq!(
+            serde_json::to_string(&ShellEvent::AudioRoutes(AudioRoutes {
+                available: vec![AudioRoute::Speaker, AudioRoute::Wired],
+                current: Some(AudioRoute::Wired)
+            }))?,
+            r#"{"kind":"audio_routes","available":["speaker","wired"],"current":"wired"}"#
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn orientation_locks_are_the_screen_orientation_apis_names() -> serde_json::Result<()> {
+        assert_eq!(serde_json::from_str::<OrientationLock>(r#""landscape""#)?, OrientationLock::Landscape);
+        assert_eq!(serde_json::from_str::<OrientationLock>(r#""portrait-secondary""#)?, OrientationLock::PortraitSecondary);
+        assert_eq!(serde_json::to_string(&OrientationLock::LandscapePrimary)?, r#""landscape-primary""#);
+        assert!(serde_json::from_str::<OrientationLock>(r#""sideways""#).is_err());
+        assert!(serde_json::from_str::<AudioRoute>(r#""hdmi""#).is_err());
         Ok(())
     }
 }
