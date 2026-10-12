@@ -278,6 +278,8 @@ describe("connect flow: app sessions of the desktop app (FEDERATION.md §8 step 
     const { unmount } = renderAt(sessionUrl());
     await userEvent.setup().click(await screen.findByRole("button", { name: "In der App anmelden" }));
     expect(await screen.findByTestId("connect-done")).toHaveTextContent("Kehre zur tavrn-App zurück");
+    // The sign-in window is the app's own: no way "back to the app" there.
+    expect(screen.queryByTestId("connect-open-app")).toBeNull();
     await waitFor(() => expect(signOutAfterHandoff).toHaveBeenCalledTimes(1));
     const args = vi.mocked(signOutAfterHandoff).mock.calls[0]![0];
     expect(args).toMatchObject({ before: devices, waitForExchange: true });
@@ -290,6 +292,8 @@ describe("connect flow: app sessions of the desktop app (FEDERATION.md §8 step 
     renderAt(sessionUrl());
     await userEvent.setup().click(await screen.findByRole("button", { name: "In der App anmelden" }));
     await screen.findByTestId("connect-done");
+    // A browser tab offers the way back to the app: the deep link with the session and the state, nothing else.
+    expect(screen.getByRole("link", { name: "tavrn-App öffnen" })).toHaveAttribute("href", `tavrn://connect?session=${SESSION}&state=${"s".repeat(22)}`);
     expect(signOutAfterHandoff).not.toHaveBeenCalled();
     expect(calls.some((c) => c.url.endsWith("/users/me/devices"))).toBe(false);
     expect(useAuth.getState().token).toBe("local");

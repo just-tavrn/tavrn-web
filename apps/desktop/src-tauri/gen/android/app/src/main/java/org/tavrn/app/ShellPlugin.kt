@@ -101,9 +101,9 @@ class ShellPlugin(private val activity: Activity) : Plugin(activity) {
     if (intent == null) return
     intent.getStringExtra(Notifier.EXTRA_PATH)?.let { Shell.emit(Shell.event("open").put("path", it)) }
     intent.removeExtra(Notifier.EXTRA_PATH)
-    val data = intent.data
-    if (intent.action == Intent.ACTION_VIEW && data != null && (data.scheme == "https" || data.scheme == "tavrn")) {
-      Shell.emit(Shell.event("link").put("url", data.toString()))
+    val link = Links.of(intent.action, intent.data?.toString())
+    if (link != null) {
+      Shell.emit(Shell.event("link").put("url", link))
       intent.data = null
     }
   }

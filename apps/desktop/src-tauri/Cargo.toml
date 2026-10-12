@@ -46,6 +46,9 @@ tauri-plugin-opener = "2.7"
 # Downloads (src/download.rs): the native save dialog; the shell writes the file itself (no fs plugin for the webview).
 tauri-plugin-dialog = "2.7"
 tauri-plugin-updater = "2.13"
+# `tavrn://` links (src/deeplink.rs): the scheme in the Windows installers' registry and the macOS bundle, the links of a
+# start and of a second start (through the single-instance plugin's deep-link feature).
+tauri-plugin-deep-link = "2"
 # OS keychain (keyring ecosystem: the core API with its in-memory mock store, plus the platform stores below).
 keyring-core = "1"
 # Native notifications (the backend of tauri-plugin-notification, used directly for the click on Linux).
@@ -78,7 +81,7 @@ windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Networking_
 
 [target.'cfg(any(windows, target_os = "linux"))'.dependencies]
 # Close to tray: a second start (launcher, Start menu, a notification click) shows the running app.
-tauri-plugin-single-instance = "2.5"
+tauri-plugin-single-instance = { version = "2.5", features = ["deep-link"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 apple-native-keyring-store = { version = "1", features = ["keychain"] }

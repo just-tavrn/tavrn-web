@@ -8,8 +8,8 @@
  * document. The shell checks every address again before it persists it. Changing the node signs out of the old one
  * first.
  */
-import { useState } from "react";
-import { Link } from "react-router";
+import { useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router";
 import { platform } from "../platform";
 import type { NodeDetails } from "../platform";
 import { checkNode, parseNodeUrl } from "../platform/nodeUrl";
@@ -36,7 +36,14 @@ export function NodePickerPage() {
   // Address first where the shell can resolve domains; the URL form stays as the advanced way.
   const byAddress = !!choice?.resolve;
   const [advanced, setAdvanced] = useState(!byAddress);
-  const [address, setAddress] = useState("");
+  // A deep link of another node names it (`DeepLinkPrompt`): the address starts with its domain.
+  const [params] = useSearchParams();
+  const suggested = (params.get("address") ?? "").slice(0, 254);
+  const [address, setAddress] = useState(suggested);
+  // The picker may already be open (the first start shows it for every path): a new suggestion replaces the field.
+  useEffect(() => {
+    if (suggested) setAddress(suggested);
+  }, [suggested]);
   const [value, setValue] = useState(current ?? "");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

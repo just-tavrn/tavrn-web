@@ -97,6 +97,9 @@ export async function createTauriPlatform(doc: Document = document): Promise<Pla
   const platform: Platform = {
     kind: android ? "android" : "desktop",
     isDesktop: true,
+    // Deep links (`tavrn://`, Android's App Links): the shell checked them and keeps those of the start until the
+    // client listens.
+    links: { subscribe: (fn) => events.on((e) => e.kind === "link" && typeof e.url === "string" && fn(e.url)) },
     nodeBase: () => node ?? "",
     // A node serves its web client on the URL the user picked (where links shared with others point to), unless its
     // document names another origin.

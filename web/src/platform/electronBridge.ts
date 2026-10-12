@@ -97,8 +97,11 @@ export interface ShellTrayStatus {
   close_to_tray: boolean;
 }
 
-/** Events of the Tauri shell's `shell_events` channel: a notification click, a tray menu action. */
-export type ShellEvent = { kind: "open"; path: string } | { kind: "tray"; action: TrayAction };
+/**
+ * Events of the Tauri shell's `shell_events` channel: a notification click, a tray menu action; `link`: deep links
+ * wait for the client (`shell.takeLinks`).
+ */
+export type ShellEvent = { kind: "open"; path: string } | { kind: "tray"; action: TrayAction } | { kind: "link" };
 
 /**
  * What `events.subscribe` delivers: the Tauri shell's channels in one stream, each with its own payloads
@@ -122,6 +125,8 @@ export interface TavrnShellBridge {
     /** Shows the chosen node's `/connect?session=…` page in the sign-in window. */
     openConnect(url: string): Promise<void>;
     closeConnect(): Promise<void>;
+    /** The checked deep links (`tavrn://…`) that opened the app since the last call: a start's and a second start's. */
+    takeLinks(): Promise<string[]>;
   };
   readonly updater: {
     checkUpdate(): Promise<ShellUpdateInfo | null>;

@@ -25,9 +25,22 @@ function eventHub(bridge: TavrnShellBridge) {
   const opens = new Set<(path: string) => void>();
   const actions = new Set<(action: TrayAction) => void>();
   const hotkeys = new Set<(event: HotkeyEvent) => void>();
+  const links = new Set<(url: string) => void>();
+  // Deep links wait in the shell until the client takes them: at the first listener (the link of the start) and
+  // whenever the shell says that more arrived.
+  const takeLinks = () => {
+    if (links.size === 0) return;
+    void bridge.shell
+      .takeLinks()
+      .then((urls) => {
+        for (const url of Array.isArray(urls) ? urls : []) if (typeof url === "string") for (const fn of links) fn(url);
+      })
+      .catch(() => undefined);
+  };
   bridge.events.subscribe((e: BridgeEvent) => {
     if (e?.channel === "shell_events") {
       const ev = e.event;
+      if (ev?.kind === "link") takeLinks();
       if (ev?.kind === "open" && isClientPath(ev.path)) for (const fn of opens) fn(ev.path);
       if (ev?.kind === "tray" && TRAY_ACTIONS.includes(ev.action)) for (const fn of actions) fn(ev.action);
     }
@@ -41,7 +54,13 @@ function eventHub(bridge: TavrnShellBridge) {
       set.add(fn);
       return () => void set.delete(fn);
     };
-  return { onOpen: add(opens), onTray: add(actions), onHotkey: add(hotkeys) };
+  const onLink = (fn: (url: string) => void): (() => void) => {
+    const first = links.size === 0;
+    links.add(fn);
+    if (first) takeLinks();
+    return () => void links.delete(fn);
+  };
+  return { onOpen: add(opens), onTray: add(actions), onHotkey: add(hotkeys), onLink };
 }
 
 
@@ -98,6 +117,7 @@ export async function createElectronPlatform(bridge: TavrnShellBridge | null = e
   const platform: Platform = {
     kind: "desktop",
     isDesktop: true,
+    links: { subscribe: events.onLink },
     nodeBase: () => node ?? "",
     // A node serves its web client on the URL the user picked (where links shared with others point to), unless its
     // document names another origin.

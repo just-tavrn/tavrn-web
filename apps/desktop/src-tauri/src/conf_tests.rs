@@ -249,10 +249,27 @@ fn the_android_manifest_keeps_its_promises() {
     for host in crate::mobile::APP_LINK_HOSTS {
         assert!(manifest.contains(&format!("android:host=\"{host}\"")), "{host} has no intent filter");
     }
+    // The `tavrn://` scheme (deeplink.rs) opens the app, in its own intent filter without autoVerify.
+    let scheme = format!("<data android:scheme=\"{}\" />", crate::deeplink::SCHEME);
+    let at = manifest.find(&scheme).unwrap_or_else(|| unreachable!("no intent filter for {scheme}"));
+    let filter = &manifest[manifest[..at].rfind("<intent-filter").unwrap_or(0)..at];
+    assert!(filter.contains("android.intent.action.VIEW") && filter.contains("android.intent.category.BROWSABLE") && !filter.contains("autoVerify"));
     // No Google services: no Firebase, no Play services anywhere in the Android project.
     let gradle = include_str!("../gen/android/app/build.gradle.kts");
     for google in ["firebase", "play-services", "gms"] {
         assert!(!gradle.contains(google) && !manifest.contains(google), "{google} in the Android app");
+    }
+}
+
+#[test]
+fn deep_links_are_the_tavrn_scheme_only() {
+    // The installers (Windows registry, the macOS bundle) register exactly the scheme deeplink.rs accepts; the plugin
+    // needs no permission in any capability (the shell hands links to the client as shell events).
+    let c = conf();
+    assert_eq!(c["plugins"]["deep-link"]["desktop"]["schemes"], serde_json::json!([crate::deeplink::SCHEME]));
+    assert!(c["plugins"]["deep-link"].get("mobile").is_none(), "Android: the manifest's intent filters");
+    for cap in [capability(), mobile_capability()] {
+        assert!(!permissions(&cap).iter().any(|p| p.starts_with("deep-link")), "{:?}", permissions(&cap));
     }
 }
 

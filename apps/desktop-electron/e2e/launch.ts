@@ -65,7 +65,7 @@ export interface ElectronApp {
   /** Runs `fn(electron, arg)` in the main process (development build only) and answers its JSON value. */
   evaluate<R, A = undefined>(fn: (electron: ElectronModule, arg: A) => R | Promise<R>, arg?: A): Promise<R>;
   /** Starts the app a second time with the same profile (it hands over to the running one and exits): its exit code. */
-  secondStart(): Promise<number | null>;
+  secondStart(extra?: string[]): Promise<number | null>;
   /** Waits until the app has exited. */
   exited(timeoutMs: number): Promise<boolean>;
   /** Quits the app (`app.quit()` when the main process is reachable, else SIGTERM) and ends its process group. */
@@ -218,7 +218,7 @@ export async function startApp(options: StartOptions = {}): Promise<ElectronApp>
     waitForWindow: (timeoutMs = scaled(30_000)) => context.waitForEvent("page", { timeout: timeoutMs }),
     nextWindow: (timeoutMs) => context.waitForEvent("page", { timeout: timeoutMs }).catch(() => null),
     evaluate,
-    secondStart: () => waitExit(spawn(file, args, { cwd: appDir, env, stdio: "ignore" }), scaled(60_000)),
+    secondStart: (extra = []) => waitExit(spawn(file, [...args, ...extra], { cwd: appDir, env, stdio: "ignore" }), scaled(60_000)),
     exited: async (timeoutMs) => (await waitExit(child, timeoutMs)) !== null,
     quit,
     close: async () => {

@@ -115,13 +115,68 @@ function closeWindow(run: AppSessionRun, done: boolean): Promise<void> | void {
   })();
 }
 
+/**
+ * The handoff the app waits for: its session id and the `state` of the page URL. The browser's "back to the app" link
+ * (`tavrn://connect?session=…&state=…`, `deepLinks.ts`) wakes it: the app polls at once instead of waiting for its
+ * timer, which a phone may have held back while the browser was in front. Nothing else happens: the code still comes
+ * from the node and is exchanged with the verifier.
+ */
+interface Pending {
+  session: string;
+  state: string;
+  wake: () => void;
+}
+
+let pending: Pending | null = null;
+
+/** Wakes the waiting sign-in or unlock when `session` and `state` are its own; false otherwise (an old or foreign link). */
+export function nudgeAppSession(session: string, state: string): boolean {
+  if (!pending || pending.session !== session || pending.state !== state) return false;
+  pending.wake();
+  return true;
+}
+
+/** Registers the handoff while `fn` runs; its waits end early when the handoff is nudged. */
+async function whilePending<T>(session: string, state: string, fn: (rearm: () => AbortSignal) => Promise<T>): Promise<T> {
+  let controller = new AbortController();
+  const rearm = () => {
+    controller = new AbortController();
+    return controller.signal;
+  };
+  const me: Pending = { session, state, wake: () => controller.abort() };
+  pending = me;
+  try {
+    return await fn(rearm);
+  } finally {
+    if (pending === me) pending = null;
+  }
+}
+
+/** A signal that ends when either does. */
+function either(a: AbortSignal | undefined, b: AbortSignal): AbortSignal {
+  if (!a) return b;
+  const both = new AbortController();
+  const end = () => both.abort();
+  for (const s of [a, b]) {
+    if (s.aborted) end();
+    else s.addEventListener("abort", end, { once: true });
+  }
+  return both.signal;
+}
+
 /** Polls until the session is ready (null when cancelled); network hiccups are retried, the node's answers are not. */
-async function pollUntilReady(run: AppSessionRun, sessionId: string): Promise<ConnectSessionStatus | null> {
+async function pollUntilReady(run: AppSessionRun, sessionId: string, rearm: () => AbortSignal = () => new AbortController().signal): Promise<ConnectSessionStatus | null> {
   const sleep = run.sleep ?? wait;
+  let lastPoll = 0;
   for (;;) {
     if (run.signal?.aborted) return null;
-    await sleep(APP_SESSION_POLL_MS, run.signal);
+    // A nudge ends the wait, but never makes the polls closer than the protocol allows.
+    const nudge = rearm();
+    await sleep(APP_SESSION_POLL_MS, either(run.signal, nudge));
+    const early = APP_SESSION_POLL_MS - (Date.now() - lastPoll);
+    if (nudge.aborted && lastPoll && early > 0) await sleep(early, run.signal);
     if (run.signal?.aborted) return null;
+    lastPoll = Date.now();
     let status;
     try {
       status = await run.api.auth.pollConnectSession(sessionId);
@@ -141,22 +196,25 @@ export async function runAppSession(run: AppSessionRun): Promise<AppSessionResul
   const { verifier, challenge } = await createPkce();
   const created = await run.api.auth.createConnectSession({ code_challenge: challenge, device_name: run.deviceName });
   const keys = await (run.keys ?? defaultKeys)();
-  const url = connectPageUrl(run.web, created.session_id, randomUrlSafe(), run.mode ?? "login", { method: run.method, key: keys?.publicKey });
+  const state = randomUrlSafe();
+  const url = connectPageUrl(run.web, created.session_id, state, run.mode ?? "login", { method: run.method, key: keys?.publicKey });
   let done = false;
   try {
     await run.open(url);
     run.onPage?.(url);
-    for (;;) {
-      const status = await pollUntilReady(run, created.session_id);
-      if (!status) return null;
-      if (!status.code) continue;
-      // Material that does not open only means no passkey unlock: the recovery key remains.
-      const unlock = status.sealed_unlock && keys ? keys.open(status.sealed_unlock, created.session_id) : null;
-      const device = run.device ? await run.device().catch(() => null) : null;
-      const session = await run.api.auth.connectToken({ code: status.code, code_verifier: verifier, device });
-      done = true;
-      return { session, unlock };
-    }
+    return await whilePending(created.session_id, state, async (rearm) => {
+      for (;;) {
+        const status = await pollUntilReady(run, created.session_id, rearm);
+        if (!status) return null;
+        if (!status.code) continue;
+        // Material that does not open only means no passkey unlock: the recovery key remains.
+        const unlock = status.sealed_unlock && keys ? keys.open(status.sealed_unlock, created.session_id) : null;
+        const device = run.device ? await run.device().catch(() => null) : null;
+        const session = await run.api.auth.connectToken({ code: status.code, code_verifier: verifier, device });
+        done = true;
+        return { session, unlock };
+      }
+    });
   } finally {
     keys?.dispose();
     await closeWindow(run, done);
@@ -177,12 +235,13 @@ export async function runAppUnlock(run: Omit<AppSessionRun, "mode" | "method" | 
     // Nodes that know unlock sessions name the purpose; older ones would treat this as a sign-in.
     const first = await run.api.auth.pollConnectSession(created.session_id);
     if (first.purpose !== "unlock") throw connectError("connect.unlock_unsupported", "The node has no unlock sessions");
-    const url = connectPageUrl(run.web, created.session_id, randomUrlSafe(), "login", { method: "passkey", key: keys.publicKey });
+    const state = randomUrlSafe();
+    const url = connectPageUrl(run.web, created.session_id, state, "login", { method: "passkey", key: keys.publicKey });
     let done = false;
     try {
       await run.open(url);
       run.onPage?.(url);
-      const status = await pollUntilReady(run, created.session_id);
+      const status = await whilePending(created.session_id, state, (rearm) => pollUntilReady(run, created.session_id, rearm));
       if (!status) return null;
       const material = status.sealed_unlock ? keys.open(status.sealed_unlock, created.session_id) : null;
       if (!material) throw connectError("connect.unlock_failed", "The unlock material did not open");

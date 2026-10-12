@@ -153,7 +153,6 @@ export function androidMembers(events: ShellEvents, initial: AndroidStatus): And
     requestBatteryExemption: () => invoke<boolean>("android_battery_exemption"),
     background: () => invoke<void>("android_background"),
     onBack: (fn) => on((e) => (e.kind === "back" ? true : undefined), () => fn()),
-    onLink: (fn) => on((e) => (e.kind === "link" && typeof e.url === "string" ? e.url : undefined), fn),
     onInsets: (fn) => on((e) => (e.kind === "insets" ? insets : undefined), fn),
     insets: () => insets,
     push: {

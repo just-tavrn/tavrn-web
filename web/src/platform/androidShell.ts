@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
  * The client's side of the Android app (docs/ANDROID.md): the back gesture (close the open dialog or menu, else go
- * back in the client's history, else send the app to the background from its first page instead of closing it), app
- * links (invites and add links open in the app), the system bars (CSS variables the layout pads itself with:
+ * back in the client's history, else send the app to the background from its first page instead of closing it), the
+ * system bars (CSS variables the layout pads itself with:
  * `--safe-top`, `--safe-right`, `--safe-bottom`, `--safe-left`, styles.css), and the Screen Orientation API, which
  * Android's webview does not implement (the shell locks natively; fullscreen itself is the webview's own Fullscreen
  * API since the shell's chrome client shows it, docs/ANDROID.md "Fullscreen"). Platform-independent: it takes the
  * Android member, so tests pass a fake.
  */
-import { identityOfHost } from "@tavrn/sdk";
 import type { AndroidInsets, PlatformAndroid } from "./types";
 
 /** Open dialogs and menus close on Escape (the client's own handlers); the back gesture uses that. */
@@ -49,44 +48,6 @@ export function onBackGesture(android: Pick<PlatformAndroid, "background">, go: 
   }
   void android.background().catch(() => undefined);
   return "background";
-}
-
-const CODE = /^[A-Za-z0-9_-]{4,64}$/;
-
-/**
- * The client's route for an app link (already checked by the shell: `/invite/<code>`, `/add/<id>`,
- * `/add/<domain>/<id>`): the home node's own links as they are; another node's invite with `?node=<its identity
- * domain>`, another node's add link with its domain in the path. `identity` finds the identity domain of a web host
- * (delegation: `app.tavrn.org` belongs to `tavrn.org`).
- */
-export async function linkRoute(link: string, home: { web: string; domain: string | null }, identity: (host: string) => Promise<string | null> = (h) => identityOfHost(h)): Promise<string | null> {
-  let url: URL;
-  try {
-    url = new URL(link);
-  } catch {
-    return null;
-  }
-  const segments = url.pathname.split("/").filter(Boolean);
-  const own = (() => {
-    try {
-      return new URL(home.web).origin === url.origin;
-    } catch {
-      return false;
-    }
-  })();
-  const domain = own ? home.domain : ((await identity(url.hostname).catch(() => null)) ?? url.hostname);
-  const local = own || (!!domain && domain === home.domain);
-  const [kind, first, second] = segments;
-  if (kind === "invite" && segments.length === 2 && first && CODE.test(first)) {
-    return local ? `/invite/${first}` : `/invite/${first}?node=${encodeURIComponent(domain ?? url.hostname)}`;
-  }
-  if (kind === "add" && first && segments.length <= 3) {
-    const room = url.searchParams.get("room");
-    const query = room ? `?room=${encodeURIComponent(room)}` : "";
-    if (second) return `/add/${first}/${second}${query}`;
-    return local ? `/add/${first}${query}` : `/add/${domain ?? url.hostname}/${first}${query}`;
-  }
-  return null;
 }
 
 /** The system bars as CSS variables on the root element (styles.css falls back to `env(safe-area-inset-*)`). */
@@ -147,21 +108,12 @@ export function routeOrientationLock(android: Pick<PlatformAndroid, "lockOrienta
 
 export interface AndroidShellOptions {
   android: PlatformAndroid;
-  navigate: (path: string) => void;
   back: () => void;
-  home: () => { web: string; domain: string | null };
 }
 
-/** Starts the wiring; returns the stopper. */
-export function startAndroidShell({ android, navigate, back, home }: AndroidShellOptions): () => void {
+/** Starts the wiring (links: `DeepLinkPrompt`); returns the stopper. */
+export function startAndroidShell({ android, back }: AndroidShellOptions): () => void {
   applyInsets(android.insets());
-  const stops = [
-    routeOrientationLock(android),
-    android.onInsets((insets) => applyInsets(insets)),
-    android.onBack(() => void onBackGesture(android, { back })),
-    android.onLink((url) => {
-      void linkRoute(url, home()).then((path) => path && navigate(path));
-    }),
-  ];
+  const stops = [routeOrientationLock(android), android.onInsets((insets) => applyInsets(insets)), android.onBack(() => void onBackGesture(android, { back }))];
   return () => stops.forEach((stop) => stop());
 }

@@ -11,37 +11,31 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use tauri::Url;
 
+use crate::deeplink::token;
 use crate::events::{ShellEvent, TrayAction};
 
 /// Hosts whose https links open in the app (Android App Links: the host publishes `/.well-known/assetlinks.json`
 /// with the app's signing certificate; docs/ANDROID.md "Links into the app").
 pub const APP_LINK_HOSTS: [&str; 1] = ["app.tavrn.org"];
-/// The fallback scheme: `tavrn://<host>/<path>` stands for `https://<host>/<path>` of any node.
-pub const APP_SCHEME: &str = "tavrn";
 
 const MAX_LINK: usize = 512;
 const MAX_TEXT: usize = 200;
 const MAX_PUSH_TEXT: usize = 300;
 
-fn token(s: &str, min: usize) -> bool {
-    (min..=64).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
-}
-
-/// A link the app opens (an App Link or a `tavrn://` link), as the https URL the client routes: only invite links
-/// (`/invite/<code>`) and add links of applications (`/add/<id>`, `/add/<domain>/<id>`, optional `?room=`), on
-/// a node's host without port or credentials. Everything else stays in the browser (the intent filters already name
-/// only these paths; this is the second check).
+/// A link the app opens. An App Link stays the https URL the client routes: only invite links (`/invite/<code>`) and
+/// add links of applications (`/add/<id>`, `/add/<domain>/<id>`, optional `?room=`) on a host of
+/// [`APP_LINK_HOSTS`], without port or credentials. A `tavrn://` link is checked by `deeplink.rs` (the desktop's
+/// rules). Everything else stays in the browser (the intent filters already name only these; this is the second check).
 pub fn app_link(input: &str) -> Option<String> {
     if input.len() > MAX_LINK {
         return None;
     }
+    if input.get(..6).is_some_and(|p| p.eq_ignore_ascii_case("tavrn:")) {
+        return crate::deeplink::deep_link(input);
+    }
     let url = Url::parse(input).ok()?;
     let host = url.host_str()?.to_ascii_lowercase();
-    let known = match url.scheme() {
-        "https" => APP_LINK_HOSTS.contains(&host.as_str()),
-        APP_SCHEME => crate::resolve::valid_domain(&host),
-        _ => false,
-    };
+    let known = url.scheme() == "https" && APP_LINK_HOSTS.contains(&host.as_str());
     if !known || url.port().is_some() || !url.username().is_empty() || url.password().is_some() || url.fragment().is_some() {
         return None;
     }
@@ -520,8 +514,9 @@ mod tests {
             app_link("https://app.tavrn.org/add/other.example/01J9ZQ?room=tavrn.org%2F01AB").as_deref(),
             Some("https://app.tavrn.org/add/other.example/01J9ZQ?room=tavrn.org%2F01AB")
         );
-        // The fallback scheme names any node's host.
-        assert_eq!(app_link("tavrn://chat.example/invite/code1234").as_deref(), Some("https://chat.example/invite/code1234"));
+        // The scheme names any node (deeplink.rs).
+        assert_eq!(app_link("tavrn://invite/chat.example/code1234").as_deref(), Some("tavrn://invite/chat.example/code1234"));
+        assert_eq!(app_link("tavrn://room/chat.example/01J9ZQ/01JA00").as_deref(), Some("tavrn://room/chat.example/01J9ZQ/01JA00"));
     }
 
     #[test]
@@ -540,6 +535,8 @@ mod tests {
             "https://app.tavrn.org/add/not_a_domain/01J9ZQ",
             "tavrn://127.0.0.1/invite/code1234",
             "tavrn://localhost/invite/code1234",
+            "tavrn://chat.example/invite/code1234",
+            "tavrn://invite/localhost/code1234",
             "javascript://app.tavrn.org/invite/code1234",
             "file:///invite/code1234",
             "not a url",

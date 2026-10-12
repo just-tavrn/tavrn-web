@@ -982,6 +982,11 @@ voice state (in a channel, speaking, muted, deafened) with mute, deafen, leave v
 closing the window keeps the app in the tray (Settings → App, which also has "Quit tavrn"; on desktops without a tray
 closing the window quits the app).
 
+**Links into the app:** `tavrn://` links (invites, rooms and channels, add links of applications) open the app,
+which shows what the link opens and the link itself and goes there only on **Open**; an app without a home node yet
+offers the node picker with the link's node first. After the sign-in on the node's page in a browser, **Open the tavrn
+app** on that page brings the app to the front and lets it continue at once (DESKTOP.md "Links into the app").
+
 **Downloads** in the app open the system's save dialog; the app writes the file and says where it went ("Saved to
 Downloads", with **Show in folder**); DESKTOP.md "Downloads".
 
@@ -1014,7 +1019,8 @@ of a window ("Sign in on \<node>'s page"). What is different in the client:
   asks for the microphone, headsets (nearby devices) and once for notifications right before the first use, and a
   permission Android no longer asks for is explained with the way to the system settings.
 - **The back gesture** closes the open dialog, menu or drawer, then goes back; from the first page it sends the app to
-  the background. **Invite and add links** of app.tavrn.org (and `tavrn://` links of any node) open in the app.
+  the background. **Invite and add links** of app.tavrn.org and `tavrn://` links of any node open in the app, which
+  asks before it opens them, as on the desktop.
 - **Safe areas**: the layout pads itself with `--safe-top`, `--safe-bottom`, … (the system bars the app reports; the
   browser's `env(safe-area-inset-*)` otherwise); the keyboard shortens the page, so the composer stays above it.
 - **Downloads** use Android's document picker; **updates** are announced from the project's releases and download in

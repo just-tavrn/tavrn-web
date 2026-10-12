@@ -31,6 +31,14 @@ First public release of the web client and the desktop apps.
   forward a report about a user of another node from Admin → Reports after a confirmation that says what is shared
   (never the reporter's address); forwarded reports show where they went, and reports other nodes forwarded show
   their origin and the reporter's pseudonym.
+- **Links into the apps** (`tavrn://`): `tavrn://invite/<node>/<code>`, `tavrn://room/<node>/<room>[/<channel>]`
+  and the add links of applications open in the desktop apps (registered by the Windows installers and the Linux
+  packages; a second start hands its link to the running app) and in the Android app. The app shows what a link opens
+  and the link itself and goes there only on **Open**; without a home node yet it offers the node picker with the
+  link's node. After the sign-in on the node's page in a browser, **Open the tavrn app** on that page
+  (`tavrn://connect`, checked against the waiting sign-in's session and state) brings the app back at once. The
+  Android app's earlier `tavrn://<host>/invite/<code>` form is replaced by these ([docs/DESKTOP.md](docs/DESKTOP.md)
+  "Links into the app").
 
 ### Changed
 

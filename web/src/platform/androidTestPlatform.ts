@@ -6,7 +6,6 @@ import type { Platform, PlatformPasskeys } from "./types";
 
 export interface FakeAndroid extends PlatformAndroid {
   emitBack(): void;
-  emitLink(url: string): void;
   emitInsets(insets: AndroidInsets): void;
   emitEndpoint(keys: PushEndpointKeys): void;
   emitUnregistered(): void;
@@ -18,7 +17,6 @@ export const FAKE_APP_ORIGIN = `android:apk-key-hash:${"A".repeat(43)}`;
 
 export function fakeAndroid(opts: { webauthn?: boolean; passkeys?: boolean; origin?: string | null; distributors?: string[]; notifications?: "granted" | "denied" | "prompt"; permission?: "granted" | "denied" | "blocked"; routes?: AudioRoutes } = {}): FakeAndroid {
   const backs = new Set<() => void>();
-  const links = new Set<(url: string) => void>();
   const insetsFns = new Set<(i: AndroidInsets) => void>();
   const endpoints = new Set<(k: PushEndpointKeys) => void>();
   const gone = new Set<() => void>();
@@ -41,7 +39,6 @@ export function fakeAndroid(opts: { webauthn?: boolean; passkeys?: boolean; orig
     requestBatteryExemption: vi.fn(async () => true),
     background: vi.fn(async () => undefined),
     onBack: (fn) => sub(backs, fn),
-    onLink: (fn) => sub(links, fn),
     onInsets: (fn) => sub(insetsFns, fn),
     insets: () => insets,
     push: {
@@ -62,7 +59,6 @@ export function fakeAndroid(opts: { webauthn?: boolean; passkeys?: boolean; orig
     },
     lockOrientation: vi.fn(async () => undefined),
     emitBack: () => backs.forEach((f) => f()),
-    emitLink: (url) => links.forEach((f) => f(url)),
     emitInsets: (i) => {
       insets = i;
       insetsFns.forEach((f) => f(i));

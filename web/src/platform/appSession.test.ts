@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it, vi } from "vitest";
 import { TavrnApi, TavrnApiError, pkceChallenge } from "@tavrn/sdk";
-import { APP_CLOSE_GRACE_MS, APP_SESSION_POLL_MS, connectPageUrl, runAppSession, runAppUnlock } from "./appSession";
+import { APP_CLOSE_GRACE_MS, APP_SESSION_POLL_MS, connectPageUrl, nudgeAppSession, runAppSession, runAppUnlock } from "./appSession";
 import type { UnlockKeyPair } from "../crypto/sealedUnlock";
 
 const session = { status: "ok", user: { address: "alice@home.example" }, access_token: "acc", refresh_token: "ref", expires_in: 3600, device_id: "D", recovery_code_used: false };
@@ -87,6 +87,38 @@ describe("app sessions of the connect flow (FEDERATION.md §8 step 3)", () => {
     expect(calls.filter((c) => c.url.includes("/auth/connect/session/"))).toHaveLength(3);
     await vi.waitFor(() => expect(close).toHaveBeenCalled());
     expect(APP_SESSION_POLL_MS).toBe(2000);
+  });
+
+  it("the browser's way back to the app (tavrn://connect) wakes the waiting sign-in, only with its own session and state", async () => {
+    const { api, calls } = node([pending, ready]);
+    // Polls wait for a timer that never fires by itself (a phone holding back the app's timers in the background).
+    // The poll timer gets the nudge's signal; the protocol's floor after a nudge is a plain wait (no signal).
+    let floors = 0;
+    const sleep = (ms: number, signal?: AbortSignal) =>
+      new Promise<void>((resolve) => {
+        if (!signal) {
+          if (ms !== APP_CLOSE_GRACE_MS) floors++;
+          return resolve();
+        }
+        if (signal.aborted) return resolve();
+        signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+    const open = vi.fn(async (_url: string) => {});
+    const run = runAppSession({ api, web: "https://app.home.example", domain: "home.example", deviceName: "d", open, close: async () => {}, sleep, keys: noKeys });
+    await vi.waitFor(() => expect(open).toHaveBeenCalled());
+    const state = new URL(open.mock.calls[0]![0]).searchParams.get("state")!;
+    const polls = () => calls.filter((c) => c.url.includes("/auth/connect/session/")).length;
+    expect(nudgeAppSession("S".repeat(43), "x".repeat(22)), "another state").toBe(false);
+    expect(nudgeAppSession("T".repeat(43), state), "another session").toBe(false);
+    expect(polls()).toBe(0);
+    expect(nudgeAppSession("S".repeat(43), state)).toBe(true);
+    await vi.waitFor(() => expect(polls()).toBe(1));
+    // The second nudge comes right after the first poll: the protocol's 2 seconds between polls still hold.
+    expect(nudgeAppSession("S".repeat(43), state)).toBe(true);
+    await expect(run).resolves.toEqual({ session, unlock: null });
+    expect(polls()).toBe(2);
+    expect(floors).toBe(1);
+    expect(nudgeAppSession("S".repeat(43), state), "done: nothing waits").toBe(false);
   });
 
   it("after a sign-in the window closes a moment later, so the page in it can sign itself out first", async () => {

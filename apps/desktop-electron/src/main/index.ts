@@ -4,7 +4,7 @@
  * (Electron)"). The main window shows only the bundled client (`app://tavrn`, `protocol.ts`); the client talks to the
  * home node chosen in its node picker over https/wss and reaches the shell only through the preload's bridge
  * (`window.tavrnShell`), whose calls the IPC registry checks (`ipc.ts`). One instance per user: a second start shows
- * the running app.
+ * the running app (and hands it its `tavrn://` link, `deeplink.ts`).
  */
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -13,6 +13,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, net, Notificati
 import { installDisplayMediaHandler } from "./capture.ts";
 import { DIR_NAME, Settings, importTauriSettings, settingsPath, tauriSettingsPath } from "./config.ts";
 import { CONNECT_PARTITION, ConnectWindow } from "./connect.ts";
+import { PendingLinks, SCHEME as LINK_SCHEME } from "./deeplink.ts";
 import type { ShellContext, ShellPart } from "./context.ts";
 import { Downloads, handleWillDownload, registerFilesHandlers, saveDialogOptions, TEST_SAVE_DIR_ENV } from "./downloads.ts";
 import { ShellEvents } from "./events.ts";
@@ -62,6 +63,11 @@ function main(): void {
     app.quit();
     return;
   }
+  // Deep links (deeplink.ts): the packages register `tavrn://` (the .desktop entry, the Windows installer); a package
+  // also claims it at start, as the desktop's default handler. The link of this start waits for the client.
+  if (app.isPackaged && !app.isDefaultProtocolClient(LINK_SCHEME)) app.setAsDefaultProtocolClient(LINK_SCHEME);
+  const links = new PendingLinks();
+  links.add(process.argv);
   // Chromium starts the spellchecker when it creates the profiles (before ready): they start with it off (hardening.ts).
   seedNoSpellcheck([app.getPath("userData"), join(app.getPath("userData"), "Partitions", CONNECT_PARTITION.slice("persist:".length))]);
   // The keychain's safeStorage asks the desktop's Secret Service, also on desktops Chromium does not know (keychain.ts).
@@ -151,6 +157,7 @@ function main(): void {
         // Chromium's network stack: verified TLS with the system's trust store, the system's proxy settings.
         resolve: (domain) => resolveNode(domain, new HttpFetcher((url, init) => net.fetch(url, init), version), systemSrv),
         connect: { open: (url) => connect.open(url), close: () => connect.close() },
+        links,
       }),
     (ctx) => registerUpdaterHandlers(ctx.registry, feed, undefined, channelSetting(ctx.settings, version)),
     (ctx) => registerKeychainHandlers(ctx.registry, { settings: ctx.settings, keychain: keychainNow }),
@@ -171,7 +178,11 @@ function main(): void {
   for (const part of parts) part(context);
   context.registry.install(ipcMain);
 
-  app.on("second-instance", () => context.showMain());
+  // A second start shows the running app; its deep link (an argument) goes to the client.
+  app.on("second-instance", (_event, argv) => {
+    if (links.add(argv)) context.events.send({ channel: "shell_events", event: { kind: "link" } });
+    context.showMain();
+  });
   // No other web contents ever opens windows or embeds a webview.
   app.on("web-contents-created", (_event, contents) => {
     contents.on("will-attach-webview", (e) => e.preventDefault());
