@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
- * The joined board as a large stage tile (loaded lazily by `WhiteboardStage.tsx`): the board with its tools,
- * plus focus (the board takes the stage), maximize (full window) and popout (the full-screen route in a new
- * window, for viewers; the presenter keeps presenting from this window).
+ * The joined board as a large stage tile (loaded lazily by `WhiteboardStage.tsx`, inside `WhiteboardLargeTile`, which
+ * adds fullscreen and Leave whiteboard / Hide preview as `headerExtra`): the board with its tools, plus focus (the
+ * board takes the stage), maximize (full window) and popout (the full-screen route in a new window, for viewers; the
+ * presenter keeps presenting from this window).
  */
 import { useState, type ReactNode } from "react";
 import { useT } from "../i18n";

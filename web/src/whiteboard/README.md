@@ -22,11 +22,18 @@ every conversation: voice and text channels, DMs and group DMs. Nothing in here 
 ## On the voice stage
 
 `WhiteboardStage.tsx` (with the lazy `WhiteboardStageTile.tsx`) and `stage.ts` plug into `web/src/voice/ui/*` with
-small additive edits: `VoiceStage` passes `WhiteboardTileOverlay` to each participant tile (badge, thumbnail,
-"Join whiteboard session", double-click, "watching" marks for the owner) and shows `WhiteboardStageTile` (focus,
-maximize, popout = the full-screen route in a new window) once joined; `VoiceControls` gets `WhiteboardControl`
-and calls `beforeScreenShare()` before the screen share dialog; `VoiceChannelRow` shows `WhiteboardOwnerBadge`.
-`openBoard()` / `beforeBoard()` stop a running screen share first. Both ask before ending the other presentation.
+small additive edits. The board is a stage tile of its own, joined like a screen share (docs/CLIENT.md "Streams are
+joined"); the participants' camera tiles are never touched. `useStageBoard()` says which tile it is
+(`boardTileState()`: `available`, `joined`, `preview`, `hidden`, `none`). `VoiceStage` puts `WhiteboardPlaceholder`
+("Whiteboard · <name>", badge, thumbnail, Join whiteboard, double-click) into the grid before joining and
+`WhiteboardLargeTile` (focus, maximize, popout = the full-screen route in a new window, fullscreen with the phone's
+landscape lock for a board wider than tall, Leave whiteboard or the owner's Hide preview) into the large area once
+joined, next to a focused stream; `WhiteboardIndicator` is the owner's "Whiteboard is open" bar (preview toggle,
+joined count, Close). The owner's preview state is `useBoardPreview` (shown again by `openBoard()`).
+`VoiceControls` gets `WhiteboardControl` and calls `beforeScreenShare()` before the screen share dialog;
+`VoiceChannelRow` shows `WhiteboardRowBadge` on the presenter (`presenterIdentity()`) and joins the board on a
+double-click or Enter (`rowBoardAction()`). `openBoard()` / `beforeBoard()` stop a running screen share first. Both
+ask before ending the other presentation.
 
 ## Integration surface
 
@@ -40,15 +47,15 @@ const { session, isOwner, role, joined, ended, join, leave, thumbnailUrl, contro
 // Plaintext text channels need { encrypted: false }; voice channels and DMs are always encrypted (the default).
 ```
 
-- `session`: `{ conversation_id, owner, owner_id, device_id, open_for_all, grants, started_at }` or `null`. Show
-  the board on the tile of the participant whose address is `session.owner` (and whose device is
-  `session.device_id`); one user presents either a screen share or a board.
+- `session`: `{ conversation_id, owner, owner_id, device_id, open_for_all, grants, started_at }` or `null`. The
+  presenter is the participant whose address is `session.owner` (and whose device is `session.device_id`); one user
+  presents either a screen share or a board.
 - `isOwner`: this device presents the board. `role`: `"owner" | "editor" | "viewer" | null`.
-- `joined` / `join()` / `leave()`: "Join whiteboard session" / "Leave session" on the tile. Joining only marks the
+- `joined` / `join()` / `leave()`: "Join whiteboard" / "Leave whiteboard" on the stage tile. Joining only marks the
   device as joined and asks the owner for a snapshot; render the board with `<WhiteboardSession>` (or navigate
   to the full-screen route: `${channelPath}/whiteboard`).
 - `thumbnailUrl`: a small `data:image/webp` of the board, refreshed by the owner at most every 5 s after changes;
-  available **before** joining (render `<WhiteboardThumbnail conversationId=… />` on the tile and
+  available **before** joining (render `<WhiteboardThumbnail conversationId=… />` on a placeholder and
   `<WhiteboardBadge conversationId=… />` as the small badge).
 - `ended`: the board was closed while this device had joined.
 - The hook must run where the conversation's MLS group is joined on this device (the voice view does that for the

@@ -35,6 +35,13 @@ First public release of the web client and the desktop apps.
   never subscribes screen shares.
 - A stream in full screen on a phone or tablet turns the screen to landscape when the video is wider than tall (where
   the browser can lock the orientation; the lock ends with full screen) and fills the screen after every rotation.
+- The whiteboard on the voice stage no longer replaces the presenter's camera tile: it is a tile of its own like a
+  screen share ("Whiteboard · <name>", its badge and live thumbnail, **Join whiteboard**; a double-click joins as
+  well), joined it fills a large tile with focus, fullscreen and **Leave whiteboard**, and every camera tile stays as
+  it is. The presenter gets a preview they can hide and a "Whiteboard is open" bar with the joined count and Close.
+  The voice member list marks the presenter with a board badge next to LIVE; a double-click or Enter joins the board
+  from inside the channel. A whiteboard and a focused stream sit side by side (stacked on phones), and a board wider
+  than tall turns a phone to landscape in full screen like a stream.
 
 ### Fixed
 

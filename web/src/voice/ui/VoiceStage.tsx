@@ -162,9 +162,9 @@ function useGhosts(q: string, members: string[] | null, active: boolean, online:
  * The voice view of a voice channel (VOICE.md §9): before joining a join panel with who is there; while
  * connected the stage with one tile per participant (camera or avatar, speaking glow and level meter),
  * screen shares and the whiteboard as tiles of their own that are joined on demand (focus, picture-in-picture), and
- * the controls. Every tile is 16:9 in a
- * grid sized from the stage and the number of tiles (`layout.ts`); shares, cameras, the whiteboard and the
- * whole stage can go fullscreen (`F`). Phones get a swipeable grid with pages of four and a bottom control bar.
+ * the controls. Every tile is 16:9 in a grid sized from the stage and the number of tiles (`layout.ts`); shares,
+ * cameras, the whiteboard and the whole stage can go fullscreen (`F`). Phones get a swipeable grid with pages of four
+ * and a bottom control bar.
  */
 export function VoiceStage({ room, channel }: { room: RoomDetail; channel: Channel }) {
   const t = useT();
