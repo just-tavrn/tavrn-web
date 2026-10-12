@@ -15,6 +15,7 @@ import { useExternalSounds, type ExternalSound } from "../../lib/sounds";
 import { ControlButton } from "./VoiceBar";
 import { PriorityButton } from "./PriorityButton";
 import { useVoiceDeviceMenu } from "./VoiceDeviceMenu";
+import { AudioRouteButton } from "./AudioRouteButton";
 import { WhiteboardControl } from "../../whiteboard/WhiteboardStage";
 import { beforeScreenShare } from "../../whiteboard/stage";
 import { GearIcon, HeadphonesIcon, HeadphonesOffIcon, LeaveIcon, MicIcon, MicOffIcon, ScreenIcon, SoundboardIcon, VideoIcon } from "./icons";
@@ -138,9 +139,10 @@ function SoundboardDialog({ open, onClose, roomId, disabled, external }: { open:
 }
 
 /**
- * Call controls (VOICE.md §9): mute, deafen, camera and screen share (only when `limits` allow them),
- * soundboard (with `use_soundboard` and `speak`), settings and leave; push-to-talk as a hold button when
- * that mode is on. A bottom bar on phones.
+ * Call controls (VOICE.md §9): mute, deafen, the audio output (Android app), camera and screen share (only when
+ * `limits` allow them), soundboard (with `use_soundboard` and `speak`), settings and leave; push-to-talk as a hold
+ * button when that mode is on. The microphone, headphones and camera buttons have quick menus (long press,
+ * right-click). A bottom bar on phones.
  */
 export function VoiceControls({ room, channel, perms }: { room: RoomDetail; channel: Channel; perms: bigint }) {
   const t = useT();
@@ -155,6 +157,7 @@ export function VoiceControls({ room, channel, perms }: { room: RoomDetail; chan
   const ptt = useVoiceSettings((s) => s.settings.inputMode === "ptt");
   const micMenu = useVoiceDeviceMenu("input");
   const outputMenu = useVoiceDeviceMenu("output");
+  const cameraMenu = useVoiceDeviceMenu("camera");
   const [screenOpen, setScreenOpen] = useState(false);
   const [soundsOpen, setSoundsOpen] = useState(false);
   const soundboard = hasPermission(perms, Permission.USE_SOUNDBOARD) && hasPermission(perms, Permission.SPEAK);
@@ -168,8 +171,9 @@ export function VoiceControls({ room, channel, perms }: { room: RoomDetail; chan
       <ControlButton label={deafened ? t("voice.undeafen") : t("voice.deafen")} active={deafened} onClick={() => void toggleDeafen()} testid="voice-deafen" className="min-h-11 min-w-11" menu={outputMenu.triggerProps}>
         {deafened ? <HeadphonesOffIcon size={20} /> : <HeadphonesIcon size={20} />}
       </ControlButton>
+      <AudioRouteButton className="min-h-11 min-w-11" />
       {limits?.camera.enabled && (
-        <ControlButton label={camera ? t("voice.camera_off") : t("voice.camera_on")} active={camera} onClick={() => void toggleCamera()} testid="voice-camera" className="min-h-11 min-w-11" unavailable={nativeOnly}>
+        <ControlButton label={camera ? t("voice.camera_off") : t("voice.camera_on")} active={camera} onClick={() => void toggleCamera()} testid="voice-camera" className="min-h-11 min-w-11" unavailable={nativeOnly} menu={nativeOnly ? undefined : cameraMenu.triggerProps}>
           <VideoIcon size={20} />
         </ControlButton>
       )}
@@ -206,6 +210,7 @@ export function VoiceControls({ room, channel, perms }: { room: RoomDetail; chan
       </ControlButton>
       {micMenu.overlay}
       {outputMenu.overlay}
+      {cameraMenu.overlay}
       {limits && <ScreenShareDialog open={screenOpen} onClose={() => setScreenOpen(false)} maxResolution={limits.screenshare.max_resolution} maxFps={limits.screenshare.max_fps} />}
       {soundsOpen && <SoundboardDialog open onClose={() => setSoundsOpen(false)} roomId={room.id} disabled={muted || !canSpeak} external={hasPermission(perms, Permission.USE_EXTERNAL_SOUNDS)} />}
     </div>

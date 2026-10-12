@@ -15,7 +15,7 @@ import { channelPermissions, useRoomMembers } from "../../pages/ChannelPage";
 import { getMls, useMlsUi } from "../../stores/mls";
 import { qualify, splitIdentity, type GhostViolation } from "@tavrn/e2ee";
 import { participantsOf, useVoicePresence } from "../presence";
-import { useVoiceSettings } from "../settings";
+import { phoneCameras, useVoiceSettings } from "../settings";
 import { ownVoiceChannel, useVoice } from "../store";
 import { joinVoice } from "../index";
 import { AvatarTile } from "./AvatarTile";
@@ -70,7 +70,10 @@ export function useIsPhone(): boolean {
  */
 export function ParticipantTile({ roomId, tile, menu }: { roomId?: string; tile: Tile; menu?: ContextMenuTrigger }) {
   const t = useT();
-  const mirror = useVoiceSettings((s) => s.settings.mirror);
+  // The own preview is mirrored like a mirror; a phone's back camera films the world, not its user: never mirrored.
+  const mirrorSetting = useVoiceSettings((s) => s.settings.mirror);
+  const backCamera = useVoiceSettings((s) => s.settings.cameraFacing === "environment" && !s.settings.cameraDeviceId) && phoneCameras();
+  const mirror = mirrorSetting && !backCamera;
   const priority = usePriority(tile.identity);
   const { status, level } = useParticipantStatus({ identity: tile.identity, connection: tile.connection, muted: tile.flags.muted, server_muted: tile.flags.server_muted });
   const speaking = status === "speaking";

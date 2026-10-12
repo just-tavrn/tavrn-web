@@ -4,10 +4,11 @@
  * devices as checkbox items, push-to-talk, the input volume and the activation threshold for the microphone, the
  * output volume for the headphones, the link to Settings → Voice & video. A pure function over the device list and
  * the settings, so the menu is unit-tested; choosing an item or moving a slider only changes the voice settings,
- * which a running call follows live (`session.ts`, `applySettings`). A choice keeps the menu open.
+ * which a running call follows live (`session.ts`, `applySettings`). A choice keeps the menu open. The camera button's
+ * menu (`cameraMenu`) offers the front and the back camera on phones and the camera list on desktops.
  */
 import { menuItem, menuLabel, normalizeMenu, separator, type MenuEntry } from "../components/ContextMenu";
-import type { VoiceSettings } from "./settings";
+import type { CameraFacing, VoiceSettings } from "./settings";
 
 type T = (key: string, params?: Record<string, string | number>) => string;
 
@@ -75,5 +76,38 @@ export function voiceDeviceMenu(kind: VoiceDeviceKind, ctx: VoiceDeviceMenuConte
     input && ctx.settings.inputMode === "vad" && actions.slider({ id: "vad-threshold", label: t("voice.settings.threshold"), value: ctx.settings.vadThreshold, min: -100, max: 0, step: 1, unit: "dB", onChange: (v) => actions.update({ vadThreshold: v }) }),
     separator("sep-settings"),
     menuItem("settings", t("voice.menu.settings"), actions.openSettings),
+  ]);
+}
+
+export interface CameraMenuContext {
+  devices: MediaDeviceInfo[];
+  settings: Pick<VoiceSettings, "cameraDeviceId" | "cameraFacing">;
+  /** A phone or tablet (`phoneCameras()`): front and back instead of the device list. */
+  phone: boolean;
+  /** The names are hidden until the page may use a capture device: offer "Show devices". */
+  needsPermission: boolean;
+}
+
+/**
+ * The menu of the camera button (long press or right-click): on phones "Front camera" / "Back camera" (remembered per
+ * device; choosing one drops a camera chosen by id in the settings), on desktops the cameras as the settings page lists
+ * them plus "Settings…". A running camera switches without leaving the call (`session.ts`).
+ */
+export function cameraMenu(ctx: CameraMenuContext, actions: Pick<VoiceDeviceMenuActions, "update" | "unlock" | "openSettings">, t: T): MenuEntry[] {
+  if (ctx.phone) {
+    const facing = (id: CameraFacing, label: string) =>
+      menuItem(`facing:${id}`, t(label), () => actions.update({ cameraFacing: id, cameraDeviceId: "" }), { checked: !ctx.settings.cameraDeviceId && ctx.settings.cameraFacing === id, keepOpen: true });
+    return normalizeMenu([menuLabel("label", t("voice.menu.camera")), facing("user", "voice.menu.camera_front"), facing("environment", "voice.menu.camera_back")]);
+  }
+  const current = ctx.settings.cameraDeviceId;
+  const choose = (id: string) => () => actions.update({ cameraDeviceId: id });
+  const named = ctx.devices.filter((d) => d.kind === "videoinput" && d.deviceId && d.deviceId !== "default");
+  return normalizeMenu([
+    menuLabel("label", t("voice.menu.camera")),
+    menuItem("device:", t("voice.settings.default_device"), choose(""), { checked: current === "", keepOpen: true }),
+    ...named.map((d, i) => menuItem(`device:${d.deviceId}`, d.label || `${t("voice.settings.camera")} ${i + 1}`, choose(d.deviceId), { checked: d.deviceId === current, keepOpen: true })),
+    ctx.needsPermission && menuItem("show-devices", t("voice.settings.devices_show"), actions.unlock, { keepOpen: true }),
+    separator("sep-settings"),
+    menuItem("settings", t("voice.menu.camera_settings"), actions.openSettings),
   ]);
 }

@@ -111,6 +111,18 @@ describe("voice & video settings (design note 4.9)", () => {
     expect(opts).toEqual({ deviceId: "cam", width: 1280, height: 720, frameRate: 30 });
   });
 
+  it("asks a phone for the front or back camera; a chosen device and desktops name no facing", () => {
+    const limit = { max_resolution: "720p", max_fps: 30 };
+    expect(DEFAULT_SETTINGS.cameraFacing).toBe("user");
+    expect(cameraOptions({ ...DEFAULT_SETTINGS }, limit, true)).toEqual({ facingMode: "user", width: 1280, height: 720, frameRate: 30 });
+    expect(cameraOptions({ ...DEFAULT_SETTINGS, cameraFacing: "environment" }, limit, true).facingMode).toBe("environment");
+    expect(cameraOptions({ ...DEFAULT_SETTINGS, cameraFacing: "environment", cameraDeviceId: "cam" }, limit, true)).toEqual({ deviceId: "cam", width: 1280, height: 720, frameRate: 30 });
+    // A desktop's laptop camera reports "user": an ideal facing would win over the system's default camera.
+    expect(cameraOptions({ ...DEFAULT_SETTINGS, cameraFacing: "environment" }, limit)).toEqual({ width: 1280, height: 720, frameRate: 30 });
+    expect(normalizeSettings({ cameraFacing: "environment" }).cameraFacing).toBe("environment");
+    expect(normalizeSettings({ cameraFacing: "left" }).cameraFacing).toBe("user");
+  });
+
   it("keeps a stream volume per streamer apart from the voice volume (issue #20)", () => {
     expect(DEFAULT_SETTINGS.streamVolumes).toEqual({});
     const store = useVoiceSettings.getState();

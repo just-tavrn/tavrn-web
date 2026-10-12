@@ -24,6 +24,8 @@ import { useVoice } from "../store";
 import { AvatarTile } from "../ui/AvatarTile";
 import { ControlButton } from "../ui/VoiceBar";
 import { ScreenShareDialog } from "../ui/VoiceControls";
+import { useVoiceDeviceMenu } from "../ui/VoiceDeviceMenu";
+import { AudioRouteButton } from "../ui/AudioRouteButton";
 import { ParticipantTile, useIsPhone, type Tile } from "../ui/VoiceStage";
 import { ScreenTile, StreamingIndicator } from "../ui/ScreenTile";
 import { HeadphonesIcon, HeadphonesOffIcon, MicIcon, MicOffIcon, MinimizeIcon, PhoneIcon, PhoneOffIcon, ScreenIcon, VideoIcon } from "../ui/icons";
@@ -297,6 +299,7 @@ function ActiveCall() {
   const selfPreview = useVoice((s) => s.selfPreview);
   const phone = useIsPhone();
   const [screenOpen, setScreenOpen] = useState(false);
+  const cameraMenu = useVoiceDeviceMenu("camera");
   const answered = (call?.participants.length ?? 0) > 1;
   const duration = useDuration(answered ? call?.participants[1]?.joined_at : null);
   if (!target || status === "idle") return null;
@@ -374,8 +377,9 @@ function ActiveCall() {
         <ControlButton label={deafened ? t("voice.undeafen") : t("voice.deafen")} active={deafened} onClick={() => void toggleDeafen()} testid="voice-deafen" className="min-h-11 min-w-11">
           {deafened ? <HeadphonesOffIcon size={20} /> : <HeadphonesIcon size={20} />}
         </ControlButton>
+        <AudioRouteButton className="min-h-11 min-w-11" />
         {limits?.camera.enabled && (
-          <ControlButton label={camera ? t("voice.camera_off") : t("voice.camera_on")} active={camera} onClick={() => void toggleCamera()} testid="voice-camera" className="min-h-11 min-w-11">
+          <ControlButton label={camera ? t("voice.camera_off") : t("voice.camera_on")} active={camera} onClick={() => void toggleCamera()} testid="voice-camera" className="min-h-11 min-w-11" menu={cameraMenu.triggerProps}>
             <VideoIcon size={20} />
           </ControlButton>
         )}
@@ -387,6 +391,7 @@ function ActiveCall() {
         <ControlButton label={t("calls.leave")} solid onClick={() => void leaveVoice()} testid="call-leave" className="min-h-11 min-w-11">
           <PhoneOffIcon size={20} />
         </ControlButton>
+        {cameraMenu.overlay}
       </div>
       {limits && <ScreenShareDialog open={screenOpen} onClose={() => setScreenOpen(false)} maxResolution={limits.screenshare.max_resolution} maxFps={limits.screenshare.max_fps} />}
     </section>
