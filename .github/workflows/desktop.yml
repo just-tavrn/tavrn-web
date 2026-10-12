@@ -338,6 +338,11 @@ jobs:
           # A D-Bus session of its own with an unlocked gnome-keyring: the keychain spec uses the real Secret Service.
           env -u WAYLAND_DISPLAY -u ELECTRON_RUN_AS_NODE xvfb-run -a -s "-screen 0 1280x800x24" dbus-run-session -- bash -c \
             'echo ci-keyring | gnome-keyring-daemon --components=secrets --daemonize --unlock >/dev/null && pnpm exec playwright test --config e2e/playwright.config.ts'
+      # The specs retry once in CI as a safety net; a test that passed only on its retry is counted here ("N flaky" in
+      # the job summary, an annotation per test), so a retry never passes silently.
+      - name: Flaky Playwright specs
+        if: ${{ always() }}
+        run: node scripts/playwright-flaky.mjs apps/desktop-electron/test-results/results.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ always() }}
         with:
