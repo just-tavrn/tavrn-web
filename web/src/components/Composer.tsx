@@ -15,6 +15,7 @@ import type { LinkPreview } from "../lib/linkPreview";
 import { useUploadPrivacy } from "./UploadPrivacy";
 import { useComposePreview } from "./ComposePreview";
 import { wrapSpoiler } from "../lib/markdown";
+import { renameClipboardFiles } from "../lib/clipboardName";
 import { composerGrowth, type Growth } from "../lib/composerGrowth";
 import { blockedText, isAutomodBlock } from "../moderation/blocked";
 import { EyeOffIcon } from "./icons";
@@ -502,7 +503,9 @@ export function Composer({
           }}
           onPaste={(e) => {
             if (!canAttach) return;
-            const files = Array.from(e.clipboardData.files);
+            // A pasted screenshot carries a made-up name (image.png, {GUID}.png): named by date and time instead;
+            // a file copied from a file manager keeps its name (#95).
+            const files = renameClipboardFiles(Array.from(e.clipboardData.files), t("composer.pasted_image"));
             if (files.length) {
               e.preventDefault();
               void addFiles(files);
