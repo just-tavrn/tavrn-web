@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { ghostNoBots } from "../../lib/botAccess";
 import { cleanupConversation, useLabelledGhosts } from "../../lib/leafCleanup";
-import { Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { useShallow } from "zustand/react/shallow";
 import { Permission, hasPermission, type Channel, type RoomDetail, type User, type VoiceParticipant } from "@tavrn/sdk";
@@ -30,7 +30,7 @@ import { MenuButton, type ContextMenuTrigger } from "../../components/ContextMen
 import { sortByRank, stableOrder } from "../order";
 import { VoiceControls } from "./VoiceControls";
 import { WhiteboardButton } from "../../whiteboard/WhiteboardBadge";
-import { WhiteboardStageTile, WhiteboardTileOverlay, useStageBoard } from "../../whiteboard/WhiteboardStage";
+import { WhiteboardIndicator, WhiteboardLargeTile, WhiteboardPlaceholder, useStageBoard } from "../../whiteboard/WhiteboardStage";
 import { LockMark } from "../../components/Badges";
 
 export interface Tile {
@@ -65,11 +65,10 @@ export function useIsPhone(): boolean {
 }
 
 /**
- * `overlay`: what other features add to the tile (the whiteboard badge and thumbnail, design note 4.10).
  * `menu`: the participant's context menu (right-click, long press, ⋯; voice channels, design note 4.13 item 3).
  * An active priority speaker gets an accent border and a megaphone; a playing soundboard clip its emoji.
  */
-export function ParticipantTile({ roomId, tile, menu, overlay }: { roomId?: string; tile: Tile; menu?: ContextMenuTrigger; overlay?: ReactNode }) {
+export function ParticipantTile({ roomId, tile, menu }: { roomId?: string; tile: Tile; menu?: ContextMenuTrigger }) {
   const t = useT();
   const mirror = useVoiceSettings((s) => s.settings.mirror);
   const priority = usePriority(tile.identity);
@@ -97,7 +96,6 @@ export function ParticipantTile({ roomId, tile, menu, overlay }: { roomId?: stri
       ) : (
         <AvatarTile roomId={roomId} user={tile.user} name={tile.name} address={tile.address} size={72} speaking={speaking} stage />
       )}
-      {overlay}
       <SoundOverlay identity={tile.identity} roomId={roomId} />
       {priority && (
         <span role="img"
@@ -163,7 +161,8 @@ function useGhosts(q: string, members: string[] | null, active: boolean, online:
 /**
  * The voice view of a voice channel (VOICE.md §9): before joining a join panel with who is there; while
  * connected the stage with one tile per participant (camera or avatar, speaking glow and level meter),
- * screen shares as large tiles with focus and picture-in-picture, and the controls. Every tile is 16:9 in a
+ * screen shares and the whiteboard as tiles of their own that are joined on demand (focus, picture-in-picture), and
+ * the controls. Every tile is 16:9 in a
  * grid sized from the stage and the number of tiles (`layout.ts`); shares, cameras, the whiteboard and the
  * whole stage can go fullscreen (`F`). Phones get a swipeable grid with pages of four and a bottom control bar.
  */
@@ -257,19 +256,24 @@ export function VoiceStage({ room, channel }: { room: RoomDetail; channel: Chann
   // Every running share is a stream tile (a placeholder until joined); the own one only while its preview is shown.
   const selfPreview = useVoice((s) => s.selfPreview);
   const screens = tiles.filter((x) => media[x.identity]?.screen && (!x.self || selfPreview));
-  // The channel's whiteboard: shown on the presenter's tile, as a large tile once joined (design note 4.10).
+  // The channel's whiteboard: a tile of its own like a screen share (a placeholder until joined, then a large tile);
+  // the camera tiles stay as they are (design note 4.10, docs/CLIENT.md "Streams are joined").
   const board = useStageBoard(channel.id, tiles.map((x) => x.identity));
-  const [boardFocus, setBoardFocus] = useState(false);
-  const overlayOf = (x: Tile) => <WhiteboardTileOverlay channelId={channel.id} identity={x.identity} self={x.self} presenter={board.presenter} />;
+  const boardLarge = board.tile === "joined" || board.tile === "preview";
+  const boardOwner = board.session ? look(board.session.owner) : null;
+  const [boardFocusWanted, setBoardFocus] = useState(false);
+  const boardFocus = boardFocusWanted && boardLarge;
+  useEffect(() => {
+    if (!boardLarge) setBoardFocus(false);
+  }, [boardLarge]);
   // Fullscreen (polish round 2): the whole stage, the whiteboard, and every share or camera tile on its own.
   const stageFs = useFullscreen<HTMLDivElement>();
-  const boardFs = useFullscreen<HTMLDivElement>();
-  // `F`: the focused share first, then the whiteboard, then any joined share, else the whole stage.
+  // `F`: the focused share first, then the joined whiteboard, then any joined share, else the whole stage.
   useFullscreenShortcut(() => {
     const body = stageFs.ref.current;
     if (!body) return null;
     const pick = (selector: string) => body.querySelector<HTMLElement>(selector);
-    return pick('[data-testid="screen-tile"][data-focused]') ?? pick('[data-testid="whiteboard-frame"]') ?? pick('[data-testid="screen-tile"]:not([data-state="available"])') ?? body;
+    return pick('[data-testid="screen-tile"][data-focused]') ?? pick('[data-testid="whiteboard-tile"]:not([data-state="available"])') ?? pick('[data-testid="screen-tile"]:not([data-state="available"])') ?? body;
   });
 
   const header = (
@@ -340,8 +344,14 @@ export function VoiceStage({ room, channel }: { room: RoomDetail; channel: Chann
   const ordered = focus ? sortedTiles.filter((x) => x.identity !== focus) : sortedTiles;
   const focused = focus ? screens.find((x) => x.identity === focus) : undefined;
   const toggleFocus = (id: string) => useVoice.setState((s) => ({ focus: s.focus === id ? null : id }));
-  // Phones: screens and participants in pages of four, swiped sideways (CSS scroll snapping, no JS animation).
-  const cells = [...screens.filter((x) => x !== focused).map((x) => ({ kind: "screen" as const, tile: x })), ...ordered.map((x) => ({ kind: "person" as const, tile: x }))];
+  // The whiteboard before joining: a placeholder tile first in the grid, like a stream.
+  const boardPlaceholder = board.tile === "available" && boardOwner ? <WhiteboardPlaceholder key="whiteboard" channelId={channel.id} name={boardOwner.name} color={boardOwner.color} /> : null;
+  // Phones: the board, screens and participants in pages of four, swiped sideways (CSS scroll snapping, no JS animation).
+  const cells = [
+    ...(boardPlaceholder ? [{ kind: "board" as const }] : []),
+    ...screens.filter((x) => x !== focused).map((x) => ({ kind: "screen" as const, tile: x })),
+    ...ordered.map((x) => ({ kind: "person" as const, tile: x })),
+  ];
   const pages = Math.max(1, Math.ceil(cells.length / PAGE));
 
   return (
@@ -351,21 +361,20 @@ export function VoiceStage({ room, channel }: { room: RoomDetail; channel: Chann
       <GhostWarning ghosts={ghosts} acknowledged={ghostAck} onAcknowledge={() => void getMls().then((m) => acknowledgeGhosts(q, m, ghosts))} />
       <div ref={stageFs.ref} className="relative flex min-h-0 flex-1 flex-col gap-2 bg-bg-0 p-2 md:p-3" data-testid="stage-body">
         <StreamingIndicator />
-        {board.visible && (
-          <div ref={boardFs.ref} className={`relative min-h-0 bg-bg-0 ${boardFocus || boardFs.active ? "flex-1" : "flex-[3]"}`} data-testid="whiteboard-frame">
-            <Suspense fallback={null}>
-              <WhiteboardStageTile roomId={room.id} channelId={channel.id} focused={boardFocus} onFocus={() => setBoardFocus((f) => !f)} headerExtra={<FullscreenButton active={boardFs.active} onToggle={boardFs.toggle} className="bg-transparent text-fg-1 hover:bg-bg-3" testId="whiteboard-fullscreen" />} />
-            </Suspense>
-            {boardFs.active && <FullscreenControls onExit={boardFs.toggle} />}
+        <WhiteboardIndicator channelId={channel.id} />
+        {(boardLarge || focused) && (
+          // The joined whiteboard and the focused share as large tiles, side by side (stacked on phones); the other
+          // tiles become a strip of small tiles below. A focused whiteboard takes the whole stage.
+          <div className={`flex min-h-0 gap-2 ${boardFocus ? "flex-1" : "flex-[3]"} ${phone ? "flex-col" : "flex-row"}`} data-testid="voice-large">
+            {boardLarge && <WhiteboardLargeTile roomId={room.id} channelId={channel.id} name={boardOwner?.name ?? ""} focused={boardFocus} onFocus={() => setBoardFocus((f) => !f)} className="min-w-0 flex-1" />}
+            {focused && !boardFocus && (
+              <StageGrid className="min-w-0 flex-1" testId="voice-focus">
+                <ScreenTile key={focused.identity} tile={focused} focused onFocus={() => toggleFocus(focused.identity)} />
+              </StageGrid>
+            )}
           </div>
         )}
-        {focused && (
-          // The focused share: one large 16:9 tile; the others become a strip of small tiles below.
-          <StageGrid className="flex-[3]" testId="voice-focus">
-            <ScreenTile key={focused.identity} tile={focused} focused onFocus={() => toggleFocus(focused.identity)} />
-          </StageGrid>
-        )}
-        {board.visible && boardFocus ? null : phone ? (
+        {boardFocus ? null : phone ? (
           <div className="flex min-h-0 flex-1 flex-col gap-1">
             <div
               className="flex min-h-0 flex-1 snap-x snap-mandatory overflow-x-auto overscroll-x-contain"
@@ -378,7 +387,7 @@ export function VoiceStage({ room, channel }: { room: RoomDetail; channel: Chann
               {Array.from({ length: pages }, (_, i) => (
                 <StageGrid key={i} className="h-full w-full shrink-0 snap-start px-0.5" testId="voice-page">
                   {cells.slice(i * PAGE, i * PAGE + PAGE).map((c) =>
-                    c.kind === "screen" ? <ScreenTile key={`s-${c.tile.identity}`} tile={c.tile} focused={false} onFocus={() => toggleFocus(c.tile.identity)} /> : <RoomParticipantTile key={c.tile.identity} room={room} channelId={channel.id} tile={c.tile} overlay={overlayOf(c.tile)} />,
+                    c.kind === "board" ? boardPlaceholder : c.kind === "screen" ? <ScreenTile key={`s-${c.tile.identity}`} tile={c.tile} focused={false} onFocus={() => toggleFocus(c.tile.identity)} /> : <RoomParticipantTile key={c.tile.identity} room={room} channelId={channel.id} tile={c.tile} />,
                   )}
                 </StageGrid>
               ))}
@@ -392,14 +401,15 @@ export function VoiceStage({ room, channel }: { room: RoomDetail; channel: Chann
             )}
           </div>
         ) : (
-          <StageGrid className={focused || board.visible ? "h-[clamp(96px,24%,200px)] shrink-0" : "flex-1"} minWidth={focused || board.visible ? 120 : 160} testId="voice-grid">
+          <StageGrid className={focused || boardLarge ? "h-[clamp(96px,24%,200px)] shrink-0" : "flex-1"} minWidth={focused || boardLarge ? 120 : 160} testId="voice-grid">
+            {boardPlaceholder}
             {screens
               .filter((x) => x !== focused)
               .map((x) => (
                 <ScreenTile key={`s-${x.identity}`} tile={x} focused={false} onFocus={() => toggleFocus(x.identity)} />
               ))}
             {ordered.map((x) => (
-              <RoomParticipantTile key={x.identity} room={room} channelId={channel.id} tile={x} overlay={overlayOf(x)} />
+              <RoomParticipantTile key={x.identity} room={room} channelId={channel.id} tile={x} />
             ))}
           </StageGrid>
         )}
@@ -411,11 +421,11 @@ export function VoiceStage({ room, channel }: { room: RoomDetail; channel: Chann
 }
 
 /** A stage tile of a voice channel with the participant's context menu (design note 4.13 item 3). */
-function RoomParticipantTile({ room, channelId, tile, overlay }: { room: RoomDetail; channelId: string; tile: Tile; overlay?: ReactNode }) {
+function RoomParticipantTile({ room, channelId, tile }: { room: RoomDetail; channelId: string; tile: Tile }) {
   const { menu, overlay: menuOverlay } = useParticipantMenu(room, channelId, tile.participant);
   return (
     <>
-      <ParticipantTile roomId={room.id} tile={tile} menu={tile.participant ? menu : undefined} overlay={overlay} />
+      <ParticipantTile roomId={room.id} tile={tile} menu={tile.participant ? menu : undefined} />
       {menuOverlay}
     </>
   );

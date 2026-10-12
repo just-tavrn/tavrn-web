@@ -18,7 +18,9 @@ import { MegaphoneIcon, SpeakerIcon } from "./icons";
 import { AccessMark, LockMark, accessMarkKey } from "../../components/Badges";
 import { channelAccessMarks } from "../../lib/channelPermissions";
 import { sortByRank, type ParticipantLook } from "../order";
-import { WhiteboardOwnerBadge } from "../../whiteboard/WhiteboardStage";
+import { WhiteboardRowBadge } from "../../whiteboard/WhiteboardStage";
+import { useWhiteboardSession } from "../../whiteboard/store";
+import { presenterIdentity, rowBoardAction, setBoardPreview } from "../../whiteboard/stage";
 import { useToasts } from "../../stores/toasts";
 import { voiceErrorMessage } from "../errors";
 import { useChannelMenu } from "../../components/menus/ChannelMenu";
@@ -35,7 +37,8 @@ const DRAG_TYPE = "application/x-tavrn-voice-member";
  * (right-click, long press or ⋯) is the one of text channels plus the mass moves (design note 4.11).
  * Participants are sorted by their highest role, then name, and shown in their role colour; each has the
  * member list's context menu (design note 4.13 item 3). A double-click (or Enter) on a streaming member (LIVE) joins
- * their stream and opens the stage, while this device is in the same voice channel (otherwise a hint).
+ * their stream and opens the stage, while this device is in the same voice channel (otherwise a hint); the same on
+ * the member who presents the channel's whiteboard (the small board badge next to LIVE) joins the whiteboard.
  */
 export function VoiceChannelRow({ room, channel, onNavigate }: { room: RoomDetail; channel: Channel; onNavigate: () => void }) {
   const t = useT();
@@ -148,28 +151,37 @@ export function VoiceChannelRow({ room, channel, onNavigate }: { room: RoomDetai
       </div>
       {overlay}
       {participants.length > 0 && (
-        <ul className="mb-1 ml-7 space-y-0.5" data-testid="voice-participants">
-          {participants.map((p) => (
-            <ParticipantRow
-              key={p.identity}
-              room={room}
-              channelId={channel.id}
-              p={p}
-              look={look(p.user)}
-              draggable={canMove && p.user_id !== me?.id}
-              onStage={() => {
-                onNavigate();
-                navigate(roomPath(room.id, channel.id));
-              }}
-            />
-          ))}
-        </ul>
+        <ParticipantList
+          room={room}
+          channelId={channel.id}
+          participants={participants}
+          look={look}
+          draggable={(p) => canMove && p.user_id !== me?.id}
+          onStage={() => {
+            onNavigate();
+            navigate(roomPath(room.id, channel.id));
+          }}
+        />
       )}
     </div>
   );
 }
 
-function ParticipantRow({ room, channelId, p, look, draggable, onStage }: { room: RoomDetail; channelId: string; p: VoiceParticipant; look: ParticipantLook; draggable: boolean; onStage: () => void }) {
+/** The participants of a voice channel; the one presenting the channel's whiteboard gets its badge. */
+function ParticipantList({ room, channelId, participants, look, draggable, onStage }: { room: RoomDetail; channelId: string; participants: VoiceParticipant[]; look: (address: string) => ParticipantLook; draggable: (p: VoiceParticipant) => boolean; onStage: () => void }) {
+  // Only channels with participants watch their board (the session and the thumbnail; nothing else is decrypted).
+  const { session, join } = useWhiteboardSession(channelId);
+  const presenter = presenterIdentity(session, participants.map((p) => p.identity));
+  return (
+    <ul className="mb-1 ml-7 space-y-0.5" data-testid="voice-participants">
+      {participants.map((p) => (
+        <ParticipantRow key={p.identity} room={room} channelId={channelId} p={p} look={look(p.user)} draggable={draggable(p)} board={p.identity === presenter} joinBoard={join} onStage={onStage} />
+      ))}
+    </ul>
+  );
+}
+
+function ParticipantRow({ room, channelId, p, look, draggable, board, joinBoard, onStage }: { room: RoomDetail; channelId: string; p: VoiceParticipant; look: ParticipantLook; draggable: boolean; board: boolean; joinBoard: () => void; onStage: () => void }) {
   const t = useT();
   const { domain } = useNode();
   const { status, level } = useParticipantStatus(p);
@@ -177,18 +189,30 @@ function ParticipantRow({ room, channelId, p, look, draggable, onStage }: { room
   const { menu, overlay } = useParticipantMenu(room, channelId, p);
   const speaking = status === "speaking";
   const name = look.name;
-  // A streaming member: double-click or Enter joins the stream (opt-in screen shares, `streams.ts`).
+  // A streaming member: double-click or Enter joins the stream (opt-in screen shares, `streams.ts`); the member who
+  // presents the whiteboard: the same joins the board (one presents either, `whiteboard/stage.ts`).
   const streaming = !!p.streaming;
+  const joinable = streaming || board;
   const watchStream = () => {
     const v = useVoice.getState();
-    const action = rowStreamAction({ identity: p.identity, streaming }, v, { domain, channelId });
-    if (action === "hint") useToasts.getState().push({ kind: "info", title: t("voice.stream.join_first"), testId: "stream-join-hint" });
+    if (streaming) {
+      const action = rowStreamAction({ identity: p.identity, streaming }, v, { domain, channelId });
+      if (action === "hint") useToasts.getState().push({ kind: "info", title: t("voice.stream.join_first"), testId: "stream-join-hint" });
+      if (action !== "join" && action !== "preview") return;
+      if (action === "join") joinStream(p.identity);
+      else useVoice.setState({ selfPreview: true });
+      onStage();
+      return;
+    }
+    const action = rowBoardAction({ identity: p.identity, presenting: board }, v, { domain, channelId });
+    if (action === "hint") useToasts.getState().push({ kind: "info", title: t("whiteboard.join_first"), testId: "whiteboard-join-hint" });
     if (action !== "join" && action !== "preview") return;
-    if (action === "join") joinStream(p.identity);
-    else useVoice.setState({ selfPreview: true });
+    if (action === "join") joinBoard();
+    else setBoardPreview(true);
     onStage();
   };
   const hint = draggable ? `${p.user} – ${t("voice.mod.drag_hint")}` : p.user;
+  const rowHint = streaming ? t("voice.stream.row_hint") : board ? t("whiteboard.row_hint") : null;
   return (
     <li
       className={`group flex min-h-8 items-center gap-2 rounded-md px-1 text-[13px] hover:bg-bg-3/60 ${priority ? "voice-priority-row" : ""}`}
@@ -204,12 +228,13 @@ function ParticipantRow({ room, channelId, p, look, draggable, onStage }: { room
         e.dataTransfer.effectAllowed = "move";
       }}
       {...menu.triggerProps}
-      title={streaming ? `${hint} – ${t("voice.stream.row_hint")}` : hint}
+      title={rowHint ? `${hint} – ${rowHint}` : hint}
       data-streaming={streaming || undefined}
-      tabIndex={streaming ? 0 : undefined}
-      aria-keyshortcuts={streaming ? "Enter" : undefined}
+      data-whiteboard={board || undefined}
+      tabIndex={joinable ? 0 : undefined}
+      aria-keyshortcuts={joinable ? "Enter" : undefined}
       onDoubleClick={
-        streaming
+        joinable
           ? (e) => {
               // Not from the (portaled) member menu, which bubbles through the React tree.
               if (!e.currentTarget.contains(e.target as Node)) return;
@@ -219,7 +244,7 @@ function ParticipantRow({ room, channelId, p, look, draggable, onStage }: { room
           : undefined
       }
       onKeyDown={(e) => {
-        if (!streaming || e.defaultPrevented || e.key !== "Enter" || e.target !== e.currentTarget) return;
+        if (!joinable || e.defaultPrevented || e.key !== "Enter" || e.target !== e.currentTarget) return;
         e.preventDefault();
         watchStream();
       }}
@@ -237,7 +262,7 @@ function ParticipantRow({ room, channelId, p, look, draggable, onStage }: { room
         </span>
       )}
       {status === "poor" && <ConnectionGlyph status={status} />}
-      <WhiteboardOwnerBadge channelId={channelId} address={p.user} />
+      {board && <WhiteboardRowBadge />}
       <ParticipantFlags p={p} size={13} />
       <MenuButton menu={menu} label={t("voice.participant_menu", { name })} className="min-h-7 min-w-7 opacity-0 focus:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100" testId="voice-participant-menu-button" />
       {overlay}

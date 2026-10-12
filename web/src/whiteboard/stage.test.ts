@@ -8,7 +8,7 @@ const opened = vi.fn(async () => undefined);
 vi.mock("./store", () => ({ ownedBoards: () => boards, loadDraft: async () => null }));
 vi.mock("../voice/index", () => ({ stopScreenShare: () => stopScreenShare() }));
 
-const { beforeBoard, beforeScreenShare, openBoard, presentationConflict, presenterIdentity, tileBoardState } = await import("./stage");
+const { beforeBoard, beforeScreenShare, boardIsWide, boardTileState, openBoard, presentationConflict, presenterIdentity, rowBoardAction, useBoardPreview } = await import("./stage");
 
 beforeEach(() => {
   boards.length = 0;
@@ -60,19 +60,45 @@ describe("the board on the stage tiles", () => {
     expect(presenterIdentity(null, ["alice@n.test/DA"])).toBeNull();
   });
 
-  it("shows join on the presenter's tile for others, the count for the owner, and who watches", () => {
-    const none = new Map<string, unknown>();
-    const watchers = new Map<string, unknown>([["bob@n.test/DB", {}]]);
-    const presenter = "alice@n.test/DA";
-    // Bob before joining: badge, thumbnail and "Join whiteboard session".
-    expect(tileBoardState({ identity: presenter, self: false }, presenter, { joined: false, isOwner: false, watchers: none })).toEqual({ kind: "presenting", self: false, canJoin: true, watching: 0 });
-    // Bob joined: no join button any more.
-    expect(tileBoardState({ identity: presenter, self: false }, presenter, { joined: true, isOwner: false, watchers: none })).toMatchObject({ canJoin: false });
-    // Alice's own tile: who joined.
-    expect(tileBoardState({ identity: presenter, self: true }, presenter, { joined: true, isOwner: true, watchers })).toEqual({ kind: "presenting", self: true, canJoin: false, watching: 1 });
-    // Alice sees that Bob watches; Bob's tile looks normal to others.
-    expect(tileBoardState({ identity: "bob@n.test/DB", self: false }, presenter, { joined: true, isOwner: true, watchers })).toEqual({ kind: "watching" });
-    expect(tileBoardState({ identity: "bob@n.test/DB", self: false }, presenter, { joined: false, isOwner: false, watchers })).toEqual({ kind: "none" });
-    expect(tileBoardState({ identity: presenter, self: false }, null, { joined: false, isOwner: false, watchers: none })).toEqual({ kind: "none" });
+  it("is its own stage tile: a placeholder until joined, the board once joined; the owner's preview can be hidden", () => {
+    const view = (v: Partial<{ session: boolean; isOwner: boolean; joined: boolean; preview: boolean }>) => boardTileState({ session: true, isOwner: false, joined: false, preview: true, ...v });
+    expect(view({ session: false })).toBe("none");
+    expect(view({ session: false, isOwner: true })).toBe("none");
+    // Others: "Join whiteboard" until they join, the board while joined, the placeholder again after leaving.
+    expect(view({})).toBe("available");
+    expect(view({ joined: true })).toBe("joined");
+    // The preview flag is the owner's only.
+    expect(view({ preview: false })).toBe("available");
+    // The device that presents: the board as a preview it can hide (and show again).
+    expect(view({ isOwner: true, joined: true })).toBe("preview");
+    expect(view({ isOwner: true, joined: true, preview: false })).toBe("hidden");
+  });
+
+  it("knows whether the board is wider than tall (the phone's landscape lock in fullscreen)", () => {
+    const el = (x: number, y: number, width: number, height: number, isDeleted = false) => ({ x, y, width, height, isDeleted });
+    // An empty board is shown in a 16:9 tile: wide.
+    expect(boardIsWide([])).toBe(true);
+    expect(boardIsWide([el(0, 0, 400, 100)])).toBe(true);
+    expect(boardIsWide([el(0, 0, 100, 400)])).toBe(false);
+    // The bounding box of all elements counts, deleted ones not; negative sizes (drawn up or left) as well.
+    expect(boardIsWide([el(0, 0, 100, 100), el(0, 500, 100, 100)])).toBe(false);
+    expect(boardIsWide([el(0, 0, 100, 100), el(0, 500, 100, 100, true)])).toBe(true);
+    expect(boardIsWide([el(500, 0, -500, 100)])).toBe(true);
+  });
+
+  it("the member list joins the board from inside the channel; the owner's own row shows the preview; elsewhere a hint", () => {
+    const channel = { domain: "n.test", channelId: "C" };
+    const here = { status: "connected" as const, target: { domain: "n.test", roomId: "R", channelId: "C" }, identity: "bob@n.test/DB" };
+    expect(rowBoardAction({ identity: "alice@n.test/DA", presenting: true }, here, channel)).toBe("join");
+    expect(rowBoardAction({ identity: "bob@n.test/DB", presenting: true }, here, channel)).toBe("preview");
+    expect(rowBoardAction({ identity: "carol@n.test/DC", presenting: false }, here, channel)).toBeNull();
+    expect(rowBoardAction({ identity: "alice@n.test/DA", presenting: true }, { ...here, target: { ...here.target, channelId: "OTHER" } }, channel)).toBe("hint");
+    expect(rowBoardAction({ identity: "alice@n.test/DA", presenting: true }, { status: "idle", target: null, identity: null }, channel)).toBe("hint");
+  });
+
+  it("opening a board shows the owner's preview again", async () => {
+    useBoardPreview.setState({ shown: false });
+    expect(await openBoard({ open: opened } as never, { domain: "n.test", conversationId: "C" })).toBe(true);
+    expect(useBoardPreview.getState().shown).toBe(true);
   });
 });

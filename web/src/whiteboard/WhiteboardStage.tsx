@@ -1,74 +1,163 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
- * The whiteboard on the voice stage (design note 4.10): the owner's tile shows a badge and the live thumbnail
- * where a screen share would be, others join on demand from the tile (button or double-click), the joined
- * board is a large stage tile with focus, maximize and popout, the sidebar row of the owner gets a small
- * badge, and the call controls open or close a board. Used by `web/src/voice/ui/*` through small additive
- * hooks; nothing here depends on the voice session beyond its store.
+ * The whiteboard on the voice stage (design note 4.10; docs/CLIENT.md "Streams are joined"): the board is its own
+ * stage tile like a screen share, and the camera tiles stay as they are. Others see a placeholder ("Whiteboard ·
+ * <who started it>", the badge, the live thumbnail and **Join whiteboard**; a double-click joins as well); joined, the
+ * board fills a large tile with focus, maximize, popout, fullscreen and **Leave whiteboard**, which returns to the
+ * placeholder, any number of times. The device that presents gets a preview of its board that it can hide and the
+ * "Whiteboard is open" bar with the preview toggle and Close (as the "You are streaming" bar). The voice member list
+ * marks the presenter with a small board badge; the call controls open or close a board. Used by
+ * `web/src/voice/ui/*` through small additive hooks and components.
  */
-import { lazy, useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { useT } from "../i18n";
 import { useNode } from "../components/NodeScope";
+import { Button } from "../components/ui";
+import { EyeOffIcon } from "../components/icons";
 import { toastError } from "../stores/toasts";
+import { ScreenOffIcon } from "../voice/ui/icons";
+import { FullscreenButton, FullscreenControls, exitFullscreen, fullscreenElement, useFullscreen } from "../voice/ui/fullscreen";
 import { useWhiteboardSession } from "./store";
-import { openBoard, presenterIdentity, tileBoardState } from "./stage";
+import { boardIsWide, boardTileState, openBoard, presenterIdentity, setBoardPreview, useBoardPreview } from "./stage";
 
-/** The stage's view of the channel's board. */
+/** The stage's view of the channel's board: which tile it is (`stage.ts` `boardTileState`) and who presents it. */
 export function useStageBoard(channelId: string, identities: readonly string[]) {
   const wb = useWhiteboardSession(channelId);
+  const preview = useBoardPreview((s) => s.shown);
   const key = identities.join(",");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const presenter = useMemo(() => presenterIdentity(wb.session, identities), [wb.session, key]);
-  return { ...wb, presenter, visible: !!wb.session && (wb.joined || wb.isOwner) };
+  return { ...wb, presenter, tile: boardTileState({ session: !!wb.session, isOwner: wb.isOwner, joined: wb.joined, preview }) };
+}
+
+/** The board badge of the whiteboard tile and the bar. */
+function BoardBadge() {
+  const t = useT();
+  return (
+    <span role="img" className="rounded bg-accent px-1.5 text-[11px] leading-5 text-accent-text" title={t("whiteboard.badge")} aria-label={t("whiteboard.badge")} data-testid="whiteboard-badge">
+      🖍
+    </span>
+  );
 }
 
 /**
- * What the board adds to a participant's tile: on the presenter's tile the badge, the live thumbnail and
- * "Join whiteboard session" (double-click joins as well); for the owner a small "watching" mark on the tiles
- * of participants who joined.
+ * The board before this viewer joins it: badge, "Whiteboard · <name>", the owner's live thumbnail and Join
+ * whiteboard (a double-click on the tile joins as well). Nothing of the board but the thumbnail is received.
  */
-export function WhiteboardTileOverlay({ channelId, identity, self, presenter }: { channelId: string; identity: string; self: boolean; presenter: string | null }) {
+export function WhiteboardPlaceholder({ channelId, name, color }: { channelId: string; name: string; color?: string | null }) {
   const t = useT();
-  const { joined, isOwner, join, thumbnailUrl, controller } = useWhiteboardSession(channelId);
-  const state = tileBoardState({ identity, self }, presenter, { joined, isOwner, watchers: controller.participants });
-  if (state.kind === "none") return null;
-  if (state.kind === "watching") {
-    return (
-      <span className="absolute right-2 top-2 rounded-md bg-black/60 px-1.5 py-0.5 text-[11px] text-fg-0" data-testid="whiteboard-watching" title={t("whiteboard.watching_badge")}>
-        🖍 {t("whiteboard.watching_badge")}
-      </span>
-    );
-  }
+  const { join, thumbnailUrl } = useWhiteboardSession(channelId);
   return (
-    <div className="absolute inset-0 flex flex-col bg-bg-2" data-testid="whiteboard-tile-overlay" onDoubleClick={() => state.canJoin && join()}>
-      {thumbnailUrl ? (
-        <img src={thumbnailUrl} alt={t("whiteboard.badge")} className="min-h-0 flex-1 object-contain" data-testid="whiteboard-thumbnail" />
-      ) : (
-        <div className="flex min-h-0 flex-1 items-center justify-center text-3xl" aria-hidden="true">
+    <div className="relative flex h-full w-full flex-col items-center justify-center gap-2 overflow-hidden rounded-xl border-2 border-line bg-bg-2 p-3" data-testid="whiteboard-tile" data-state="available" onDoubleClick={join}>
+      {thumbnailUrl && <img src={thumbnailUrl} alt={t("whiteboard.badge")} className="absolute inset-0 h-full w-full object-contain opacity-70" data-testid="whiteboard-thumbnail" />}
+      <div className="absolute inset-x-1.5 top-1.5 flex min-w-0 items-center gap-1.5">
+        <BoardBadge />
+        <span className="truncate rounded-md bg-black/60 px-1.5 py-0.5 text-xs text-fg-0" data-testid="whiteboard-tile-title">
+          {t("whiteboard.title")} · <span style={color ? { color } : undefined}>{name}</span>
+        </span>
+      </div>
+      {!thumbnailUrl && (
+        <span className="text-3xl" aria-hidden="true">
           🖍
-        </div>
-      )}
-      <span className="absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded-md bg-accent px-1.5 py-0.5 text-[11px] font-semibold text-accent-text" data-testid="whiteboard-badge">
-        🖍 {t("whiteboard.badge")}
-      </span>
-      {state.canJoin && (
-        <button type="button" onClick={join} className="absolute left-1/2 top-1/2 min-h-9 -translate-x-1/2 -translate-y-1/2 rounded-md bg-accent px-3 text-sm font-medium text-accent-text shadow-lg hover:bg-accent-hover" data-testid="whiteboard-join">
-          {t("whiteboard.join")}
-        </button>
-      )}
-      {state.self && (
-        <span className="absolute right-1.5 top-1.5 rounded-md bg-black/60 px-1.5 py-0.5 text-[11px] text-fg-0" data-testid="whiteboard-joined-count">
-          {t("whiteboard.joined_count", { count: state.watching })}
         </span>
       )}
+      <Button className="relative" onClick={join} aria-label={t("whiteboard.tile_join_named", { name })} data-testid="whiteboard-join">
+        {t("whiteboard.tile_join")}
+      </Button>
+    </div>
+  );
+}
+
+/** The joined board as a large stage tile (lazy: the board UI and Excalidraw load only when a board is shown). */
+const WhiteboardStageTile = lazy(() => import("./WhiteboardStageTile"));
+
+const headerButton = "inline-flex min-h-9 min-w-9 items-center justify-center rounded-md text-fg-1 hover:bg-bg-3 hover:text-fg-0";
+
+/**
+ * The board in a large stage tile: joined (Leave whiteboard, also in the fullscreen controls) or the owner's own
+ * board (Hide preview). Fullscreen as with streams: a touch device turns to landscape for a board wider than tall.
+ */
+export function WhiteboardLargeTile({ roomId, channelId, name, focused, onFocus, className = "" }: { roomId: string; channelId: string; name: string; focused: boolean; onFocus: () => void; className?: string }) {
+  const t = useT();
+  const { isOwner, leave, controller } = useWhiteboardSession(channelId);
+  const fs = useFullscreen<HTMLDivElement>();
+  // Recomputed with every change of the board (`version`).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const wide = useMemo(() => boardIsWide(controller.elements.values()), [controller, controller.version]);
+  const leaveBoard = () => {
+    if (fs.ref.current && fullscreenElement() === fs.ref.current) void exitFullscreen();
+    leave();
+  };
+  const extra = (
+    <>
+      <FullscreenButton active={fs.active} onToggle={fs.toggle} className="bg-transparent text-fg-1 hover:bg-bg-3" testId="whiteboard-fullscreen" />
+      {isOwner ? (
+        <button type="button" className={headerButton} onClick={() => setBoardPreview(false)} aria-label={t("voice.stream.preview_hide")} title={t("voice.stream.preview_hide")} data-testid="whiteboard-preview-hide">
+          <EyeOffIcon size={16} />
+        </button>
+      ) : (
+        <button type="button" className={headerButton} onClick={leaveBoard} aria-label={t("whiteboard.tile_leave_named", { name })} title={t("whiteboard.tile_leave")} data-testid="whiteboard-leave">
+          <ScreenOffIcon size={16} />
+        </button>
+      )}
+    </>
+  );
+  return (
+    <div
+      ref={fs.ref}
+      className={`relative min-h-0 bg-bg-0 [&:fullscreen]:h-dvh [&:fullscreen]:w-dvw ${className}`}
+      data-testid="whiteboard-tile"
+      data-state={isOwner ? "preview" : "joined"}
+      data-focused={focused || undefined}
+      data-wide={String(wide)}
+      data-orientation={fs.active ? fs.orientation : undefined}
+    >
+      <Suspense fallback={null}>
+        <WhiteboardStageTile roomId={roomId} channelId={channelId} focused={focused} onFocus={onFocus} headerExtra={extra} />
+      </Suspense>
+      {fs.active && <FullscreenControls onExit={fs.toggle} onLeaveStream={isOwner ? undefined : leaveBoard} leaveLabel={t("whiteboard.tile_leave")} leaveTestId="fullscreen-board-leave" />}
     </div>
   );
 }
 
 /**
- * The joined board as a large stage tile (lazy: the board UI and Excalidraw load only when a board is shown).
+ * The presenting device's bar while its board is open: "Whiteboard is open", how many joined, the preview toggle
+ * (the preview tile can be hidden and reopened here) and Close (after a confirmation, for everyone).
  */
-export const WhiteboardStageTile = lazy(() => import("./WhiteboardStageTile"));
+export function WhiteboardIndicator({ channelId }: { channelId: string }) {
+  const t = useT();
+  const { session, isOwner, controller } = useWhiteboardSession(channelId);
+  const preview = useBoardPreview((s) => s.shown);
+  const [busy, setBusy] = useState(false);
+  if (!session || !isOwner) return null;
+  const close = async () => {
+    if (!confirm(t("whiteboard.close_confirm"))) return;
+    setBusy(true);
+    try {
+      await controller.close();
+    } catch (e) {
+      toastError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-lg border border-line bg-bg-1 px-2 py-1 text-xs" data-testid="whiteboard-indicator">
+      <BoardBadge />
+      <span className="font-medium text-fg-0">{t("whiteboard.open_bar")}</span>
+      <span className="text-fg-2" data-testid="whiteboard-joined-count">
+        {t("whiteboard.joined_count", { count: controller.participants.size })}
+      </span>
+      <span className="flex-1" />
+      <Button variant="ghost" className="min-h-8 px-2 text-xs" onClick={() => setBoardPreview(!preview)} data-testid="whiteboard-preview-toggle">
+        {preview ? t("voice.stream.preview_hide") : t("voice.stream.preview_show")}
+      </Button>
+      <Button variant="danger" className="min-h-8 px-2 text-xs" disabled={busy} onClick={() => void close()} data-testid="whiteboard-stop">
+        {t("whiteboard.close")}
+      </Button>
+    </div>
+  );
+}
 
 /** Call control: open a whiteboard on the stage (or close the own one). */
 export function WhiteboardControl({ channelId, canOpen, className = "" }: { channelId: string; canOpen: boolean; className?: string }) {
@@ -109,11 +198,9 @@ export function WhiteboardControl({ channelId, canOpen, className = "" }: { chan
   );
 }
 
-/** Small badge next to the owner in the voice channel's sidebar row. */
-export function WhiteboardOwnerBadge({ channelId, address }: { channelId: string; address: string }) {
+/** The small board badge next to LIVE in the voice member list, on the member who presents the board. */
+export function WhiteboardRowBadge() {
   const t = useT();
-  const { session } = useWhiteboardSession(channelId);
-  if (!session || session.owner.toLowerCase() !== address.toLowerCase()) return null;
   return (
     <span role="img" className="text-[12px]" title={t("whiteboard.badge")} aria-label={t("whiteboard.badge")} data-testid="whiteboard-owner-badge">
       🖍
