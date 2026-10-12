@@ -36,6 +36,12 @@ function android(release: unknown = null) {
       case "get_update_channel":
         return "stable";
       case "set_update_channel":
+      case "android_audio_routes":
+        return { available: ["speaker", "earpiece"], current: "speaker" };
+      case "android_audio_route":
+        return { available: ["speaker", "earpiece"], current: a.route };
+      case "android_orientation":
+        if (a.lock === "sideways") throw "android.invalid";
         return null;
       case "android_voice":
       case "android_push_config":
@@ -130,6 +136,27 @@ describe("the Android app's platform", () => {
     await p.android?.push.configure({ app: "tavrn" }, "tavrn.example");
     expect(calls.find((c) => c.cmd === "android_push_register")?.args).toEqual({ vapid: "BKEY", distributor: null });
     expect(calls.find((c) => c.cmd === "android_push_config")?.args).toEqual({ config: { strings: { app: "tavrn" }, home_node: "tavrn.example" } });
+  });
+
+  it("routes the call's audio and follows the routes' changes", async () => {
+    const { calls, emit } = android();
+    const p = await createTauriPlatform(document.implementation.createHTMLDocument("app"));
+    await expect(p.android?.audio.routes()).resolves.toEqual({ available: ["speaker", "earpiece"], current: "speaker" });
+    await expect(p.android?.audio.setRoute("earpiece")).resolves.toEqual({ available: ["speaker", "earpiece"], current: "earpiece" });
+    expect(calls.find((c) => c.cmd === "android_audio_route")?.args).toEqual({ route: "earpiece" });
+    const seen: unknown[] = [];
+    p.android?.audio.onRoutes((r) => seen.push(r));
+    emit({ kind: "audio_routes", available: ["speaker", "earpiece", "bluetooth"], current: "bluetooth" });
+    emit({ kind: "back" });
+    expect(seen).toEqual([{ available: ["speaker", "earpiece", "bluetooth"], current: "bluetooth" }]);
+  });
+
+  it("locks the orientation natively and releases it", async () => {
+    const { calls } = android();
+    const p = await createTauriPlatform(document.implementation.createHTMLDocument("app"));
+    await p.android?.lockOrientation("landscape");
+    await p.android?.lockOrientation(null);
+    expect(calls.filter((c) => c.cmd === "android_orientation").map((c) => c.args)).toEqual([{ lock: "landscape" }, { lock: null }]);
   });
 
   it("links to a newer release's APK in the browser", async () => {

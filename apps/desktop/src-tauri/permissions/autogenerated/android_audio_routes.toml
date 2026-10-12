@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-android-audio-routes"
+description = "Enables the android_audio_routes command without any pre-configured scope."
+commands.allow = ["android_audio_routes"]
+
+[[permission]]
+identifier = "deny-android-audio-routes"
+description = "Denies the android_audio_routes command without any pre-configured scope."
+commands.deny = ["android_audio_routes"]

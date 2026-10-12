@@ -100,6 +100,8 @@ class VoiceService : Service() {
     focus?.let { (getSystemService(Context.AUDIO_SERVICE) as AudioManager).abandonAudioFocusRequest(it) }
     focus = null
     running = false
+    // The app closed from the recent apps (the webview and its call are gone): the system's audio routing comes back.
+    AudioRouter.stop()
   }
 
   /** The texts and the state the client sent (`VoiceNotice` in src/mobile.rs, checked there). */

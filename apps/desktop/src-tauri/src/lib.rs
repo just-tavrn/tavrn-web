@@ -269,6 +269,9 @@ pub fn run() {
             android::android_save_chunk,
             android::android_save_end,
             android::android_save_abort,
+            android::android_audio_routes,
+            android::android_audio_route,
+            android::android_orientation,
         ])
         .setup(|app| {
             let handle = app.handle();

@@ -417,6 +417,24 @@ export interface AndroidPush {
   onUnregistered(fn: () => void): () => void;
 }
 
+/** An output of the call's audio in the Android app (docs/ANDROID.md "Audio output"). */
+export type AudioRoute = "speaker" | "earpiece" | "bluetooth" | "wired";
+
+/** The routes the call can use now (the menu's order) and the one in use (null while no voice runs). */
+export interface AudioRoutes {
+  available: AudioRoute[];
+  current: AudioRoute | null;
+}
+
+/** The call's audio output: speaker, earpiece, a wired or a Bluetooth headset. */
+export interface AndroidAudio {
+  routes(): Promise<AudioRoutes>;
+  /** Moves the call's audio there; it stays while the device is connected (a new headset takes over). */
+  setRoute(route: AudioRoute): Promise<AudioRoutes>;
+  /** A headset came or went, or the audio moved. */
+  onRoutes(fn: (routes: AudioRoutes) => void): () => void;
+}
+
 /** The Android app's own pieces (`platform/tauriAndroid.ts`). */
 export interface PlatformAndroid {
   /** The Android API level at start. */
@@ -442,4 +460,10 @@ export interface PlatformAndroid {
   push: AndroidPush;
   /** Without a distributor: keeps the app running in the background for notifications (a foreground service). */
   keepConnection(on: boolean, texts: { title: string; text: string }): Promise<void>;
+  audio: AndroidAudio;
+  /**
+   * `screen.orientation.lock()` natively (the webview does not implement it; `androidShell.ts` routes the standard
+   * API here): only while an element is in fullscreen; null releases the lock.
+   */
+  lockOrientation(orientation: string | null): Promise<void>;
 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 /** Tests: a fake Android app platform (the members of `tauriAndroid.ts` without the shell). */
 import { vi } from "vitest";
-import type { AndroidInsets, PlatformAndroid, PushEndpointKeys } from "./types";
+import type { AndroidInsets, AudioRoute, AudioRoutes, PlatformAndroid, PushEndpointKeys } from "./types";
 import type { Platform } from "./types";
 
 export interface FakeAndroid extends PlatformAndroid {
@@ -10,14 +10,17 @@ export interface FakeAndroid extends PlatformAndroid {
   emitInsets(insets: AndroidInsets): void;
   emitEndpoint(keys: PushEndpointKeys): void;
   emitUnregistered(): void;
+  emitRoutes(routes: AudioRoutes): void;
 }
 
-export function fakeAndroid(opts: { webauthn?: boolean; distributors?: string[]; notifications?: "granted" | "denied" | "prompt"; permission?: "granted" | "denied" | "blocked" } = {}): FakeAndroid {
+export function fakeAndroid(opts: { webauthn?: boolean; distributors?: string[]; notifications?: "granted" | "denied" | "prompt"; permission?: "granted" | "denied" | "blocked"; routes?: AudioRoutes } = {}): FakeAndroid {
   const backs = new Set<() => void>();
   const links = new Set<(url: string) => void>();
   const insetsFns = new Set<(i: AndroidInsets) => void>();
   const endpoints = new Set<(k: PushEndpointKeys) => void>();
   const gone = new Set<() => void>();
+  const routeFns = new Set<(r: AudioRoutes) => void>();
+  let routes: AudioRoutes = opts.routes ?? { available: ["speaker", "earpiece"], current: "speaker" };
   let insets: AndroidInsets = { top: 24, right: 0, bottom: 48, left: 0, keyboard: 0 };
   let n = 0;
   const sub = <T>(set: Set<T>, fn: T) => {
@@ -44,6 +47,15 @@ export function fakeAndroid(opts: { webauthn?: boolean; distributors?: string[];
       onUnregistered: (fn) => sub(gone, fn),
     },
     keepConnection: vi.fn(async () => undefined),
+    audio: {
+      routes: vi.fn(async () => routes),
+      setRoute: vi.fn(async (route: AudioRoute) => {
+        routes = { ...routes, current: route };
+        return routes;
+      }),
+      onRoutes: (fn) => sub(routeFns, fn),
+    },
+    lockOrientation: vi.fn(async () => undefined),
     emitBack: () => backs.forEach((f) => f()),
     emitLink: (url) => links.forEach((f) => f(url)),
     emitInsets: (i) => {
@@ -52,6 +64,10 @@ export function fakeAndroid(opts: { webauthn?: boolean; distributors?: string[];
     },
     emitEndpoint: (k) => endpoints.forEach((f) => f(k)),
     emitUnregistered: () => gone.forEach((f) => f()),
+    emitRoutes: (r) => {
+      routes = r;
+      routeFns.forEach((f) => f(r));
+    },
   };
 }
 

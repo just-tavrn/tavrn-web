@@ -36,6 +36,8 @@ pub enum ShellEvent {
     PushEndpoint(crate::mobile::PushEndpoint),
     /// Android: the push distributor dropped the registration.
     PushUnregistered,
+    /// Android: the call's audio routes changed (`mobile::AudioRoutes`).
+    AudioRoutes(crate::mobile::AudioRoutes),
 }
 
 /// Links and notification clicks kept while the client has not subscribed yet (the one that started the app).

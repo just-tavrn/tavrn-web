@@ -43,6 +43,8 @@ import org.unifiedpush.android.connector.UnifiedPush
 @InvokeArg class SaveChunkArgs { lateinit var id: String; lateinit var data: String }
 @InvokeArg class SaveIdArgs { lateinit var id: String }
 @InvokeArg class NotifyArgs { lateinit var title: String; lateinit var body: String; var path: String? = null }
+@InvokeArg class OrientationArgs { var lock: String? = null }
+@InvokeArg class RouteArgs { lateinit var route: String }
 @InvokeArg class VoiceArgs {
   lateinit var state: String
   lateinit var title: String
@@ -61,16 +63,19 @@ import org.unifiedpush.android.connector.UnifiedPush
 @TauriPlugin
 class ShellPlugin(private val activity: Activity) : Plugin(activity) {
   private var webAuthn = false
+  private var fullscreen: Fullscreen? = null
   private var insets = JSObject().put("top", 0).put("right", 0).put("bottom", 0).put("left", 0).put("keyboard", 0)
 
   override fun load(webView: WebView) {
     Notifier.channels(activity)
     webAuthn = enableWebAuthn(webView)
+    fullscreen = Fullscreen.install(activity, webView)
     watchInsets()
-    // The back gesture goes to the client (history back, or the app to the background from its first page); it runs
-    // before the default handlers, which would close the activity.
+    // The back gesture leaves fullscreen first, then goes to the client (history back, or the app to the background
+    // from its first page); it runs before the default handlers, which would close the activity.
     (activity as AppCompatActivity).onBackPressedDispatcher.addCallback(activity, object : OnBackPressedCallback(true) {
       override fun handleOnBackPressed() {
+        if (fullscreen?.exit() == true) return
         if (!Shell.emitNow(Shell.event("back"))) activity.moveTaskToBack(true)
       }
     })
@@ -222,7 +227,31 @@ class ShellPlugin(private val activity: Activity) : Plugin(activity) {
   fun voice(invoke: Invoke) {
     val a = invoke.parseArgs(VoiceArgs::class.java)
     VoiceService.update(activity, VoiceService.Notice(a.state, a.title, a.text, a.mute, a.unmute, a.leave, a.camera))
+    // The call's audio output follows the voice notification's lifetime (docs/ANDROID.md "Audio output").
+    if (a.state == "disconnected") AudioRouter.stop() else AudioRouter.start(activity)
     invoke.resolve()
+  }
+
+  /** The routes of the call's audio and the one in use. */
+  @Command
+  fun audioRoutes(invoke: Invoke) {
+    invoke.resolve(AudioRouter.state(activity))
+  }
+
+  @Command
+  fun audioRoute(invoke: Invoke) {
+    val route = AudioRoutes.Route.of(invoke.parseArgs(RouteArgs::class.java).route) ?: return invoke.reject("unknown route", "android.invalid")
+    val state = AudioRouter.choose(activity, route) ?: return invoke.reject("route not available", "audio.unavailable")
+    invoke.resolve(state)
+  }
+
+  /** `screen.orientation.lock()` of the page, which the webview does not implement: only in fullscreen (null: unlock). */
+  @Command
+  fun orientation(invoke: Invoke) {
+    val lock = invoke.parseArgs(OrientationArgs::class.java).lock
+    activity.runOnUiThread {
+      if (fullscreen?.lock(lock) == true) invoke.resolve() else invoke.reject("not in fullscreen", "orientation.refused")
+    }
   }
 
   @Command
