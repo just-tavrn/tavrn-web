@@ -210,6 +210,10 @@ test.describe("TAVRN_OIDC_ONLY", () => {
   }
 
   test("SSO only: password form for administrators only (emergency access)", async ({ page, browser, request }) => {
+    // The break-glass account is one account for every run (both projects, retries, --repeat-each): the node takes each
+    // TOTP step once, so a sign-in may wait up to 30 s for the next step, and the other worker waits for the lock
+    // meanwhile. The default 30 s budget left no room for that.
+    test.setTimeout(scaled(120_000));
     // Registration is closed for everybody but the break-glass names.
     const refused = await request.post(`${SSO_NODE}/api/v1/auth/register`, { data: { username: uniqueName("nope"), password: "passwort-nope-12345" } });
     expect(refused.status()).toBe(403);
