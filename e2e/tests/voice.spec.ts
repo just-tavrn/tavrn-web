@@ -10,6 +10,7 @@ import { dirname, join, resolve } from "node:path";
 import { expect, test, type APIRequestContext, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { NODE, createRoomViaApi, inviteCode, loginAs, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, type Account } from "./helpers";
 import { hideDeviceNamesUntilAsked } from "./voice-helpers";
+import { speechWav } from "./fake-audio";
 import AxeBuilder from "@axe-core/playwright";
 import { isTouch, openContextMenu } from "./menu-helpers";
 import { scaled } from "./timeouts";
@@ -17,12 +18,12 @@ import { scaled } from "./timeouts";
 /** An animated GIF (profile.spec.ts fixture) for the avatar animation on the stage. */
 const ANIMATED_GIF = resolve(dirname(new URL(import.meta.url).pathname), "../fixtures/animated.gif");
 
-// Fake microphone and camera, no permission prompts, audio without a user gesture. The microphone plays a
-// continuous tone from a file (Chromium's default fake input only beeps briefly, which LiveKit's active
-// speaker detection rightly does not count as speech).
-const FAKE_TONE = join(tmpdir(), "tavrn-voice-e2e-tone.wav");
-writeFileSync(FAKE_TONE, toneWav(5, 48000));
-const FAKE_MEDIA = ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", `--use-file-for-fake-audio-capture=${FAKE_TONE}`, "--autoplay-policy=no-user-gesture-required"];
+// Fake microphone and camera, no permission prompts, audio without a user gesture. The microphone plays
+// speech-like sound from a file (`fake-audio.ts`; Chromium's default fake input only beeps briefly, which LiveKit's
+// active speaker detection rightly does not count as speech, and a steady tone is taken down by the noise suppression).
+const FAKE_VOICE = join(tmpdir(), "tavrn-voice-e2e-voice.wav");
+writeFileSync(FAKE_VOICE, speechWav(5));
+const FAKE_MEDIA = ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", `--use-file-for-fake-audio-capture=${FAKE_VOICE}`, "--autoplay-policy=no-user-gesture-required"];
 test.use({ launchOptions: { args: FAKE_MEDIA }, permissions: ["microphone", "camera"] });
 
 /**
@@ -259,7 +260,7 @@ test.describe("Voice channels", () => {
       .poll(() => alice.page.evaluate((id) => (window as unknown as { __tavrnVoice: { inboundAudioPeak: (i: string) => Promise<number> } }).__tavrnVoice.inboundAudioPeak(id), bobIdentity), { timeout: 30_000 })
       .toBeGreaterThan(0.05);
 
-    // Speaking: Alice mutes herself, Bob's fake microphone plays its tone; Alice sees Bob's tile light up.
+    // Speaking: Alice mutes herself, Bob's fake microphone plays; Alice sees Bob's tile light up.
     await alice.page.getByTestId("voice-mute").click();
     await expect(alice.page.getByTestId("voice-mute")).toHaveAttribute("aria-pressed", "true");
     await expect.poll(() => cues(alice.page)).toContainEqual({ cue: "mute", own: true });
@@ -384,6 +385,47 @@ test.describe("Voice channels", () => {
     await expect(row(alice.page, bob.address)).toHaveCount(0, { timeout: 20_000 });
     await alice.page.getByTestId("voice-leave").click();
     await expect(alice.page.getByTestId("voice-join-panel")).toBeVisible();
+  });
+
+  test("Push-to-talk switched on while connected: the other side's speaking light follows every press (issue #47)", async ({ browser, request }) => {
+    test.setTimeout(scaled(180_000));
+    const { roomId, code } = await setup(request);
+    const alice = await voiceUser(browser, "vlisten", { cuesOff: true });
+    const bob = await voiceUser(browser, "vptt", { cuesOff: true });
+    await joinRoom(request, alice.page, code);
+    await joinRoom(request, bob.page, code);
+    await joinFromSidebar(alice.page, roomId);
+    await joinFromSidebar(bob.page, roomId);
+    for (const u of [alice, bob]) await expect(u.page.getByTestId("voice-bar")).toHaveAttribute("data-status", "connected", { timeout: 30_000 });
+    // Alice only listens; Bob's fake microphone plays, so with voice activation his tile lights up for her.
+    await alice.page.getByTestId("voice-mute").click();
+    await expect(tile(alice.page, bob.address)).toHaveAttribute("data-speaking", "true", { timeout: 30_000 });
+
+    // Bob switches to push-to-talk in the microphone's quick menu while connected: his microphone goes quiet.
+    await openNavIfMobile(bob.page);
+    await openContextMenu(bob.page, bob.page.getByTestId("voice-bar-mute"));
+    const ptt = bob.page.getByTestId("voice-input-menu").getByRole("menuitemcheckbox", { name: /Push-to-Talk/ });
+    await ptt.click();
+    await expect(ptt).toHaveAttribute("aria-checked", "true");
+    await bob.page.keyboard.press("Escape");
+    await expect(tile(alice.page, bob.address)).not.toHaveAttribute("data-speaking", "true", { timeout: 20_000 });
+
+    // Every press: Bob transmits at once, and Alice's tile of him lights up within five seconds and goes dark after.
+    // His voice arrives well above the speaking threshold (-50 dBFS): the fake microphone plays a speech-like signal,
+    // which the browser's noise suppression keeps (it took a steady test tone down by about 20 dB, near the threshold).
+    const bobIdentity = (await hooks(bob.page)).local.identity;
+    const hold = bob.page.getByTestId("voice-ptt");
+    for (const [press, quietMs] of [2_000, 12_000].entries()) {
+      // Long enough for the encoder to fall into discontinuous transmission (silence frames only).
+      await bob.page.waitForTimeout(quietMs);
+      await hold.dispatchEvent("pointerdown");
+      await expect(hold).toHaveClass(/bg-accent/);
+      await expect(tile(alice.page, bob.address), `press ${press + 1}`).toHaveAttribute("data-speaking", "true", { timeout: 5_000 });
+      const peak = await alice.page.evaluate((id) => (window as unknown as { __tavrnVoice: { inboundAudioPeak: (i: string, ms?: number) => Promise<number> } }).__tavrnVoice.inboundAudioPeak(id, 1000), bobIdentity);
+      expect(peak, `press ${press + 1}: received level`).toBeGreaterThan(0.1);
+      await hold.dispatchEvent("pointerup");
+      await expect(tile(alice.page, bob.address)).not.toHaveAttribute("data-speaking", "true", { timeout: 10_000 });
+    }
   });
 
   test("Connection problems: plug icon, reconnecting without duplicates, removal after the grace period", async ({ browser, request }) => {
@@ -748,7 +790,7 @@ test.describe("Voice channels", () => {
     await joinFromSidebar(alice.page, roomId);
     await joinFromSidebar(bob.page, roomId);
 
-    // Alice's fake microphone plays a tone: Bob sees her tile speaking and her avatar animated; muted, the
+    // Alice's fake microphone plays: Bob sees her tile speaking and her avatar animated; muted, the
     // tile shows the still frame (also when hovered).
     const aliceAvatar = tile(bob.page, alice.address).locator(".voice-avatar");
     await expect(aliceAvatar).toHaveAttribute("data-has-animation", "true", { timeout: 20_000 });

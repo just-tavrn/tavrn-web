@@ -322,23 +322,16 @@ test("the Linux app end to end: picker, sign-in, encrypted chat, media, voice, c
       for (const type of ["keydown", "keyup"]) window.addEventListener(type, () => void (w.__e2eKeys += 1), { capture: true });
     });
     execFileSync("xdotool", ["keydown", "Control_L"]);
-    let heard = false;
     try {
       await expect(transmitting).toHaveClass(/bg-accent/, { timeout: 10_000 });
-      // The other side's speaking light after the gate reopened is noted, not required: it stays dark in some runs
-      // although the app transmits (a voice matter, not the shell's: tavrn-web issue #47).
-      heard = await expect(tile(bob.page, appAddress)).toHaveAttribute("data-speaking", "true", { timeout: 15_000 }).then(
-        () => true,
-        () => false,
-      );
+      // The other side sees the app speaking (tavrn-web issue #47: with a steady test tone, which the noise suppression
+      // takes down, the light stayed dark in some runs; the fake microphone now plays speech-like sound).
+      await expect(tile(bob.page, appAddress)).toHaveAttribute("data-speaking", "true", { timeout: 15_000 });
     } finally {
       execFileSync("xdotool", ["keyup", "Control_L"]);
     }
     await expect(transmitting).not.toHaveClass(/bg-accent/, { timeout: 10_000 });
     await expect(tile(bob.page, appAddress)).not.toHaveAttribute("data-speaking", "true", { timeout: 30_000 });
-    const note = heard ? "the other side saw the app speaking" : "the other side's speaking light stayed dark";
-    info.annotations.push({ type: "push-to-talk", description: note });
-    stepNote = note;
     expect(await page.evaluate(() => (window as unknown as { __e2eKeys: number }).__e2eKeys), "key events the app's page received itself").toBe(0);
   });
 

@@ -165,7 +165,7 @@ test.describe("Voice, round 3", () => {
     await expect(tile(alice.page, bob.address).getByTestId("sound-overlay")).toHaveCount(0, { timeout: 10_000 });
     await bob.page.getByRole("dialog").getByRole("button", { name: "Schließen" }).click();
 
-    // Speaking ring latency (VOICE.md §9.1): Bob unmutes (his fake microphone plays a tone); Alice records when
+    // Speaking ring latency (VOICE.md §9.1): Bob unmutes (his fake microphone plays); Alice records when
     // his tile lights up and when LiveKit's active-speaker event names him.
     await bob.page.getByTestId("voice-mute").click();
     await expect(tile(alice.page, bob.address)).not.toHaveAttribute("data-speaking", "true", { timeout: 20_000 });

@@ -124,7 +124,7 @@ test.describe("Desktop app: tray", () => {
     await expect(page.getByTestId("voice-stage")).toBeVisible({ timeout: 30_000 });
     await expect.poll(async () => (await last(page))?.state, { timeout: 15_000 }).toMatch(/^(connected|speaking)$/);
     expect((await last(page))?.labels.tooltip).toMatch(/^tavrn · Sprache \(Stammtisch\) · (Im Sprachkanal|Du sprichst)$/);
-    // The fake microphone plays a tone: voice activation lets it through.
+    // The fake microphone plays: voice activation lets it through.
     await expect.poll(async () => (await shellRecord(page)).tray.map((t) => t.state), { timeout: 20_000 }).toContain("speaking");
 
     await shellEmit(page, { kind: "tray", action: "mute" });
