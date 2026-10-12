@@ -155,9 +155,20 @@ export interface PlatformAuth {
 }
 
 export interface AppUpdater {
-  /** The newest signed release, or null when this version is current. */
+  /**
+   * The newest signed release of the chosen channel, or null when this version is current. Rejects with an error
+   * whose `problem.code` is one of `updateErrors.ts`'s codes.
+   */
   check(): Promise<AvailableUpdate | null>;
+  /** The update channel (Settings → App); the shell keeps it and the default for its version. */
+  channel?: {
+    get(): Promise<UpdateChannel>;
+    set(channel: UpdateChannel): Promise<void>;
+  };
 }
+
+/** `stable`: releases only; `beta`: pre-releases too. */
+export type UpdateChannel = "stable" | "beta";
 
 export interface AvailableUpdate {
   version: string;

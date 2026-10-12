@@ -13,7 +13,8 @@ import { createShellEvents } from "./shellEvents";
 import { androidMembers, androidStatus } from "./tauriAndroid";
 import { createTauriSaveFile } from "./tauriFiles";
 import { voiceMember } from "./tauriVoice";
-import type { AppUpdater, HotkeyEvent, Platform, PlatformHotkeys, ResolvedNode } from "./types";
+import type { AppUpdater, HotkeyEvent, Platform, PlatformHotkeys, ResolvedNode, UpdateChannel } from "./types";
+import { updateFailure } from "./updateErrors";
 
 /** Shared with the Electron shell (`links.ts`); kept here for the existing callers. */
 export { installLinkHandler };
@@ -38,12 +39,19 @@ interface UpdateInfo {
   notes?: string | null;
 }
 
+/** The update channel of the shell's settings (desktop and Android). */
+const tauriUpdateChannel: NonNullable<AppUpdater["channel"]> = {
+  get: () => invoke<UpdateChannel>("get_update_channel").catch(updateFailure),
+  set: (channel) => invoke<void>("set_update_channel", { channel }).catch(updateFailure),
+};
+
 const updater: AppUpdater = {
   check: async () => {
-    const found = await invoke<UpdateInfo | null>("check_update");
+    const found = await invoke<UpdateInfo | null>("check_update").catch(updateFailure);
     if (!found) return null;
-    return { version: found.version, notes: found.notes ?? null, install: () => invoke<void>("install_update") };
+    return { version: found.version, notes: found.notes ?? null, install: () => invoke<void>("install_update").catch(updateFailure) };
   },
+  channel: tauriUpdateChannel,
 };
 
 /**

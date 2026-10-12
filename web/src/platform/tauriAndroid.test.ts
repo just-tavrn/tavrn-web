@@ -31,7 +31,12 @@ function android(release: unknown = null) {
       case "android_push_register":
         return { endpoint: "https://ntfy.example/upX", p256dh: "B".repeat(87), auth: "a".repeat(22) };
       case "android_check_update":
+        if (typeof release === "string") throw release;
         return release;
+      case "get_update_channel":
+        return "stable";
+      case "set_update_channel":
+        return null;
       case "android_voice":
       case "android_push_config":
       case "android_keep_connection":
@@ -134,6 +139,15 @@ describe("the Android app's platform", () => {
     expect(update?.version).toBe("0.5.0");
     await update?.install();
     expect(calls.at(-1)).toEqual({ cmd: "open_external", args: { url: "https://github.com/just-tavrn/tavrn-web/releases/download/v0.5.0/Tavrn_0.5.0_android-arm64.apk" } });
+  });
+
+  it("names why the check failed and offers the update channel", async () => {
+    const { calls } = android("update.no_release");
+    const p = await createTauriPlatform(document.implementation.createHTMLDocument("app"));
+    await expect(p.updater?.check()).rejects.toMatchObject({ problem: { code: "update.no_release" } });
+    await expect(p.updater?.channel?.get()).resolves.toBe("stable");
+    await p.updater?.channel?.set("beta");
+    expect(calls.at(-1)).toEqual({ cmd: "set_update_channel", args: { channel: "beta" } });
   });
 });
 

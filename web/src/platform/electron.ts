@@ -12,6 +12,7 @@ import { electronBridge } from "./electronDetect";
 import type { BridgeEvent, TavrnShellBridge } from "./electronBridge";
 import { createElectronSaveFile } from "./electronFiles";
 import { externalUrl, installLinkHandler } from "./links";
+import { updateFailure } from "./updateErrors";
 import type { AppUpdater, HotkeyAction, HotkeyEvent, Platform, PlatformHotkeys, PlatformKeystore, PlatformNotifications, PlatformTray, TrayAction } from "./types";
 
 const TRAY_ACTIONS: readonly string[] = ["mute", "deafen", "leave"] satisfies TrayAction[];
@@ -43,14 +44,6 @@ function eventHub(bridge: TavrnShellBridge) {
   return { onOpen: add(opens), onTray: add(actions), onHotkey: add(hotkeys) };
 }
 
-/**
- * The shell refused an update whose feed is not signed with the app's update key (apps/desktop-electron
- * src/main/updater.ts): an error with its code, so Settings → App shows `errors.update.signature_invalid`.
- */
-function updateRefusal(e: unknown): never {
-  if (e === "update.signature_invalid") throw Object.assign(new Error(e), { problem: { code: e } });
-  throw e;
-}
 
 /** The desktop platform over the Electron shell's bridge; `doc` receives the link handler (tests pass a detached document). */
 export async function createElectronPlatform(bridge: TavrnShellBridge | null = electronBridge(), doc: Document = document): Promise<Platform> {
@@ -66,9 +59,14 @@ export async function createElectronPlatform(bridge: TavrnShellBridge | null = e
   };
   const updater: AppUpdater = {
     check: async () => {
-      const found = await bridge.updater.checkUpdate().catch(updateRefusal);
+      // The shell answers one of the update codes (apps/desktop-electron src/main/updater.ts), shown by Settings → App.
+      const found = await bridge.updater.checkUpdate().catch(updateFailure);
       if (!found) return null;
-      return { version: found.version, notes: found.notes ?? null, install: () => bridge.updater.installUpdate().catch(updateRefusal) };
+      return { version: found.version, notes: found.notes ?? null, install: () => bridge.updater.installUpdate().catch(updateFailure) };
+    },
+    channel: {
+      get: () => bridge.updater.getUpdateChannel().catch(updateFailure),
+      set: (channel) => bridge.updater.setUpdateChannel(channel).catch(updateFailure),
     },
   };
   const hotkeys: PlatformHotkeys = {

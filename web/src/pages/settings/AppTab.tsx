@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
- * Settings → App, desktop app only: version, the home node (node picker), the signed updates, where the keys of this
+ * Settings → App, desktop app only: version, the home node (node picker), the signed updates and their channel, where the keys of this
  * device are kept (OS keychain or the visible fallback), close to tray and quit.
  */
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { platform, type AvailableUpdate } from "../../platform";
+import type { AppUpdater, UpdateChannel } from "../../platform/types";
 import { useT } from "../../i18n";
 import { describeError } from "../../stores/toasts";
-import { Button, ErrorText } from "../../components/ui";
-import { Section } from "./common";
+import { Button, ErrorText, Field } from "../../components/ui";
+import { Section, Select } from "./common";
 import { cryptoStore } from "../../crypto";
 import { useAuth } from "../../stores/auth";
 
@@ -73,6 +74,7 @@ export function AppTab() {
           </p>
         ) : (
           <>
+            {p.updater.channel && <ChannelField channel={p.updater.channel} onChange={() => setState({ kind: "idle" })} onError={setError} />}
             {state.kind === "current" && (
               <p role="status" className="text-sm text-fg-1" data-testid="app-up-to-date">
                 {t("desktop.up_to_date")}
@@ -101,6 +103,35 @@ export function AppTab() {
       <KeysSection />
       <TraySection />
     </div>
+  );
+}
+
+/** The update channel: stable (releases) or beta (pre-releases too); the shell keeps the choice. */
+function ChannelField({ channel, onChange, onError }: { channel: NonNullable<AppUpdater["channel"]>; onChange: () => void; onError: (message: string | null) => void }) {
+  const t = useT();
+  const queryClient = useQueryClient();
+  const current = useQuery({ queryKey: ["app-update-channel"], queryFn: () => channel.get(), retry: false });
+  const [pending, setPending] = useState<UpdateChannel | null>(null);
+  const choose = async (next: UpdateChannel) => {
+    onError(null);
+    setPending(next);
+    try {
+      await channel.set(next);
+      onChange();
+    } catch (e) {
+      onError(describeError(e));
+    }
+    await queryClient.invalidateQueries({ queryKey: ["app-update-channel"] });
+    setPending(null);
+  };
+  return (
+    <Field label={t("desktop.update_channel")} hint={t("desktop.update_channel_hint")}>
+      <Select value={pending ?? current.data ?? ""} disabled={!current.data || pending !== null} onChange={(e) => void choose(e.target.value as UpdateChannel)} data-testid="app-update-channel">
+        {!current.data && <option value="">…</option>}
+        <option value="stable">{t("desktop.update_channel_stable")}</option>
+        <option value="beta">{t("desktop.update_channel_beta")}</option>
+      </Select>
+    </Field>
   );
 }
 
