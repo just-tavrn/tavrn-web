@@ -20,15 +20,13 @@ use serde::Serialize;
 use tauri::State;
 
 use crate::commands::Settings;
+pub use crate::node_url::{MAX_ACCOUNT, valid_account};
 
 /// Service name of every entry: the app's identifier.
 pub const SERVICE: &str = "org.tavrn.desktop";
 
 /// Length of a stored secret: the AES-256 local storage key.
 pub const SECRET_LEN: usize = 32;
-
-/// Longest account address accepted (local part, `@`, domain with an optional port).
-const MAX_ACCOUNT: usize = 320;
 
 /// Environment switch of the backend (see the module documentation).
 pub const BACKEND_ENV: &str = "TAVRN_DESKTOP_KEYCHAIN";
@@ -65,22 +63,6 @@ impl From<Error> for KeychainError {
             _ => Self::Unavailable,
         }
     }
-}
-
-/// An account address as the client's key store names accounts: `local@domain` or `local@domain:port`.
-pub fn valid_account(account: &str) -> bool {
-    if account.is_empty() || account.len() > MAX_ACCOUNT {
-        return false;
-    }
-    let Some((local, host)) = account.split_once('@') else { return false };
-    let (domain, port) = host.split_once(':').map_or((host, None), |(d, p)| (d, Some(p)));
-    let local_ok = !local.is_empty() && local.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'));
-    let domain_ok = !domain.is_empty()
-        && !domain.starts_with('.')
-        && !domain.ends_with('.')
-        && domain.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-'));
-    let port_ok = port.is_none_or(|p| !p.is_empty() && p.len() <= 5 && p.bytes().all(|b| b.is_ascii_digit()));
-    local_ok && domain_ok && port_ok
 }
 
 /// The entry's user name: scoped by the home node's origin and the account.

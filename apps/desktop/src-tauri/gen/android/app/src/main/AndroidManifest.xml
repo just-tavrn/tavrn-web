@@ -21,6 +21,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Unlock with fingerprint, face or PIN: the system's prompt (granted at install). -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <!-- Only when the user asks for it in the settings (the system's dialog). -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 

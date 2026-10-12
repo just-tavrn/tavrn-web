@@ -66,6 +66,11 @@ fn main() {
         "android_audio_routes",
         "android_audio_route",
         "android_orientation",
+        // Unlock with fingerprint, face or PIN (src/android.rs → BiometricUnlock.kt).
+        "android_unlock_status",
+        "android_unlock_store",
+        "android_unlock_get",
+        "android_unlock_clear",
     ];
     // Windows: the whole C runtime is linked statically (+crt-static in .cargo/config.toml, for the prebuilt libwebrtc
     // of the native voice engine), so Tauri's own hybrid runtime (static vcruntime, dynamic ucrt) must stay out.

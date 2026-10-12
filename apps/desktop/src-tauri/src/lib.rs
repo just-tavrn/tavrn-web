@@ -279,6 +279,10 @@ pub fn run() {
             android::android_audio_routes,
             android::android_audio_route,
             android::android_orientation,
+            android::android_unlock_status,
+            android::android_unlock_store,
+            android::android_unlock_get,
+            android::android_unlock_clear,
         ])
         .setup(|app| {
             let handle = app.handle();

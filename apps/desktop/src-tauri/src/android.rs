@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The Android app's bridge to its Kotlin side (docs/ANDROID.md). The Kotlin plugin `ShellPlugin`
 //! (`gen/android/app/src/main/java/org/tavrn/app/ShellPlugin.kt`) does what only Android can: runtime permissions,
-//! the foreground service of voice, UnifiedPush, notifications, the back gesture, app links, the system bars. The
+//! the foreground service of voice, UnifiedPush, notifications, the back gesture, app links, the system bars, the
+//! biometric unlock of the local key store. The
 //! webview never reaches it directly: the plugin has no permission in any capability, so only these commands (granted
 //! by capabilities/mobile.json) call it, after `mobile.rs` checked their input; its events come back through `mobile.rs`
 //! to the client's `shell_events` channel.
@@ -13,7 +14,9 @@ use tauri::plugin::{Builder, PluginHandle, TauriPlugin};
 use tauri::{Manager, Runtime, State, Wry};
 
 use crate::commands::Settings;
-use crate::mobile::{self, AudioRoute, AudioRoutes, Insets, OrientationLock, Permission, PushConfig, PushEndpoint, SettingsPage, VoiceNotice};
+use crate::mobile::{
+    self, AudioRoute, AudioRoutes, Insets, OrientationLock, Permission, PushConfig, PushEndpoint, SettingsPage, UnlockPrompt, UnlockStatus, VoiceNotice,
+};
 use crate::{events, guard, notify};
 
 /// Package and class of the Kotlin plugin.
@@ -249,6 +252,61 @@ pub async fn android_save_abort(android: State<'_, Android<Wry>>, id: String) ->
         return Err("download.invalid".into());
     }
     android.call("saveAbort", json!({ "id": id })).await
+}
+
+// ---- Unlock with fingerprint, face or PIN (docs/ANDROID.md; the client: web/src/platform/tauriAndroid.ts) ----
+
+/// The entry of `account` on the home node of the settings (never a node the page names).
+fn unlock_entry(settings: &Settings, account: &str) -> Result<String, String> {
+    let node = settings.config.lock().map_err(|_| "config.unavailable".to_string())?.node.clone();
+    mobile::unlock_entry(node.as_deref(), account).map_err(str::to_string)
+}
+
+/// Whether the phone can unlock with fingerprint, face or PIN, and what is stored for `account` (no prompt).
+#[tauri::command]
+pub async fn android_unlock_status(android: State<'_, Android<Wry>>, settings: State<'_, Settings>, account: Option<String>) -> Result<UnlockStatus, String> {
+    let entry = account.as_deref().map(|a| unlock_entry(&settings, a)).transpose()?;
+    android.call("unlockStatus", json!({ "entry": entry })).await
+}
+
+/// Seals the local storage key of `account` (32 bytes) with a keystore key behind the system's prompt.
+#[tauri::command]
+pub async fn android_unlock_store(
+    android: State<'_, Android<Wry>>,
+    settings: State<'_, Settings>,
+    account: String,
+    secret: Vec<u8>,
+    prompt: UnlockPrompt,
+) -> Result<(), String> {
+    let entry = unlock_entry(&settings, &account)?;
+    prompt.validate().map_err(str::to_string)?;
+    let secret = mobile::unlock_secret_out(&secret).map_err(str::to_string)?;
+    android.call("unlockStore", json!({ "entry": entry, "secret": secret, "title": prompt.title, "subtitle": prompt.subtitle })).await
+}
+
+/// The local storage key of `account` after the system's prompt.
+#[tauri::command]
+pub async fn android_unlock_get(
+    android: State<'_, Android<Wry>>,
+    settings: State<'_, Settings>,
+    account: String,
+    prompt: UnlockPrompt,
+) -> Result<Vec<u8>, String> {
+    #[derive(Deserialize)]
+    struct Answer {
+        secret: String,
+    }
+    let entry = unlock_entry(&settings, &account)?;
+    prompt.validate().map_err(str::to_string)?;
+    let answer: Answer = android.call("unlockGet", json!({ "entry": entry, "title": prompt.title, "subtitle": prompt.subtitle })).await?;
+    mobile::unlock_secret_in(&answer.secret).ok_or_else(|| "unlock.failed".to_string())
+}
+
+/// Removes what is stored for `account` (turned off, sign-out, forget the device).
+#[tauri::command]
+pub async fn android_unlock_clear(android: State<'_, Android<Wry>>, settings: State<'_, Settings>, account: String) -> Result<(), String> {
+    let entry = unlock_entry(&settings, &account)?;
+    android.call("unlockClear", json!({ "entry": entry })).await
 }
 
 /// A newer release with an APK in the chosen update channel (`release.rs`), or none.
