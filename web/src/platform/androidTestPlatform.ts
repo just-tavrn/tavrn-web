@@ -13,7 +13,10 @@ export interface FakeAndroid extends PlatformAndroid {
   emitRoutes(routes: AudioRoutes): void;
 }
 
-export function fakeAndroid(opts: { webauthn?: boolean; distributors?: string[]; notifications?: "granted" | "denied" | "prompt"; permission?: "granted" | "denied" | "blocked"; routes?: AudioRoutes } = {}): FakeAndroid {
+/** The origin of the fake app (a fake SHA-256 in base64url: 32 zero bytes). */
+export const FAKE_APP_ORIGIN = `android:apk-key-hash:${"A".repeat(43)}`;
+
+export function fakeAndroid(opts: { webauthn?: boolean; origin?: string | null; distributors?: string[]; notifications?: "granted" | "denied" | "prompt"; permission?: "granted" | "denied" | "blocked"; routes?: AudioRoutes } = {}): FakeAndroid {
   const backs = new Set<() => void>();
   const links = new Set<(url: string) => void>();
   const insetsFns = new Set<(i: AndroidInsets) => void>();
@@ -30,7 +33,8 @@ export function fakeAndroid(opts: { webauthn?: boolean; distributors?: string[];
   return {
     sdk: 36,
     webauthn: opts.webauthn ?? false,
-    status: vi.fn(async () => ({ sdk: 36, webauthn: opts.webauthn ?? false, distributors: opts.distributors ?? ["io.heckel.ntfy"], distributor: null, notifications: opts.notifications ?? "prompt", batteryExempt: false, keepConnection: false, insets })),
+    origin: opts.origin === undefined ? FAKE_APP_ORIGIN : opts.origin,
+    status: vi.fn(async () => ({ sdk: 36, webauthn: opts.webauthn ?? false, origin: opts.origin === undefined ? FAKE_APP_ORIGIN : opts.origin, distributors: opts.distributors ?? ["io.heckel.ntfy"], distributor: null, notifications: opts.notifications ?? "prompt", batteryExempt: false, keepConnection: false, insets })),
     requestPermission: vi.fn(async () => opts.permission ?? "granted"),
     openSettings: vi.fn(async () => undefined),
     requestBatteryExemption: vi.fn(async () => true),

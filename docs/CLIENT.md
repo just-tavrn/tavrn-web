@@ -954,8 +954,10 @@ builders where the node lives. The node picker and the login page take the accou
 Flows that need the node's own origin (passkeys, single sign-on, the captcha) run on the node's own page in a window
 of the app without any native API ("Sign in on \<node>'s page"), and the app takes over the session; a passkey used
 there also unlocks the encrypted messages, and "Unlock with a passkey" on the app's unlock screen runs just the passkey
-on that page; on nodes without app sessions the password with TOTP or a recovery code is what works. Web push is not
-offered. Details in DESKTOP.md "Signing in" and "Limitations".
+on that page; on nodes without app sessions the password with TOTP or a recovery code is what works. The Windows app
+runs passkeys natively instead (the Windows WebAuthn API with the node's web origin, DESKTOP.md "Passkeys"): there the
+passkey buttons work in the app itself and the node's page is optional. Web push is not offered. Details in DESKTOP.md
+"Signing in" and "Limitations".
 
 The app keeps the key that unlocks the local key store in the OS keychain (Secret Service, Credential Manager) instead
 of IndexedDB, and moves an existing key there on its first start; without a keychain it keeps the browser's behaviour
@@ -1002,7 +1004,9 @@ of a window ("Sign in on \<node>'s page"). What is different in the client:
 - **Safe areas**: the layout pads itself with `--safe-top`, `--safe-bottom`, … (the system bars the app reports; the
   browser's `env(safe-area-inset-*)` otherwise); the keyboard shortens the page, so the composer stays above it.
 - **Downloads** use Android's document picker; **updates** are announced from the project's releases and download in
-  the browser. Passkeys run on the node's page in the browser (ANDROID.md "Passkeys").
+  the browser. **Passkeys** run in the app (registration, sign-in, re-authentication, the PRF unlock) on Android 14+
+  when the home node lists the app's origin in `webauthn.origins`; otherwise on the node's page in the browser, with
+  "This node does not accept the app's passkeys yet" where the node is the reason (ANDROID.md "Passkeys").
 
 ## Translations
 

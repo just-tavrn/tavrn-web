@@ -155,6 +155,7 @@ class ShellPlugin(private val activity: Activity) : Plugin(activity) {
     val result = JSObject()
       .put("sdk", Build.VERSION.SDK_INT)
       .put("webauthn", webAuthn)
+      .put("origin", if (webAuthn) AppOrigin.of(activity) else null)
       .put("distributors", app.tauri.plugin.JSArray(distributors))
       .put("distributor", UnifiedPush.getAckDistributor(activity))
       .put("notifications", notificationState())

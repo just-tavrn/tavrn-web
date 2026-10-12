@@ -12,7 +12,7 @@ import { useAuthFlow, type FlowKind } from "../stores/authFlow";
 import { describeError, useToasts } from "../stores/toasts";
 import { useT } from "../i18n";
 import { deviceProofFor, rememberPrf } from "../crypto/e2ee";
-import { passkeyLogin, passkeysSupported } from "../lib/passkeys";
+import { passkeyLogin, passkeysSupported, usePasskeyBlocker } from "../lib/passkeys";
 import { Button, ErrorText, Field, Input } from "../components/ui";
 import { tabListKeyDown } from "../lib/a11y";
 import { Captcha } from "../components/Captcha";
@@ -161,6 +161,9 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
   const node = useQuery({ queryKey: ["node", "origin"], queryFn: () => publicApi.node.info() });
   const queryClient = useQueryClient();
   const desktop = platform().isDesktop;
+  // Passkeys in the app itself: the Windows app natively, the Android app when the node accepts its origin.
+  const passkeyBlock = usePasskeyBlocker();
+  const inAppPasskey = passkeyBlock === null;
   // Desktop app: passkeys, single sign-on and the captcha run on the node's own page (FEDERATION.md §8 step 3).
   const handoff = useNodePageHandoff({ next, onSession });
   const captcha = node.data?.captcha ?? null;
@@ -477,10 +480,15 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
         </Button>
         {mode === "login" && (
           <>
-            {(passkeysSupported() || toNodePage) && (
-              <Button variant="ghost" className="w-full border border-line" disabled={busy} onClick={() => (desktop && passkeyOnNodePage && !passkeysSupported() ? passkeyOnNodePage() : void passkeyOnly())} data-testid="passkey-login">
+            {(inAppPasskey || toNodePage) && (
+              <Button variant="ghost" className="w-full border border-line" disabled={busy} onClick={() => (desktop && passkeyOnNodePage && !inAppPasskey ? passkeyOnNodePage() : void passkeyOnly())} data-testid="passkey-login">
                 {t("auth.passkey_login")}
               </Button>
+            )}
+            {passkeyBlock === "node" && toNodePage && (
+              <p className="text-xs text-fg-2" data-testid="passkey-app-origin">
+                {t("passkey.app_origin_refused")}
+              </p>
             )}
             {desktop && toNodePage && (
               <div className="space-y-1">

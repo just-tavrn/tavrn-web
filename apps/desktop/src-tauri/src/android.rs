@@ -69,6 +69,10 @@ pub struct AndroidInfo {
     pub sdk: u32,
     /// The webview runs WebAuthn for the app (Android 14+ with a webview that supports it; docs/ANDROID.md "Passkeys").
     pub webauthn: bool,
+    /// The app's WebAuthn origin (`android:apk-key-hash:<base64url>` of its signing certificate, checked by
+    /// `mobile::app_origin`): the client offers in-app passkeys only while the node lists it in `webauthn.origins`.
+    #[serde(default)]
+    pub origin: Option<String>,
     /// Installed UnifiedPush distributors (package names).
     pub distributors: Vec<String>,
     /// The distributor this app uses, once one was chosen.
@@ -84,7 +88,8 @@ pub struct AndroidInfo {
 
 #[tauri::command]
 pub async fn android_info(android: State<'_, Android<Wry>>) -> Result<AndroidInfo, String> {
-    android.call("info", json!({})).await
+    let info: AndroidInfo = android.call("info", json!({})).await?;
+    Ok(AndroidInfo { origin: info.origin.as_deref().and_then(mobile::app_origin), ..info })
 }
 
 /// Asks for a runtime permission right before its first use: `granted`, `denied` (ask again later) or `blocked` (only

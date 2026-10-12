@@ -167,6 +167,16 @@ pub fn vapid_key(key: &str) -> Option<String> {
     (key.len() == 87 && key.starts_with('B') && key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')).then(|| key.to_string())
 }
 
+/// The Android app's WebAuthn origin as its webview puts it into `clientDataJSON` (PROTOCOL.md §5a.4):
+/// `android:apk-key-hash:` and the base64url (no padding) of the SHA-256 of the signing certificate, 43 characters
+/// whose last one carries no stray bits. Anything else from the Kotlin side is dropped (the client then signs in
+/// through the browser).
+pub fn app_origin(origin: &str) -> Option<String> {
+    let hash = origin.strip_prefix("android:apk-key-hash:")?;
+    let chars_ok = hash.len() == 43 && hash.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+    (chars_ok && hash.ends_with(|c: char| "AEIMQUYcgkosw048".contains(c))).then(|| origin.to_string())
+}
+
 /// A runtime permission the client asks for right before its first use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -351,6 +361,26 @@ pub fn parse_native(json: &str) -> Option<ShellEvent> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn the_app_origin_is_the_hash_of_a_signing_certificate() {
+        // A fake hash: 32 zero bytes in base64url.
+        let hash = "A".repeat(43);
+        let ok = format!("android:apk-key-hash:{hash}");
+        assert_eq!(app_origin(&ok), Some(ok.clone()));
+        for bad in [
+            String::new(),
+            "https://app.tavrn.org".into(),
+            "android:apk-key-hash:".into(),
+            format!("{ok}="),
+            format!("android:apk-key-hash:{}", &hash[1..]),
+            format!("android:apk-key-hash:{}B", &hash[1..]),
+            format!("android:apk-key-hash:{}/A", &hash[2..]),
+            format!(" {ok}"),
+        ] {
+            assert_eq!(app_origin(&bad), None, "{bad}");
+        }
+    }
 
     #[test]
     fn app_links_are_invites_and_add_links_on_known_hosts() {

@@ -7,7 +7,9 @@ vi.mock("@tavrn/e2ee", () => ({ ensureCrypto: async () => undefined }));
 vi.mock("@tavrn/crypto", () => ({ secretStoragePrfInput: () => new Uint8Array(32).fill(7) }));
 
 import type { TavrnApi } from "@tavrn/sdk";
-import { evaluatePrf, passkeyReauth, resetRelyingPartyId } from "./passkeys";
+import { evaluatePrf, passkeyReauth, registerPasskey, resetNodeWebauthn } from "./passkeys";
+import { resetPlatform, setPlatform } from "../platform";
+import type { Platform } from "../platform";
 
 /** The `publicKey` options of the `n`-th `credentials.get` call. */
 const optionsOf = (get: ReturnType<typeof vi.fn>, n: number) => (get.mock.calls[n]?.[0] as CredentialRequestOptions).publicKey!;
@@ -19,7 +21,7 @@ function prfCredential(id: string) {
 describe("evaluatePrf: the node's relying party id (PROTOCOL.md §5a.4)", () => {
   let get: ReturnType<typeof vi.fn>;
   beforeEach(() => {
-    resetRelyingPartyId();
+    resetNodeWebauthn();
     get = vi.fn(async () => prfCredential("cred-1"));
     Object.defineProperty(navigator, "credentials", { value: { get }, configurable: true });
   });
@@ -81,5 +83,53 @@ describe("passkeyReauth: one assertion for the re-authentication and the PRF (PR
     expect(sent.challenge_id).toBe("ch-1");
     expect(sent.response.clientExtensionResults.prf).toEqual({});
     expect(JSON.stringify(sent)).not.toContain("results");
+  });
+});
+
+describe("the Windows app's native ceremonies (platform.passkeys)", () => {
+  const credential = { id: "cred-w", rawId: "cred-w", type: "public-key", response: { clientDataJSON: "AQ" }, clientExtensionResults: { prf: { enabled: true, results: { first: "leak" } } } };
+  const windows = (passkeys: Platform["passkeys"]): Platform => ({
+    kind: "desktop",
+    isDesktop: true,
+    nodeBase: () => "https://tavrn.test",
+    webOrigin: () => "https://tavrn.test",
+    openExternal: async () => {},
+    appVersion: async () => "0.4.0",
+    passkeys,
+  });
+  beforeEach(() => resetNodeWebauthn());
+  afterEach(() => {
+    resetPlatform();
+    nodeInfo.mockReset();
+  });
+
+  it("evaluatePrf: the PRF input and the node's relying party id go to the shell as WebAuthn JSON", async () => {
+    nodeInfo.mockResolvedValue({ webauthn: { rp_id: "tavrn.test", origins: ["https://tavrn.test"] } });
+    const get = vi.fn(async (_o: Record<string, unknown>) => ({ credential, prf: new Uint8Array(32).fill(3) }));
+    setPlatform(windows({ create: vi.fn(), get }));
+    const r = await evaluatePrf(["AAAA", "BBBB"]);
+    expect(r).toEqual({ credentialId: "cred-w", prf: new Uint8Array(32).fill(3) });
+    const publicKey = (get.mock.calls[0]![0] as { publicKey: Record<string, unknown> }).publicKey;
+    expect(publicKey).toMatchObject({ rpId: "tavrn.test", userVerification: "required", allowCredentials: [{ type: "public-key", id: "AAAA" }, { type: "public-key", id: "BBBB" }] });
+    expect(publicKey.challenge).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(publicKey.extensions).toEqual({ prf: { eval: { first: "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc" } } });
+  });
+
+  it("evaluatePrf: an authenticator without PRF gives null", async () => {
+    nodeInfo.mockResolvedValue({ webauthn: { rp_id: "tavrn.test" } });
+    setPlatform(windows({ create: vi.fn(), get: vi.fn(async () => ({ credential, prf: null })) }));
+    expect(await evaluatePrf(["AAAA"])).toBeNull();
+  });
+
+  it("registerPasskey: the node gets the shell's credential without any PRF output", async () => {
+    const create = vi.fn(async () => ({ credential, prf: new Uint8Array(32).fill(4) }));
+    setPlatform(windows({ create, get: vi.fn() }));
+    const finish = vi.fn(async (_req: unknown) => ({ credential: { id: "cred-w", prf_supported: false }, recovery_codes: null, session: null }));
+    const api = { auth: { webauthnRegisterStart: vi.fn(async () => ({ challenge_id: "ch", options: { publicKey: { challenge: "AAAA" } } })), webauthnRegisterFinish: finish } } as unknown as TavrnApi;
+    const r = await registerPasskey(api, "Windows");
+    expect(create).toHaveBeenCalledWith({ publicKey: { challenge: "AAAA" } });
+    expect(r.prf).toEqual(new Uint8Array(32).fill(4));
+    expect(r.prfSupported).toBe(true);
+    expect(JSON.stringify(finish.mock.calls[0]![0])).not.toContain("leak");
   });
 });

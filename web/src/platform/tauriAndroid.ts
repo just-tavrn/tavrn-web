@@ -29,6 +29,8 @@ import type {
 interface RawStatus {
   sdk: number;
   webauthn: boolean;
+  /** Older shells send nothing. */
+  origin?: string | null;
   distributors: string[];
   distributor: string | null;
   notifications: AndroidStatus["notifications"];
@@ -43,6 +45,7 @@ function status(raw: RawStatus): AndroidStatus {
   return {
     sdk: raw.sdk,
     webauthn: raw.webauthn,
+    origin: raw.origin ?? null,
     distributors: raw.distributors ?? [],
     distributor: raw.distributor ?? null,
     notifications: raw.notifications,
@@ -132,6 +135,7 @@ export function androidMembers(events: ShellEvents, initial: AndroidStatus): And
   const android: PlatformAndroid = {
     sdk: initial.sdk,
     webauthn: initial.webauthn,
+    origin: initial.origin,
     status: async () => status(await invoke<RawStatus>("android_info")),
     requestPermission: (permission) => invoke("android_permission", { permission }),
     openSettings: (page) => invoke<void>("android_open_settings", { page }),

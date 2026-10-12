@@ -16,6 +16,8 @@ import { takePrf } from "../crypto/e2ee";
 import { useAuth } from "../stores/auth";
 import { useAuthFlow } from "../stores/authFlow";
 import { mockFetch, renderWithProviders } from "../test/render";
+import { resetNodeWebauthn } from "../lib/passkeys";
+import { FAKE_APP_ORIGIN, androidPlatform, fakeAndroid } from "../platform/androidTestPlatform";
 
 vi.mock("../crypto/e2ee", async (original) => ({ ...(await original<typeof import("../crypto/e2ee")>()), deviceProofFor: vi.fn(async () => null) }));
 
@@ -80,6 +82,7 @@ function renderLogin(route = "/login") {
 }
 
 beforeEach(() => {
+  resetNodeWebauthn();
   useAuth.getState().logout();
   useAuthFlow.getState().clearPreauth();
   useAuthFlow.getState().setSetup(null);
@@ -237,5 +240,87 @@ describe("desktop login: address first", () => {
     const alert = await screen.findByText(/Kein Knoten für nowhere.example gefunden/);
     expect(alert).toHaveTextContent("https://nowhere.example/api/v1");
     expect(fake.set).not.toHaveBeenCalled();
+  });
+});
+
+describe("app login: passkeys in the app itself", () => {
+  const bytes = (n: number, fill: number) => new Uint8Array(n).fill(fill).buffer;
+  const assertion = {
+    id: "Y3JlZA",
+    rawId: bytes(4, 9),
+    type: "public-key",
+    authenticatorAttachment: "platform",
+    response: { clientDataJSON: bytes(8, 1), authenticatorData: bytes(8, 2), signature: bytes(8, 3), userHandle: bytes(16, 4) },
+    getClientExtensionResults: () => ({ prf: { results: { first: bytes(32, 5) } } }),
+  };
+  const passkeyRoutes = (origins: string[] | null) => ({
+    "/api/v1/node": { body: nodeInfo({ webauthn: origins ? { rp_id: "t.local", origins } : { rp_id: "t.local" } }) },
+    "/.well-known/tavrn": { body: wellKnown(["connect.app"]) },
+    "/api/v1/auth/webauthn/login/start": { body: { challenge_id: "ch", options: { publicKey: { challenge: "AAAA", rpId: "t.local", allowCredentials: [], userVerification: "required", extensions: { prf: { eval: { first: "BwcH" } } } } } } },
+    "/api/v1/auth/webauthn/login/finish": { body: session },
+  });
+
+  function android(): { signIn: ReturnType<typeof vi.fn> } {
+    const signIn = vi.fn(() => new Promise<NodePageResult | null>(() => {}));
+    setPlatform({ ...androidPlatform(fakeAndroid({ webauthn: true }), "t.local"), auth: { signInOnNodePage: signIn, reopen: vi.fn(async () => {}) } });
+    return { signIn };
+  }
+
+  beforeEach(() => {
+    vi.stubGlobal("PublicKeyCredential", function PublicKeyCredential() {});
+  });
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, "credentials");
+  });
+
+  it("Android: the node accepts the app's origin, so the passkey runs in the app and unlocks with its PRF", async () => {
+    const { signIn } = android();
+    const get = vi.fn(async () => assertion);
+    Object.defineProperty(navigator, "credentials", { value: { get }, configurable: true });
+    const calls = mockFetch(passkeyRoutes(["https://t.local", FAKE_APP_ORIGIN]));
+    renderLogin();
+    const u = userEvent.setup();
+    await waitFor(() => expect(calls.some((c) => c.url.endsWith("/api/v1/node"))).toBe(true));
+    await u.click(await screen.findByRole("button", { name: "Mit Passkey anmelden" }));
+    expect(await screen.findByText("Verschlüsselungsseite")).toBeInTheDocument();
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(signIn).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("passkey-app-origin")).toBeNull();
+    const finish = calls.find((c) => c.url.endsWith("/webauthn/login/finish"))!;
+    const body = JSON.parse(String(finish.init.body)) as { response: { clientExtensionResults: { prf?: { results?: unknown } } } };
+    expect(body.response.clientExtensionResults.prf?.results).toBeUndefined();
+    expect(takePrf()).toEqual({ credentialId: "Y3JlZA", prf: new Uint8Array(32).fill(5) });
+  });
+
+  it("Android: a node that does not list the app's origin gets the passkey on its page, with the reason", async () => {
+    const { signIn } = android();
+    const get = vi.fn(async () => assertion);
+    Object.defineProperty(navigator, "credentials", { value: { get }, configurable: true });
+    mockFetch(passkeyRoutes(["https://t.local"]));
+    renderLogin();
+    const u = userEvent.setup();
+    expect(await screen.findByTestId("passkey-app-origin")).toHaveTextContent("akzeptiert die Passkeys der App noch nicht");
+    await u.click(screen.getByRole("button", { name: "Mit Passkey anmelden" }));
+    await waitFor(() => expect(signIn).toHaveBeenCalledTimes(1));
+    expect((signIn.mock.calls[0] as unknown as [NodePageSignIn])[0].method).toBe("passkey");
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it("Windows: the shell's native passkey signs in without the node's page", async () => {
+    const fake = desktop();
+    const nativeGet = vi.fn(async () => ({
+      credential: { id: "Y3JlZA", rawId: "Y3JlZA", type: "public-key", authenticatorAttachment: "platform", response: { clientDataJSON: "AQ", authenticatorData: "Ag", signature: "Aw", userHandle: "BA" }, clientExtensionResults: {} },
+      prf: new Uint8Array(32).fill(6),
+    }));
+    setPlatform({ ...fake.platform, passkeys: { create: vi.fn(), get: nativeGet } });
+    const calls = mockFetch(passkeyRoutes(null));
+    renderLogin();
+    const u = userEvent.setup();
+    await u.click(await screen.findByRole("button", { name: "Mit Passkey anmelden" }));
+    expect(await screen.findByText("Verschlüsselungsseite")).toBeInTheDocument();
+    expect(nativeGet).toHaveBeenCalledWith({ publicKey: expect.objectContaining({ challenge: "AAAA", rpId: "t.local" }) });
+    expect(fake.signIn).not.toHaveBeenCalled();
+    expect(calls.some((c) => c.url.endsWith("/webauthn/login/finish"))).toBe(true);
+    expect(takePrf()).toEqual({ credentialId: "Y3JlZA", prf: new Uint8Array(32).fill(6) });
   });
 });

@@ -9,7 +9,7 @@ import { useAuthFlow } from "../stores/authFlow";
 import { e2eeContext, isDeviceKeyLost, markDeviceLost, signOut, useE2ee } from "../stores/e2ee";
 import { describeError } from "../stores/toasts";
 import { passkeyEntryIds, resetIdentity, setupAccount, takePrf, unlockWithPasskeyPrf, unlockWithRecoveryKey } from "../crypto/e2ee";
-import { evaluatePrf, passkeysSupported } from "../lib/passkeys";
+import { evaluatePrf, passkeysSupported, usePasskeyBlocker } from "../lib/passkeys";
 import { Button, ErrorText, Field, Input } from "../components/ui";
 import { AuthCard } from "../components/auth/AuthCard";
 import { BrandIcon } from "../components/auth/Brand";
@@ -231,7 +231,9 @@ function UnlockView({ busy, error, onRun, onReset, onSkip }: { busy: boolean; er
   const entries = useQuery({ queryKey: ["secret-storage", "passkeys"], queryFn: () => passkeyEntryIds(api), enabled: !remoteHome });
   // The desktop app has no WebAuthn of the node's domain: the passkey runs on the node's page (an unlock session).
   const onNodePage = useNodePageUnlock();
-  const canPasskey = !remoteHome && (passkeysSupported() || onNodePage.available) && (entries.data?.length ?? 0) > 0;
+  // In the app itself where it can (the Windows app natively, the Android app when the node accepts its origin).
+  const inApp = usePasskeyBlocker() === null;
+  const canPasskey = !remoteHome && (inApp || onNodePage.available) && (entries.data?.length ?? 0) > 0;
   const unlockWith = (r: { credentialId: string; prf: Uint8Array }) =>
     onRun(async () => {
       try {
@@ -275,7 +277,7 @@ function UnlockView({ busy, error, onRun, onReset, onSkip }: { busy: boolean; er
           className="w-full border border-line"
           disabled={busy}
           onClick={() =>
-            onNodePage.available
+            !inApp && onNodePage.available
               ? onNodePage.start(unlockWith)
               : onRun(async () => {
                   const r = await evaluatePrf(entries.data ?? []);
