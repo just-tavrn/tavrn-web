@@ -33,7 +33,7 @@ import { createRoomViaApi, inviteCode, nextTotpCode, registerViaApi, registerVia
 import { scaled } from "../../../e2e/tests/timeouts.ts";
 import { FAKE_MEDIA } from "../../../e2e/tests/voice-helpers.ts";
 import { nodeUrl } from "./harness.ts";
-import { packagedApp, smokePackaged, startApp, type ElectronApp } from "./launch.ts";
+import { chooseInPicker, packagedApp, smokePackaged, startApp, type ElectronApp } from "./launch.ts";
 
 const PARTIAL = process.env.E2E_ELECTRON_PARTIAL === "1";
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
@@ -408,5 +408,5 @@ const otherPid = () => server!.process().pid!;
 async function chooseFirstSource(picker: Page): Promise<void> {
   const screen = picker.locator('button.source[data-kind="screen"]').first();
   await expect(screen).toBeVisible();
-  await screen.click();
+  await chooseInPicker(picker, screen);
 }

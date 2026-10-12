@@ -21,7 +21,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { chromium, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import { chromium, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { scaled } from "../../../e2e/tests/timeouts.ts";
 import { appDir, appEnv } from "./harness.ts";
 
@@ -253,4 +253,18 @@ function waitExit(child: ChildProcess, timeoutMs: number): Promise<number | null
       done(code ?? -1);
     });
   });
+}
+
+/**
+ * Chooses `source` in the shell's screen-share picker (`src/main/picker.ts`), which closes its window the moment a source
+ * is chosen: Playwright's click can then end with "Target page, context or browser has been closed" although it landed.
+ * Done means the picker closed; any other failure of the click still fails.
+ */
+export async function chooseInPicker(picker: Page, source: Locator): Promise<void> {
+  const closed = picker.waitForEvent("close");
+  closed.catch(() => undefined);
+  await source.click().catch((e: unknown) => {
+    if (!picker.isClosed()) throw e;
+  });
+  await closed;
 }
