@@ -920,7 +920,8 @@ the text once), and a lock next to the WEBHOOK badge says which.
 The same client also runs as the desktop app for Linux and Windows ([DESKTOP.md](DESKTOP.md)): it is bundled into a
 shell instead of being served by a node (Electron on Linux, Tauri on Windows and later macOS; the client does not care
 which), asks for the home node on the first start (the node picker at `/node`,
-changeable under Settings → App, where the app also shows its version and installs signed updates) and talks to that
+changeable under Settings → App, where the app also shows its version, installs signed updates and chooses the update
+channel: stable or beta, kept by the shell, beta by default for a pre-release build) and talks to that
 node over https and wss. The client's platform layer (`src/platform/`) tells the API client, the WebSocket and the link
 builders where the node lives. The node picker and the login page take the account's address first
 (`alice@home.example`): the shell finds the node of that domain (well-known, SRV, direct) and the app switches to it.

@@ -540,7 +540,7 @@ What the browser gets from "the client is served by the node" and what the app d
 | Voice and video | Windows (WebView2, Chromium): voice and video as in Chromium (to be confirmed by hand), or audio only with the native engine setting | voice, video, screen sharing (the shell's picker, or the desktop portal on Wayland), the soundboard and the background effects as in Chromium; no system audio with a shared screen | the Tauri shell on Linux runs voice in the native engine, audio only, because the WebKitGTK of Ubuntu 24.04 and 26.04 has no WebRTC ("Voice"), which is why Linux ships the Electron shell; Electron captures system audio on Windows only. |
 | Popping out the whiteboard, "open original" in the media viewer | not offered | same | the app opens no window for content (only the sign-in window); maximize and the download icon cover it. |
 | The terms and other pages that open in a new tab | open on the node's web client in the system browser | same | the app opens no window for content. |
-| Updates while the repository is private | do not download | the check fails quietly | the updaters fetch their feeds (`latest.json`, `latest-linux.yml` and its `.minisig`) and the installers from the public release URLs. |
+| Updates while the repository is private | do not download | the check fails quietly | the updaters fetch their feeds (`latest.json`, `latest-linux.yml` and its `.minisig`) through the website's redirect and the installers from the public release URLs. |
 
 ## The Linux shell (Electron)
 
@@ -766,13 +766,16 @@ captures it (`loopback`) on Windows only.
 
 ### Updates (Electron)
 
-electron-updater checks the GitHub releases of tavrn-web: electron-builder writes the feed's settings into the package
-(`resources/app-update.yml`, from the `publish` entry of `electron-builder.config.mjs`) and generates the feed next to
-the packages (`latest-linux.yml` with the SHA-512 and size of the `.AppImage` and the `.deb`; `latest.yml` for the
-Windows fallback); the release attaches both with their minisign signatures. Settings → App offers the update as for
-the Tauri app, once the shell has verified the signed feed ([Updates](#updates): one key for both shells, and how the
-check works). A development run and a package without a valid key offer no updates (`updater: false`). While the
-repository is private the check fails (GitHub answers 404) and the client stays quiet.
+electron-updater reads the website's feed of the chosen update channel: before every check the shell points its
+generic provider at `https://tavrn.org/updates/desktop/<channel>/` ([Updates](#updates)), where `latest-linux.yml`
+(`latest.yml` on Windows) and the packages it names redirect to the right GitHub release. electron-builder generates the
+feed next to the packages (`latest-linux.yml` with the SHA-512 and size of the `.AppImage` and the `.deb`; `latest.yml`
+for the Windows fallback) and writes the repository into the package (`resources/app-update.yml`, from the `publish`
+entry of `electron-builder.config.mjs`), which the signed-feed check uses; the release attaches both feeds with their
+minisign signatures. The channel is `update_channel` in `settings.json` (the bridge's `getUpdateChannel` and
+`setUpdateChannel`). Settings → App offers the update as for the Tauri app, once the shell has verified the signed feed
+([Updates](#updates): one key for both shells, and how the check works). A development run and a package without a
+valid key offer no updates (`updater: false`).
 
 ### Packages and the Chromium sandbox
 
@@ -1032,13 +1035,15 @@ picker accepts `http://127.0.0.1:8080`).
 | `just desktop-voice-test` | the native engine's LiveKit test (`cargo test --test voice_livekit -- --ignored`, needs `livekit-server`) |
 | `just desktop-voice-e2e` | voice between Chromium and the built app (`desktop-voice.spec.ts`) under `xvfb-run`; the app from `TAVRN_DESKTOP_APP` or `<cargo target dir>/release/tavrn`, a release node from `E2E_NODE_BIN` |
 
-The app reads three environment variables, all for tests only; each one only ever makes the app store or send less:
+The app reads these environment variables, all for tests only; each one only ever makes the app store or send less
+(`TAVRN_UPDATE_BASE` only changes where a development build looks for updates):
 
 | Variable | Effect |
 |---|---|
 | `TAVRN_DESKTOP_KEYCHAIN` | `memory`: the keyring crates' in-memory mock store instead of the OS keychain; `unavailable`: behave as if there were no keychain |
 | `TAVRN_DESKTOP_TEST_SAVE_DIR` | saves go into this directory without a dialog (never overwriting: `name (1).ext`) |
 | `TAVRN_DESKTOP_FAKE_AUDIO` | `1`: the native engine's fake audio backend (a tone in, a level meter out) for machines without sound hardware |
+| `TAVRN_UPDATE_BASE` | development builds only: the host of the update feeds instead of `https://tavrn.org/updates/desktop` ([Updates](#updates)) |
 
 `just desktop-voice-e2e` takes `TAVRN_DESKTOP_APP` (the built binary) and `E2E_NODE_BIN`, `E2E_NODE_PORT`, `E2E_WEB_PORT`
 like `just e2e`.
@@ -1167,9 +1172,37 @@ Both shells update themselves from the GitHub releases of tavrn-web, checked onc
 newer version; Settings → App installs it), and **one key** vouches for every update: the minisign key pair of the
 Tauri updater.
 
+**Channels.** Settings → App chooses the update channel: **stable** offers releases only, **beta** the pre-releases
+(`-rc.N`, `-beta.N`) too. Without a choice a pre-release build follows beta and a release stable; a choice sticks
+(`update_channel` in the shell's settings file, the commands `get_update_channel` and `set_update_channel`). The
+updaters only ever offer a higher version (semantic versions: `0.4.0` > `0.4.0-rc.10` > `0.4.0-rc.9`), so switching an
+rc build to stable never goes back: it waits for the release. The Android app's check follows the same setting
+([ANDROID.md](ANDROID.md) "Updates").
+
+**Where the feeds come from.** The apps ask the project's website, one feed per channel:
+`https://tavrn.org/updates/desktop/<channel>/latest.json` (Tauri), `…/latest.yml` and `…/latest-linux.yml` with their
+`.minisig` (Electron). The website answers with a redirect to that file of the right release on GitHub (stable: the
+highest version that is no pre-release; beta: the highest of all; each only among the releases that carry the file),
+so the signed files come from GitHub exactly as the release workflow uploaded them; the website only chooses the
+release (tavrn-website `deploy/README.md`, "Desktop update feeds"). GitHub's own
+`releases/latest/download/…` cannot serve a beta channel: "latest" never points at a pre-release, so every check of an
+rc build was a 404. The release workflow and the asset names are unchanged: the feeds stay attached to each release.
+
+**What a failed check says.** The shells answer one of four codes, which Settings → App names in the user's language
+(`web/src/platform/updateErrors.ts`): `update.unreachable` (no network, or the website has no release list right now:
+its 503), `update.no_release` (the website's 404 `no_release`: the channel has no release of this app yet; also a
+release without this platform's build), `update.signature_invalid` (the update is not signed with the app's key) and
+`update.failed` (anything else). The shells log the underlying reason (`tavrn: the update check at <url> failed: …`).
+
+**Development.** A development build of the Tauri shell takes another feed host from `TAVRN_UPDATE_BASE`, e.g.
+`http://127.0.0.1:18089/updates/desktop` for the website's container with its fake GitHub API (tavrn-website
+`just gh-proxy-test`, or the image with `GITHUB_READ_TOKEN` set); release builds ignore it and accept https only.
+To watch a check, build an older version (`pnpm --filter @tavrn/desktop tauri build --debug --no-bundle --config
+'{"version":"0.4.0-rc.1"}'`) and call `check_update` from the app's page (WebDriver under `xvfb-run`).
+
 | | Tauri (Windows) | Electron (Linux, the Windows fallback) |
 |---|---|---|
-| Feed | `https://github.com/just-tavrn/tavrn-web/releases/latest/download/latest.json` | electron-updater's GitHub provider: `latest-linux.yml` or `latest.yml` of the latest release, settings in the package's `resources/app-update.yml` |
+| Feed | `https://tavrn.org/updates/desktop/<channel>/latest.json`, set at every check (`updater.rs`) | `https://tavrn.org/updates/desktop/<channel>/`: electron-updater's generic provider reads `latest-linux.yml` or `latest.yml` there and downloads the packages it names next to it (redirects by the version in the name); the package's `resources/app-update.yml` names the repository for the signed-feed check |
 | What the key signs | every installer (`<installer>.sig`), checked by the Tauri updater | the feed (`<feed>.minisig`), checked by the shell; the feed holds the SHA-512 of every package, which electron-updater checks after the download |
 | Install | download, signature check, install, restart; on Windows the installer runs in passive mode | the AppImage replaces itself and restarts; the `.deb` is installed with the system's package tools (an administrator password is asked); on Windows the NSIS installer runs |
 
@@ -1179,8 +1212,9 @@ release could ship any package. The release therefore signs each feed with the u
 signature names the feed file and the version), and before the shell offers an update, and again right before the
 download, `apps/desktop-electron/src/main/updater.ts`
 
-1. fetches the feed of the release electron-updater found and its `.minisig` from
-   `https://github.com/<owner>/<repo>/releases/download/<tag>/`,
+1. fetches the feed of the version electron-updater found and its `.minisig` straight from that release,
+   `https://github.com/<owner>/<repo>/releases/download/v<version>/` (not through the website, so a channel that moves
+   on in between cannot mix two releases),
 2. verifies the signature with the public key of `tauri.conf.json` `plugins.updater.pubkey` (electron-builder writes it
    into the package's `package.json`; `src/main/minisign.ts` parses minisign's key and signature formats and checks the
    algorithm, the key id, the Ed25519 signature of the feed and the global signature over the trusted comment with

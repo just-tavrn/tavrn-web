@@ -27,6 +27,13 @@ First public release of the web client and the desktop apps.
 
 ### Changed
 
+- **Update channels for the desktop apps.** "Check for updates" of the rc builds said "Something went wrong": the apps
+  asked GitHub's "latest" release, which never is a pre-release. Both shells now read the website's feed of their
+  channel (`https://tavrn.org/updates/desktop/<stable|beta>/…`, a redirect to the right release's signed feed on
+  GitHub). Settings → App chooses the channel: **stable** (releases only) or **beta** (pre-releases too), beta by
+  default for a pre-release build; switching never installs an older version. A failed check now says why: the update
+  server is unreachable, the channel has no release yet, the update is not signed with the app's key, or another
+  failure. The Android app's check follows the same channel.
 - Screen shares are opt-in: nobody receives a stream until they join it. A share shows as a tile with the streamer's
   name, LIVE and **Join stream**; joining (the button, a double-click on the tile, or a double-click or Enter on the
   LIVE member in the voice member list) receives its video and audio, **Leave stream** (tile or full screen controls)
