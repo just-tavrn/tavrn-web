@@ -15,7 +15,8 @@ export type DeletionCase = "internal" | "external_plain" | "external_encrypted";
 
 /** The case of the dialog for a channel's usage. */
 export function deletionCase(info: Pick<FilesInfo, "backend" | "encrypted">): DeletionCase {
-  if (info.backend === "internal") return "internal";
+  // `none` (no store yet, FILES.md §5): anything left is on the node.
+  if (info.backend === "internal" || info.backend === "none") return "internal";
   return info.encrypted ? "external_encrypted" : "external_plain";
 }
 

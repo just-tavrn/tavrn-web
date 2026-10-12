@@ -512,6 +512,13 @@ browser (`web/src/files/`): breadcrumbs, list and grid views, sorting, uploads b
 progress, folders, rename, move (dialog or dragging, with a non-drag equivalent), delete, download, media in the
 viewer, the context menu and keyboard navigation. Uploads follow the room's file types ("File types" below).
 
+On a node that keeps no files of files channels itself (`TAVRN_FILES_INTERNAL=off`, FILES.md §5; `files_internal:
+false` in `GET /node`), a channel without an external store reports its store as `none`: instead of "Upload" and "New
+folder" the toolbar shows "Choose a store first", a link to the channel's storage settings for members who may
+configure it (*Manage channels* and *Manage files*) and a plain note for everybody else, and the empty folder explains
+why. The storage settings start on WebDAV and offer "This node" disabled with the reason; once a store is saved the
+upload button appears.
+
 ### End-to-end encrypted files channels
 
 Files channels are end-to-end encrypted by default (FILES.md §8): the "Create channel" dialog has "End-to-end

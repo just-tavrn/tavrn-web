@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from "vitest";
 import type { FileEntry } from "@tavrn/sdk";
-import { EMPTY_SELECTION, canModify, entryIcon, extensionOf, formatBytes, moveFocus, precheck, pruneSelection, selectAll, selectWith, sortEntries, totalProgress, uploadsReducer, usageFraction, validName } from "./model";
+import { EMPTY_SELECTION, canModify, externalBackend, needsStore, entryIcon, extensionOf, formatBytes, moveFocus, precheck, pruneSelection, selectAll, selectWith, sortEntries, totalProgress, uploadsReducer, usageFraction, validName } from "./model";
 
 const entry = (name: string, kind: "file" | "folder" = "file", extra: Partial<FileEntry> = {}): FileEntry => ({
   id: name,
@@ -135,5 +135,15 @@ describe("formatting and rights", () => {
     expect(canModify(mine, "other", { can_manage: false, can_attach: true })).toBe(false);
     expect(canModify(mine, "me", { can_manage: false, can_attach: false })).toBe(false);
     expect(canModify(mine, "other", { can_manage: true, can_attach: false })).toBe(true);
+  });
+});
+
+describe("store of a files channel", () => {
+  it("knows external stores and channels that still need one (FILES.md §5)", () => {
+    expect([externalBackend("webdav"), externalBackend("s3"), externalBackend("internal"), externalBackend("none")]).toEqual([true, true, false, false]);
+    expect(needsStore({ backend: "none" })).toBe(true);
+    expect(needsStore({ backend: "internal" })).toBe(false);
+    expect(needsStore({ backend: "webdav" })).toBe(false);
+    expect(needsStore(undefined)).toBe(false);
   });
 });

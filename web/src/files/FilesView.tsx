@@ -15,7 +15,7 @@
 import { useGhostGate } from "../components/GhostGate";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import type { Channel, FileEntry, FilesInfo, RoomDetail } from "@tavrn/sdk";
 import { decryptFileRecord, parseHistoryPolicy, qualify, type FileRecord, type FileRecordResult } from "@tavrn/e2ee";
 import { historyPending, historyReceive } from "../crypto/history";
@@ -62,8 +62,10 @@ import {
   EMPTY_SELECTION,
   canModify,
   entryIcon,
+  externalBackend,
   formatBytes,
   moveFocus,
+  needsStore,
   precheck,
   pruneSelection,
   selectAll,
@@ -119,7 +121,7 @@ function useFilesRealtime(domain: string, home: boolean, channelId: string, onCh
 
 export default function FilesView({ room, channel }: { room: RoomDetail; channel: Channel }) {
   const t = useT();
-  const { api, domain, home, me } = useNode();
+  const { api, domain, home, me, roomPath } = useNode();
   const queryClient = useQueryClient();
   const phone = usePhone();
   const [params, setParams] = useSearchParams();
@@ -521,7 +523,9 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
   const fraction = i ? usageFraction(i.used_bytes, i.limit_bytes) : null;
   const progress = totalProgress(uploads);
   const sortLabel: Record<SortKey, string> = { name: t("files.sort.name"), size: t("files.sort.size"), modified: t("files.sort.modified"), type: t("files.sort.type") };
-  const external = i && i.backend !== "internal";
+  const external = i && externalBackend(i.backend);
+  // A node without its own storage for files channels: no uploads until the channel has an external store.
+  const storeMissing = needsStore(i);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="files-view" onDragOver={onDragOver} onDragLeave={() => setDropActive(false)} onDrop={onDrop}>
@@ -661,6 +665,20 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
               />
             </>
           )}
+          {storeMissing &&
+            (i?.can_configure ? (
+              <Link
+                to={roomPath(room.id, undefined, `settings/channels?channel=${encodeURIComponent(channel.id)}`)}
+                className="inline-flex min-h-8 items-center rounded-md bg-accent px-2 text-xs font-medium text-accent-text hover:bg-accent-hover"
+                data-testid="files-choose-store"
+              >
+                {t("files.choose_store")}
+              </Link>
+            ) : (
+              <span className="px-1 text-xs font-medium text-fg-1" data-testid="files-choose-store">
+                {t("files.choose_store")}
+              </span>
+            ))}
         </div>
       </div>
       {uploads.length > 0 && (
@@ -719,7 +737,7 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
             <span aria-hidden="true" className="text-4xl">
               {search ? "🔍" : "📂"}
             </span>
-            <p>{search ? t("files.no_results") : canUpload ? t("files.empty_upload") : t("files.empty")}</p>
+            <p>{search ? t("files.no_results") : storeMissing ? t("files.no_store") : canUpload ? t("files.empty_upload") : t("files.empty")}</p>
           </div>
         )}
         {entries.length > 0 && lockState !== "locked" && view === "list" && (

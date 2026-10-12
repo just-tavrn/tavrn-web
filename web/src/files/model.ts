@@ -185,6 +185,19 @@ export function formatBytes(bytes: number): string {
   return `${v >= 100 ? v.toFixed(0) : v.toFixed(1)} ${units[u]}`;
 }
 
+/** The channel keeps its files on an external store (`webdav`, `s3`; not the node, not `none`). */
+export function externalBackend(backend: string): boolean {
+  return backend !== "internal" && backend !== "none";
+}
+
+/**
+ * The channel has no store yet: a node that keeps no files of files channels itself (`TAVRN_FILES_INTERNAL=off`,
+ * FILES.md §5) takes uploads only once the channel's managers chose an external store.
+ */
+export function needsStore(info: Pick<FilesInfo, "backend"> | undefined): boolean {
+  return info?.backend === "none";
+}
+
 /** Used share of the limit (0–1), or null without a limit. */
 export function usageFraction(used: number, limit: number): number | null {
   if (!(limit > 0)) return null;
