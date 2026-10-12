@@ -49,6 +49,17 @@ The registration form follows the node's e-mail policy (`email` of the discovery
 shows "Email (optional)", `none` shows no field. A refused registration keeps every entered value, including the
 invite code, so the person corrects only what the node named.
 
+**E-mail confirmation** (PROTOCOL.md §5a.3). An address given at registration gets a confirmation mail with the link
+`<node>/verify-email?token=…` (valid 24 hours, usable once). With `required` the field says that signing in with the
+password needs the confirmed address, and the recovery codes step names the address the link went to (with `optional`
+it says that a confirmed address allows a password reset); the device that registered stays signed in. The page of
+the link confirms the address once on load and then offers "Sign in" (or "Continue" with a session); an invalid or
+expired link says so and points to the sign-in, a network error offers "Try again", and the page without a token
+explains where the link comes from. A sign-in refused with `auth.email_unverified` says that the address is not
+confirmed yet and offers "Send the confirmation mail again" (`POST /auth/verify-email/resend` with the entered
+account; the node answers the same for every account, sends a new link that replaces the old one, at most three an
+hour). The apps open the mailed link in the system browser, on the node's own web client, like the password reset link.
+
 ### Date of birth and age gates
 
 Nodes with `age.v1` (PROTOCOL.md §5e) ask every account for its date of birth.

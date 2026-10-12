@@ -11,6 +11,7 @@ import { RoomSettingsPage } from "./pages/settings/RoomSettingsPage";
 import { UserSettingsPage } from "./pages/UserSettingsPage";
 import { AdminPage } from "./pages/AdminPage";
 import { ForgotPasswordPage, ResetPasswordPage } from "./pages/PasswordResetPages";
+import { VerifyEmailPage } from "./pages/VerifyEmailPage";
 import { EncryptionPage } from "./pages/EncryptionPage";
 import { ConversationPage } from "./pages/DirectMessages";
 import { FriendsPage } from "./pages/FriendsPage";
@@ -59,6 +60,8 @@ export function App() {
         <Route path="/encryption" element={<EncryptionPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
+        {/* The link of the confirmation mail (PROTOCOL.md §5a.3). */}
+        <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/invite/:code" element={<InvitePage />} />
         {/* Add links of applications (APPLICATIONS.md §4.1), also of other nodes. */}
         <Route path="/add/:id" element={<AddApplicationPage />} />

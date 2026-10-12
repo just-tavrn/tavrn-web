@@ -17,7 +17,7 @@ tokens and the few styles that failed a contrast or size criterion were nudged (
 | Vitest (behaviour) | Dialog focus trap, Escape and focus return; field hint and error association; tab arrow keys; the feed and its announcements. | `web/src/components/a11y.test.tsx`, `web/src/stores/accessibility.test.ts` |
 
 Screens scanned (each on phone, tablet and desktop): sign-in, sign-in with an error, registration, forgot
-password, invite; a text channel with messages (formatting, a reply, a code block, an image attachment, a link),
+password, the e-mail confirmation page (without a link and with an invalid one), invite; a text channel with messages (formatting, a reply, a code block, an image attachment, a link),
 the navigation drawer (phone), the composer with the emoji picker, a message context menu, the media viewer, the
 member list, a modal dialog (create channel), the search panel with results, a files channel with entries, all
 room settings tabs, all user settings tabs, Discover, Home; friends with an incoming request, a direct message,

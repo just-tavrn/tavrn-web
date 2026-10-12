@@ -325,6 +325,104 @@ describe("LoginPage: the node's e-mail policy", () => {
   });
 });
 
+describe("LoginPage: e-mail confirmation (TAVRN_EMAIL=required)", () => {
+  const nodeRequired = {
+    "/api/v1/node": { body: { registration: "open" } },
+    "/.well-known/tavrn": { body: { domain: "t.local", registration: "open", email: "required" } },
+  };
+  const unverified = { status: 403, body: { type: "x", title: "Forbidden", status: 403, code: "auth.email_unverified", detail: "Please verify the email address first" } };
+  const signIn = async (u: ReturnType<typeof userEvent.setup>) => {
+    await u.type(screen.getByLabelText("Benutzername"), "alice");
+    await u.type(screen.getByLabelText("Passwort"), "passwort-alice-123");
+    await u.click(screen.getByRole("button", { name: "Anmelden" }));
+  };
+
+  it("an unconfirmed address names the problem and sends the confirmation mail again", async () => {
+    const calls = mockFetch({ ...nodeRequired, "/api/v1/auth/login": unverified, "/api/v1/auth/verify-email/resend": { body: {} } });
+    renderLogin();
+    const u = userEvent.setup();
+    await signIn(u);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Deine E-Mail-Adresse ist noch nicht bestätigt");
+    await u.click(screen.getByRole("button", { name: "Bestätigungsmail erneut senden" }));
+    expect(await screen.findByText(/ein neuer Link unterwegs/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Bestätigungsmail erneut senden" })).toBeNull();
+    const resend = calls.filter((c) => c.url.includes("/auth/verify-email/resend"));
+    expect(resend).toHaveLength(1);
+    expect(body(resend[0]!)).toEqual({ account: "alice" });
+    expect(useAuth.getState().token).toBeNull();
+  });
+
+  it("a node that cannot send mail says so instead", async () => {
+    mockFetch({
+      ...nodeRequired,
+      "/api/v1/auth/login": unverified,
+      "/api/v1/auth/verify-email/resend": { status: 503, body: { type: "x", title: "Unavailable", status: 503, code: "mail.unavailable", detail: "This node sends no e-mail" } },
+    });
+    renderLogin();
+    const u = userEvent.setup();
+    await signIn(u);
+    await u.click(await screen.findByRole("button", { name: "Bestätigungsmail erneut senden" }));
+    expect(await screen.findByText(/kann gerade keine E-Mails senden/)).toBeInTheDocument();
+  });
+
+  it("other sign-in errors offer no confirmation mail", async () => {
+    mockFetch({ ...nodeRequired, "/api/v1/auth/login": { status: 401, body: { type: "x", title: "Unauthorized", status: 401, code: "auth.invalid_credentials", detail: "" } } });
+    renderLogin();
+    await signIn(userEvent.setup());
+    await screen.findByRole("alert");
+    expect(screen.queryByRole("button", { name: "Bestätigungsmail erneut senden" })).toBeNull();
+  });
+
+  it("registration: the field explains the confirmation, and the wizard names the address the link went to", async () => {
+    mockFetch({
+      ...nodeRequired,
+      "/api/v1/auth/register": { status: 201, body: enrollStep },
+      "/api/v1/auth/totp/enroll": { body: { secret: "JBSWY3DPEHPK3PXP", otpauth_url: "otpauth://totp/t.local:alice?secret=JBSWY3DPEHPK3PXP&issuer=t.local", issuer: "t.local" } },
+      "/api/v1/auth/totp/confirm": { body: { recovery_codes: codes, session: { ...session, user: { ...user, email: "alice@example.org", email_verified: false } } } },
+    });
+    renderLogin("/login?mode=register");
+    const u = userEvent.setup();
+    const field = await screen.findByLabelText("E-Mail");
+    expect(field).toHaveAccessibleDescription(/Wir senden dir einen Link/);
+    await u.type(screen.getByLabelText("Benutzername"), "alice");
+    await u.type(screen.getByLabelText("Passwort", { exact: true }), "passwort-alice-123");
+    await u.type(screen.getByLabelText("Passwort wiederholen"), "passwort-alice-123");
+    fireEvent.change(screen.getByLabelText("Geburtsdatum"), { target: { value: "1990-05-17" } });
+    await u.type(field, "alice@example.org");
+    await u.click(screen.getByRole("button", { name: "Konto erstellen" }));
+    await u.click(await screen.findByTestId("choose-totp"));
+    await screen.findByTestId("totp-secret");
+    await u.type(screen.getByLabelText("6-stelliger Code"), "654321");
+    await u.click(screen.getByRole("button", { name: "Aktivieren" }));
+    expect(await screen.findByRole("heading", { name: "Deine Wiederherstellungscodes" })).toBeInTheDocument();
+    expect(screen.getByTestId("email-confirmation-notice")).toHaveTextContent(
+      "Wir haben einen Bestätigungslink an alice@example.org gesendet. Bestätige deine Adresse, bevor du dich erneut anmeldest",
+    );
+  });
+
+  it("a confirmed address (or none) shows no notice after the registration", async () => {
+    mockFetch({
+      "/api/v1/node": { body: { registration: "open" } },
+      "/api/v1/auth/register": { status: 201, body: enrollStep },
+      "/api/v1/auth/totp/enroll": { body: { secret: "JBSWY3DPEHPK3PXP", otpauth_url: "otpauth://totp/x?secret=JBSWY3DPEHPK3PXP", issuer: "t.local" } },
+      "/api/v1/auth/totp/confirm": { body: { recovery_codes: codes, session } },
+    });
+    renderLogin("/login?mode=register");
+    const u = userEvent.setup();
+    await u.type(await screen.findByLabelText("Benutzername"), "alice");
+    await u.type(screen.getByLabelText("Passwort", { exact: true }), "passwort-alice-123");
+    await u.type(screen.getByLabelText("Passwort wiederholen"), "passwort-alice-123");
+    fireEvent.change(screen.getByLabelText("Geburtsdatum"), { target: { value: "1990-05-17" } });
+    await u.click(screen.getByRole("button", { name: "Konto erstellen" }));
+    await u.click(await screen.findByTestId("choose-totp"));
+    await screen.findByTestId("totp-secret");
+    await u.type(screen.getByLabelText("6-stelliger Code"), "654321");
+    await u.click(screen.getByRole("button", { name: "Aktivieren" }));
+    await screen.findByRole("heading", { name: "Deine Wiederherstellungscodes" });
+    expect(screen.queryByTestId("email-confirmation-notice")).toBeNull();
+  });
+});
+
 describe("LoginPage: captcha", () => {
   afterEach(() => {
     delete window.turnstile;

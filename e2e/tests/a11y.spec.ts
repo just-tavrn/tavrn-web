@@ -83,7 +83,7 @@ const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 const phone = (page: Page) => (page.viewportSize()?.width ?? 1280) < 768;
 
 test.describe("Accessibility (axe, WCAG 2.2 AA)", () => {
-  test("sign-in, registration, password reset and invite pages", async ({ page, request }) => {
+  test("sign-in, registration, password reset, e-mail confirmation and invite pages", async ({ page, request }) => {
     const owner = await registerViaApi(request, "a11yinv");
     const room = await createRoomViaApi(request, owner.token, "Barrierefrei");
     const code = await inviteCode(request, owner.token, room.id);
@@ -104,6 +104,14 @@ test.describe("Accessibility (axe, WCAG 2.2 AA)", () => {
 
     await page.goto("/forgot-password");
     await scan(page, "forgot password");
+
+    // The page of the confirmation mail's link: without a link, and with one that is invalid.
+    await page.goto("/verify-email");
+    await expect(page.getByRole("heading", { name: "E-Mail-Adresse bestätigen" })).toBeVisible();
+    await scan(page, "verify e-mail");
+    await page.goto("/verify-email?token=not-a-real-token");
+    await expect(page.getByRole("heading", { name: "Link ungültig" })).toBeVisible();
+    await scan(page, "verify e-mail (invalid link)");
 
     // The invite page of a signed-in user who is not a member yet (signed out it leads to the sign-in).
     const guest = await registerViaApi(request, "a11yg");
