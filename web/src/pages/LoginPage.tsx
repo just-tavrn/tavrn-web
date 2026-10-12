@@ -44,10 +44,13 @@ export function LoginPage() {
   const setSession = useAuth((s) => s.setSession);
   const preauth = useAuthFlow((s) => s.preauth);
   const setup = useAuthFlow((s) => s.setup);
-  const [codes, setCodes] = useState<{ codes: string[]; account: string } | null>(null);
+  const [codes, setCodes] = useState<{ codes: string[]; account: string; unconfirmed: string | null } | null>(null);
   const next = params.get("next") || "/";
   const preApi = useMemo(() => (preauth ? publicApi.withToken(preauth.token) : null), [preauth]);
   const kind: FlowKind = preauth?.kind ?? setup?.kind ?? "login";
+  // TAVRN_EMAIL (the discovery document's `email`): with `required` a password sign-in needs the confirmed address.
+  const wellKnown = useQuery({ queryKey: ["node", "well-known"], queryFn: () => publicApi.node.wellKnown(), retry: false, staleTime: 60_000 });
+  const emailRequired = wellKnown.data?.email === "required";
 
   // The encryption step (recovery key or unlock), except on the confirmation of the desktop app's sign-in.
   const toEncryption = () => navigate(afterSignIn(next), { replace: true });
@@ -59,9 +62,16 @@ export function LoginPage() {
     setSession(session);
     if (extra.passkey?.prf) rememberPrf(extra.passkey.credentialId, extra.passkey.prf);
     if (session.recovery_code_used) useToasts.getState().push({ kind: "warning", title: t("verify.recovery_used"), detail: t("verify.recovery_used_hint") });
-    if (extra.codes?.length) setCodes({ codes: extra.codes, account: session.user.address });
-    else toEncryption();
+    // A new account with an address to confirm: the mail with the link is on its way (PROTOCOL.md §5a.3).
+    const unconfirmed = flow.preauth?.kind === "register" && session.user.email && !session.user.email_verified ? session.user.email : null;
+    if (extra.codes?.length) setCodes({ codes: extra.codes, account: session.user.address, unconfirmed });
+    else {
+      if (unconfirmed) useToasts.getState().push({ kind: "info", title: t("verify_email.title"), detail: confirmationNotice(unconfirmed) });
+      toEncryption();
+    }
   };
+
+  const confirmationNotice = (email: string) => t(emailRequired ? "verify_email.sent_required" : "verify_email.sent_optional", { email });
 
   const cancelFlow = () => {
     useAuthFlow.getState().clearPreauth();
@@ -76,6 +86,11 @@ export function LoginPage() {
       <AuthCard>
         {kind === "register" && <Steps current={3} />}
         <h1 className="mt-3 text-base font-semibold">{t("codes.title")}</h1>
+        {codes.unconfirmed && (
+          <p role="status" className="mt-3 rounded-md border border-line bg-bg-0 px-3 py-2 text-sm text-fg-1" data-testid="email-confirmation-notice">
+            {confirmationNotice(codes.unconfirmed)}
+          </p>
+        )}
         <div className="mt-3">
           <RecoveryCodesView codes={codes.codes} account={codes.account} onDone={toEncryption} />
         </div>
@@ -135,6 +150,9 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
   const [dobError, setDobError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // `403 auth.email_unverified`: the address of the account is not confirmed yet; the mail can be sent again.
+  const [unverified, setUnverified] = useState(false);
+  const [resent, setResent] = useState<string | null>(null);
   const [remote, setRemote] = useState(false);
   // TAVRN_OIDC_ONLY: the password form only for the operators' break-glass sign-in (APPLICATIONS.md §8.3).
   const [breakGlass, setBreakGlass] = useState(false);
@@ -158,6 +176,8 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setUnverified(false);
+    setResent(null);
     if (mode === "register" && password !== passwordRepeat) {
       setError(t("auth.password_mismatch"));
       return;
@@ -216,6 +236,7 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
       onPreauth(resp, mode, name);
     } catch (err) {
       setError(describeError(err) || t("auth.failed"));
+      if (mode === "login" && err instanceof TavrnApiError && err.code === "auth.email_unverified") setUnverified(true);
       if (captchaNeeded) setCaptchaReset((n) => n + 1);
       // New terms were published meanwhile: show the current version and ask again.
       if (err instanceof TavrnApiError && err.code === "legal.terms_not_accepted") {
@@ -223,6 +244,18 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
         setError(t("legal.terms.changed_register"));
         void node.refetch();
       }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const resendConfirmation = async () => {
+    setBusy(true);
+    try {
+      await publicApi.auth.resendVerification(username.trim());
+      setResent(t("verify_email.resent"));
+    } catch (err) {
+      setResent(err instanceof TavrnApiError && err.code === "mail.unavailable" ? t("verify_email.resend_unavailable") : describeError(err));
     } finally {
       setBusy(false);
     }
@@ -348,6 +381,8 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
             onClick={() => {
               setMode(m);
               setError(null);
+              setUnverified(false);
+              setResent(null);
             }}
             className={`min-h-10 rounded ${mode === m ? "bg-bg-3 text-fg-0" : "text-fg-2"}`}
           >
@@ -386,7 +421,11 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
               <Input name="display_name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
             </Field>
             {emailPolicy !== "none" && (
-              <Field label={emailPolicy === "required" ? t("auth.email") : t("auth.email_optional")} errorId={emailError ? "auth-error" : undefined}>
+              <Field
+                label={emailPolicy === "required" ? t("auth.email") : t("auth.email_optional")}
+                hint={emailPolicy === "required" ? t("auth.email_required_hint") : undefined}
+                errorId={emailError ? "auth-error" : undefined}
+              >
                 <Input
                   name="email"
                   type="email"
@@ -422,6 +461,17 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
         )}
         {captchaNeeded && captcha && <Captcha siteKey={captcha.site_key} onToken={setCaptchaToken} resetKey={captchaReset} />}
         <ErrorText id="auth-error">{error}</ErrorText>
+        {unverified &&
+          username.trim() &&
+          (resent ? (
+            <p role="status" className="text-sm text-fg-1" data-testid="confirmation-resent">
+              {resent}
+            </p>
+          ) : (
+            <Button variant="ghost" className="w-full border border-line" disabled={busy} onClick={() => void resendConfirmation()} data-testid="resend-confirmation">
+              {t("verify_email.resend")}
+            </Button>
+          ))}
         <Button type="submit" className="w-full" disabled={busy || (mode === "register" && registrationClosed)}>
           {busy ? t("auth.wait") : mode === "login" ? t("auth.login") : t("auth.create_account")}
         </Button>

@@ -7,7 +7,8 @@ import { describeError } from "../stores/toasts";
 import { Button, ErrorText, Field, Input } from "../components/ui";
 import { LegalLink } from "../components/legal/LegalLink";
 
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
+/** The centred card of the account pages outside the app (password reset, e-mail confirmation). */
+export function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div role="main" className="flex min-h-full items-center justify-center p-4">
       <div className="w-full max-w-sm rounded-xl border border-line bg-bg-1 p-6 shadow-xl">
