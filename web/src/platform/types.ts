@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
- * The platform the client runs on: a browser tab served by a node, or the desktop app (Tauri shell in
- * `apps/desktop`) that bundles the client and talks to the node the user picked (docs/DESKTOP.md).
+ * The platform the client runs on: a browser tab served by a node, or one of the apps that bundle the client and talk
+ * to the node the user picked: the desktop app (Tauri or Electron shell, docs/DESKTOP.md) or the Android app (the
+ * Tauri shell on Android, docs/ANDROID.md).
  *
  * The interface is deliberately small. The optional members at the end are extension points of the
  * desktop app: they stay absent in the browser and are filled by the shell's later steps (global
@@ -11,10 +12,15 @@ import type { AuthResponse, DeviceProof, NodeEndpoints, TavrnApi } from "@tavrn/
 import type { UnlockMaterial } from "../crypto/sealedUnlock";
 import type { SaveFile } from "./files";
 
-export type PlatformKind = "browser" | "desktop";
+export type PlatformKind = "browser" | "desktop" | "android";
 
 export interface Platform {
   readonly kind: PlatformKind;
+  /**
+   * One of the apps (desktop or Android): the client is bundled, its node is the one the user picked, the node's own
+   * pages (passkeys, single sign-on, the captcha) open in a window or the browser. Code that is about the screen
+   * (a phone or a desktop) asks `kind` instead.
+   */
   readonly isDesktop: boolean;
   /**
    * Base URL of the node the client belongs to, for the API client (`<base>/api/v1`), the WebSocket and media.
@@ -45,6 +51,8 @@ export interface Platform {
   readonly saveFile?: SaveFile;
   /** Desktop: the native voice engine of the shell (LiveKit's Rust SDK; `voice/nativeSession.ts`, docs/DESKTOP.md "Voice"). */
   readonly voice?: PlatformVoice;
+  /** Android: permissions, the back gesture, app links, the system bars, push without Google (docs/ANDROID.md). */
+  readonly android?: PlatformAndroid;
 }
 
 export interface NodeChoice {
@@ -247,8 +255,22 @@ export interface TrayStatus {
   closeToTray: boolean;
 }
 
+/**
+ * What the Android app's voice notification shows besides the tray's texts ("In voice channel X" with Mute or Unmute
+ * and Leave); the desktop's tray ignores it.
+ */
+export interface TrayVoiceExtra {
+  /** "In voice channel Lounge (Gaming)", "In a call with Bob". */
+  title: string;
+  /** The state in words ("Connected", "Muted"). */
+  text: string;
+  unmute: string;
+  /** The camera is on (the service then also holds the camera). */
+  camera: boolean;
+}
+
 export interface PlatformTray {
-  set(state: TrayVoiceState, labels: TrayLabels): Promise<void>;
+  set(state: TrayVoiceState, labels: TrayLabels, extra?: TrayVoiceExtra): Promise<void>;
   /** A voice item of the tray menu was chosen. Returns the unsubscriber. */
   onAction(fn: (action: TrayAction) => void): () => void;
   status(): Promise<TrayStatus>;
@@ -331,4 +353,82 @@ export interface PlatformVoice {
   configure(config: NativeVoiceConfig): Promise<void>;
   /** Playback gains per identity (1 = unchanged). */
   setVolumes(volumes: Record<string, number>): Promise<void>;
+}
+
+/** The system bars and the on-screen keyboard of the Android app in CSS pixels. */
+export interface AndroidInsets {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+  /** The keyboard's height (0 when hidden); the app already shortened the page by it. */
+  keyboard: number;
+}
+
+/** What the Android side reports about itself (the shell's `android_info`). */
+export interface AndroidStatus {
+  /** The Android API level. */
+  sdk: number;
+  /** The webview runs WebAuthn for the app (Android 14+). */
+  webauthn: boolean;
+  /** Installed UnifiedPush distributors (package names). */
+  distributors: string[];
+  /** The distributor in use, once one was chosen. */
+  distributor: string | null;
+  notifications: "granted" | "denied" | "prompt";
+  batteryExempt: boolean;
+  keepConnection: boolean;
+  insets: AndroidInsets;
+}
+
+export type AndroidPermission = "notifications" | "bluetooth" | "microphone" | "camera";
+/** `blocked`: Android no longer asks; only the system settings can grant it. */
+export type PermissionAnswer = "granted" | "denied" | "blocked";
+export type AndroidSettingsPage = "app" | "notifications" | "battery";
+
+/** A UnifiedPush endpoint with its RFC 8291 keys: what the node's push API takes (PROTOCOL.md §6d). */
+export interface PushEndpointKeys {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+}
+
+/** Push without Google: UnifiedPush with WebPush (docs/ANDROID.md "Notifications without Google"). */
+export interface AndroidPush {
+  /** Registers at the distributor with the node's VAPID key; rejects with `push.no_distributor`, `push.timeout`, … */
+  register(vapid: string, distributor?: string | null): Promise<PushEndpointKeys>;
+  unregister(): Promise<void>;
+  /** The texts of the native receiver (`push.sw.*`) and the account's home node. */
+  configure(strings: Record<string, string>, homeNode: string | null): Promise<void>;
+  /** The distributor handed a new endpoint (it must be registered at the node again). */
+  onEndpoint(fn: (endpoint: PushEndpointKeys) => void): () => void;
+  /** The distributor dropped the registration. */
+  onUnregistered(fn: () => void): () => void;
+}
+
+/** The Android app's own pieces (`platform/tauriAndroid.ts`). */
+export interface PlatformAndroid {
+  /** The Android API level at start. */
+  readonly sdk: number;
+  /** The webview runs WebAuthn for the app (Android 14+ and a webview that supports it). */
+  readonly webauthn: boolean;
+  status(): Promise<AndroidStatus>;
+  /** Asks for a runtime permission right before its first use. */
+  requestPermission(permission: AndroidPermission): Promise<PermissionAnswer>;
+  openSettings(page: AndroidSettingsPage): Promise<void>;
+  /** The system dialog of the battery-optimisation exemption; whether the app is exempt afterwards. */
+  requestBatteryExemption(): Promise<boolean>;
+  /** Sends the app to the background (the back gesture on the first page). */
+  background(): Promise<void>;
+  /** The system back gesture. Returns the unsubscriber. */
+  onBack(fn: () => void): () => void;
+  /** An app link (`https://app.tavrn.org/invite/…`) or a `tavrn://` link opened the app; checked by the shell. */
+  onLink(fn: (url: string) => void): () => void;
+  /** The system bars or the keyboard changed. */
+  onInsets(fn: (insets: AndroidInsets) => void): () => void;
+  /** The latest insets. */
+  insets(): AndroidInsets;
+  push: AndroidPush;
+  /** Without a distributor: keeps the app running in the background for notifications (a foreground service). */
+  keepConnection(on: boolean, texts: { title: string; text: string }): Promise<void>;
 }

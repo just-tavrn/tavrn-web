@@ -20,6 +20,7 @@
  * Screen shares are opt-in (`streams.ts`): the room connects without auto-subscription; microphones and cameras
  * are subscribed as they are published, a screen share's video and audio only once this viewer joined it.
  */
+import { platform } from "../platform";
 import { cleanupConversation } from "../lib/leafCleanup";
 import {
   ConnectionQuality,
@@ -702,7 +703,8 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
       mls,
       room,
       pipeline,
-      capture: new CaptureRelease(pipeline),
+      // The Android app keeps the capture while muted: its notification unmutes in the background (capture.ts).
+      capture: new CaptureRelease(pipeline, undefined, !!platform().android),
       keyProvider,
       info,
       offs: [],

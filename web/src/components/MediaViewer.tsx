@@ -172,7 +172,7 @@ export default function MediaViewer({ items, start, onClose }: { items: ViewAtta
   const tool = "min-h-9 min-w-9 rounded text-white/80 hover:bg-white/10 hover:text-white disabled:opacity-40";
   return createPortal(
     <div ref={root} role="dialog" aria-modal="true" aria-label={t("media.viewer", { name: item.name })} className="fixed inset-0 z-[80] flex flex-col bg-black/90 text-white" data-testid="media-viewer" data-index={state.index}>
-      <div className="flex shrink-0 items-center gap-1 px-3 py-2" style={{ paddingTop: "max(0.5rem, env(safe-area-inset-top))" }}>
+      <div className="flex shrink-0 items-center gap-1 px-3 py-2" style={{ paddingTop: "max(0.5rem, var(--safe-top))" }}>
         <p className="min-w-0 flex-1 truncate text-sm" title={item.name}>
           {item.name}
           {items.length > 1 && <span className="ml-2 text-white/60" data-testid="viewer-counter">{t("media.counter", { index: state.index + 1, count: items.length })}</span>}

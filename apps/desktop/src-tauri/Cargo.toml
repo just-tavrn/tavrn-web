@@ -28,16 +28,22 @@ tauri-build = { version = "2.7", features = [] }
 
 [dependencies]
 tauri = { version = "2.12", features = ["tray-icon", "image-png"] }
-tauri-plugin-opener = "2.7"
-# Downloads (src/download.rs): the native save dialog; the shell writes the file itself (no fs plugin for the webview).
-tauri-plugin-dialog = "2.7"
-tauri-plugin-updater = "2.13"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Address first (src/resolve.rs): the discovery document over rustls (the updater's TLS stack) and SRV records.
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 hickory-resolver = { version = "0.26", default-features = false, features = ["tokio", "system-config"] }
+# The Android app's check for a newer release (src/release.rs); already in the tree through Tauri.
+semver = "1"
+
+# Desktop only (Windows, macOS, Linux): the Android app (docs/ANDROID.md) has no tray, hotkeys, keychain, updater, save
+# dialog or native voice engine; its platform pieces are Kotlin (src-tauri/gen/android) behind src/android.rs.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-opener = "2.7"
+# Downloads (src/download.rs): the native save dialog; the shell writes the file itself (no fs plugin for the webview).
+tauri-plugin-dialog = "2.7"
+tauri-plugin-updater = "2.13"
 # OS keychain (keyring ecosystem: the core API with its in-memory mock store, plus the platform stores below).
 keyring-core = "1"
 # Native notifications (the backend of tauri-plugin-notification, used directly for the click on Linux).
@@ -51,6 +57,11 @@ futures-util = { version = "0.3", default-features = false, optional = true }
 # The system-wide key listener of the hotkeys (X RECORD on Linux, a low-level keyboard hook on Windows; observes, never
 # grabs), shared with the Electron shell's native module.
 keywatch = { package = "tavrn-keywatch", path = "../crates/keywatch" }
+
+# The Android app: Mozilla's root certificates for the node discovery (src/resolve.rs; reqwest's platform verifier needs
+# a Kotlin component on Android), the same bundle the native voice engine uses on the desktop.
+[target.'cfg(target_os = "android")'.dependencies]
+webpki-roots = "1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] }

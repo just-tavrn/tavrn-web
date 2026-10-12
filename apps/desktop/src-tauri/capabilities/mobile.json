@@ -1,0 +1,33 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "mobile",
+  "description": "The bundled client in the Android app's main window: only the app's own commands for the node picker, the sign-in in the browser and the Android side (docs/ANDROID.md). No remote URLs, no plugin permissions: a node never reaches the native API.",
+  "windows": ["main"],
+  "platforms": ["android"],
+  "permissions": [
+    "allow-get-config",
+    "allow-set-node",
+    "allow-app-info",
+    "allow-open-external",
+    "allow-resolve-node",
+    "allow-open-connect",
+    "allow-close-connect",
+    "allow-notify",
+    "allow-shell-events",
+    "allow-android-info",
+    "allow-android-permission",
+    "allow-android-open-settings",
+    "allow-android-battery-exemption",
+    "allow-android-voice",
+    "allow-android-background",
+    "allow-android-push-register",
+    "allow-android-push-unregister",
+    "allow-android-push-config",
+    "allow-android-keep-connection",
+    "allow-android-check-update",
+    "allow-android-save-begin",
+    "allow-android-save-chunk",
+    "allow-android-save-end",
+    "allow-android-save-abort"
+  ]
+}

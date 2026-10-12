@@ -114,7 +114,8 @@ export function NotificationsTab() {
           {t("notify.mentions_privacy")}
         </p>
       </Section>
-      {!desktop && <PushSection />}
+      {/* The Android app pushes through UnifiedPush (docs/ANDROID.md); the desktop app has no push. */}
+      {(!desktop || !!platform().android) && <PushSection />}
       <AccessibilitySection />
       <Section title={t("notify.overrides")} description={t("notify.overrides_hint")}>
         {overrides.length === 0 && <p className="text-sm text-fg-2">{t("notify.overrides_none")}</p>}

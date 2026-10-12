@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
- * The desktop app (Tauri shell in `apps/desktop`). Talks to the shell only through its own commands
- * (`src-tauri/src/commands.rs`): the chosen node, opening links in the system browser, the updater. This module
- * is loaded only inside the app (platform/index.ts); nothing here runs in a browser.
+ * The desktop app (Tauri shell in `apps/desktop`) and the Android app (the same shell on Android, docs/ANDROID.md).
+ * Talks to the shell only through its own commands (`src-tauri/src/commands.rs`): the chosen node, opening links in
+ * the system browser, the updater; the Android app's own members are in `tauriAndroid.ts`. This module is loaded only
+ * inside the app (platform/index.ts); nothing here runs in a browser.
  */
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { externalUrl, installLinkHandler } from "./links";
 import { runAppSession, runAppUnlock } from "./appSession";
 import { shellMembers } from "./tauriShell";
+import { createShellEvents } from "./shellEvents";
+import { androidMembers, androidStatus } from "./tauriAndroid";
 import { createTauriSaveFile } from "./tauriFiles";
 import { voiceMember } from "./tauriVoice";
 import type { AppUpdater, HotkeyEvent, Platform, PlatformHotkeys, ResolvedNode } from "./types";
@@ -24,8 +27,10 @@ interface ShellConfig {
 
 interface AppInfo {
   version: string;
-  /** False while the build carries no updater key (development builds, forks). */
+  /** False while the build carries no updater key (development builds, forks), and on Android. */
   updater: boolean;
+  /** `android` in the Android app (older shells send nothing). */
+  os?: string;
 }
 
 interface UpdateInfo {
@@ -71,8 +76,15 @@ export async function createTauriPlatform(doc: Document = document): Promise<Pla
   const openExternal = async (url: string) => {
     await invoke<void>("open_external", { url: externalUrl(url) });
   };
+  const events = createShellEvents();
+  const android = info.os === "android";
+  const deviceName = android ? "Android app" : "Desktop app";
+  // The desktop's tray, hotkeys, keychain, native voice and save dialog; the Android app's own members instead.
+  const members: Partial<Platform> = android
+    ? androidMembers(events, await androidStatus())
+    : { hotkeys: createHotkeys(), voice: voiceMember(), ...shellMembers(events), saveFile: createTauriSaveFile() };
   const platform: Platform = {
-    kind: "desktop",
+    kind: android ? "android" : "desktop",
     isDesktop: true,
     nodeBase: () => node ?? "",
     // A node serves its web client on the URL the user picked (where links shared with others point to), unless its
@@ -98,7 +110,7 @@ export async function createTauriPlatform(doc: Document = document): Promise<Pla
           api: req.api,
           web: req.endpoints.web,
           domain: req.endpoints.domain,
-          deviceName: "Desktop app",
+          deviceName,
           mode: req.mode,
           method: req.method,
           open: (url) => invoke<void>("open_connect", { url }),
@@ -113,7 +125,7 @@ export async function createTauriPlatform(doc: Document = document): Promise<Pla
           api: req.api,
           web: req.endpoints.web,
           domain: req.endpoints.domain,
-          deviceName: "Desktop app",
+          deviceName,
           open: (url) => invoke<void>("open_connect", { url }),
           close: () => invoke<void>("close_connect"),
           onPage: req.onPage,
@@ -122,13 +134,10 @@ export async function createTauriPlatform(doc: Document = document): Promise<Pla
       reopen: (url) => invoke<void>("open_connect", { url }),
     },
     ...(info.updater ? { updater } : {}),
-    hotkeys: createHotkeys(),
-    // The native voice engine (tauriVoice.ts): Linux always, Windows behind a setting (voice/engine.ts).
-    voice: voiceMember(),
-    // OS keychain, native notifications, tray (tauriShell.ts).
-    ...shellMembers(),
-    // Downloads through the shell's save dialog (tauriFiles.ts).
-    saveFile: createTauriSaveFile(),
+    // Desktop: hotkeys, the native voice engine (tauriVoice.ts: Linux always, Windows behind a setting), the OS
+    // keychain, native notifications and the tray (tauriShell.ts), downloads through the save dialog (tauriFiles.ts).
+    // Android: tauriAndroid.ts.
+    ...members,
   };
   installLinkHandler(doc, openExternal, platform.webOrigin);
   return platform;

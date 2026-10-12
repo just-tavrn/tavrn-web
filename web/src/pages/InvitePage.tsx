@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Navigate, useNavigate, useParams } from "react-router";
+import { Navigate, useNavigate, useParams, useSearchParams } from "react-router";
+import { isNodeDomain } from "@tavrn/sdk";
 import { api } from "../lib/api";
 import { useAuth } from "../stores/auth";
 import { useOriginDomain } from "../lib/origin";
@@ -19,21 +20,29 @@ import { useAgeStatus } from "../lib/age";
 export function InvitePage() {
   const t = useT();
   const { code = "" } = useParams();
+  const [search] = useSearchParams();
   const token = useAuth((s) => s.token);
   // Invite links belong to the node that served this page: with an account of another node, that
-  // node is reached through its federated session.
+  // node is reached through its federated session. An app link of another node names it (`?node=`, docs/ANDROID.md).
   const remoteHome = useAuth((s) => !!s.home);
   const origin = useOriginDomain();
-  const node = remoteHome ? origin : null;
+  const named = search.get("node")?.toLowerCase() ?? null;
+  const other = named && isNodeDomain(named) && named !== useAuth.getState().user?.domain ? named : null;
+  const node = other ?? (remoteHome ? origin : null);
   const client = node ? apiFor(node) : api;
-  const preview = useQuery({ queryKey: ["invite", code, node], queryFn: () => client.invites.preview(code), enabled: !remoteHome || !!origin });
+  const preview = useQuery({ queryKey: ["invite", code, node], queryFn: async () => {
+      // Another node's link: its federated session first (as the join dialog does).
+      if (other) await connectNode(other);
+      return client.invites.preview(code);
+    },
+    enabled: !!other || !remoteHome || !!origin });
   const [accepted, setAccepted] = useState(false);
   // Age gates (PROTOCOL.md §5e): the preview names the gate, the own status decides; the node refuses anyway.
   const ageStatus = useAgeStatus();
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  if (!token) return <Navigate to={`/login?next=${encodeURIComponent(`/invite/${code}`)}`} replace />;
+  if (!token) return <Navigate to={`/login?next=${encodeURIComponent(`/invite/${code}${other ? `?node=${encodeURIComponent(other)}` : ""}`)}`} replace />;
 
   const join = async () => {
     setError(null);

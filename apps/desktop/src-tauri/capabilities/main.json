@@ -3,6 +3,7 @@
   "identifier": "main",
   "description": "The bundled web client in the main window: only the app's own commands (docs/DESKTOP.md). No remote URLs: a node never reaches the native API.",
   "windows": ["main"],
+  "platforms": ["linux", "macOS", "windows"],
   "permissions": [
     "allow-get-config",
     "allow-set-node",

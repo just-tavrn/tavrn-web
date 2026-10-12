@@ -9,6 +9,7 @@ import { voiceErrorMessage } from "./errors";
 import { useVoice, type VoiceTarget } from "./store";
 import { currentEngineKind, useVoiceEngine, type EngineKind, type VoiceEngine } from "./engine";
 import type { ScreenShareOptions } from "./session";
+import { prepareAndroidMedia } from "./androidMedia";
 
 /** Both engines export the same functions (`engine.ts`). */
 type SessionModule = VoiceEngine;
@@ -47,6 +48,8 @@ const warn = (e: unknown) => useToasts.getState().push({ kind: "warning", title:
 /** Joins a voice channel; failures end up as a toast and in `useVoice().error`. */
 export async function joinVoice(target: VoiceTarget, opts: { canCreate: boolean; start?: boolean }): Promise<boolean> {
   try {
+    // Android: the microphone (and headsets) right before the first use (docs/ANDROID.md "Permissions").
+    await prepareAndroidMedia("microphone");
     await (await loadSession()).join(target, opts);
     return true;
   } catch (e) {
@@ -69,7 +72,9 @@ export async function toggleDeafen(): Promise<void> {
 }
 
 export async function toggleCamera(): Promise<void> {
-  await (await loadSession()).setCamera(!useVoice.getState().camera);
+  const on = !useVoice.getState().camera;
+  if (on) await prepareAndroidMedia("camera");
+  await (await loadSession()).setCamera(on);
 }
 
 export async function startScreenShare(opts: ScreenShareOptions): Promise<void> {

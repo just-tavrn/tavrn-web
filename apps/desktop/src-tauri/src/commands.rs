@@ -7,9 +7,12 @@ use std::sync::Mutex;
 
 use serde::Serialize;
 use tauri::{AppHandle, Manager, Runtime, State};
+#[cfg(desktop)]
 use tauri_plugin_updater::UpdaterExt;
 
-use crate::{config, guard, node_url, resolve, updater};
+#[cfg(desktop)]
+use crate::guard;
+use crate::{config, node_url, resolve, updater};
 
 /// The settings file and its current content.
 pub struct Settings {
@@ -27,8 +30,10 @@ impl Settings {
 #[derive(Debug, Serialize)]
 pub struct AppInfo {
     pub version: String,
-    /// False while the build carries no updater key (the placeholder of tauri.conf.json).
+    /// False while the build carries no updater key (the placeholder of tauri.conf.json), and on Android.
     pub updater: bool,
+    /// The operating system (`linux`, `windows`, `macos`, `android`): the client loads the Android members for `android`.
+    pub os: &'static str,
 }
 
 #[derive(Debug, Serialize)]
@@ -81,10 +86,13 @@ pub fn update_config(settings: &Settings, change: impl FnOnce(&mut config::Confi
 
 #[tauri::command]
 pub fn app_info<R: Runtime>(app: AppHandle<R>) -> AppInfo {
-    AppInfo { version: app.package_info().version.to_string(), updater: updater::configured(app.config().plugins.0.get("updater")) }
+    // Android: no updater (Tauri's updater does not support it; the client checks the release feed, docs/ANDROID.md).
+    let updater = cfg!(desktop) && updater::configured(app.config().plugins.0.get("updater"));
+    AppInfo { version: app.package_info().version.to_string(), updater, os: std::env::consts::OS }
 }
 
-/// Opens a web link (http, https, mailto) in the system browser.
+/// Opens a web link (http, https, mailto) in the system browser (Android: `android.rs`).
+#[cfg(desktop)]
 #[tauri::command]
 pub fn open_external(url: String) -> Result<(), String> {
     let url = guard::external_str(&url).ok_or_else(|| "link.refused".to_string())?;
@@ -101,6 +109,7 @@ pub async fn resolve_node<R: Runtime>(app: AppHandle<R>, domain: String) -> Resu
 
 /// Opens (or shows again) the sign-in window with the chosen node's `/connect` page of an app session
 /// (docs/DESKTOP.md "Signing in"). Async: windows must not be created from a synchronous command (Windows).
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn open_connect<R: Runtime>(app: AppHandle<R>, settings: State<'_, Settings>, url: String) -> Result<(), String> {
     let web = {
@@ -113,6 +122,7 @@ pub async fn open_connect<R: Runtime>(app: AppHandle<R>, settings: State<'_, Set
 }
 
 /// Closes the sign-in window (the app has its session, or the user cancelled).
+#[cfg(desktop)]
 #[tauri::command]
 pub fn close_connect<R: Runtime>(app: AppHandle<R>) {
     if let Some(window) = app.get_webview_window(crate::CONNECT_WINDOW) {
@@ -121,6 +131,7 @@ pub fn close_connect<R: Runtime>(app: AppHandle<R>) {
 }
 
 /// The newest signed release when it is newer than this app.
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn check_update<R: Runtime>(app: AppHandle<R>) -> Result<Option<UpdateInfo>, String> {
     if !updater::configured(app.config().plugins.0.get("updater")) {
@@ -131,6 +142,7 @@ pub async fn check_update<R: Runtime>(app: AppHandle<R>) -> Result<Option<Update
 }
 
 /// Downloads the newest release, verifies its signature, installs it and restarts the app.
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn install_update<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     if !updater::configured(app.config().plugins.0.get("updater")) {
@@ -206,6 +218,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(s.path.parent().unwrap_or(&s.path));
     }
 
+    #[cfg(desktop)]
     #[test]
     fn open_external_refuses_non_web_links() {
         assert_eq!(open_external("file:///etc/passwd".into()), Err("link.refused".into()));

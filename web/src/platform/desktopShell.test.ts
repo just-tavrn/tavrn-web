@@ -155,3 +155,12 @@ describe("startDesktopShell", () => {
     stop();
   });
 });
+
+describe("the Android voice notification's texts", () => {
+  it("name the channel or the call, and the state", async () => {
+    const { voiceExtra } = await import("./desktopShell");
+    expect(voiceExtra("connected", "Lounge (Gaming)", false, false)).toEqual({ title: "In voice channel Lounge (Gaming)", text: "Connected", unmute: "Unmute microphone", camera: false });
+    expect(voiceExtra("speaking", "Bob", true, true)).toEqual({ title: "In a call with Bob", text: "Connected", unmute: "Unmute microphone", camera: true });
+    expect(voiceExtra("muted", null, false, false)).toMatchObject({ title: "In a voice channel", text: "Microphone muted" });
+  });
+});

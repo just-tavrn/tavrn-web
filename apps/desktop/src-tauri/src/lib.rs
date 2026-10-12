@@ -5,37 +5,68 @@
 //! browser, signed updates, the OS keychain (`keychain.rs`), native notifications (`notify.rs`) and the tray
 //! (`tray.rs`), whose clicks come back to the client as shell events (`events.rs`), and the native voice engine
 //! (`voice`, Linux always, Windows behind a setting).
+//!
+//! The same crate is the Android app (docs/ANDROID.md, identifier `org.tavrn.app`): the modules marked desktop below
+//! are left out there (`#[cfg(desktop)]`), and `android.rs` bridges the client to the Kotlin side instead (permissions,
+//! the voice service, UnifiedPush, notifications, the back gesture, app links). `mobile.rs` holds the checks of that
+//! bridge; it builds everywhere, so its tests run with the desktop's.
 
+#[cfg(target_os = "android")]
+pub mod android;
 pub mod commands;
 pub mod config;
+#[cfg(desktop)]
 pub mod download;
 pub mod events;
 pub mod guard;
+#[cfg(desktop)]
 pub mod hotkeys;
+#[cfg(desktop)]
 pub mod keychain;
 pub mod media;
+pub mod mobile;
 pub mod node_url;
 pub mod notify;
+pub mod release;
 pub mod resolve;
+#[cfg(desktop)]
 pub mod tray;
 pub mod updater;
+#[cfg(desktop)]
 pub mod voice;
 
 #[cfg(test)]
 mod conf_tests;
 
+#[cfg(desktop)]
 use std::sync::Arc;
 
+#[cfg(desktop)]
+use tauri::WebviewUrl;
+#[cfg(desktop)]
+use tauri::WindowEvent;
 use tauri::webview::{NewWindowResponse, PermissionKind, PermissionResponse};
-use tauri::{AppHandle, Manager, Runtime, Url, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri::{AppHandle, Manager, Runtime, Url, WebviewWindowBuilder};
 
 /// Label of the app's window; capabilities/main.json applies to it (and only to it).
 pub const MAIN_WINDOW: &str = "main";
 /// Label of the sign-in window: the node's own `/connect` page, without any capability (docs/DESKTOP.md "Signing in").
 pub const CONNECT_WINDOW: &str = "connect";
 
+#[cfg(desktop)]
 fn open_link(link: String) {
     let _ = tauri_plugin_opener::open_url(link, None::<&str>);
+}
+
+/// Android: links leave the app through the Kotlin side (the browser, or the app that handles them).
+#[cfg(target_os = "android")]
+fn open_link_on<R: Runtime>(app: &AppHandle<R>, link: String) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let (Some(android), Some(link)) = (app.try_state::<android::Android<R>>(), guard::external_str(&link)) {
+            let _ = android.open_url(&link, false).await;
+        }
+    });
 }
 
 /// Shows `url` (validated by `guard::connect_url`) in the sign-in window, creating it on first use.
@@ -49,6 +80,7 @@ pub fn connect_permission(_kind: PermissionKind) -> PermissionResponse {
     PermissionResponse::Deny
 }
 
+#[cfg(desktop)]
 pub fn open_connect_window<R: Runtime>(app: &AppHandle<R>, url: Url) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window(CONNECT_WINDOW) {
         window.navigate(url)?;
@@ -83,6 +115,7 @@ pub fn open_connect_window<R: Runtime>(app: &AppHandle<R>, url: Url) -> tauri::R
     Ok(())
 }
 
+#[cfg(desktop)]
 pub fn run() {
     let builder = tauri::Builder::default();
     // A second start (launcher, Start menu, a Windows notification click) shows the running app, which may sit in the
@@ -200,6 +233,72 @@ pub fn run() {
     }
 }
 
+/// The Android app (docs/ANDROID.md): the bundled client in the activity's webview, the shared commands of the node
+/// picker and the sign-in, and the Kotlin side through `android.rs`.
+#[cfg(target_os = "android")]
+#[tauri::mobile_entry_point]
+pub fn run() {
+    let result = tauri::Builder::default()
+        .plugin(android::plugin())
+        .invoke_handler(tauri::generate_handler![
+            commands::get_config,
+            commands::set_node,
+            commands::app_info,
+            commands::resolve_node,
+            events::shell_events,
+            android::open_external,
+            android::open_connect,
+            android::close_connect,
+            android::notify,
+            android::android_info,
+            android::android_permission,
+            android::android_open_settings,
+            android::android_battery_exemption,
+            android::android_voice,
+            android::android_background,
+            android::android_push_register,
+            android::android_push_unregister,
+            android::android_push_config,
+            android::android_keep_connection,
+            android::android_check_update,
+            android::android_save_begin,
+            android::android_save_chunk,
+            android::android_save_end,
+            android::android_save_abort,
+        ])
+        .setup(|app| {
+            let handle = app.handle();
+            app.manage(commands::Settings::load(commands::settings_path(handle)?));
+            app.manage(events::ShellEvents::default());
+            let window = app.config().app.windows.iter().find(|w| w.label == MAIN_WINDOW).cloned().ok_or("tauri.conf.json defines no main window")?;
+            let dev_url: Option<Url> = if cfg!(dev) { app.config().build.dev_url.clone() } else { None };
+            let nav_app = handle.clone();
+            let new_window_app = handle.clone();
+            WebviewWindowBuilder::from_config(handle, &window)?
+                .on_navigation(move |url| match guard::navigation(url, dev_url.as_ref()) {
+                    guard::Navigation::Allow => true,
+                    guard::Navigation::External(link) => {
+                        open_link_on(&nav_app, link);
+                        false
+                    }
+                    guard::Navigation::Deny => false,
+                })
+                .on_new_window(move |url, _features| {
+                    if let Some(link) = guard::new_window(&url) {
+                        open_link_on(&new_window_app, link);
+                    }
+                    NewWindowResponse::Deny
+                })
+                .on_permission_request(|_, kind| media::permission(kind))
+                .build()?;
+            Ok(())
+        })
+        .run(tauri::generate_context!());
+    if let Err(e) = result {
+        eprintln!("tavrn: the app could not start: {e}");
+    }
+}
+
 /// A D-Bus session bus can be reached (its address in the environment, or the standard socket of the user session).
 #[cfg(target_os = "linux")]
 fn session_bus() -> bool {
@@ -207,7 +306,7 @@ fn session_bus() -> bool {
         || std::env::var_os("XDG_RUNTIME_DIR").is_some_and(|d| std::path::Path::new(&d).join("bus").exists())
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(all(desktop, not(target_os = "linux")))]
 #[allow(dead_code)]
 fn session_bus() -> bool {
     false

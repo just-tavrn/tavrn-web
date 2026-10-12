@@ -19,6 +19,8 @@ type UpdateState = { kind: "idle" } | { kind: "checking" } | { kind: "current" }
 export function AppTab() {
   const t = useT();
   const p = platform();
+  // The Android app downloads updates in the browser (docs/ANDROID.md "Updates") and has no tray.
+  const android = !!p.android;
   const version = useQuery({ queryKey: ["app-version"], queryFn: () => p.appVersion(), staleTime: Infinity });
   const [state, setState] = useState<UpdateState>({ kind: "idle" });
   const [error, setError] = useState<string | null>(null);
@@ -40,8 +42,9 @@ export function AppTab() {
     setError(null);
     setState({ kind: "installing", update });
     try {
-      // Restarts the app on success.
+      // Restarts the app on success (Android: opens the download in the browser).
       await update.install();
+      if (android) setState({ kind: "available", update });
     } catch (e) {
       setError(describeError(e));
       setState({ kind: "available", update });
@@ -50,7 +53,7 @@ export function AppTab() {
 
   return (
     <div className="space-y-4">
-      <Section title={t("desktop.section_title")}>
+      <Section title={t(android ? "android.section_title" : "desktop.section_title")}>
         <p className="text-sm text-fg-1" data-testid="app-version">
           {version.data ? t("desktop.version", { version: version.data }) : "…"}
         </p>
@@ -63,7 +66,7 @@ export function AppTab() {
           {t("desktop.change_node")}
         </Link>
       </Section>
-      <Section title={t("desktop.updates")} description={p.updater ? t("desktop.updates_hint") : undefined}>
+      <Section title={t("desktop.updates")} description={p.updater ? t(android ? "android.updates_hint" : "desktop.updates_hint") : undefined}>
         {!p.updater ? (
           <p className="text-sm text-fg-2" data-testid="app-updates-unconfigured">
             {t("desktop.updates_unconfigured")}
@@ -82,7 +85,7 @@ export function AppTab() {
                 </p>
                 {state.update.notes && <p className="whitespace-pre-wrap text-xs text-fg-2">{state.update.notes}</p>}
                 <Button disabled={state.kind === "installing"} onClick={() => void install(state.update)}>
-                  {state.kind === "installing" ? t("desktop.installing") : t("desktop.install_update")}
+                  {state.kind === "installing" && !android ? t("desktop.installing") : t(android ? "android.download_update" : "desktop.install_update")}
                 </Button>
               </div>
             )}
@@ -129,7 +132,7 @@ function KeysSection() {
 /** Close to tray (persisted by the shell) and quit. */
 function TraySection() {
   const t = useT();
-  const tray = platform().tray;
+  const tray = platform().android ? undefined : platform().tray;
   const queryClient = useQueryClient();
   const status = useQuery({ queryKey: ["app-tray"], queryFn: () => tray!.status(), enabled: !!tray });
   const [error, setError] = useState<string | null>(null);

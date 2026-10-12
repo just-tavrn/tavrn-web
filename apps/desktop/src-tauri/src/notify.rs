@@ -6,21 +6,27 @@
 //!
 //! A click focuses the window and opens the notification's path in the client: Linux through the notification
 //! server's default action (GNOME, KDE and most others), Windows through the toast's activation while the app runs.
-//! macOS (later) shows the notification only.
+//! macOS (later) shows the notification only. The Android app shows the same notices through its Kotlin side
+//! (`android.rs`); the checks here apply to both.
 
+#[cfg(desktop)]
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde::Deserialize;
+#[cfg(desktop)]
 use tauri::{AppHandle, Runtime};
 
+#[cfg(desktop)]
 use crate::events::{self, ShellEvent};
 
 const MAX_TITLE: usize = 200;
 const MAX_BODY: usize = 1000;
 const MAX_PATH: usize = 512;
 /// Notifications whose click is awaited at the same time (each waits on its own thread until clicked or closed).
+#[cfg(desktop)]
 const MAX_WAITING: usize = 16;
 
+#[cfg(desktop)]
 static WAITING: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -48,6 +54,7 @@ pub fn validate(n: &Notice) -> Result<(), &'static str> {
 }
 
 /// Shows a notification; a click focuses the window and opens `path`.
+#[cfg(desktop)]
 #[tauri::command]
 pub fn notify<R: Runtime>(app: AppHandle<R>, notice: Notice) -> Result<(), String> {
     validate(&notice).map_err(str::to_string)?;
@@ -85,6 +92,7 @@ pub fn notify<R: Runtime>(app: AppHandle<R>, notice: Notice) -> Result<(), Strin
 }
 
 /// The body of the notification was clicked (the default action).
+#[cfg(desktop)]
 pub fn clicked(response: &notify_rust::NotificationResponse) -> bool {
     use notify_rust::NotificationResponse as R;
     matches!(response, R::Default) || matches!(response, R::Action(a) if a == "default")
@@ -101,7 +109,6 @@ fn installed() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use notify_rust::{CloseReason, NotificationResponse};
 
     fn notice(title: &str, body: &str, path: Option<&str>) -> Notice {
         Notice { title: title.into(), body: body.into(), path: path.map(str::to_string) }
@@ -132,8 +139,10 @@ mod tests {
         assert_eq!(validate(&notice(&"ü".repeat(MAX_TITLE), "b", None)), Ok(()), "characters, not bytes");
     }
 
+    #[cfg(desktop)]
     #[test]
     fn only_the_body_click_opens_the_conversation() {
+        use notify_rust::{CloseReason, NotificationResponse};
         assert!(clicked(&NotificationResponse::Default));
         assert!(clicked(&NotificationResponse::Action("default".into())));
         assert!(!clicked(&NotificationResponse::Action("other".into())));

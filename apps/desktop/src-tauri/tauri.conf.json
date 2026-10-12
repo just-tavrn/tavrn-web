@@ -26,7 +26,7 @@
       }
     ],
     "security": {
-      "capabilities": ["main"],
+      "capabilities": ["main", "mobile"],
       "csp": {
         "default-src": "'self'",
         "script-src": "'self' 'wasm-unsafe-eval'",

@@ -8,7 +8,8 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 
 const WORKFLOWS = new URL("../../../.github/workflows/", import.meta.url);
-const KEY = /TAURI_SIGNING_PRIVATE_KEY/;
+// The updater key and the Android signing key (keystore, its passwords and alias): release-assets only.
+const KEY = /TAURI_SIGNING_PRIVATE_KEY|ANDROID_KEYSTORE|ANDROID_KEY_(ALIAS|PASSWORD)/;
 
 /** The jobs of a workflow file by name (the lines below `jobs:` at two spaces of indentation) and what precedes them. */
 function jobsOf(text) {
@@ -33,7 +34,7 @@ const desktop = jobsOf(readFileSync(new URL("desktop.yml", WORKFLOWS), "utf8"));
 const signer = desktop.jobs["release-assets"];
 
 /** The caller's pass-through of an environment secret by name: `NAME: ${{ secrets.NAME }}` in a `secrets:` mapping. */
-const PASS_THROUGH = /^ {6}(TAURI_SIGNING_PRIVATE_KEY(?:_PASSWORD)?): \$\{\{ secrets\.\1 \}\}$/;
+const PASS_THROUGH = /^ {6}(TAURI_SIGNING_PRIVATE_KEY(?:_PASSWORD)?|ANDROID_KEYSTORE_B64|ANDROID_KEYSTORE_PASSWORD|ANDROID_KEY_ALIAS|ANDROID_KEY_PASSWORD): \$\{\{ secrets\.\1 \}\}$/;
 
 test("only desktop.yml's release-assets job names the updater key; release.yml passes it by name to desktop.yml", () => {
   for (const file of files) {
@@ -45,7 +46,7 @@ test("only desktop.yml's release-assets job names the updater key; release.yml p
         // A called workflow receives an environment secret only when the caller passes it by name; the value is the
         // environment's, resolved at the job that declares the environment. Nothing else of this job may name it.
         const passed = lines.filter((l) => PASS_THROUGH.test(l));
-        assert.equal(passed.length, 2, "release.yml passes the key and its password by name");
+        assert.equal(passed.length, 6, "release.yml passes the updater key, the Android keystore and their passwords by name");
         lines = lines.filter((l) => !PASS_THROUGH.test(l));
       }
       assert.doesNotMatch(lines.join("\n"), KEY, `${file}: job ${name} names the updater key`);
@@ -70,7 +71,7 @@ test("the Windows build makes no updater artifacts (release-assets signs the ins
 });
 
 test("the parser sees the jobs of desktop.yml", () => {
-  assert.deepEqual(Object.keys(desktop.jobs).sort(), ["linux-electron", "release-assets", "tauri-linux", "windows", "windows-electron", "windows-nsis"]);
+  assert.deepEqual(Object.keys(desktop.jobs).sort(), ["android", "linux-electron", "release-assets", "tauri-linux", "windows", "windows-electron", "windows-nsis"]);
 });
 
 test("no workflow passes the updater key through workflow-level env or `secrets: inherit`", () => {
@@ -107,16 +108,16 @@ test("linux-electron uploads the packages right after packaging, before the spec
 test("release-assets takes each build artifact by id into its own directory and collects only allowed files before signing", () => {
   const steps = code(signer).split(/\n(?= {6}- )/);
   const downloads = steps.filter((s) => /actions\/download-artifact@/.test(s));
-  assert.equal(downloads.length, 3);
+  assert.equal(downloads.length, 4);
   for (const d of downloads) {
-    assert.match(d, /artifact-ids: \$\{\{ needs\.(windows|linux-electron|windows-electron)\.outputs\.artifact-id \}\}/);
+    assert.match(d, /artifact-ids: \$\{\{ needs\.(windows|linux-electron|windows-electron|android)\.outputs\.artifact-id \}\}/);
     assert.doesNotMatch(d, /^\s+name:/m, "never by artifact name");
     assert.match(d, /path: built\//);
   }
   const at = (re) => steps.findIndex((s) => re.test(s));
   const collect = at(/release-assets\.mjs collect/);
   assert.ok(collect > at(/download-artifact/) && collect < at(/tauri signer sign/), "collect after the downloads, before signing");
-  for (const job of ["windows", "linux-electron", "windows-electron"]) {
+  for (const job of ["windows", "linux-electron", "windows-electron", "android"]) {
     assert.match(desktop.jobs[job], /outputs:\n\s+artifact-id: \$\{\{ steps\.\w+\.outputs\.artifact-id \}\}/, `${job} reports its artifact id`);
   }
 });
@@ -126,4 +127,22 @@ test("build provenance only for public repositories; release specs use their own
   assert.match(attest, /if: \$\{\{ !github\.event\.repository\.private \}\}/);
   const specs = code(desktop.jobs["linux-electron"]);
   assert.match(specs, /inputs\.release-tag && vars\.TAVRN_RELEASE_NODE_IMAGE \|\| 'ghcr\.io\/just-tavrn\/tavrn-node:edge'/);
+});
+
+test("the Android build: GitHub-hosted, aarch64 only, an unsigned APK, no key; release-assets signs it with apksigner", () => {
+  const android = code(desktop.jobs.android);
+  assert.match(android, /runs-on: ubuntu-latest/);
+  assert.match(android, /tauri android build --apk --target aarch64/);
+  assert.doesNotMatch(android, /--target (armv7|i686|x86_64)/);
+  assert.match(android, /sdkmanager[^\n]*"ndk;28\.2\.13676358"/, "the NDK pinned");
+  assert.match(android, /android-arm64-unsigned\.apk/);
+  assert.doesNotMatch(android, /apksigner|keystore/i);
+  const steps = code(signer).split(/\n(?= {6}- )/);
+  const at = (re) => steps.findIndex((s) => re.test(s));
+  const sign = at(/apksigner" sign/);
+  assert.ok(sign > at(/release-assets\.mjs collect/), "signed after collect");
+  assert.ok(sign < at(/checksums\.mjs/), "signed before the checksums and the asset check");
+  assert.match(steps[sign], /apksigner" verify/);
+  assert.match(steps[sign], /rm -f "\$keystore"/, "the keystore file is removed");
+  assert.match(code(signer), /needs: \[linux-electron, windows-electron, windows, android\]/);
 });

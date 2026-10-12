@@ -256,7 +256,7 @@ impl HttpFetcher {
             let same_host = attempt.previous().first().and_then(|u| u.host_str()) == attempt.url().host_str();
             if attempt.previous().len() > 3 || attempt.url().scheme() != "https" || !same_host { attempt.error("redirect refused") } else { attempt.follow() }
         });
-        let client = reqwest::Client::builder()
+        let client = client_builder()
             .redirect(policy)
             .connect_timeout(Duration::from_secs(5))
             .timeout(Duration::from_secs(10))
@@ -267,16 +267,44 @@ impl HttpFetcher {
     }
 }
 
-async fn read_capped(mut resp: reqwest::Response) -> Result<Fetched, FetchError> {
+/// The HTTP client of the discovery: the platform's certificate verifier on the desktop; on Android Mozilla's root
+/// certificates (reqwest's platform verifier needs a Kotlin component there; docs/ANDROID.md "Limits").
+fn client_builder() -> reqwest::ClientBuilder {
+    #[cfg(target_os = "android")]
+    {
+        let roots = rustls::RootCertStore { roots: webpki_roots::TLS_SERVER_ROOTS.to_vec() };
+        let provider = std::sync::Arc::new(rustls::crypto::ring::default_provider());
+        if let Ok(config) = rustls::ClientConfig::builder_with_provider(provider).with_safe_default_protocol_versions() {
+            let tls = config.with_root_certificates(roots).with_no_client_auth();
+            return reqwest::Client::builder().tls_backend_preconfigured(tls);
+        }
+    }
+    reqwest::Client::builder()
+}
+
+async fn read_capped(resp: reqwest::Response) -> Result<Fetched, FetchError> {
+    read_at_most(resp, MAX_DOCUMENT).await
+}
+
+async fn read_at_most(mut resp: reqwest::Response, max: usize) -> Result<Fetched, FetchError> {
     let status = resp.status().as_u16();
     let mut body = Vec::new();
     while let Some(chunk) = resp.chunk().await.map_err(|_| FetchError::Transport)? {
-        if body.len() + chunk.len() > MAX_DOCUMENT {
+        if body.len() + chunk.len() > max {
             return Err(FetchError::Refused);
         }
         body.extend_from_slice(&chunk);
     }
     Ok(Fetched { status, body })
+}
+
+impl HttpFetcher {
+    /// A JSON document of at most `max` bytes with status 200 (the release feed of `release.rs`).
+    pub async fn get_capped(&self, url: &str, max: usize) -> Result<Vec<u8>, FetchError> {
+        let resp = self.client.get(url).header("Accept", "application/json").send().await.map_err(|_| FetchError::Transport)?;
+        let fetched = read_at_most(resp, max).await?;
+        if fetched.status == 200 { Ok(fetched.body) } else { Err(FetchError::Refused) }
+    }
 }
 
 impl Fetcher for HttpFetcher {
@@ -307,7 +335,7 @@ impl Fetcher for HttpFetcher {
             if addrs.is_empty() {
                 return Err(FetchError::Transport);
             }
-            let mut builder = reqwest::Client::builder()
+            let mut builder = client_builder()
                 .redirect(reqwest::redirect::Policy::none())
                 .connect_timeout(Duration::from_secs(5))
                 .timeout(Duration::from_secs(10))

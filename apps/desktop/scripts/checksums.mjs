@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
  * Writes `<asset>.sha256` (sha256sum format, `sha256sum -c` checks it) next to every installer of a release directory
- * (`.AppImage`, `.deb`, `.exe`, `.msi`); updater signatures, feeds, block maps and existing sums get none. desktop.yml
+ * (`.AppImage`, `.deb`, `.exe`, `.msi`, `.apk`); updater signatures, feeds, block maps and existing sums get none. desktop.yml
  * runs it before the upload, so every installer on the GitHub release has its checksum (docs/DESKTOP.md "Builds and
  * releases").
  *   node checksums.mjs <dir>
@@ -12,7 +12,7 @@ import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const INSTALLERS = [".AppImage", ".deb", ".exe", ".msi"];
+const INSTALLERS = [".AppImage", ".deb", ".exe", ".msi", ".apk"];
 
 /** Writes the sums and returns the names of the written files, sorted. */
 export function writeChecksums(dir) {

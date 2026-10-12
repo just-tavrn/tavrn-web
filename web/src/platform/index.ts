@@ -10,7 +10,7 @@ import { detectElectron } from "./electronDetect";
 import { detectTauri } from "./tauriDetect";
 import type { Platform } from "./types";
 
-export type { AvailableUpdate, AppUpdater, HotkeyAction, HotkeyEvent, NodeChoice, NodeDetails, NodePageMethod, NodePageMode, NodePageResult, NodePageSignIn, NodePageUnlock, Platform, PlatformAuth, PlatformHotkeys, PlatformKind, PlatformVoice, NativeDevice, NativeParticipant, NativeVoiceConfig, NativeVoiceEvent, NativeVoiceJoin, ResolvedNode, ResolveFailure } from "./types";
+export type { AndroidInsets, AndroidPermission, AndroidStatus, PermissionAnswer, PlatformAndroid, PushEndpointKeys, AvailableUpdate, AppUpdater, HotkeyAction, HotkeyEvent, NodeChoice, NodeDetails, NodePageMethod, NodePageMode, NodePageResult, NodePageSignIn, NodePageUnlock, Platform, PlatformAuth, PlatformHotkeys, PlatformKind, PlatformVoice, NativeDevice, NativeParticipant, NativeVoiceConfig, NativeVoiceEvent, NativeVoiceJoin, ResolvedNode, ResolveFailure } from "./types";
 
 let current: Platform = browserPlatform;
 
@@ -78,7 +78,7 @@ export function originHost(): string {
 
 /** Name of a new device of this platform, as the node lists it under the account's devices. */
 export function deviceName(): string {
-  return current.isDesktop ? "Desktop app" : "Browser";
+  return current.kind === "android" ? "Android app" : current.isDesktop ? "Desktop app" : "Browser";
 }
 
 /** Nodes in development mode speak plain HTTP; only a client of such a node accepts http peers. */

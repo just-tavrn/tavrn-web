@@ -379,7 +379,7 @@ export function Composer({
     {above}
     <form
       className={`border-t border-line p-3 ${dragging ? "bg-accent-soft" : ""}`}
-      style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+      style={{ paddingBottom: "max(0.75rem, var(--safe-bottom))" }}
       onSubmit={(e) => {
         e.preventDefault();
         void submit();

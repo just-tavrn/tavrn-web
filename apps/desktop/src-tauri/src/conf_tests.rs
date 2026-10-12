@@ -13,6 +13,26 @@ fn capability() -> Value {
     serde_json::from_str(include_str!("../capabilities/main.json")).unwrap_or_else(|e| unreachable!("main.json: {e}"))
 }
 
+fn mobile_capability() -> Value {
+    serde_json::from_str(include_str!("../capabilities/mobile.json")).unwrap_or_else(|e| unreachable!("mobile.json: {e}"))
+}
+
+fn android_conf() -> Value {
+    serde_json::from_str(include_str!("../tauri.android.conf.json")).unwrap_or_else(|e| unreachable!("tauri.android.conf.json: {e}"))
+}
+
+fn permissions(cap: &Value) -> Vec<&str> {
+    cap["permissions"].as_array().map(|p| p.iter().filter_map(Value::as_str).collect()).unwrap_or_default()
+}
+
+/// The commands build.rs gives permissions to (its `commands` list).
+fn manifest_commands() -> Vec<String> {
+    let build = include_str!("../build.rs");
+    let list = &build[build.find("let commands = &[").unwrap_or_else(|| unreachable!("build.rs: commands"))..];
+    let list = &list[..list.find("];").unwrap_or(list.len())];
+    list.lines().filter_map(|l| l.trim().strip_prefix('"').and_then(|l| l.strip_suffix("\",")).map(str::to_string)).collect()
+}
+
 fn csp(directive: &str) -> Vec<String> {
     conf()["app"]["security"]["csp"][directive]
         .as_str()
@@ -116,7 +136,109 @@ fn the_capability_grants_only_the_app_commands_to_the_main_window() {
     // Downloads: the shell opens the save dialog and writes the file itself; the dialog, opener and fs plugins stay
     // out of the webview's reach.
     assert!(permissions.iter().all(|p| p.starts_with("allow-")), "no plugin or core permissions: the shell's own commands only");
-    assert_eq!(conf()["app"]["security"]["capabilities"], serde_json::json!(["main"]));
+    assert_eq!(cap["platforms"], serde_json::json!(["linux", "macOS", "windows"]), "the desktop's commands only on the desktop");
+    assert_eq!(conf()["app"]["security"]["capabilities"], serde_json::json!(["main", "mobile"]));
+}
+
+#[test]
+fn the_android_capability_grants_only_the_app_commands_of_the_android_app() {
+    let cap = mobile_capability();
+    assert_eq!(cap["windows"], serde_json::json!([crate::MAIN_WINDOW]));
+    assert_eq!(cap["platforms"], serde_json::json!(["android"]));
+    assert!(cap.get("remote").is_none(), "no remote origin may call the shell");
+    let granted = permissions(&cap);
+    assert_eq!(
+        granted,
+        [
+            "allow-get-config",
+            "allow-set-node",
+            "allow-app-info",
+            "allow-open-external",
+            "allow-resolve-node",
+            "allow-open-connect",
+            "allow-close-connect",
+            "allow-notify",
+            "allow-shell-events",
+            "allow-android-info",
+            "allow-android-permission",
+            "allow-android-open-settings",
+            "allow-android-battery-exemption",
+            "allow-android-voice",
+            "allow-android-background",
+            "allow-android-push-register",
+            "allow-android-push-unregister",
+            "allow-android-push-config",
+            "allow-android-keep-connection",
+            "allow-android-check-update",
+            "allow-android-save-begin",
+            "allow-android-save-chunk",
+            "allow-android-save-end",
+            "allow-android-save-abort",
+        ]
+    );
+    // Only the app's own commands: the Kotlin plugin (`plugin:tavrn-android|…`) and every other plugin stay out of
+    // the webview's reach, so the Kotlin side is reached only through android.rs's checked commands.
+    assert!(granted.iter().all(|p| p.starts_with("allow-") && !p.contains(':')));
+    // No desktop-only command (keychain, tray, hotkeys, downloads, native voice, updater) on Android.
+    for desktop_only in ["keychain", "tray", "hotkey", "save-file", "allow-voice-", "install-update", "quit"] {
+        assert!(!granted.iter().any(|p| p.contains(desktop_only)), "{desktop_only} granted on Android");
+    }
+    assert!(!granted.contains(&"allow-check-update"), "Tauri's updater has no Android support");
+}
+
+#[test]
+fn every_granted_permission_is_a_command_of_the_manifest() {
+    let commands = manifest_commands();
+    assert!(commands.len() > 40, "build.rs lists {commands:?}");
+    for cap in [capability(), mobile_capability()] {
+        for permission in permissions(&cap) {
+            let command = permission.trim_start_matches("allow-").replace('-', "_");
+            assert!(commands.contains(&command), "{permission} names no command of build.rs");
+        }
+    }
+    let android_commands = commands.iter().filter(|c| c.starts_with("android_")).count();
+    assert_eq!(android_commands, permissions(&mobile_capability()).iter().filter(|p| p.starts_with("allow-android-")).count());
+}
+
+#[test]
+fn the_android_app_has_its_own_identifier_and_minimum_version() {
+    let c = android_conf();
+    assert_eq!(c["identifier"], "org.tavrn.app", "never the desktop's org.tavrn.desktop");
+    assert_ne!(c["identifier"], conf()["identifier"]);
+    assert_eq!(c["bundle"]["android"]["minSdkVersion"], 26, "docs/ANDROID.md \"Which Android versions\"");
+    let gradle = include_str!("../gen/android/app/build.gradle.kts");
+    for line in ["applicationId = \"org.tavrn.app\"", "minSdk = 26", "targetSdk = 36"] {
+        assert!(gradle.contains(line), "build.gradle.kts lacks {line}");
+    }
+}
+
+#[test]
+fn the_android_manifest_keeps_its_promises() {
+    let manifest = include_str!("../gen/android/app/src/main/AndroidManifest.xml");
+    // Plain http only for a development node on the device itself, no backups of the key store.
+    assert!(manifest.contains("android:networkSecurityConfig=\"@xml/network_security_config\""));
+    assert!(!manifest.contains("usesCleartextTraffic"));
+    assert!(manifest.contains("android:allowBackup=\"false\""));
+    let network = include_str!("../gen/android/app/src/main/res/xml/network_security_config.xml");
+    assert!(network.contains("<base-config cleartextTrafficPermitted=\"false\" />"));
+    // Every service and receiver of the app is private (the connector's own receiver is the only door for pushes).
+    for component in ["\".VoiceService\"", "\".ConnectionService\"", "\".PushReceiver\"", "\".ActionReceiver\""] {
+        let at = manifest.find(component).unwrap_or_else(|| unreachable!("{component} missing"));
+        let tag = &manifest[..at];
+        let start = tag.rfind('<').unwrap_or(0);
+        let element = &manifest[start..manifest[at..].find('>').map_or(manifest.len(), |e| at + e)];
+        assert!(element.contains("android:exported=\"false\""), "{component} is exported");
+    }
+    // App links only for the paths the shell accepts (mobile::app_link).
+    assert!(manifest.contains("android:autoVerify=\"true\""));
+    for host in crate::mobile::APP_LINK_HOSTS {
+        assert!(manifest.contains(&format!("android:host=\"{host}\"")), "{host} has no intent filter");
+    }
+    // No Google services: no Firebase, no Play services anywhere in the Android project.
+    let gradle = include_str!("../gen/android/app/build.gradle.kts");
+    for google in ["firebase", "play-services", "gms"] {
+        assert!(!gradle.contains(google) && !manifest.contains(google), "{google} in the Android app");
+    }
 }
 
 #[test]

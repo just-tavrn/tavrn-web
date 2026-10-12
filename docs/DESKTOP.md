@@ -29,6 +29,10 @@ releases](#builds-and-releases)).
 Both shells run the same client and behave alike wherever this document describes a behaviour; sections that apply to
 one shell only say so.
 
+**The Android app** is the Tauri shell built for Android (identifier `org.tavrn.app`, its own signing key): the same
+crate with the desktop-only modules left out and a Kotlin side for permissions, voice in the background, push through
+UnifiedPush, links and the system bars. It is described in [ANDROID.md](ANDROID.md).
+
 ## What the app is
 
 - **It bundles the client.** The app ships `web/dist` (built by Vite, exactly what a node embeds) and its main window
@@ -250,7 +254,9 @@ pnpm --filter @tavrn/desktop tauri icon /tmp/tavrn-icon.png
 ```
 
 This writes `src-tauri/icons/` (32, 64, 128 and 256 pixel PNGs and `icon.png` for Linux and the window, `icon.ico` for
-the Windows installer, taskbar and window, `icon.icns` for macOS later); delete the generated `android/`, `ios/` and
+the Windows installer, taskbar and window, `icon.icns` for macOS later); delete the generated `android/` (the Android
+app's launcher and notification icons live in its project, `gen/android/app/src/main/res`, drawn from
+`web/public/icon-512.png` on a white adaptive background, [ANDROID.md](ANDROID.md)), `ios/` and
 Windows Store images, the app does not use them. Unit tests check that every icon of `tauri.conf.json` exists and that
 the PNG icons fill at least 85 % of their canvas. The Electron shell's packages take the same icons from
 `src-tauri/icons/` (`electron-builder.config.mjs`). The logo and the icons are not covered by the Apache License

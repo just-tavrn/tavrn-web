@@ -32,6 +32,7 @@ import { useVoiceRealtime } from "../voice/useVoiceRealtime";
 import { originUrl, platform } from "../platform";
 import { announceUpdate } from "../platform/updates";
 import { startDesktopShell } from "../platform/desktopShell";
+import { restoreKeepConnection } from "../lib/androidConnection";
 import { useToasts } from "../stores/toasts";
 
 /** Renewal check for federated sessions (before the 7-day cap). */
@@ -125,7 +126,10 @@ function useNotificationSetup(token: string | null, address: string | undefined)
     // Web push of this device (PROTOCOL.md §6d): renews an enabled registration on the home node.
     const { user, deviceId } = useAuth.getState();
     void usePush.getState().init({ api, account: address, homeNode: user?.domain ?? new URL(originUrl()).hostname, deviceId: deviceId ?? null });
+    // Android: the connection service for notifications, when the user turned it on (docs/ANDROID.md).
+    restoreKeepConnection(platform().android, true);
     return () => {
+      restoreKeepConnection(platform().android, false);
       useNotifications.getState().reset();
       usePush.getState().reset();
     };

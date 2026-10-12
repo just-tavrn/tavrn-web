@@ -16,10 +16,12 @@
 # - GitHub-hosted runners: forks, Dependabot and dependabot/* branches fall back to ubuntu-latest (`windows-nsis` is
 #   skipped there); release builds are GitHub-hosted throughout (just-tavrn/.github, runner/README.md "Security"). On
 #   windows-latest, by hand or for a release tag: `windows` (the Tauri .msi and NSIS installers, `windows: true`) and
-#   `windows-electron` (the Electron fallback's NSIS installer and latest.yml, `electron-windows: true`).
+#   `windows-electron` (the Electron fallback's NSIS installer and latest.yml, `electron-windows: true`); on
+#   ubuntu-latest `android` (the Android app's APK for 64-bit ARM, unsigned, `android: true`; docs/ANDROID.md).
 # - Release tags: release.yml calls this workflow with `release-tag` after it created the GitHub release; `linux-electron`
-#   (on ubuntu-latest), `windows` and `windows-electron` build from the tag WITHOUT any secret, and `release-assets`
-#   (environment `release`, the only job that sees the updater key) signs the Tauri installers and the Electron feeds,
+#   (on ubuntu-latest), `windows`, `windows-electron` and `android` build from the tag WITHOUT any secret, and
+#   `release-assets` (environment `release`, the only job that sees the updater key and the Android keystore) signs the
+#   Tauri installers, the Electron feeds and the APK,
 #   writes the checksums and latest.json, verifies every signature, attests the build provenance, checks the file
 #   names against the download page's rules and attaches everything to that release (never a second one). It installs
 #   nothing but the Tauri CLI (no lifecycle scripts) and runs no cargo. `tauri-linux` and `windows-nsis` do not run
@@ -50,6 +52,10 @@ on:
         description: "Also build the Electron fallback for Windows on windows-latest (NSIS, latest.yml)"
         type: boolean
         default: false
+      android:
+        description: "Also build the Android app on ubuntu-latest (APK for arm64, unsigned)"
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       release-tag:
@@ -65,6 +71,15 @@ on:
       TAURI_SIGNING_PRIVATE_KEY:
         required: false
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        required: false
+      # The Android app's signing key (docs/ANDROID.md "Releases"): the environment `release` as well, release-assets only.
+      ANDROID_KEYSTORE_B64:
+        required: false
+      ANDROID_KEYSTORE_PASSWORD:
+        required: false
+      ANDROID_KEY_ALIAS:
+        required: false
+      ANDROID_KEY_PASSWORD:
         required: false
 
 permissions:
@@ -563,6 +578,71 @@ jobs:
           path: dist-electron-windows/
           retention-days: 7
 
+  # The Android app (docs/ANDROID.md): the same Tauri shell built for Android, the APK for 64-bit ARM only (phones of
+  # the last decade; the emulator's x86_64 is a development build), release-built but unsigned: the signing key is a
+  # secret of the environment `release` and only release-assets signs (apksigner). No secret here, no cache of a release.
+  android:
+    name: Android (APK, arm64)
+    if: ${{ vars.CI_ENABLED == 'true' && (inputs.android || inputs.release-tag) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 60
+    outputs:
+      artifact-id: ${{ steps.apk.outputs.artifact-id }}
+    env:
+      NDK_VERSION: 28.2.13676358
+    steps:
+      - name: Access to private organization repositories
+        env:
+          READ_TOKEN: ${{ secrets.TAVRN_READ_PAT }}
+        run: |
+          if [ -n "$READ_TOKEN" ]; then
+            git config --global url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "https://github.com/just-tavrn/"
+            git config --global --add url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "ssh://git@github.com/just-tavrn/"
+            git config --global --add url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "git@github.com:just-tavrn/"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.release-tag || github.ref }}
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Rust toolchain with the Android target
+        run: rustup toolchain install stable --profile minimal && rustup default stable && rustup target add aarch64-linux-android
+      - name: Android NDK (pinned) and Java 21
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;28.2.13676358" "platforms;android-36" "build-tools;36.0.0" > /dev/null
+          echo "NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+      - run: pnpm install --frozen-lockfile
+      - name: Web client (web/dist, bundled into the app)
+        run: pnpm --filter @tavrn/web build
+      - name: Build (release, unsigned, aarch64)
+        env:
+          GRADLE_OPTS: -Dorg.gradle.daemon=false
+        run: pnpm --filter @tavrn/desktop tauri android build --apk --target aarch64 --config '{"build":{"beforeBuildCommand":""}}'
+      - name: Kotlin unit tests (push notifications as the service worker shows them)
+        working-directory: apps/desktop/src-tauri/gen/android
+        run: ./gradlew --no-daemon :app:testUniversalDebugUnitTest
+      - name: Collect the APK
+        run: |
+          version="$(node -p "require('./web/package.json').version")"
+          apk="$(find apps/desktop/src-tauri/gen/android/app/build/outputs/apk -name '*-release-unsigned.apk' | head -n1)"
+          [ -s "$apk" ] || { echo "::error::no unsigned release APK"; exit 1; }
+          mkdir -p dist-android
+          cp "$apk" "dist-android/Tavrn_${version}_android-arm64-unsigned.apk"
+          ls -l dist-android
+      - id: apk
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: desktop-android-a${{ github.run_attempt }}
+          path: dist-android/
+          retention-days: 7
+
   # The only job that writes and the only one that holds the updater key (environment `release`: tags v*, a required
   # reviewer; docs/GITHUB.md "Releases"). It signs the Tauri installers (<installer>.sig, read by the Tauri updater
   # through latest.json) and the Electron feeds (latest-linux.yml, latest.yml: <feed>.minisig, checked by the apps
@@ -578,7 +658,7 @@ jobs:
   release-assets:
     name: Release assets (installers, checksums, signatures)
     if: ${{ vars.CI_ENABLED == 'true' && inputs.release-tag }}
-    needs: [linux-electron, windows-electron, windows]
+    needs: [linux-electron, windows-electron, windows, android]
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -621,10 +701,15 @@ jobs:
           artifact-ids: ${{ needs.windows-electron.outputs.artifact-id }}
           path: built/electron-windows
           merge-multiple: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.android.outputs.artifact-id }}
+          path: built/android
+          merge-multiple: true
       - name: Only the files each build job may deliver
         run: |
           node apps/desktop/scripts/release-assets.mjs collect "$RELEASE_TAG" installers \
-            tauri=built/tauri linux=built/linux electron-windows=built/electron-windows
+            tauri=built/tauri linux=built/linux electron-windows=built/electron-windows android=built/android
       - name: The Linux packages are the ones hashed at packaging
         working-directory: installers
         run: sha256sum -c ./*.AppImage.sha256 ./*.deb.sha256
@@ -654,6 +739,34 @@ jobs:
             base64 -d "installers/$feed.sig" > "installers/$feed.minisig"
             rm "installers/$feed.sig"
           done
+      # The APK with the owner's Android key (the keystore of the environment `release`; docs/ANDROID.md "Releases"),
+      # by the runner image's apksigner (Android SDK build-tools, nothing installed). Android installs an update only
+      # with the same certificate; vars.ANDROID_CERT_SHA256 (optional) pins it, so a wrong keystore fails here.
+      - name: Sign the APK (apksigner)
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          CERT_SHA256: ${{ vars.ANDROID_CERT_SHA256 }}
+        run: |
+          [ -n "$ANDROID_KEYSTORE_B64" ] || { echo "the secret ANDROID_KEYSTORE_B64 of the environment release is missing (docs/ANDROID.md)" >&2; exit 1; }
+          version="${RELEASE_TAG#v}"
+          tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n1)"
+          keystore="$RUNNER_TEMP/tavrn-release.jks"
+          trap 'rm -f "$keystore"' EXIT
+          printf '%s' "$ANDROID_KEYSTORE_B64" | base64 -d > "$keystore"
+          unsigned="installers/Tavrn_${version}_android-arm64-unsigned.apk"
+          signed="installers/Tavrn_${version}_android-arm64.apk"
+          "$tools/zipalign" -c -P 16 4 "$unsigned" || { "$tools/zipalign" -f -P 16 4 "$unsigned" "$unsigned.aligned" && mv "$unsigned.aligned" "$unsigned"; }
+          "$tools/apksigner" sign --ks "$keystore" --ks-pass env:ANDROID_KEYSTORE_PASSWORD --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --key-pass env:ANDROID_KEY_PASSWORD --out "$signed" "$unsigned"
+          rm -f "$keystore" "$unsigned" "$signed.idsig"
+          "$tools/apksigner" verify --print-certs "$signed" | tee "$RUNNER_TEMP/apk-certs.txt"
+          if [ -n "$CERT_SHA256" ]; then
+            want="$(printf '%s' "$CERT_SHA256" | tr -d ':' | tr 'A-F' 'a-f')"
+            grep -q "certificate SHA-256 digest: $want" "$RUNNER_TEMP/apk-certs.txt" || { echo "::error::the APK is not signed with the certificate of vars.ANDROID_CERT_SHA256"; exit 1; }
+          fi
       - name: Checksums, latest.json, the signatures and the asset check
         run: |
           # <asset>.sha256 (sha256sum format) for every installer; the update feeds carry their own hashes and signatures.
@@ -677,6 +790,7 @@ jobs:
             installers/*.deb
             installers/*.msi
             installers/*.exe
+            installers/*.apk
             installers/latest-linux.yml
             installers/latest.yml
             installers/latest.json

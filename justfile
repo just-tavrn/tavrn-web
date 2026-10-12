@@ -56,6 +56,17 @@ desktop-check: install
     cd apps/desktop/crates/keywatch && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked
     cd apps/desktop/src-tauri && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked && cargo deny check
 
+# Build tools: ANDROID_HOME, NDK_HOME (docs/ANDROID.md "Development"); TARGET aarch64 (phones) or x86_64 (the emulator)
+# The Android app's debug APK from web/dist (just build first), without a Gradle daemon left running
+android-build target="x86_64": install
+    @[ -f web/dist/index.html ] || { echo "web/dist is missing: run just build first" >&2; exit 1; }
+    cd apps/desktop && GRADLE_OPTS=-Dorg.gradle.daemon=false pnpm tauri android build --debug --apk --target {{target}} --config '{"build":{"beforeBuildCommand":""}}'
+
+# Needs one android-build first (it generates the Gradle settings of the Tauri plugins)
+# The Android app's Kotlin unit tests (JUnit: the push receiver's notification rules)
+android-test:
+    cd apps/desktop/src-tauri/gen/android && ./gradlew --no-daemon :app:testUniversalDebugUnitTest
+
 # Two native engines, end-to-end encrypted, against a local livekit-server (needs livekit-server on the PATH)
 # The native voice engine against LiveKit (docs/DESKTOP.md "Voice")
 desktop-voice-test:

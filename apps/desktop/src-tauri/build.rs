@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-// The app's commands get permissions of their own (capabilities/main.json grants them to the main window only).
+// The app's commands get permissions of their own (capabilities/main.json grants the desktop's to the main window,
+// capabilities/mobile.json the Android app's: docs/ANDROID.md).
 fn main() {
     let commands = &[
         "get_config",
@@ -41,6 +42,22 @@ fn main() {
         "voice_set_ptt",
         "voice_configure",
         "voice_set_volumes",
+        // The Android app (src/android.rs).
+        "android_info",
+        "android_permission",
+        "android_open_settings",
+        "android_battery_exemption",
+        "android_voice",
+        "android_background",
+        "android_push_register",
+        "android_push_unregister",
+        "android_push_config",
+        "android_keep_connection",
+        "android_check_update",
+        "android_save_begin",
+        "android_save_chunk",
+        "android_save_end",
+        "android_save_abort",
     ];
     // Windows: the whole C runtime is linked statically (+crt-static in .cargo/config.toml, for the prebuilt libwebrtc
     // of the native voice engine), so Tauri's own hybrid runtime (static vcruntime, dynamic ucrt) must stay out.

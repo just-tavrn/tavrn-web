@@ -349,7 +349,7 @@ export function VoiceSettingsTab() {
   const devices = deviceView(settings, native);
   const chooseDevice = (patch: Partial<VoiceSettings>) => update(devicePatch(patch, native));
   // The desktop app's window holds the microphone permission: the device names come without a prompt.
-  const media = useMediaDevices({ autoUnlock: platform().isDesktop, refresh });
+  const media = useMediaDevices({ autoUnlock: platform().isDesktop && !platform().android, refresh });
   const audioDevices = native ? nativeDevices : media.devices;
   const unlockDevices = !native && media.needsPermission ? () => void media.unlock() : undefined;
   const [bgNote, setBgNote] = useState<string | null>(null);
@@ -417,7 +417,7 @@ export function VoiceSettingsTab() {
           {t("voice.settings.test_tone")}
         </Button>
         {/* The desktop app keeps the screen on through its shell later (`voice/wakeLock.ts`). */}
-        {!platform().isDesktop && <Check label={t("voice.settings.keep_screen_on")} hint={t("voice.settings.keep_screen_on_hint")} checked={settings.keepScreenOn} onChange={(v) => update({ keepScreenOn: v })} testid="keep-screen-on" />}
+        {(!platform().isDesktop || !!platform().android) && <Check label={t("voice.settings.keep_screen_on")} hint={t("voice.settings.keep_screen_on_hint")} checked={settings.keepScreenOn} onChange={(v) => update({ keepScreenOn: v })} testid="keep-screen-on" />}
       </Section>
 
       <Section title={t("voice.test.title")} description={t("voice.test.description")}>

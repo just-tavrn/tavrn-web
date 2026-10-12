@@ -24,12 +24,12 @@ single-page app that works on phones, tablets and desktops, in English and Germa
 | [`e2e/`](e2e) | `@tavrn/e2e`: the Playwright suite (`tests/`), its fixtures (a fake OpenID provider, the example bot) and `playwright.config.ts` |
 | [`apps/desktop/`](apps/desktop) | `@tavrn/desktop`: the desktop app for Windows (and macOS later), a Tauri 2 shell around the client (Rust crate `tavrn-desktop` in `src-tauri/` with its own Cargo workspace, the release scripts in `scripts/`) |
 | [`apps/desktop-electron/`](apps/desktop-electron) | `@tavrn/desktop-electron`: the desktop app for Linux and the Windows fallback, an Electron shell around the client (TypeScript main process and preload, the Playwright smoke test in `e2e/`) |
-| [`docs/`](docs) | [CLIENT.md](docs/CLIENT.md) (what the client does), [DESKTOP.md](docs/DESKTOP.md) (the desktop app), [ACCESSIBILITY.md](docs/ACCESSIBILITY.md), [GITHUB.md](docs/GITHUB.md) (repository setup) |
+| [`docs/`](docs) | [CLIENT.md](docs/CLIENT.md) (what the client does), [DESKTOP.md](docs/DESKTOP.md) (the desktop app), [ANDROID.md](docs/ANDROID.md) (the Android app), [ACCESSIBILITY.md](docs/ACCESSIBILITY.md), [GITHUB.md](docs/GITHUB.md) (repository setup) |
 | `scripts/` | license and hygiene checks |
 
 A pnpm workspace at the root ties `web`, `e2e`, `apps/desktop` and `apps/desktop-electron` together. The desktop app
-bundles the same client and talks to the home node its user picks ([DESKTOP.md](docs/DESKTOP.md)); there are no mobile
-apps yet.
+bundles the same client and talks to the home node its user picks ([DESKTOP.md](docs/DESKTOP.md)); so does the Android
+app, the same Tauri shell built for Android ([ANDROID.md](docs/ANDROID.md)).
 
 ## How the client reaches a node
 

@@ -34,6 +34,8 @@ export function expectedAssets(version) {
     { name: `tavrn-electron_${v}_x64-setup.exe.blockmap`, from: "desktop" },
     { name: `Tavrn-${v}.AppImage`, from: "desktop", installer: { os: "linux", shell: "electron", kind: "appimage" } },
     { name: `tavrn_${v}_amd64.deb`, from: "desktop", installer: { os: "linux", shell: "electron", kind: "deb" } },
+    // The Android app (docs/ANDROID.md "Releases"): signed by release-assets with apksigner, no updater signature.
+    { name: `Tavrn_${v}_android-arm64.apk`, from: "desktop", installer: { os: "android", shell: "tauri", kind: "apk", arch: "arm64" } },
     { name: "latest.json", from: "desktop" },
     { name: "latest.yml", from: "desktop" },
     { name: "latest.yml.minisig", from: "desktop" },
@@ -62,6 +64,8 @@ export function sourceAssets(version) {
     linux: [`Tavrn-${v}.AppImage`, `Tavrn-${v}.AppImage.sha256`, `tavrn_${v}_amd64.deb`, `tavrn_${v}_amd64.deb.sha256`, "latest-linux.yml"],
     // desktop-windows-electron (the fallback installer, its block map, the Windows feed)
     "electron-windows": [`tavrn-electron_${v}_x64-setup.exe`, `tavrn-electron_${v}_x64-setup.exe.blockmap`, "latest.yml"],
+    // android (the APK, unsigned: release-assets signs it as Tavrn_<version>_android-arm64.apk)
+    android: [`Tavrn_${v}_android-arm64-unsigned.apk`],
   };
 }
 
@@ -137,7 +141,7 @@ export function checkAssets(names, version, from = ["desktop", "release"]) {
     if (!have.has(a.name)) problems.push(`missing: ${a.name}`);
     if (a.installer) {
       const entry = websiteEntry(a.name);
-      const ok = entry && entry.os === a.installer.os && entry.shell === a.installer.shell && entry.kind === a.installer.kind && entry.arch === "x64";
+      const ok = entry && entry.os === a.installer.os && entry.shell === a.installer.shell && entry.kind === a.installer.kind && entry.arch === (a.installer.arch ?? "x64");
       if (!ok) problems.push(`the download page would read ${a.name} as ${JSON.stringify(entry)}`);
     } else if (websiteEntry(a.name)) {
       problems.push(`the download page would list ${a.name} as an installer`);
@@ -158,6 +162,7 @@ export function releaseNotes(tag, repo) {
     ["Windows (fallback)", link(`tavrn-electron_${v}_x64-setup.exe`), "**Fallback only**: the full version with its own Chromium (Electron), for computers where WebView2 causes trouble; larger"],
     ["Linux", link(`Tavrn-${v}.AppImage`), "Runs without installing on most distributions (Electron); on Ubuntu 24.04 and later prefer the .deb"],
     ["Linux (Debian, Ubuntu)", link(`tavrn_${v}_amd64.deb`), "Package with a sandbox profile for Ubuntu (Electron); recommended on Ubuntu"],
+    ["Android", link(`Tavrn_${v}_android-arm64.apk`), "The Android app (Android 8 and newer, 64-bit ARM); push notifications through a UnifiedPush app such as ntfy, no Google services needed"],
     ["Node operators", link(`tavrn-web-${v}.tar.gz`), "The web client bundle (`web/dist`) for building a node image"],
   ];
   return [

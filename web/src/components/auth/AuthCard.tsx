@@ -16,7 +16,7 @@ export function AuthCard({ children, wide = false, nodeInfo = true }: { children
   const t = useT();
   const node = useQuery({ queryKey: ["node", "origin"], queryFn: () => publicApi.node.info(), enabled: nodeInfo });
   return (
-    <div role="main" className="flex min-h-full items-start justify-center p-4 sm:items-center">
+    <div role="main" className="flex min-h-full items-start justify-center px-4 pb-[max(1rem,var(--safe-bottom))] pt-[max(1rem,var(--safe-top))] sm:items-center">
       <div className={`w-full ${wide ? "max-w-lg" : "max-w-md"} overflow-hidden rounded-xl border border-line bg-bg-1 shadow-xl`}>
         <div className="brand-line" aria-hidden="true" />
         <div className="p-4 sm:p-6">

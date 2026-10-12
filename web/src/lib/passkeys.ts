@@ -10,9 +10,23 @@ import { ensureCrypto } from "@tavrn/e2ee";
 import { platform } from "../platform";
 import { publicApi } from "./api";
 
-/** WebAuthn is there; never in the desktop app, whose origin is not the node's (passkeys are bound to the node's domain). */
-export function passkeysSupported(): boolean {
-  if (platform().isDesktop) return false;
+/**
+ * Relying party ids whose passkeys the Android app may use in its webview (docs/ANDROID.md "Passkeys"): the domain
+ * publishes `assetlinks.json` with `delegate_permission/common.get_login_creds` for the app, and its node accepts the
+ * app's origin (`android:apk-key-hash:…`). Empty until a node does: every passkey then goes through the browser.
+ */
+export const APP_PASSKEY_RP_IDS: readonly string[] = [];
+
+/**
+ * WebAuthn is there. Never in the desktop app, whose origin is not the node's (passkeys are bound to the node's
+ * domain: they run on the node's page). In the Android app only on Android 14+ with a webview that runs WebAuthn for
+ * the app, and only for a home node in {@link APP_PASSKEY_RP_IDS}; otherwise the browser's connect flow.
+ */
+export function passkeysSupported(p = platform(), allowed: readonly string[] = APP_PASSKEY_RP_IDS): boolean {
+  if (p.android) {
+    const domain = p.node?.domain?.() ?? null;
+    if (!p.android.webauthn || !domain || !allowed.includes(domain)) return false;
+  } else if (p.isDesktop) return false;
   return typeof window !== "undefined" && typeof window.PublicKeyCredential !== "undefined" && !!navigator.credentials;
 }
 

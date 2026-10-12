@@ -47,6 +47,10 @@ perf/results/
 .publish-check.private
 
 # The desktop shell: files tauri-build generates (capability schemas); signing keys never (*.key above)
-apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/gen/schemas/
+# The Android project (apps/desktop/src-tauri/gen/android) is committed; its build output and keystores never are
+*.jks
+*.keystore
+keystore.properties
 # The Electron shell's packages (electron-builder output)
 apps/desktop-electron/release/
