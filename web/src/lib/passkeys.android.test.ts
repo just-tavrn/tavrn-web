@@ -85,6 +85,13 @@ describe("passkeys in the Android app", () => {
     expect(result.current).toBe("node");
   });
 
+  it("the hook falls back to the browser without a reason when the node cannot be asked", async () => {
+    mockFetch({ "/api/v1/node": { status: 503, body: { code: "x", status: 503, title: "down", detail: "", type: "x" } } });
+    setPlatform(app());
+    const { result } = renderHook(() => usePasskeyBlocker());
+    await waitFor(() => expect(result.current).toBe("platform"));
+  });
+
   it("the browser and the desktop app do not ask the node for origins", () => {
     const calls = mockFetch({});
     const { result } = renderHook(() => usePasskeyBlocker());

@@ -31,7 +31,7 @@ export function parseNodeWebauthn(raw: unknown): NodeWebauthn {
 }
 
 /** The home node's accepted origins once known, for the synchronous checks; components use {@link usePasskeySupport}. */
-export const useNodeWebauthn = create<NodeWebauthn & { loaded: boolean }>(() => ({ rpId: null, origins: null, loaded: false }));
+export const useNodeWebauthn = create<NodeWebauthn & { loaded: boolean; answered: boolean }>(() => ({ rpId: null, origins: null, loaded: false, answered: false }));
 
 let nodeWebauthnPromise: Promise<NodeWebauthn> | null = null;
 
@@ -42,11 +42,11 @@ let nodeWebauthnPromise: Promise<NodeWebauthn> | null = null;
 export function loadNodeWebauthn(): Promise<NodeWebauthn> {
   nodeWebauthnPromise ??= publicApi.node
     .info()
-    .then((info) => parseNodeWebauthn((info as { webauthn?: unknown }).webauthn))
-    .catch(() => ({ rpId: null, origins: null }))
-    .then((found) => {
+    .then((info) => ({ ...parseNodeWebauthn((info as { webauthn?: unknown }).webauthn), answered: true }))
+    .catch(() => ({ rpId: null, origins: null, answered: false }))
+    .then(({ answered, ...found }) => {
       if (!found.rpId) nodeWebauthnPromise = null;
-      useNodeWebauthn.setState({ ...found, loaded: true });
+      useNodeWebauthn.setState({ ...found, loaded: true, answered });
       return found;
     });
   return nodeWebauthnPromise;
@@ -55,7 +55,7 @@ export function loadNodeWebauthn(): Promise<NodeWebauthn> {
 /** Tests: forget what the node published. */
 export function resetNodeWebauthn(): void {
   nodeWebauthnPromise = null;
-  useNodeWebauthn.setState({ rpId: null, origins: null, loaded: false });
+  useNodeWebauthn.setState({ rpId: null, origins: null, loaded: false, answered: false });
 }
 
 /**
@@ -91,14 +91,16 @@ export function passkeysSupported(p: Platform = platform(), origins: readonly st
 export function usePasskeyBlocker(): PasskeyBlocker | null {
   const origins = useNodeWebauthn((s) => s.origins);
   const loaded = useNodeWebauthn((s) => s.loaded);
+  const answered = useNodeWebauthn((s) => s.answered);
   const p = platform();
   const asks = !!p.android && p.android.webauthn && !!p.android.origin;
   useEffect(() => {
     if (asks) void loadNodeWebauthn();
   }, [asks]);
   const blocker = passkeyBlocker(p, origins);
-  // The node could not be asked (offline, an older node without the list): the browser as before.
-  return blocker === "pending" && loaded ? "node" : blocker;
+  if (blocker !== "pending" || !loaded) return blocker;
+  // An older node without the list does not accept the app; an unreachable one: the browser as before, no reason.
+  return answered ? "node" : "platform";
 }
 
 function cancelled(): Error {
