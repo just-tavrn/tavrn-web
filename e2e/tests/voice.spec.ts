@@ -627,6 +627,9 @@ test.describe("Voice channels", () => {
     await page.keyboard.press("Escape");
     await expect(cameraMenu).toHaveCount(0);
     await expect(camera).toHaveAttribute("aria-pressed", "false");
+    // The click a long press leaves behind is swallowed for 400 ms after the finger lifts (useContextMenu); a person's
+    // next tap comes later than this test's.
+    if (isTouch()) await page.waitForTimeout(500);
     await camera.click();
     await expect(camera).toHaveAttribute("aria-pressed", "true");
     const ownVideo = tile(page, alice.address).getByTestId("video-camera");
@@ -648,6 +651,7 @@ test.describe("Voice channels", () => {
     await expect(camera).toHaveAttribute("aria-pressed", "true");
     await expect(ownVideo).toBeVisible();
     await expect(page.getByTestId("voice-bar")).toHaveAttribute("data-status", "connected");
+    if (isTouch()) await page.waitForTimeout(500);
     await camera.click();
     await expect(camera).toHaveAttribute("aria-pressed", "false");
 
