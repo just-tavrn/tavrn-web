@@ -33,6 +33,8 @@
     "allow-android-save-abort",
     "allow-android-audio-routes",
     "allow-android-audio-route",
-    "allow-android-orientation"
+    "allow-android-orientation",
+    "allow-passkey-create",
+    "allow-passkey-get"
   ]
 }

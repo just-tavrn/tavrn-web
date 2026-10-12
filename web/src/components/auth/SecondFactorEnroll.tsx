@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { AuthResponse, TavrnApi, TotpEnrollment } from "@tavrn/sdk";
 import { useT } from "../../i18n";
 import { describeError } from "../../stores/toasts";
-import { defaultPasskeyName, passkeysSupported, registerPasskey } from "../../lib/passkeys";
+import { defaultPasskeyName, registerPasskey, usePasskeyBlocker } from "../../lib/passkeys";
 import { Button, ErrorText, Field, Input } from "../ui";
 import { QrCode } from "./QrCode";
 
@@ -88,7 +88,10 @@ export function PasskeyEnroll({ api, onDone, onCancel, submitLabel }: { api: Tav
   const [name, setName] = useState(defaultPasskeyName);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  if (!passkeysSupported()) return <ErrorText>{t("passkey.error.unsupported")}</ErrorText>;
+  const blocker = usePasskeyBlocker();
+  if (blocker === "pending") return <p className="text-sm text-fg-2">{t("common.loading")}</p>;
+  if (blocker === "node") return <ErrorText>{t("passkey.app_origin_refused")}</ErrorText>;
+  if (blocker) return <ErrorText>{t("passkey.error.unsupported")}</ErrorText>;
   return (
     <form
       className="space-y-3"

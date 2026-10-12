@@ -45,6 +45,7 @@ import org.unifiedpush.android.connector.UnifiedPush
 @InvokeArg class NotifyArgs { lateinit var title: String; lateinit var body: String; var path: String? = null }
 @InvokeArg class OrientationArgs { var lock: String? = null }
 @InvokeArg class RouteArgs { lateinit var route: String }
+@InvokeArg class PasskeyArgs { lateinit var request: String }
 @InvokeArg class VoiceArgs {
   lateinit var state: String
   lateinit var title: String
@@ -142,6 +143,24 @@ class ShellPlugin(private val activity: Activity) : Plugin(activity) {
     ViewCompat.requestApplyInsets(content)
   }
 
+  /** Passkey registration through the Credential Manager (`Passkeys.kt`); `request` is the creation options' JSON. */
+  @Command
+  fun passkeyCreate(invoke: Invoke) {
+    val request = invoke.parseArgs(PasskeyArgs::class.java).request
+    Passkeys.create(activity, request) { json, error ->
+      if (json != null) invoke.resolve(JSObject().put("response", json)) else invoke.reject(error, error)
+    }
+  }
+
+  /** A passkey assertion through the Credential Manager; `request` is the request options' JSON. */
+  @Command
+  fun passkeyGet(invoke: Invoke) {
+    val request = invoke.parseArgs(PasskeyArgs::class.java).request
+    Passkeys.get(activity, request) { json, error ->
+      if (json != null) invoke.resolve(JSObject().put("response", json)) else invoke.reject(error, error)
+    }
+  }
+
   @Command
   fun listen(invoke: Invoke) {
     Shell.listen(invoke.parseArgs(ListenArgs::class.java).sink)
@@ -155,6 +174,8 @@ class ShellPlugin(private val activity: Activity) : Plugin(activity) {
     val result = JSObject()
       .put("sdk", Build.VERSION.SDK_INT)
       .put("webauthn", webAuthn)
+      .put("passkeys", Passkeys.available)
+      .put("origin", if (Passkeys.available) AppOrigin.of(activity) else null)
       .put("distributors", app.tauri.plugin.JSArray(distributors))
       .put("distributor", UnifiedPush.getAckDistributor(activity))
       .put("notifications", notificationState())

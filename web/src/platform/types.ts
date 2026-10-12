@@ -53,6 +53,34 @@ export interface Platform {
   readonly voice?: PlatformVoice;
   /** Android: permissions, the back gesture, app links, the system bars, push without Google (docs/ANDROID.md). */
   readonly android?: PlatformAndroid;
+  /**
+   * The apps' native passkeys, because the webview's origin can never be under the node's relying party id: the
+   * Windows WebAuthn API (docs/DESKTOP.md "Passkeys on Windows") and Android's Credential Manager (docs/ANDROID.md
+   * "Passkeys", Android 14+). Absent elsewhere (the browser uses `navigator.credentials`; Linux has no native path yet).
+   */
+  readonly passkeys?: PlatformPasskeys;
+}
+
+/** WebAuthn JSON as the node sends and expects it (PROTOCOL.md §5a.4). */
+export type WebauthnJson = Record<string, unknown>;
+
+/** A ceremony the shell ran natively: the credential as `PublicKeyCredential.toJSON()`, the PRF output apart. */
+export interface NativePasskeyResult {
+  /** Without `clientExtensionResults.prf.results`: ready for the node. */
+  credential: WebauthnJson;
+  /** The PRF output (`prf.results.first`, 32 bytes) for local use only, or null. */
+  prf: Uint8Array | null;
+}
+
+/**
+ * Native passkey ceremonies of the shell. It puts the web origin of the node the app is connected to into
+ * `clientDataJSON` (never an origin from the page) and refuses relying party ids that do not cover it.
+ */
+export interface PlatformPasskeys {
+  /** Registration: `options` is the node's `{ publicKey }` of `webauthn/register/start`. */
+  create(options: WebauthnJson): Promise<NativePasskeyResult>;
+  /** Assertion: the node's `{ publicKey }` of `webauthn/login/start` (or a local one with the PRF input). */
+  get(options: WebauthnJson): Promise<NativePasskeyResult>;
 }
 
 export interface NodeChoice {
@@ -382,6 +410,10 @@ export interface AndroidStatus {
   sdk: number;
   /** The webview runs WebAuthn for the app (Android 14+). */
   webauthn: boolean;
+  /** Passkeys run through Android's Credential Manager (Android 14+). */
+  passkeys: boolean;
+  /** The app's WebAuthn origin (`android:apk-key-hash:<base64url>`, from its signing certificate), null if unknown. */
+  origin: string | null;
   /** Installed UnifiedPush distributors (package names). */
   distributors: string[];
   /** The distributor in use, once one was chosen. */
@@ -439,8 +471,15 @@ export interface AndroidAudio {
 export interface PlatformAndroid {
   /** The Android API level at start. */
   readonly sdk: number;
-  /** The webview runs WebAuthn for the app (Android 14+ and a webview that supports it). */
+  /** The webview runs WebAuthn for the app (Android 14+ and a webview that supports it); not used for passkeys. */
   readonly webauthn: boolean;
+  /** Passkeys run through Android's Credential Manager (Android 14+): `platform.passkeys` is set (docs/ANDROID.md). */
+  readonly passkeys: boolean;
+  /**
+   * The origin Android's Credential Manager puts into `clientDataJSON`: `android:apk-key-hash:<base64url SHA-256 of the
+   * signing certificate>` (PROTOCOL.md §5a.4). In-app passkeys need the node to list it in `webauthn.origins`.
+   */
+  readonly origin: string | null;
   status(): Promise<AndroidStatus>;
   /** Asks for a runtime permission right before its first use. */
   requestPermission(permission: AndroidPermission): Promise<PermissionAnswer>;

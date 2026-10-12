@@ -44,6 +44,9 @@ fn main() {
         "voice_set_ptt",
         "voice_configure",
         "voice_set_volumes",
+        // Passkeys through the Windows WebAuthn API (src/passkey.rs).
+        "passkey_create",
+        "passkey_get",
         // The Android app (src/android.rs).
         "android_info",
         "android_permission",

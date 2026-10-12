@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useState } from "react";
-import { credentialToJSON, parseRequestOptions, stripPrfResults } from "@tavrn/sdk";
 import { api } from "../lib/api";
-import { passkeysSupported } from "../lib/passkeys";
+import { passkeyReauth, usePasskeyBlocker } from "../lib/passkeys";
 import { startSso } from "../lib/sso";
 import { describeError } from "../stores/toasts";
 import { finishReauth, setReauth, useReauth } from "../stores/reauth";
@@ -19,6 +18,8 @@ export function ReauthDialog() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // The browser, the Windows app (natively) and the Android app when the node accepts its origin.
+  const inAppPasskey = usePasskeyBlocker() === null;
   if (!pending) return null;
   const methods = pending.methods;
   const close = (ok: boolean) => {
@@ -45,11 +46,10 @@ export function ReauthDialog() {
     });
   const withPasskey = () =>
     run(async () => {
-      const { challenge_id, options } = await api.auth.reauthWebauthnStart();
-      const cred = (await navigator.credentials.get(parseRequestOptions(options))) as PublicKeyCredential | null;
-      if (!cred) throw new Error(t("reauth.cancelled"));
-      const r = await api.auth.reauth({ challenge_id, response: stripPrfResults(credentialToJSON(cred)) });
-      setReauth(r.reauth_token, r.expires_in);
+      const r = await passkeyReauth(api);
+      // Only the confirmation is needed here, not the PRF output of the same assertion.
+      r.prf?.fill(0);
+      setReauth(r.reauth.reauth_token, r.reauth.expires_in);
       close(true);
     });
   const withSso = () =>
@@ -78,7 +78,7 @@ export function ReauthDialog() {
             </Button>
           </form>
         )}
-        {methods.includes("webauthn") && passkeysSupported() && (
+        {methods.includes("webauthn") && inAppPasskey && (
           <Button variant="ghost" disabled={busy} onClick={() => void withPasskey()} data-testid="reauth-passkey">
             {t("reauth.passkey")}
           </Button>

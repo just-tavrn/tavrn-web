@@ -27,6 +27,7 @@ pub mod media;
 pub mod mobile;
 pub mod node_url;
 pub mod notify;
+pub mod passkey;
 pub mod release;
 pub mod resolve;
 #[cfg(desktop)]
@@ -181,6 +182,9 @@ pub fn run() {
             voice::voice_set_ptt,
             voice::voice_configure,
             voice::voice_set_volumes,
+            // Passkeys through the Windows WebAuthn API (passkey.rs; elsewhere `passkey.unavailable`).
+            passkey::passkey_create,
+            passkey::passkey_get,
         ])
         .on_window_event(|window, event| {
             if window.label() != MAIN_WINDOW {
@@ -255,6 +259,9 @@ pub fn run() {
             android::close_connect,
             android::notify,
             android::android_info,
+            // Passkeys through Android's Credential Manager (passkey.rs → Passkeys.kt).
+            passkey::passkey_create,
+            passkey::passkey_get,
             android::android_permission,
             android::android_open_settings,
             android::android_battery_exemption,

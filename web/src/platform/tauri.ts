@@ -13,6 +13,7 @@ import { createShellEvents } from "./shellEvents";
 import { androidMembers, androidStatus } from "./tauriAndroid";
 import { createTauriSaveFile } from "./tauriFiles";
 import { voiceMember } from "./tauriVoice";
+import { nativePasskeys } from "./tauriPasskeys";
 import type { AppUpdater, HotkeyEvent, Platform, PlatformHotkeys, ResolvedNode, UpdateChannel } from "./types";
 import { updateFailure } from "./updateErrors";
 
@@ -32,6 +33,8 @@ interface AppInfo {
   updater: boolean;
   /** `android` in the Android app (older shells send nothing). */
   os?: string;
+  /** The shell runs passkeys through the operating system (Windows with its WebAuthn API); older shells send nothing. */
+  passkeys?: boolean;
 }
 
 interface UpdateInfo {
@@ -142,6 +145,8 @@ export async function createTauriPlatform(doc: Document = document): Promise<Pla
       reopen: (url) => invoke<void>("open_connect", { url }),
     },
     ...(info.updater ? { updater } : {}),
+    // Windows: passkeys through the Windows WebAuthn API, with the node's web origin (tauriPasskeys.ts).
+    ...(!android && info.passkeys ? { passkeys: nativePasskeys() } : {}),
     // Desktop: hotkeys, the native voice engine (tauriVoice.ts: Linux always, Windows behind a setting), the OS
     // keychain, native notifications and the tray (tauriShell.ts), downloads through the save dialog (tauriFiles.ts).
     // Android: tauriAndroid.ts.

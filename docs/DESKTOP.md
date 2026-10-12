@@ -339,6 +339,36 @@ browser tab (the Linux fallback, "Open in the browser instead") keeps its sessio
 window's storage is persistent, not private: the node's page keeps its local settings (such as the language) between
 handoffs; only the session goes, so every handoff asks for a sign-in on the page.
 
+### Passkeys on Windows
+
+The app's own window (WebView2 at `https://tauri.localhost`) can never run a passkey of the node: the relying party id
+(`tavrn.org`) does not cover that origin. The Windows app therefore runs the ceremony **natively**, through the Windows
+WebAuthn API (webauthn.dll, Windows 10 1903 and newer; the dialog of Windows Hello, security keys and phones), as a
+browser does on Windows (`src-tauri/src/passkey.rs`, the commands `passkey_create` and `passkey_get`):
+
+- The client passes the node's options unchanged (`web/src/platform/tauriPasskeys.ts`); the shell writes
+  `clientDataJSON` itself with the **web origin of the node the app is connected to** (the settings' `web`, else the
+  node URL; never an origin from the page) and refuses a relying party id that this origin's host is not equal to or a
+  subdomain of (`passkey.refused`). The node verifies the result as it verifies a browser's: no node setting is
+  needed for the Windows app.
+- It answers with the credential as `PublicKeyCredential.toJSON()`; the PRF output (`prf.results.first`) travels
+  apart, for the key store only, and never reaches the node.
+- `app_info` reports `passkeys: true` when webauthn.dll is there (it is loaded at the first use from System32, so the
+  app also starts without it). The client then runs registration (Settings → Security and at registration), the
+  passkey sign-in and second factor, re-authentication and "Unlock with a passkey" in the app; "Sign in on
+  \<node>'s page" stays for single sign-on and the captcha.
+- **PRF (the key store unlock).** The shell asks for the PRF where the system offers it: at registration
+  `bEnablePrf` (webauthn.h API version 6) or the hmac-secret extension (before), at an assertion the PRF input as
+  `pHmacSecretSaltValues` (API version 4 and newer), which Windows turns into the hmac-secret salt exactly as WebAuthn's
+  PRF extension does, so the output equals a browser's for the same passkey. Security keys with hmac-secret support
+  it; whether Windows Hello and phones (hybrid) return a PRF output depends on the Windows build and the
+  authenticator. Without a PRF output the passkey still signs in, and the app unlocks its key store from the OS
+  keychain as before (or with the recovery key on a new device).
+- Errors become the browser's: cancelled, timed out or no matching passkey → "The passkey prompt was cancelled";
+  an excluded authenticator → "already holds a passkey".
+
+On Linux (the Electron shell) passkeys keep going through the browser (no native path yet); macOS has no build.
+
 ## Hotkeys
 
 Push-to-talk and the priority speaker (while held), mute and deafen (toggles) have **one binding each**, and it works
@@ -532,7 +562,7 @@ What the browser gets from "the client is served by the node" and what the app d
 | Password with the second factor (TOTP, recovery code) | works | same | ordinary API calls with bearer tokens (the node allows every origin, without cookies) |
 | Registration, account settings, encryption, rooms, DMs, federation | work | same | same |
 | Sign-in with an account of another node | the app signs in at the account's own node instead: the address (`alice@home.example`) switches the app to that node; "Sign in with an account of another node" keeps password with TOTP or a recovery code | same | the origin connect flow returns the code to an `https://<domain>` origin, which the app does not have; the sign-in window is bound to the app's own node. |
-| Passkeys (WebAuthn) as second factor or sign-in | on the node's page in the sign-in window ("Signing in"), which also unlocks the encrypted messages (sealed unlock material) | through the system browser ("Open in the browser instead"), which unlocks the app as well | passkeys are bound to the node's domain; the app's origin is not the node's. On Linux the sign-in window has no WebAuthn (Electron offers no dialog of its own there, nor does the Tauri shell's WebKitGTK). Without `connect.app` on the node: not offered, TOTP or a recovery code is required. |
+| Passkeys (WebAuthn) as second factor or sign-in | Windows: in the app through the Windows WebAuthn API ("Passkeys on Windows"), also registration and the PRF unlock; macOS: on the node's page in the sign-in window ("Signing in"), which also unlocks the encrypted messages (sealed unlock material) | through the system browser ("Open in the browser instead"), which unlocks the app as well | passkeys are bound to the node's domain; the app's origin is not the node's. On Linux the sign-in window has no WebAuthn (Electron offers no dialog of its own there, nor does the Tauri shell's WebKitGTK). Without `connect.app` on the node (and without the native path): not offered, TOTP or a recovery code is required. |
 | Single sign-on (OpenID Connect) | on the node's page in the sign-in window | same | the node sends the browser back to its own web client (`<web>/sso/callback`), which is the page in the sign-in window. Without `connect.app`: not offered, an SSO-only node shows a notice. A later step may add an app-scheme callback (RFC 8252) as an accelerator. |
 | Captcha on login or registration | on the node's page in the sign-in window | same | the widget is a third-party script (CSP `script-src 'self'`) bound to the node's host name; the node's page loads it. Without `connect.app`: a notice, use the browser for that step. |
 | Web push | not offered | same | there is no service worker in the app (its pages are not served by the node). The app shows native notifications instead while it runs (also from the tray); nothing reaches a device where the app is not running. |

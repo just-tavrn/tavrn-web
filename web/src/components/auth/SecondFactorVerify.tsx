@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { AuthResponse, TavrnApi } from "@tavrn/sdk";
 import { useT } from "../../i18n";
 import { describeError } from "../../stores/toasts";
-import { passkeyLogin, passkeysSupported } from "../../lib/passkeys";
+import { passkeyLogin, usePasskeyBlocker } from "../../lib/passkeys";
 import { Button, ErrorText, Field, Input } from "../ui";
 import { cleanCode } from "./SecondFactorEnroll";
 
@@ -17,7 +17,7 @@ export interface VerifyResult {
 export function SecondFactorVerify({ api, preauthToken, methods, onSession, onCancel }: { api: TavrnApi; preauthToken: string; methods: string[]; onSession: (r: VerifyResult) => void; onCancel: () => void }) {
   const t = useT();
   const hasTotp = methods.includes("totp");
-  const hasPasskey = methods.includes("webauthn") && passkeysSupported();
+  const hasPasskey = methods.includes("webauthn") && usePasskeyBlocker() === null;
   const [mode, setMode] = useState<"totp" | "recovery">(hasTotp ? "totp" : "recovery");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);

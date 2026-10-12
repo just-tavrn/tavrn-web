@@ -133,6 +133,8 @@ fn the_capability_grants_only_the_app_commands_to_the_main_window() {
             "allow-voice-set-ptt",
             "allow-voice-configure",
             "allow-voice-set-volumes",
+            "allow-passkey-create",
+            "allow-passkey-get",
         ]
     );
     // Downloads: the shell opens the save dialog and writes the file itself; the dialog, opener and fs plugins stay
@@ -181,6 +183,8 @@ fn the_android_capability_grants_only_the_app_commands_of_the_android_app() {
             "allow-android-audio-routes",
             "allow-android-audio-route",
             "allow-android-orientation",
+            "allow-passkey-create",
+            "allow-passkey-get",
         ]
     );
     // Only the app's own commands: the Kotlin plugin (`plugin:tavrn-android|…`) and every other plugin stay out of

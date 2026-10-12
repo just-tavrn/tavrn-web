@@ -11,6 +11,7 @@ import { asBlob, type SaveFile } from "./files";
 import type { ShellEvents } from "./shellEvents";
 import { updateFailure } from "./updateErrors";
 import { notificationOpens, trayActions } from "./tauriShell";
+import { nativePasskeys } from "./tauriPasskeys";
 import type {
   AppUpdater,
   AndroidInsets,
@@ -18,6 +19,7 @@ import type {
   AudioRoutes,
   PlatformAndroid,
   PlatformNotifications,
+  PlatformPasskeys,
   PlatformTray,
   PushEndpointKeys,
   TrayVoiceExtra,
@@ -29,6 +31,9 @@ import type {
 interface RawStatus {
   sdk: number;
   webauthn: boolean;
+  /** Older shells send nothing. */
+  passkeys?: boolean;
+  origin?: string | null;
   distributors: string[];
   distributor: string | null;
   notifications: AndroidStatus["notifications"];
@@ -43,6 +48,8 @@ function status(raw: RawStatus): AndroidStatus {
   return {
     sdk: raw.sdk,
     webauthn: raw.webauthn,
+    passkeys: raw.passkeys ?? false,
+    origin: raw.origin ?? null,
     distributors: raw.distributors ?? [],
     distributor: raw.distributor ?? null,
     notifications: raw.notifications,
@@ -116,6 +123,8 @@ export interface AndroidMembers {
   android: PlatformAndroid;
   notifications: PlatformNotifications;
   tray: PlatformTray;
+  /** Passkeys through Android's Credential Manager (Android 14+), the same commands as the Windows app's. */
+  passkeys?: PlatformPasskeys;
 }
 
 /** The Android members; `initial` is the shell's `android_info` at start. */
@@ -132,6 +141,8 @@ export function androidMembers(events: ShellEvents, initial: AndroidStatus): And
   const android: PlatformAndroid = {
     sdk: initial.sdk,
     webauthn: initial.webauthn,
+    passkeys: initial.passkeys,
+    origin: initial.origin,
     status: async () => status(await invoke<RawStatus>("android_info")),
     requestPermission: (permission) => invoke("android_permission", { permission }),
     openSettings: (page) => invoke<void>("android_open_settings", { page }),
@@ -193,7 +204,7 @@ export function androidMembers(events: ShellEvents, initial: AndroidStatus): And
     },
   };
 
-  return { saveFile: createAndroidSaveFile(), updater, android, notifications, tray };
+  return { saveFile: createAndroidSaveFile(), updater, android, notifications, tray, ...(initial.passkeys ? { passkeys: nativePasskeys() } : {}) };
 }
 
 /** The shell's `android_info` at start. */

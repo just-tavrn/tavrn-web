@@ -67,6 +67,14 @@ describe("desktop app: flows bound to the node's origin", () => {
     expect(pushSupported()).toBe(true);
   });
 
+  it("passkeys in the Windows app only through the shell's native ceremony", () => {
+    setPlatform({ ...desktop, passkeys: { create: vi.fn(), get: vi.fn() } });
+    expect(passkeysSupported()).toBe(true);
+    // Also without the webview's WebAuthn: the ceremony runs in the operating system.
+    vi.stubGlobal("PublicKeyCredential", undefined);
+    expect(passkeysSupported()).toBe(true);
+  });
+
   it("offers no passkeys and no web push in the desktop app", async () => {
     setPlatform(desktop);
     expect(passkeysSupported()).toBe(false);
