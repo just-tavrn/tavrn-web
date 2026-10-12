@@ -1,0 +1,3 @@
+# Built by `napi build` (pnpm --filter @tavrn/passkeys-native build): the module and its generated types.
+*.node
+index.d.ts

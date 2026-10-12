@@ -1,0 +1,38 @@
+# @tavrn/passkeys-native: native passkeys of the Linux app (docs/DESKTOP.md "Passkeys on Linux"), a Node-API module
+# around the crate `fido/` (FIDO2 security keys over USB HID through Mozilla's authenticator library, the one Firefox
+# uses on Linux). Built with `napi build --release` into a .node file; its own Cargo workspace, like the key listener.
+[workspace]
+members = ["fido"]
+
+[package]
+name = "tavrn-passkeys-native"
+description = "tavrn desktop (Electron): native passkeys with FIDO2 security keys as a Node-API module"
+version = "0.0.0"
+license = "Apache-2.0"
+edition = "2024"
+rust-version = "1.90"
+repository = "https://github.com/just-tavrn/tavrn-web"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+fido = { package = "tavrn-fido", path = "fido" }
+napi = { version = "3", default-features = false, features = ["napi4"] }
+napi-derive = "3"
+serde_json = "1"
+
+[build-dependencies]
+napi-build = "2"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "warn"
+panic = "deny"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

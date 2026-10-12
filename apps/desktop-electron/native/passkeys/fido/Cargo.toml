@@ -1,0 +1,37 @@
+# The native passkeys of the Linux app (docs/DESKTOP.md "Passkeys on Linux"): the node's WebAuthn options in, the
+# browser's `PublicKeyCredential.toJSON()` out, with the connected node's web origin in `clientDataJSON`; FIDO2 security
+# keys over USB HID (CTAP2 with the PIN protocol, hmac-secret for the PRF) through Mozilla's `authenticator` crate with
+# its pure-Rust crypto (no OpenSSL, no NSS). The mapping is platform independent and tested with a software
+# authenticator; the USB transport is Linux only.
+[package]
+name = "tavrn-fido"
+description = "tavrn desktop (Electron): WebAuthn ceremonies with FIDO2 security keys"
+version = "0.0.0"
+license = "Apache-2.0"
+edition = "2024"
+rust-version = "1.90"
+repository = "https://github.com/just-tavrn/tavrn-web"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+sha2 = "0.10"
+url = "2"
+# CTAP2 over USB HID: Firefox's library (MPL-2.0), with the RustCrypto backend for the PIN protocol and hmac-secret.
+authenticator = { version = "0.5", default-features = false, features = ["crypto_rust"] }
+serde_cbor = "0.11"
+
+[dev-dependencies]
+# A software authenticator and the node's own WebAuthn verifier (tavrn-node uses webauthn-rs 0.5 with vendored OpenSSL):
+# the results of the mapping must be what the node accepts. Tests only; the module itself links no OpenSSL.
+webauthn-authenticator-rs = { version = "0.5.5", features = ["softpasskey"] }
+webauthn-rs = "0.5.5"
+webauthn-rs-proto = "0.5.5"
+openssl = { version = "0.10", features = ["vendored"] }
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "warn"
+panic = "deny"

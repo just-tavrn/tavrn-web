@@ -1,0 +1,23 @@
+{
+  "name": "@tavrn/passkeys-native",
+  "version": "0.0.0",
+  "description": "The Linux app's native passkeys (FIDO2 security keys over USB): a Node-API module around the crate fido/",
+  "private": true,
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/just-tavrn/tavrn-web.git",
+    "directory": "apps/desktop-electron/native/passkeys"
+  },
+  "napi": {
+    "binaryName": "passkeys",
+    "targets": ["x86_64-unknown-linux-gnu"]
+  },
+  "scripts": {
+    "build": "napi build --platform --release --no-js --dts index.d.ts",
+    "test": "node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "3.10.8"
+  }
+}
