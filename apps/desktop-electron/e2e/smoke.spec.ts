@@ -47,7 +47,7 @@ async function bridgeSurface(page: Page) {
 const expectedSurface = {
   kind: "electron",
   window: "main",
-  shell: ["appInfo", "closeConnect", "getConfig", "openConnect", "openExternal", "resolveNode", "setNode"],
+  shell: ["appInfo", "closeConnect", "getConfig", "openConnect", "openExternal", "resolveNode", "setNode", "takeLinks"],
   namespaces: ["events", "files", "hotkeys", "keychain", "kind", "notify", "shell", "tray", "updater", "window"],
   node: "undefinedundefinedundefinedundefined",
   secure: true,

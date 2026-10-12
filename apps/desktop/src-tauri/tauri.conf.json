@@ -61,6 +61,9 @@
     }
   },
   "plugins": {
+    "deep-link": {
+      "desktop": { "schemes": ["tavrn"] }
+    },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDBBMjI4NDkxQjAxRDE2NDQKUldSRUZoMndrWVFpQ3ZFbmRQSk51a1M4UEZSaWF1S3ozS2paQm5xTmZlRUhZZ2NnM0R1TlVVY24K",
       "endpoints": ["https://tavrn.org/updates/desktop/stable/latest.json"],

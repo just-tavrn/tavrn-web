@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 /** The Android app's back gesture, app links and system bars (`androidShell.ts`), with a fake Android side. */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { applyInsets, canGoBack, closeTopLayer, linkRoute, onBackGesture, routeOrientationLock, startAndroidShell } from "./androidShell";
+import { applyInsets, canGoBack, closeTopLayer, onBackGesture, routeOrientationLock, startAndroidShell } from "./androidShell";
 import { fakeAndroid } from "./androidTestPlatform";
 
-const home = { web: "https://app.tavrn.example", domain: "tavrn.example" };
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -49,33 +48,6 @@ describe("the back gesture", () => {
     expect(canGoBack({ state: { idx: 0 } })).toBe(false);
     expect(canGoBack({ state: { idx: "1" } })).toBe(false);
     expect(closeTopLayer(document)).toBe(false);
-  });
-});
-
-describe("app links", () => {
-  it("routes the home node's links as they are", async () => {
-    const identity = vi.fn(async () => "other");
-    expect(await linkRoute("https://app.tavrn.example/invite/Code_1234", home, identity)).toBe("/invite/Code_1234");
-    expect(await linkRoute("https://app.tavrn.example/add/01ABC?room=tavrn.example%2F01R", home, identity)).toBe("/add/01ABC?room=tavrn.example%2F01R");
-    expect(identity).not.toHaveBeenCalled();
-  });
-
-  it("names another node by its identity domain", async () => {
-    const identity = vi.fn(async (host: string) => (host === "app.other.example" ? "other.example" : null));
-    expect(await linkRoute("https://app.other.example/invite/Code_1234", home, identity)).toBe("/invite/Code_1234?node=other.example");
-    expect(await linkRoute("https://app.other.example/add/01ABC", home, identity)).toBe("/add/other.example/01ABC");
-    expect(await linkRoute("https://chat.example/add/third.example/01ABC", home, identity)).toBe("/add/third.example/01ABC");
-    // Unknown identity (offline): the host itself.
-    expect(await linkRoute("https://chat.example/invite/Code_1234", home, async () => null)).toBe("/invite/Code_1234?node=chat.example");
-    // A delegated host of the home node itself.
-    expect(await linkRoute("https://web.tavrn.example/invite/Code_1234", home, async () => "tavrn.example")).toBe("/invite/Code_1234");
-  });
-
-  it("ignores everything else", async () => {
-    const identity = async () => null;
-    for (const bad of ["https://app.tavrn.example/settings", "https://app.tavrn.example/invite/x", "not a url", "https://app.tavrn.example/add"]) {
-      expect(await linkRoute(bad, home, identity)).toBeNull();
-    }
   });
 });
 
@@ -134,19 +106,16 @@ describe("the Screen Orientation API in the app", () => {
 });
 
 describe("the wiring", () => {
-  it("follows insets, the back gesture and links until stopped", async () => {
+  it("follows insets and the back gesture until stopped (links: DeepLinkPrompt)", async () => {
     const android = fakeAndroid();
-    const navigate = vi.fn();
     const back = vi.fn();
     window.history.replaceState({ idx: 1 }, "");
-    const stop = startAndroidShell({ android, navigate, back, home: () => home });
+    const stop = startAndroidShell({ android, back });
     expect(document.documentElement.style.getPropertyValue("--safe-top")).toBe("24px");
     android.emitInsets({ top: 30, right: 0, bottom: 0, left: 0, keyboard: 250 });
     expect(document.documentElement.style.getPropertyValue("--safe-top")).toBe("30px");
     android.emitBack();
     expect(back).toHaveBeenCalledTimes(1);
-    android.emitLink("https://app.tavrn.example/invite/Code_1234");
-    await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith("/invite/Code_1234"));
     stop();
     android.emitBack();
     expect(back).toHaveBeenCalledTimes(1);

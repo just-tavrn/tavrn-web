@@ -111,6 +111,11 @@ export function directMethod(params: URLSearchParams): "passkey" | "sso" | null 
   return m === "passkey" || m === "sso" ? m : null;
 }
 
+/** The app's deep link back from the browser after the handoff (only the session and the state; no code, no key). */
+export function appReturnLink(session: string, state: string): string {
+  return `tavrn://connect?session=${encodeURIComponent(session)}&state=${encodeURIComponent(state)}`;
+}
+
 export function ConnectPage() {
   const [params] = useSearchParams();
   return params.has("session") ? <AppSessionConnect /> : <OriginConnect />;
@@ -171,6 +176,16 @@ function AppSessionConnect() {
         <p role="status" className="mt-2 text-sm text-fg-1" data-testid="connect-done">
           {t(outcome === "unlocked" ? "connect.unlock_done" : outcome === "signed_in_unlock" ? "connect.app_done_unlock" : "connect.app_done")}
         </p>
+        {state && !inSignInWindow() && (
+          // In a browser (the Android app's Custom Tab, "Open in the browser instead"): back to the app, which then
+          // polls at once (`tavrn://connect`, docs/DESKTOP.md "Links into the app").
+          <>
+            <a href={appReturnLink(id, state)} className="mt-3 inline-flex min-h-10 w-full items-center justify-center rounded-md bg-accent px-3 text-sm font-medium text-accent-text hover:bg-accent-hover" data-testid="connect-open-app">
+              {t("connect.open_app")}
+            </a>
+            <p className="mt-2 text-xs text-fg-2">{t("connect.open_app_hint")}</p>
+          </>
+        )}
         <p className="mt-2 text-xs text-fg-2">{t("connect.app_close_hint")}</p>
       </AuthCard>
     );

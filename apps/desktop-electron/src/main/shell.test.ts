@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Settings, loadConfig } from "./config.ts";
 import { IpcRegistry, type IpcEventLike } from "./ipc.ts";
+import { PendingLinks } from "./deeplink.ts";
 import { registerShellHandlers } from "./shell.ts";
 
 const me: IpcEventLike = { sender: "main", senderFrame: { url: "app://tavrn/" } };
@@ -17,6 +18,7 @@ function setup(t: { after: (fn: () => void) => void }) {
   const opened: string[] = [];
   const windows: string[] = [];
   const registry = new IpcRegistry((e) => e === me);
+  const links = new PendingLinks();
   registerShellHandlers(registry, {
     settings,
     version: "0.2.0",
@@ -27,9 +29,10 @@ function setup(t: { after: (fn: () => void) => void }) {
       return { domain, api: `https://${domain}/api/v1`, ws: `wss://${domain}/api/v1/ws`, web: `https://${domain}`, source: "well_known" };
     },
     connect: { open: async (url) => void windows.push(url), close: () => void windows.push("closed") },
+    links,
   });
   const call = (method: string, ...args: unknown[]) => registry.dispatch(`tavrn:shell.${method}`, method, me, args);
-  return { settings, opened, windows, call };
+  return { settings, opened, windows, links, call };
 }
 
 test("getConfig and setNode work on the settings file", async (t) => {
@@ -73,4 +76,13 @@ test("openConnect shows only the chosen node's sign-in page; closeConnect closes
   assert.deepEqual(await call("openConnect", "https://web.home.example/login"), { ok: false, error: "connect.url_refused: invalid" });
   assert.deepEqual(await call("closeConnect"), { ok: true, value: undefined });
   assert.deepEqual(windows, [page, "closed"]);
+});
+
+test("takeLinks hands the client the checked deep links once", async (t) => {
+  const { links, call } = setup(t);
+  assert.deepEqual(await call("takeLinks"), { ok: true, value: [] });
+  links.add(["/usr/bin/tavrn", "tavrn://invite/chat.example/code1234", "tavrn://invite/localhost/code1234"]);
+  assert.deepEqual(await call("takeLinks"), { ok: true, value: ["tavrn://invite/chat.example/code1234"] });
+  assert.deepEqual(await call("takeLinks"), { ok: true, value: [] });
+  assert.deepEqual(await call("takeLinks", "extra"), { ok: false, error: "ipc.invalid_arguments" });
 });

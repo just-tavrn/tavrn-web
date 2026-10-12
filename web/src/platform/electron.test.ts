@@ -35,6 +35,7 @@ function fakeBridge(config: Partial<ShellConfig> = {}, updater = false) {
       }),
       openConnect: vi.fn(async () => {}),
       closeConnect: vi.fn(async () => {}),
+      takeLinks: vi.fn(async (): Promise<string[]> => []),
     },
     updater: {
       checkUpdate: vi.fn(async () => ({ version: "0.3.0", notes: "New things" })),
@@ -274,6 +275,23 @@ describe("the shell's other parts through the bridge", () => {
     off();
     emit({ channel: "hotkeys", event: { action: "push_to_talk", pressed: false } });
     expect(seen).toEqual([{ action: "push_to_talk", pressed: true }]);
+  });
+
+  it("deep links: the start's link at the first listener, later ones when the shell says they wait", async () => {
+    const { bridge, emit } = fakeBridge({ node: "https://tavrn.example" });
+    bridge.shell.takeLinks.mockResolvedValueOnce(["tavrn://invite/chat.example/code1234"]).mockResolvedValueOnce(["tavrn://room/chat.example/R1", 42 as unknown as string]);
+    const p = await createElectronPlatform(bridge, detached());
+    // Nobody listens yet: the links stay in the shell.
+    emit({ channel: "shell_events", event: { kind: "link" } });
+    expect(bridge.shell.takeLinks).not.toHaveBeenCalled();
+    const seen: string[] = [];
+    const stop = p.links!.subscribe((url) => seen.push(url));
+    await vi.waitFor(() => expect(seen).toEqual(["tavrn://invite/chat.example/code1234"]));
+    emit({ channel: "shell_events", event: { kind: "link" } });
+    await vi.waitFor(() => expect(seen).toEqual(["tavrn://invite/chat.example/code1234", "tavrn://room/chat.example/R1"]));
+    stop();
+    emit({ channel: "shell_events", event: { kind: "link" } });
+    expect(bridge.shell.takeLinks).toHaveBeenCalledTimes(2);
   });
 
   it("notifications and tray: clicks and menu actions arrive as shell events, validated", async () => {

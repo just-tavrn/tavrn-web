@@ -27,6 +27,7 @@ import { DateOfBirthGate } from "./components/age/DateOfBirthGate";
 import { LegalDocumentPage, LegalIndexPage, NoticeFormPage, NoticeStatusPage } from "./pages/legal/LegalPages";
 import { NodePickerPage } from "./pages/NodePickerPage";
 import { AndroidShell } from "./components/AndroidShell";
+import { DeepLinkPrompt } from "./components/DeepLinkPrompt";
 import { platform } from "./platform";
 
 // The whiteboard page (and with it the Excalidraw canvas) is loaded only when a board is opened.
@@ -44,6 +45,7 @@ export function App() {
     return (
       <BrowserRouter>
         <AndroidShell />
+        <DeepLinkPrompt />
         <Routes>
           <Route path="*" element={<NodePickerPage />} />
         </Routes>
@@ -53,6 +55,7 @@ export function App() {
   return (
     <BrowserRouter>
       <AndroidShell />
+      <DeepLinkPrompt />
       <Routes>
         {/* Desktop app: change the home node (Settings → App). */}
         {desktop && <Route path="/node" element={<NodePickerPage />} />}

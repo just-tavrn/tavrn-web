@@ -33,6 +33,9 @@ export default {
     { from: "../../web/dist", to: "web", filter: ["**/*", "!**/*.map"] },
     { from: "../desktop/src-tauri/icons", to: "icons", filter: ["icon.png", "128x128@2x.png"] },
   ],
+  // Deep links (src/main/deeplink.ts, docs/DESKTOP.md "Links into the app"): `x-scheme-handler/tavrn` in the .desktop
+  // entry of the .deb and the AppImage, the URL protocol in the Windows installer's registry.
+  protocols: [{ name: "tavrn", schemes: ["tavrn"] }],
   electronFuses: {
     runAsNode: false,
     enableNodeOptionsEnvironmentVariable: false,

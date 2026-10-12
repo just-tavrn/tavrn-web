@@ -28,7 +28,8 @@ pub enum ShellEvent {
     Tray { action: TrayAction },
     /// Android: the back gesture; the client goes back, or sends the app to the background from its first page.
     Back,
-    /// Android: an app link opened the app (`mobile::app_link`); the client routes it.
+    /// A deep link opened the app: a `tavrn://` link (`deeplink.rs`; desktop and Android) or an App Link (Android,
+    /// `mobile::app_link`). The client shows its target and acts only when the user confirms.
     Link { url: String },
     /// Android: the system bars and the keyboard changed.
     Insets(crate::mobile::Insets),
@@ -89,6 +90,16 @@ pub fn send<R: Runtime>(app: &AppHandle<R>, event: ShellEvent) {
     if let Some(events) = app.try_state::<ShellEvents>() {
         events.send(event);
     }
+}
+
+/// A `tavrn://` link the system handed the desktop app (a start with the link, or a second start that the single
+/// instance forwards): checked (`deeplink.rs`), handed to the client (it waits for the client's subscription), and the
+/// main window comes to the front. Anything else is dropped.
+#[cfg(desktop)]
+pub fn open_deep_link<R: Runtime>(app: &AppHandle<R>, url: &str) {
+    let Some(url) = crate::deeplink::deep_link(url) else { return };
+    send(app, ShellEvent::Link { url });
+    show_main(app);
 }
 
 /// Brings the main window to the front (tray "Show", a notification click, a second start of the app).

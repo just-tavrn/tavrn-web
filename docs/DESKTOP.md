@@ -61,6 +61,7 @@ The properties of the Tauri shell (Windows, macOS; on Linux it builds for develo
 | The sign-in window (`connect`) shows only the chosen node's `/connect?session=…` page (`open_connect` checks origin, path and parameters) and follows https pages from there (identity providers redirect), plain http only on this computer; it never loads the bundled client or `tauri:`, `file:`, `data:`, `javascript:` or `blob:` URLs, and new windows go to the system browser. It refuses every download and every permission request (microphone, camera, location, notifications; a test checks both handlers). The node's web client there runs as a plain web client: only the main window counts as the app (`platform/tauriDetect.ts`). | `src-tauri/src/guard.rs`, `src/lib.rs` |
 | The microphone and the camera are granted to the main window without a prompt of the webview (it shows only the bundled client); screen capture and every other permission keep the webview's default. | `src-tauri/src/media.rs` |
 | The node URL is validated twice: in the client and again in the shell before it is stored. | `web/src/platform/nodeUrl.ts`, `src-tauri/src/node_url.rs` |
+| `tavrn://` links are checked by the shell before the client sees them (a domain as the node, tokens, the handoff's session and state; nothing else), and the client asks before it opens one ("Links into the app"). The deep-link plugin has no permission in any capability. | `src-tauri/src/deeplink.rs`, `web/src/components/DeepLinkPrompt.tsx` |
 | Downloads are written by the shell: the webview names only a file name to suggest and a save's id, never a path; the user picks the target in the native save dialog, the shell writes a temporary file next to it and renames it into place. The dialog, opener and fs plugins have no permission in the webview. | `src-tauri/src/download.rs` |
 
 Unit tests in `src-tauri/src/conf_tests.rs` keep these properties of `tauri.conf.json` and the capability from eroding.
@@ -368,6 +369,47 @@ browser does on Windows (`src-tauri/src/passkey.rs`, the commands `passkey_creat
   an excluded authenticator → "already holds a passkey".
 
 On Linux (the Electron shell) passkeys keep going through the browser (no native path yet); macOS has no build.
+
+## Links into the app
+
+The apps open `tavrn://` links: the Windows installers register the scheme (tauri-plugin-deep-link; a second start
+hands its link to the running app through the single-instance plugin), the Linux packages carry it in their `.desktop`
+entry (`x-scheme-handler/tavrn`) and the Electron shell claims it at start (`app.setAsDefaultProtocolClient`; a second
+start hands its link over in `second-instance`), the Android app has an intent filter next to its App Links
+([ANDROID.md](ANDROID.md) "Links into the app"). A development build registers nothing (the Tauri one registers itself
+on Windows and Linux).
+
+| Link | Opens |
+|---|---|
+| `tavrn://invite/<node>/<code>` | the invite page of `<node>` (`/invite/<code>`; another node's with `?node=<its identity domain>`) |
+| `tavrn://room/<node>/<room>[/<channel>]` | the room or channel (`/rooms/…`, another node's under `/n/<domain>/rooms/…`) |
+| `tavrn://add/<node>/<id>`, `tavrn://add/<node>/<domain>/<id>` (optional `?room=`) | an application's add link |
+| `tavrn://connect?session=<id>&state=<state>` | nothing: the browser's way back to the app after the sign-in on the node's page |
+
+`<node>` is the node's host as its web links name it (its identity domain or its web client's host; the client finds
+the identity domain as for invites). **Rules** (`src-tauri/src/deeplink.rs`, the Electron shell's `deeplink.ts`, again
+in the client's `platform/deepLinks.ts`): `<node>` is a domain name with a dot (no port, no address, no `localhost`, so
+a link never points the app at this computer), codes and ids are base64url of at most 64 characters, `connect` takes
+exactly the 43-character session id and a 16 to 128 character state (the rules of the sign-in window's
+`open_connect`), no fragment, no other parameter, at most 512 bytes. Everything else is dropped by the shell.
+
+**The client shows the target before it acts.** A link never navigates by itself: a dialog names what it opens ("An
+invite to a room on chat.example", "A channel of a room on chat.example") and shows the link; only **Open** goes there,
+Cancel (focused first) and Escape drop it. An app without a home node yet offers **Choose node**: the node picker with
+the link's node filled in, and the link is offered again once a node is chosen. Links that arrive before the client
+listens (the link that started the app) wait in the shell (Tauri: with the notification clicks, then in the client's
+platform until the prompt subscribes, `linkEvents` in `platform/shellEvents.ts`; Electron: until the client takes
+them, `shell.takeLinks`).
+
+**Back to the app after the sign-in** (RFC 8252 style). When the node's page ran in a browser (the Android app's Custom
+Tab, "Open in the browser instead" on the desktop) its last screen offers **Open the tavrn app**, the link
+`tavrn://connect?session=…&state=…` of that handoff. The app acts on it only when session and state are the ones of
+the sign-in or unlock it waits for, and then only polls at once (at most every 2 seconds as always) and comes to the
+front; the one-time code still comes from the node and is exchanged with the PKCE verifier, so the link carries no
+secret. A phone that held back the app's timers while the browser was in front continues at once.
+
+**The website's invite page** (tavrn.org) can offer "Open in the app" with `tavrn://invite/<node>/<code>` next to
+the link to the web client; that is a change of the website.
 
 ## Hotkeys
 

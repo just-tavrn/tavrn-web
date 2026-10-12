@@ -2,7 +2,7 @@
 /**
  * The `shell` namespace of the bridge (the Tauri shell's `commands.rs`): the settings with the chosen home node, the
  * app's version, opening web links in the system browser, finding the node of an address (`resolve.ts`) and the
- * sign-in window (`connect.ts`).
+ * sign-in window (`connect.ts`), and the deep links that opened the app (`deeplink.ts`).
  */
 import type { Settings } from "./config.ts";
 import { connectUrl, externalLink } from "./guard.ts";
@@ -27,6 +27,8 @@ export interface ShellDeps {
   resolve: (domain: string) => Promise<Resolved>;
   /** The sign-in window: shows a validated URL, closes. */
   connect: { open: (url: string) => Promise<void>; close: () => void };
+  /** The deep links that wait for the client (`deeplink.ts`). */
+  links: { take: () => string[] };
 }
 
 /** The longest sign-in page URL (session, state, mode, method and the key fragment fit easily). */
@@ -54,4 +56,5 @@ export function registerShellHandlers(registry: IpcRegistry, deps: ShellDeps): v
     await deps.connect.open(checked.url);
   });
   registry.handle("shell", "closeConnect", none, () => deps.connect.close());
+  registry.handle("shell", "takeLinks", none, () => deps.links.take());
 }

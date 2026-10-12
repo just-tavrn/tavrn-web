@@ -7,7 +7,7 @@
  * channel per method, `tavrn:<namespace>.<method>`, and one channel for the shell's events to the main window.
  */
 export const BRIDGE_METHODS = {
-  shell: ["getConfig", "setNode", "appInfo", "openExternal", "resolveNode", "openConnect", "closeConnect"],
+  shell: ["getConfig", "setNode", "appInfo", "openExternal", "resolveNode", "openConnect", "closeConnect", "takeLinks"],
   updater: ["checkUpdate", "installUpdate", "getUpdateChannel", "setUpdateChannel"],
   files: ["saveFileBegin", "saveFileChunk", "saveFileEnd", "saveFileAbort", "saveFileReveal"],
   keychain: ["keychainGet", "keychainSet", "keychainDelete", "keychainStatus"],

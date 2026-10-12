@@ -53,7 +53,12 @@ export interface Platform {
   readonly saveFile?: SaveFile;
   /** Desktop: the native voice engine of the shell (LiveKit's Rust SDK; `voice/nativeSession.ts`, docs/DESKTOP.md "Voice"). */
   readonly voice?: PlatformVoice;
-  /** Android: permissions, the back gesture, app links, the system bars, push without Google (docs/ANDROID.md). */
+  /**
+   * The apps: deep links that opened the app (`tavrn://…`, in the Android app also its App Links), already checked by
+   * the shell; `DeepLinkPrompt` shows their target before anything happens (docs/DESKTOP.md "Links into the app").
+   */
+  readonly links?: PlatformLinks;
+  /** Android: permissions, the back gesture, the system bars, push without Google (docs/ANDROID.md). */
   readonly android?: PlatformAndroid;
   /**
    * The apps' native passkeys, because the webview's origin can never be under the node's relying party id: the
@@ -61,6 +66,12 @@ export interface Platform {
    * "Passkeys", Android 14+). Absent elsewhere (the browser uses `navigator.credentials`; Linux has no native path yet).
    */
   readonly passkeys?: PlatformPasskeys;
+}
+
+/** Deep links of the shell (`deepLinks.ts`). */
+export interface PlatformLinks {
+  /** Every link that opened the app from now on, and those that waited for the client; returns the unsubscriber. */
+  subscribe(fn: (url: string) => void): () => void;
 }
 
 /** WebAuthn JSON as the node sends and expects it (PROTOCOL.md §5a.4). */
@@ -526,8 +537,6 @@ export interface PlatformAndroid {
   background(): Promise<void>;
   /** The system back gesture. Returns the unsubscriber. */
   onBack(fn: () => void): () => void;
-  /** An app link (`https://app.tavrn.org/invite/…`) or a `tavrn://` link opened the app; checked by the shell. */
-  onLink(fn: (url: string) => void): () => void;
   /** The system bars or the keyboard changed. */
   onInsets(fn: (insets: AndroidInsets) => void): () => void;
   /** The latest insets. */

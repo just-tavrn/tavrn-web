@@ -15,6 +15,7 @@
 pub mod android;
 pub mod commands;
 pub mod config;
+pub mod deeplink;
 #[cfg(desktop)]
 pub mod download;
 pub mod events;
@@ -122,8 +123,11 @@ pub fn run() {
     // A second start (launcher, Start menu, a Windows notification click) shows the running app, which may sit in the
     // tray. On Linux the plugin needs the session bus; without one (a bare session, CI under xvfb) it is left out.
     #[cfg(any(windows, target_os = "linux"))]
+    // With the deep-link feature the plugin hands a second start's `tavrn://` link to the deep-link plugin first.
     let builder =
         if cfg!(windows) || session_bus() { builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| events::show_main(app))) } else { builder };
+    // `tavrn://` links (deeplink.rs, docs/DESKTOP.md "Links into the app"): the Windows installers register the scheme.
+    let builder = builder.plugin(tauri_plugin_deep_link::init());
     // Push-to-talk of the native voice engine follows the system-wide hotkey directly (also while the webview is in the
     // background); the client hears the same events and tells the engine too.
     let voice = voice::VoiceShell::default();
@@ -206,6 +210,22 @@ pub fn run() {
             app.manage(Arc::new(keychain::Keychain::from_env()));
             app.manage(events::ShellEvents::default());
             app.manage(tray::Tray::create(handle));
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let links = handle.clone();
+                app.deep_link().on_open_url(move |event| {
+                    for url in event.urls() {
+                        events::open_deep_link(&links, url.as_str());
+                    }
+                });
+                // The link this start was made for (Windows, Linux: an argument; macOS: the plugin's first event).
+                for url in app.deep_link().get_current().ok().flatten().unwrap_or_default() {
+                    events::open_deep_link(handle, url.as_str());
+                }
+                // A development build registers the scheme for itself (the installers do it for a release).
+                #[cfg(all(dev, any(windows, target_os = "linux")))]
+                let _ = app.deep_link().register_all();
+            }
             let window = app.config().app.windows.iter().find(|w| w.label == MAIN_WINDOW).cloned().ok_or("tauri.conf.json defines no main window")?;
             let dev_url: Option<Url> = if cfg!(dev) { app.config().build.dev_url.clone() } else { None };
             let nav_dev_url = dev_url.clone();

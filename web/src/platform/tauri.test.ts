@@ -199,7 +199,8 @@ describe("createTauriPlatform", () => {
     expect(p.webOrigin()).toBe("https://tavrn.example");
     expect(p.node?.current()).toBe("https://tavrn.example");
     await expect(p.appVersion()).resolves.toBe("0.2.0");
-    expect(calls.map((c) => c.cmd).sort()).toEqual(["app_info", "get_config", "listen_hotkeys"]);
+    // shell_events at once: the deep links that started the app wait in the platform for the prompt.
+    expect(calls.map((c) => c.cmd).sort()).toEqual(["app_info", "get_config", "listen_hotkeys", "shell_events"]);
   });
 
   it("has no node before the first start's choice", async () => {

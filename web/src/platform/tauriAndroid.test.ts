@@ -106,12 +106,30 @@ describe("the Android app's platform", () => {
     expect(calls.at(-1)).toEqual({ cmd: "open_connect", args: { url: "https://app.tavrn.example/connect?session=x" } });
   });
 
+  it("keeps the link that started the app until the prompt listens (another member took the channel first)", async () => {
+    const { emit } = android();
+    const p = await createTauriPlatform(document.implementation.createHTMLDocument("app"));
+    // The shell hands its waiting link to the channel's first listener: the insets member of the platform.
+    emit({ kind: "link", url: "tavrn://invite/chat.example/Code_1234" });
+    emit({ kind: "link", url: "tavrn://room/chat.example/R1" });
+    const seen: string[] = [];
+    const stop = p.links!.subscribe((url) => seen.push(url));
+    expect(seen).toEqual(["tavrn://invite/chat.example/Code_1234", "tavrn://room/chat.example/R1"]);
+    emit({ kind: "link", url: "tavrn://room/chat.example/R2" });
+    expect(seen).toHaveLength(3);
+    stop();
+    for (let i = 0; i < 20; i++) emit({ kind: "link", url: `tavrn://room/chat.example/R${i}` });
+    const later: string[] = [];
+    p.links!.subscribe((url) => later.push(url));
+    expect(later).toHaveLength(8);
+  });
+
   it("hands the shell's events to their listeners", async () => {
     const { emit } = android();
     const p = await createTauriPlatform(document.implementation.createHTMLDocument("app"));
     const seen: string[] = [];
     p.android?.onBack(() => seen.push("back"));
-    p.android?.onLink((url) => seen.push(`link ${url}`));
+    p.links?.subscribe((url) => seen.push(`link ${url}`));
     p.android?.onInsets((i) => seen.push(`insets ${i.top}`));
     p.android?.push.onEndpoint((k) => seen.push(`endpoint ${k.endpoint}`));
     p.notifications?.onOpen((path) => seen.push(`open ${path}`));
