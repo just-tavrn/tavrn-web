@@ -25,11 +25,14 @@ keys stay on your devices (section 4).
 
 ## 3. Update checks
 
-At every start, and when you ask for it in Settings > App, the app asks GitHub whether a newer release exists: it
-downloads the file latest.json of the releases of the repository just-tavrn/tavrn-web from github.com (the Electron
-app: latest-linux.yml on Linux, latest.yml on Windows, each with its signature file ending in .minisig), and the
-installer or package of a newer version from GitHub's servers when you install it. GitHub sees your IP address and the request
-as with any download; GitHub's privacy statement applies
+At every start, and when you ask for it in Settings > App, the app asks whether a newer release exists in its update
+channel (stable or beta, chosen in Settings > App): it requests the update file of that channel from the project's
+website, https://tavrn.org/updates/desktop/ (latest.json; the Electron app: latest-linux.yml on Linux, latest.yml on
+Windows, each with its signature file ending in .minisig), and the website sends it on to that file of the right
+release of the repository just-tavrn/tavrn-web on github.com. The installer or package of a newer version comes from
+GitHub's servers when you install it. The website receives the request like a page request and does not log your IP
+address (its privacy policy, https://tavrn.org/legal/privacy/, also names the service in front of it); GitHub sees
+your IP address and the request as with any download, and GitHub's privacy statement applies
 (https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement). Updates are signed and
 checked before they are installed.
 
@@ -37,8 +40,8 @@ The app sends no telemetry, no usage statistics and no crash reports, and it con
 
 ## 4. What the app stores on your computer, and how to remove it
 
-- Settings: the address of your home node and the "close to tray" choice, in config.json in the app's configuration
-  folder (Linux: ~/.config/org.tavrn.desktop/, Windows: %APPDATA%\org.tavrn.desktop\).
+- Settings: the address of your home node, the "close to tray" choice and the update channel, in config.json in the
+  app's configuration folder (Linux: ~/.config/org.tavrn.desktop/, Windows: %APPDATA%\org.tavrn.desktop\).
 - The data of the client: your session, the encrypted local key store with the keys of this device, and the
   settings of the client, in the storage of the app's web view (Linux: ~/.local/share/org.tavrn.desktop/,
   Windows: %LOCALAPPDATA%\org.tavrn.desktop\), and caches (Linux: ~/.cache/org.tavrn.desktop/).

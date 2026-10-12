@@ -130,27 +130,77 @@ pub fn close_connect<R: Runtime>(app: AppHandle<R>) {
     }
 }
 
-/// The newest signed release when it is newer than this app.
-#[cfg(desktop)]
+/// The update channel in effect: the stored choice, else the default for this version (`updater::Channel`).
+pub fn update_channel_in(settings: &Settings, version: &str) -> updater::Channel {
+    let stored = settings.config.lock().ok().and_then(|c| c.update_channel.clone());
+    updater::Channel::effective(stored.as_deref(), version)
+}
+
+/// The update channel in effect (Settings → App).
 #[tauri::command]
-pub async fn check_update<R: Runtime>(app: AppHandle<R>) -> Result<Option<UpdateInfo>, String> {
+pub fn get_update_channel<R: Runtime>(app: AppHandle<R>, settings: State<'_, Settings>) -> updater::Channel {
+    update_channel_in(&settings, &app.package_info().version.to_string())
+}
+
+/// Stores the update channel the user chose; it sticks, also across a change of the default.
+#[tauri::command]
+pub fn set_update_channel(settings: State<'_, Settings>, channel: String) -> Result<(), String> {
+    set_update_channel_in(&settings, &channel)
+}
+
+pub fn set_update_channel_in(settings: &Settings, channel: &str) -> Result<(), String> {
+    let channel = updater::Channel::parse(channel).ok_or_else(|| "update.channel_invalid".to_string())?;
+    update_config(settings, |c| c.update_channel = Some(channel.as_str().to_string()))
+}
+
+/// The update check against the feed of the chosen channel; a failure becomes one of the client's four codes
+/// (`updater.rs`), its reason is logged.
+#[cfg(desktop)]
+async fn find_update<R: Runtime>(app: &AppHandle<R>, settings: &Settings) -> Result<Option<tauri_plugin_updater::Update>, String> {
     if !updater::configured(app.config().plugins.0.get("updater")) {
         return Err("update.not_configured".into());
     }
-    let update = app.updater().map_err(|e| e.to_string())?.check().await.map_err(|e| e.to_string())?;
+    let version = app.package_info().version.to_string();
+    let url = updater::endpoint(&updater::base(), update_channel_in(settings, &version));
+    let endpoint = tauri::Url::parse(&url).map_err(|_| updater::FAILED.to_string())?;
+    let checker = app.updater_builder().endpoints(vec![endpoint]).and_then(|b| b.build()).map_err(|e| {
+        eprintln!("tavrn: the updater could not be set up for {url}: {e}");
+        updater::FAILED.to_string()
+    })?;
+    match checker.check().await {
+        Ok(update) => Ok(update),
+        Err(e) => {
+            eprintln!("tavrn: the update check at {url} failed: {e}");
+            let code = match updater::code_of(&e) {
+                Some(code) => code,
+                // No release JSON: the feed's own answer tells why (the website's 404 `no_release`, its 503, …).
+                None => match resolve::HttpFetcher::new(&version) {
+                    Ok(fetcher) => updater::code_of_answer(resolve::Fetcher::get(&fetcher, &url).await.as_ref().map_err(|e| *e)),
+                    Err(_) => updater::FAILED,
+                },
+            };
+            Err(code.to_string())
+        }
+    }
+}
+
+/// The newest signed release of the chosen channel when it is newer than this app.
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn check_update<R: Runtime>(app: AppHandle<R>, settings: State<'_, Settings>) -> Result<Option<UpdateInfo>, String> {
+    let update = find_update(&app, &settings).await?;
     Ok(update.map(|u| UpdateInfo { version: u.version, notes: u.body }))
 }
 
-/// Downloads the newest release, verifies its signature, installs it and restarts the app.
+/// Downloads the newest release of the chosen channel, verifies its signature, installs it and restarts the app.
 #[cfg(desktop)]
 #[tauri::command]
-pub async fn install_update<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
-    if !updater::configured(app.config().plugins.0.get("updater")) {
-        return Err("update.not_configured".into());
+pub async fn install_update<R: Runtime>(app: AppHandle<R>, settings: State<'_, Settings>) -> Result<(), String> {
+    let Some(update) = find_update(&app, &settings).await? else { return Err("update.none".into()) };
+    if let Err(e) = update.download_and_install(|_, _| {}, || {}).await {
+        eprintln!("tavrn: the update to {} failed: {e}", update.version);
+        return Err(updater::code_of(&e).unwrap_or(updater::FAILED).to_string());
     }
-    let update = app.updater().map_err(|e| e.to_string())?.check().await.map_err(|e| e.to_string())?;
-    let Some(update) = update else { return Err("update.none".into()) };
-    update.download_and_install(|_, _| {}, || {}).await.map_err(|e| e.to_string())?;
     app.restart()
 }
 
@@ -202,7 +252,7 @@ mod tests {
         assert_eq!(config::load(&s.path).domain.as_deref(), Some("tavrn.example"), "refusals keep the old settings");
         // The node URL alone (the advanced picker) forgets the old node's details.
         assert!(set_node_in(&s, "https://other.example").is_ok());
-        assert_eq!(config::load(&s.path), config::Config { node: Some("https://other.example".into()), web: None, domain: None, close_to_tray: None });
+        assert_eq!(config::load(&s.path), config::Config { node: Some("https://other.example".into()), ..config::Config::default() });
         let _ = std::fs::remove_dir_all(s.path.parent().unwrap_or(&s.path));
     }
 
@@ -215,6 +265,21 @@ mod tests {
         let stored = config::load(&s.path);
         assert_eq!(stored.node.as_deref(), Some("https://other.example"));
         assert_eq!(stored.close_to_tray, Some(false));
+        let _ = std::fs::remove_dir_all(s.path.parent().unwrap_or(&s.path));
+    }
+
+    #[test]
+    fn the_update_channel_defaults_by_version_and_a_choice_sticks() {
+        let s = settings("channel");
+        assert_eq!(update_channel_in(&s, "0.4.0-rc.4"), updater::Channel::Beta);
+        assert_eq!(update_channel_in(&s, "0.4.0"), updater::Channel::Stable);
+        assert_eq!(set_update_channel_in(&s, "stable"), Ok(()));
+        assert_eq!(update_channel_in(&s, "0.4.0-rc.4"), updater::Channel::Stable, "the choice sticks on a pre-release");
+        assert_eq!(config::load(&s.path).update_channel.as_deref(), Some("stable"), "persisted");
+        assert_eq!(set_update_channel_in(&s, "nightly"), Err("update.channel_invalid".into()));
+        assert_eq!(update_channel_in(&s, "0.4.0-rc.4"), updater::Channel::Stable, "a refusal keeps the choice");
+        assert!(set_node_in(&s, "https://tavrn.example").is_ok());
+        assert_eq!(config::load(&s.path).update_channel.as_deref(), Some("stable"), "other settings keep it");
         let _ = std::fs::remove_dir_all(s.path.parent().unwrap_or(&s.path));
     }
 

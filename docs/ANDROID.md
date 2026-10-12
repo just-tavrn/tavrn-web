@@ -189,7 +189,10 @@ get-app-links org.tavrn.app` shows the result.
   side writes it to the document the user picked; the webview never names a place.
 - **Updates**: Tauri's updater does not support Android. At start and in Settings → App the shell reads the release
   list of tavrn-web through the website's proxy (`https://tavrn.org/gh/releases/web`) and names the newest release with
-  an APK newer than the app (prereleases only for a prerelease app; only GitHub's download URL of that very asset).
+  an APK newer than the app in the update channel of Settings → App (stable: releases only, beta: pre-releases too;
+  beta by default for a pre-release app; only GitHub's download URL of that very asset). A failure names its reason
+  like the desktop's: the server unreachable (`update.unreachable`), no release with an APK in the channel
+  (`update.no_release`) or another failure (`update.failed`).
   "Download the update" opens the APK in the browser; Android installs it over the app (same signing key). The
   Android version code follows the version (`major·10⁶ + minor·10³ + patch`), so a release candidate and its final
   release share a code and install over each other.

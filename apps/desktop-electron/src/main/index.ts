@@ -27,7 +27,7 @@ import { HttpFetcher, resolveNode, systemSrv } from "./resolve.ts";
 import { registerShellHandlers } from "./shell.ts";
 import { attachWindow, electronTrayHost, registerTrayHandlers, TrayController } from "./tray.ts";
 import { decodePng } from "./tray_icon.ts";
-import { registerUpdaterHandlers, updaterSetup } from "./updater.ts";
+import { channelSetting, registerUpdaterHandlers, updaterSetup } from "./updater.ts";
 import { createMainWindow, showMain } from "./windows.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -152,7 +152,7 @@ function main(): void {
         resolve: (domain) => resolveNode(domain, new HttpFetcher((url, init) => net.fetch(url, init), version), systemSrv),
         connect: { open: (url) => connect.open(url), close: () => connect.close() },
       }),
-    (ctx) => registerUpdaterHandlers(ctx.registry, feed),
+    (ctx) => registerUpdaterHandlers(ctx.registry, feed, undefined, channelSetting(ctx.settings, version)),
     (ctx) => registerKeychainHandlers(ctx.registry, { settings: ctx.settings, keychain: keychainNow }),
     // Notifications and the tray; their clicks come back to the client as shell events.
     (ctx) =>

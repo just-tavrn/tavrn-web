@@ -8,7 +8,7 @@
  */
 export const BRIDGE_METHODS = {
   shell: ["getConfig", "setNode", "appInfo", "openExternal", "resolveNode", "openConnect", "closeConnect"],
-  updater: ["checkUpdate", "installUpdate"],
+  updater: ["checkUpdate", "installUpdate", "getUpdateChannel", "setUpdateChannel"],
   files: ["saveFileBegin", "saveFileChunk", "saveFileEnd", "saveFileAbort", "saveFileReveal"],
   keychain: ["keychainGet", "keychainSet", "keychainDelete", "keychainStatus"],
   notify: ["notify"],

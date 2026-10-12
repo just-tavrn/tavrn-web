@@ -3,7 +3,7 @@
  * The app's settings in `<config dir>/tavrn-desktop/settings.json` (Linux `~/.config/tavrn-desktop/`), with the schema
  * of the Tauri shell's `config.json` (`apps/desktop/src-tauri/src/config.rs`): the home node chosen in the node picker,
  * with its identity domain and the origin of its web client when they are known (delegation: both may differ from the
- * node's URL), and "close to tray". A missing, unreadable or corrupt file means "no settings" (the node picker asks
+ * node's URL), "close to tray" and the update channel (`updater.ts`). A missing, unreadable or corrupt file means "no settings" (the node picker asks
  * again); a stored node that no longer passes the validation is dropped.
  */
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -22,6 +22,8 @@ export interface Config {
   domain: string | null;
   /** Closing the window hides it into the tray; absent: the platform's default. */
   close_to_tray?: boolean;
+  /** The update channel chosen in Settings → App; absent: the default for this version (`updater.ts`). */
+  update_channel?: "stable" | "beta";
 }
 
 const EMPTY: Config = { node: null, web: null, domain: null };
@@ -78,7 +80,7 @@ export function loadConfig(path: string): Config {
   // As serde does: a known field of the wrong type makes the whole file unreadable; unknown fields are ignored.
   const doc = raw as Record<string, unknown> | undefined;
   const readable =
-    typeof raw === "object" && raw !== null && !Array.isArray(raw) && optionalString(doc?.node) && optionalString(doc?.web) && optionalString(doc?.domain) && (doc?.close_to_tray === undefined || doc?.close_to_tray === null || typeof doc?.close_to_tray === "boolean");
+    typeof raw === "object" && raw !== null && !Array.isArray(raw) && optionalString(doc?.node) && optionalString(doc?.web) && optionalString(doc?.domain) && (doc?.close_to_tray === undefined || doc?.close_to_tray === null || typeof doc?.close_to_tray === "boolean") && optionalString(doc?.update_channel);
   if (!readable || !doc) {
     console.warn(`tavrn: ignoring the corrupt settings file ${path}`);
     return { ...EMPTY };
@@ -89,6 +91,7 @@ export function loadConfig(path: string): Config {
   const domain = node && typeof doc.domain === "string" && validIdentityDomain(doc.domain) ? doc.domain : null;
   const config: Config = { node, web, domain };
   if (typeof doc.close_to_tray === "boolean") config.close_to_tray = doc.close_to_tray;
+  if (doc.update_channel === "stable" || doc.update_channel === "beta") config.update_channel = doc.update_channel;
   return config;
 }
 
@@ -98,6 +101,7 @@ export function saveConfig(path: string, config: Config): void {
   const tmp = `${path}.tmp`;
   const out: Record<string, unknown> = { node: config.node, web: config.web, domain: config.domain };
   if (config.close_to_tray !== undefined) out.close_to_tray = config.close_to_tray;
+  if (config.update_channel !== undefined) out.update_channel = config.update_channel;
   writeFileSync(tmp, JSON.stringify(out, null, 2), { mode: 0o600 });
   renameSync(tmp, path);
 }

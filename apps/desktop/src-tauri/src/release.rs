@@ -4,8 +4,12 @@
 //! GitHub API's release objects) and names the newest release with a signed APK newer than this app; the client links
 //! to it, the browser downloads it, Android installs it (the signature must match the installed app's). Read in Rust
 //! because the proxy sends no CORS headers for the app's origin. Builds everywhere, so its tests run with the desktop's.
+//! The update channel of the settings applies as on the desktop (`updater::Channel`): stable offers releases only,
+//! beta pre-releases too; failures are the desktop's codes (`update.unreachable`, `update.no_release`, `update.failed`).
 
 use serde::{Deserialize, Serialize};
+
+use crate::updater::{self, Channel};
 
 /// The website's proxy of the tavrn-web releases.
 pub const FEED: &str = "https://tavrn.org/gh/releases/web";
@@ -45,30 +49,33 @@ pub struct AvailableRelease {
     pub url: String,
 }
 
-/// The newest release newer than `current` that carries the APK (prereleases only for a prerelease app).
-pub fn newest(feed: &[u8], current: &str) -> Option<AvailableRelease> {
-    let current = semver::Version::parse(current).ok()?;
-    let releases: Vec<Release> = serde_json::from_slice(feed).ok()?;
-    releases
+/// The newest release of the channel that carries the APK, when it is newer than `current`. `update.no_release`
+/// when the channel has no release with an APK at all, `update.failed` for a feed or version that cannot be read.
+pub fn newest(feed: &[u8], current: &str, channel: Channel) -> Result<Option<AvailableRelease>, &'static str> {
+    let current = semver::Version::parse(current).map_err(|_| updater::FAILED)?;
+    let releases: Vec<Release> = serde_json::from_slice(feed).map_err(|_| updater::FAILED)?;
+    let newest = releases
         .into_iter()
-        .filter(|r| !r.draft && (!r.prerelease || !current.pre.is_empty()))
+        .filter(|r| !r.draft && (!r.prerelease || channel == Channel::Beta))
         .filter_map(|r| {
             let version = semver::Version::parse(r.tag_name.strip_prefix('v')?).ok()?;
             let name = apk_name(&version.to_string());
             let asset = r.assets.iter().find(|a| a.name == name)?;
             // Only GitHub's download of this very asset: the feed never sends the app elsewhere.
             let expected = format!("{DOWNLOADS}{}/{name}", r.tag_name);
-            (asset.browser_download_url == expected && version > current).then_some((version, r.body, expected))
+            (asset.browser_download_url == expected).then_some((version, r.body, expected))
         })
         .max_by(|a, b| a.0.cmp(&b.0))
-        .map(|(version, notes, url)| AvailableRelease { version: version.to_string(), notes: notes.map(|n| n.chars().take(4000).collect()), url })
+        .ok_or(updater::NO_RELEASE)?;
+    let (version, notes, url) = newest;
+    Ok((version > current).then(|| AvailableRelease { version: version.to_string(), notes: notes.map(|n| n.chars().take(4000).collect()), url }))
 }
 
 /// Reads the feed (at most 2 MiB).
-pub async fn fetch(version: &str) -> Result<Option<AvailableRelease>, String> {
+pub async fn fetch(version: &str, channel: Channel) -> Result<Option<AvailableRelease>, String> {
     let fetcher = crate::resolve::HttpFetcher::new(version)?;
-    let body = fetcher.get_capped(FEED, MAX_FEED).await.map_err(|_| "update.unreachable".to_string())?;
-    Ok(newest(&body, version))
+    let body = fetcher.get_capped(FEED, MAX_FEED).await.map_err(|_| updater::UNREACHABLE.to_string())?;
+    newest(&body, version, channel).map_err(str::to_string)
 }
 
 #[cfg(test)]
@@ -90,32 +97,48 @@ mod tests {
         serde_json::to_vec(releases).unwrap_or_default()
     }
 
-    #[test]
-    fn the_newest_release_with_an_apk() {
-        let f = feed(&[release("v0.6.0", false, false), release("v0.5.1", false, true), release("v0.5.0", false, true)]);
-        let found = newest(&f, "0.5.0");
-        assert_eq!(found.as_ref().map(|r| r.version.as_str()), Some("0.5.1"));
-        assert_eq!(found.map(|r| r.url), Some(format!("{DOWNLOADS}v0.5.1/Tavrn_0.5.1_android-arm64.apk")));
-        assert_eq!(newest(&f, "0.5.1"), None, "current");
+    fn version_of(r: Result<Option<AvailableRelease>, &'static str>) -> Result<Option<String>, &'static str> {
+        r.map(|found| found.map(|r| r.version))
     }
 
     #[test]
-    fn prereleases_only_for_prerelease_apps() {
+    fn the_newest_release_with_an_apk() {
+        let f = feed(&[release("v0.6.0", false, false), release("v0.5.1", false, true), release("v0.5.0", false, true)]);
+        let found = newest(&f, "0.5.0", Channel::Stable);
+        assert_eq!(found.as_ref().ok().cloned().flatten().map(|r| r.version), Some("0.5.1".into()));
+        assert_eq!(found.ok().flatten().map(|r| r.url), Some(format!("{DOWNLOADS}v0.5.1/Tavrn_0.5.1_android-arm64.apk")));
+        assert_eq!(newest(&f, "0.5.1", Channel::Stable), Ok(None), "current");
+        assert_eq!(newest(&f, "0.6.0", Channel::Stable), Ok(None), "never an older version");
+    }
+
+    #[test]
+    fn prereleases_only_in_the_beta_channel() {
         let f = feed(&[release("v0.5.0-rc.2", true, true), release("v0.4.0", false, true)]);
-        assert_eq!(newest(&f, "0.4.0"), None);
-        assert_eq!(newest(&f, "0.5.0-rc.1").map(|r| r.version), Some("0.5.0-rc.2".into()));
-        assert_eq!(newest(&f, "0.4.0-rc.2").map(|r| r.version), Some("0.5.0-rc.2".into()));
+        assert_eq!(version_of(newest(&f, "0.4.0", Channel::Stable)), Ok(None));
+        assert_eq!(version_of(newest(&f, "0.4.0", Channel::Beta)), Ok(Some("0.5.0-rc.2".into())));
+        assert_eq!(version_of(newest(&f, "0.5.0-rc.1", Channel::Beta)), Ok(Some("0.5.0-rc.2".into())));
+        assert_eq!(version_of(newest(&f, "0.5.0-rc.1", Channel::Stable)), Ok(None), "stable from a pre-release waits for the release");
+        let released = feed(&[release("v0.5.0", false, true), release("v0.5.0-rc.2", true, true)]);
+        assert_eq!(version_of(newest(&released, "0.5.0-rc.2", Channel::Stable)), Ok(Some("0.5.0".into())), "0.5.0 > 0.5.0-rc.2");
+    }
+
+    #[test]
+    fn a_channel_without_a_release_and_an_unreadable_feed_are_errors() {
+        let only_rc = feed(&[release("v0.5.0-rc.2", true, true)]);
+        assert_eq!(newest(&only_rc, "0.4.0", Channel::Stable), Err(updater::NO_RELEASE));
+        assert_eq!(newest(&feed(&[]), "0.4.0", Channel::Beta), Err(updater::NO_RELEASE));
+        assert_eq!(newest(b"not json", "0.4.0", Channel::Beta), Err(updater::FAILED));
+        assert_eq!(newest(&only_rc, "not a version", Channel::Beta), Err(updater::FAILED));
     }
 
     #[test]
     fn links_elsewhere_and_garbage_are_ignored() {
         let mut evil = release("v9.0.0", false, true);
         evil["assets"][1]["browser_download_url"] = json!("https://evil.example/Tavrn_9.0.0_android-arm64.apk");
-        assert_eq!(newest(&feed(&[evil]), "0.4.0"), None);
+        assert_eq!(newest(&feed(&[evil]), "0.4.0", Channel::Stable), Err(updater::NO_RELEASE));
         let mut draft = release("v9.0.0", false, true);
         draft["draft"] = json!(true);
-        assert_eq!(newest(&feed(&[draft]), "0.4.0"), None);
-        assert_eq!(newest(b"not json", "0.4.0"), None);
-        assert_eq!(newest(&feed(&[release("latest", false, true)]), "0.4.0"), None);
+        assert_eq!(newest(&feed(&[draft, release("v0.4.0", false, true)]), "0.4.0", Channel::Stable), Ok(None));
+        assert_eq!(newest(&feed(&[release("latest", false, true)]), "0.4.0", Channel::Stable), Err(updater::NO_RELEASE));
     }
 }

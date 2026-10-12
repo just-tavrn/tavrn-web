@@ -11,7 +11,7 @@ const detached = () => document.implementation.createHTMLDocument("app");
 
 type Calls = Array<{ cmd: string; args: unknown }>;
 
-function backend(state: { node: string | null; web?: string | null; domain?: string | null; updater?: boolean; update?: unknown; channel?: Channel<HotkeyEvent> }): Calls {
+function backend(state: { node: string | null; web?: string | null; domain?: string | null; updater?: boolean; update?: unknown; updateError?: string; updateChannel?: string; channel?: Channel<HotkeyEvent> }): Calls {
   const calls: Calls = [];
   mockWindows("main");
   mockIPC((cmd, args) => {
@@ -36,7 +36,16 @@ function backend(state: { node: string | null; web?: string | null; domain?: str
         if ((args as { domain: string }).domain === "nowhere.example") throw { code: "resolve.not_found", step: "direct", domain: "nowhere.example" };
         return { domain: "home.example", api: "https://app.home.example/api/v1", ws: "wss://app.home.example/api/v1/ws", web: "https://app.home.example", source: "well_known" };
       case "check_update":
+        if (state.updateError) throw state.updateError;
         return state.update ?? null;
+      case "get_update_channel":
+        return state.updateChannel ?? "beta";
+      case "set_update_channel": {
+        const channel = (args as { channel: string }).channel;
+        if (channel !== "stable" && channel !== "beta") throw "update.channel_invalid";
+        state.updateChannel = channel;
+        return null;
+      }
       case "listen_hotkeys":
         state.channel = (args as { onEvent: Channel<HotkeyEvent> }).onEvent;
         return null;
@@ -234,6 +243,19 @@ describe("createTauriPlatform", () => {
     expect(update).toMatchObject({ version: "0.3.0", notes: "New things" });
     await update?.install();
     expect(calls.map((c) => c.cmd)).toContain("install_update");
+  });
+
+  it("names why a check failed and keeps the update channel in the shell", async () => {
+    const state = { node: "https://tavrn.example", updater: true, updateError: "update.no_release" };
+    const calls = backend(state);
+    const p = await createTauriPlatform(detached());
+    await expect(p.updater?.check()).rejects.toMatchObject({ problem: { code: "update.no_release" } });
+    state.updateError = "Could not fetch a valid release JSON from the remote";
+    await expect(p.updater?.check()).rejects.toMatchObject({ problem: { code: "update.failed" } });
+    await expect(p.updater?.channel?.get()).resolves.toBe("beta");
+    await p.updater?.channel?.set("stable");
+    expect(calls.find((c) => c.cmd === "set_update_channel")?.args).toEqual({ channel: "stable" });
+    await expect(p.updater?.channel?.get()).resolves.toBe("stable");
   });
 
   it("reports no update when the shell finds none", async () => {

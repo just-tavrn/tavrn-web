@@ -36,7 +36,12 @@ function fakeBridge(config: Partial<ShellConfig> = {}, updater = false) {
       openConnect: vi.fn(async () => {}),
       closeConnect: vi.fn(async () => {}),
     },
-    updater: { checkUpdate: vi.fn(async () => ({ version: "0.3.0", notes: "New things" })), installUpdate: vi.fn(async () => {}) },
+    updater: {
+      checkUpdate: vi.fn(async () => ({ version: "0.3.0", notes: "New things" })),
+      installUpdate: vi.fn(async () => {}),
+      getUpdateChannel: vi.fn(async () => "beta" as const),
+      setUpdateChannel: vi.fn(async () => {}),
+    },
     files: {
       saveFileBegin: vi.fn(async () => ({ status: "ready" as const, id: "s1" })),
       saveFileChunk: vi.fn(async () => {}),
@@ -215,9 +220,27 @@ describe("createElectronPlatform", () => {
     const update = await p.updater!.check();
     bridge.updater.installUpdate.mockRejectedValueOnce("update.signature_invalid" as never);
     await expect(update!.install()).rejects.toMatchObject({ problem: { code: "update.signature_invalid" } });
-    // Other refusals stay as they are.
+    // Every refusal is a code Settings → App can name, never the generic message.
     bridge.updater.checkUpdate.mockRejectedValueOnce("update.not_configured" as never);
-    await expect(p.updater!.check()).rejects.toBe("update.not_configured");
+    await expect(p.updater!.check()).rejects.toMatchObject({ problem: { code: "update.not_configured" } });
+    for (const code of ["update.unreachable", "update.no_release", "update.failed"]) {
+      bridge.updater.checkUpdate.mockRejectedValueOnce(code as never);
+      const e = await p.updater!.check().catch((x: unknown) => x);
+      expect(e).toMatchObject({ problem: { code } });
+      expect([en[`errors.${code}` as keyof typeof en], de[`errors.${code}` as keyof typeof de]]).toContain(describeError(e));
+    }
+    bridge.updater.checkUpdate.mockRejectedValueOnce(new Error("not implemented: checkUpdate") as never);
+    await expect(p.updater!.check()).rejects.toMatchObject({ problem: { code: "update.failed" } });
+  });
+
+  it("reads and stores the update channel through the bridge", async () => {
+    const { bridge } = fakeBridge({ node: "https://tavrn.example" }, true);
+    const p = await createElectronPlatform(bridge, detached());
+    await expect(p.updater?.channel?.get()).resolves.toBe("beta");
+    await p.updater?.channel?.set("stable");
+    expect(bridge.updater.setUpdateChannel).toHaveBeenCalledWith("stable");
+    bridge.updater.setUpdateChannel.mockRejectedValueOnce("ipc.invalid_arguments" as never);
+    await expect(p.updater?.channel?.set("stable")).rejects.toMatchObject({ problem: { code: "update.failed" } });
   });
 
   it("installs the link handler: other sites open in the system browser", async () => {

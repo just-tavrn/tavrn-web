@@ -9,6 +9,8 @@ fn main() {
         "open_external",
         "check_update",
         "install_update",
+        "get_update_channel",
+        "set_update_channel",
         "resolve_node",
         "open_connect",
         "close_connect",

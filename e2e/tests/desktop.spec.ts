@@ -5,6 +5,7 @@
  * the explicit node base, Settings → App and the global hotkeys run against the real node. The built Linux app (Electron)
  * is covered by its smoke test (apps/desktop-electron/e2e/electron-smoke.spec.ts).
  */
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
 import { NODE, addVirtualAuthenticator, confirmWithPassword, createRoomViaApi, loginAs, logoutViaUi, nextTotpCode, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, type Account } from "./helpers";
 import { FAKE_MEDIA, cues, hideDeviceNamesUntilAsked } from "./voice-helpers";
@@ -19,9 +20,9 @@ test.use({ launchOptions: { args: FAKE_MEDIA }, permissions: ["microphone", "cam
  * `open_connect` records the sign-in page instead of opening a window, `close_connect` records that it closed. The
  * hotkey commands are logged there too, and `window.__e2eHotkey(action, pressed)` plays the shell's event channel.
  */
-async function asDesktopApp(page: Page, node: string | null = null) {
+async function asDesktopApp(page: Page, node: string | null = null, updates = false) {
   await page.addInitScript(
-    ({ initial, testNode }) => {
+    ({ initial, testNode, withUpdater }) => {
       const KEY = "e2e.desktop.node";
       if (initial && sessionStorage.getItem(KEY) === null) sessionStorage.setItem(KEY, initial);
       const HOTKEYS = "e2e.desktop.hotkeys";
@@ -34,7 +35,21 @@ async function asDesktopApp(page: Page, node: string | null = null) {
             case "get_config":
               return { node: sessionStorage.getItem(KEY), web: sessionStorage.getItem(`${KEY}.web`), domain: sessionStorage.getItem(`${KEY}.domain`) };
             case "app_info":
-              return { version: "0.2.0", updater: false };
+              return { version: withUpdater ? "0.2.0-rc.1" : "0.2.0", updater: withUpdater };
+            // The update channel as the shells keep it (beta by default for a pre-release). The fake website has a
+            // pre-release in beta and no release in stable; "e2e.desktop.offline" plays a missing network.
+            case "get_update_channel":
+              return sessionStorage.getItem("e2e.desktop.channel") ?? "beta";
+            case "set_update_channel": {
+              const channel = String((args as { channel?: string }).channel);
+              if (channel !== "stable" && channel !== "beta") throw "update.channel_invalid";
+              sessionStorage.setItem("e2e.desktop.channel", channel);
+              return null;
+            }
+            case "check_update":
+              if (sessionStorage.getItem("e2e.desktop.offline")) throw "update.unreachable";
+              if ((sessionStorage.getItem("e2e.desktop.channel") ?? "beta") === "stable") throw "update.no_release";
+              return { version: "0.2.0-rc.2", notes: "Fixes" };
             case "set_node": {
               const url = String(args.url);
               if (!/^https:\/\/|^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(url)) throw "node_url.insecure";
@@ -82,7 +97,7 @@ async function asDesktopApp(page: Page, node: string | null = null) {
         transformCallback: () => 0,
       };
     },
-    { initial: node, testNode: NODE },
+    { initial: node, testNode: NODE, withUpdater: updates },
   );
 }
 
@@ -226,6 +241,35 @@ test.describe("Desktop app (simulated shell)", () => {
     await expect.poll(() => deviceNames(page, request)).toEqual(["Desktop app", "e2e"]);
     // The app closes the window a moment later, after the page signed out.
     await expect.poll(() => page.evaluate(() => sessionStorage.getItem("e2e.desktop.connect.closed")), { timeout: 10_000 }).toBe("1");
+  });
+
+  test("Settings → App: the update channel and why a check failed", async ({ page, request }) => {
+    const account = await registerViaApi(request, "deskupd");
+    await asDesktopApp(page, NODE, true);
+    await loginAs(page, account);
+    await page.goto("/settings/app");
+    const channel = page.getByRole("combobox", { name: "Update-Kanal" });
+    await expect(channel).toHaveValue("beta");
+    await page.getByRole("button", { name: "Nach Updates suchen" }).click();
+    await expect(page.getByTestId("app-update")).toContainText("0.2.0-rc.2");
+    // Stable has no release yet: the client says so instead of "Something went wrong".
+    await channel.selectOption("stable");
+    await expect(channel).toHaveValue("stable");
+    await expect(page.getByTestId("app-update")).toHaveCount(0);
+    await page.getByRole("button", { name: "Nach Updates suchen" }).click();
+    await expect(page.getByText("In diesem Update-Kanal gibt es noch kein Release dieser App.", { exact: false })).toBeVisible();
+    await expect(page.getByText("Etwas ist schiefgelaufen")).toHaveCount(0);
+    // The choice sticks (the shell's settings).
+    await page.reload();
+    await expect(page.getByRole("combobox", { name: "Update-Kanal" })).toHaveValue("stable");
+    await page.evaluate(() => sessionStorage.setItem("e2e.desktop.offline", "1"));
+    await page.getByRole("button", { name: "Nach Updates suchen" }).click();
+    await expect(page.getByText("Der Update-Server ist nicht erreichbar.", { exact: false })).toBeVisible();
+    // No horizontal scrolling on the phone, and the section passes axe (WCAG 2.2 AA).
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    const result = await new AxeBuilder({ page }).include("main").withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();
+    const blocking = result.violations.filter((v) => v.impact === "serious" || v.impact === "critical");
+    expect(blocking.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(" | ")}`)).toEqual([]);
   });
 
   test("the browser has neither the picker nor Settings → App", async ({ page, request }) => {

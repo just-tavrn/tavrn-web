@@ -9,6 +9,7 @@
 import { invoke, type InvokeArgs, type InvokeOptions } from "@tauri-apps/api/core";
 import { asBlob, type SaveFile } from "./files";
 import type { ShellEvents } from "./shellEvents";
+import { updateFailure } from "./updateErrors";
 import { notificationOpens, trayActions } from "./tauriShell";
 import type {
   AppUpdater,
@@ -174,9 +175,14 @@ export function androidMembers(events: ShellEvents, initial: AndroidStatus): And
   // Android installs it over the app (the same signing key).
   const updater: AppUpdater = {
     check: async () => {
-      const found = await invoke<Release | null>("android_check_update");
+      const found = await invoke<Release | null>("android_check_update").catch(updateFailure);
       if (!found) return null;
       return { version: found.version, notes: found.notes, install: () => invoke<void>("open_external", { url: found.url }) };
+    },
+    // The same setting as the desktop's (`get_update_channel`, `set_update_channel`): beta offers pre-releases too.
+    channel: {
+      get: () => invoke<"stable" | "beta">("get_update_channel").catch(updateFailure),
+      set: (channel) => invoke<void>("set_update_channel", { channel }).catch(updateFailure),
     },
   };
 

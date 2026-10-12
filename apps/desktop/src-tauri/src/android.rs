@@ -211,10 +211,12 @@ pub async fn android_save_abort(android: State<'_, Android<Wry>>, id: String) ->
     android.call("saveAbort", json!({ "id": id })).await
 }
 
-/// A newer release with an APK (`release.rs`), or none.
+/// A newer release with an APK in the chosen update channel (`release.rs`), or none.
 #[tauri::command]
-pub async fn android_check_update(app: tauri::AppHandle) -> Result<Option<crate::release::AvailableRelease>, String> {
-    crate::release::fetch(&app.package_info().version.to_string()).await
+pub async fn android_check_update(app: tauri::AppHandle, settings: State<'_, Settings>) -> Result<Option<crate::release::AvailableRelease>, String> {
+    let version = app.package_info().version.to_string();
+    let channel = crate::commands::update_channel_in(&settings, &version);
+    crate::release::fetch(&version, channel).await
 }
 
 /// Opens a web link (http, https, mailto) in the browser.

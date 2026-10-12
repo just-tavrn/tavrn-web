@@ -4,14 +4,15 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppTab } from "./AppTab";
 import { resetPlatform, setPlatform } from "../../platform";
-import type { AvailableUpdate, Platform } from "../../platform";
+import type { Platform } from "../../platform";
 import { renderWithProviders } from "../../test/render";
 import { cryptoStore } from "../../crypto";
 import type { KeyProtection } from "../../crypto/store";
-import type { KeychainStatus } from "../../platform/types";
+import type { AppUpdater, KeychainStatus, UpdateChannel } from "../../platform/types";
+import { updateFailure } from "../../platform/updateErrors";
 import { useAuth } from "../../stores/auth";
 
-function desktop(updater?: { check: () => Promise<AvailableUpdate | null> }): Platform {
+function desktop(updater?: AppUpdater): Platform {
   const p: Platform = {
     kind: "desktop",
     isDesktop: true,
@@ -67,6 +68,55 @@ describe("AppTab", () => {
     renderWithProviders(<AppTab />);
     await userEvent.setup().click(await screen.findByRole("button", { name: "Nach Updates suchen" }));
     expect(await screen.findByText(/signature invalid/)).toBeInTheDocument();
+  });
+
+  it.each([
+    ["update.unreachable", /Update-Server ist nicht erreichbar/],
+    ["update.no_release", /In diesem Update-Kanal gibt es noch kein Release/],
+    ["update.signature_invalid", /Das Update wurde abgelehnt/],
+    ["update.failed", /Das Update hat nicht geklappt/],
+  ])("names why the check failed: %s", async (code, text) => {
+    desktop({ check: async () => updateFailure(code) });
+    renderWithProviders(<AppTab />);
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Nach Updates suchen" }));
+    expect(await screen.findByText(text)).toBeInTheDocument();
+    expect(screen.queryByText("Etwas ist schiefgelaufen")).toBeNull();
+  });
+
+  it("shows the update channel and stores a new choice; the next check asks that channel", async () => {
+    let channel: UpdateChannel = "beta";
+    const set = vi.fn(async (c: UpdateChannel) => void (channel = c));
+    const check = vi.fn(async () => null);
+    desktop({ check, channel: { get: async () => channel, set } });
+    renderWithProviders(<AppTab />);
+    const u = userEvent.setup();
+    const select = await screen.findByRole("combobox", { name: "Update-Kanal" });
+    await vi.waitFor(() => expect(select).toHaveValue("beta"));
+    expect(screen.getByRole("option", { name: "Stabil" })).toBeInTheDocument();
+    await u.click(screen.getByRole("button", { name: "Nach Updates suchen" }));
+    expect(await screen.findByTestId("app-up-to-date")).toBeInTheDocument();
+    await u.selectOptions(select, "stable");
+    expect(set).toHaveBeenCalledWith("stable");
+    await vi.waitFor(() => expect(select).toHaveValue("stable"));
+    // A new channel means a new answer: the old "newest version" note goes.
+    expect(screen.queryByTestId("app-up-to-date")).toBeNull();
+  });
+
+  it("keeps the old channel when the shell refuses the new one", async () => {
+    desktop({ check: async () => null, channel: { get: async () => "stable", set: async () => updateFailure("update.channel_invalid") } });
+    renderWithProviders(<AppTab />);
+    const select = await screen.findByRole("combobox", { name: "Update-Kanal" });
+    await vi.waitFor(() => expect(select).toHaveValue("stable"));
+    await userEvent.setup().selectOptions(select, "beta");
+    expect(await screen.findByText("Diesen Update-Kanal gibt es nicht.")).toBeInTheDocument();
+    await vi.waitFor(() => expect(select).toHaveValue("stable"));
+  });
+
+  it("offers no channel without an updater", async () => {
+    desktop();
+    renderWithProviders(<AppTab />);
+    await screen.findByTestId("app-updates-unconfigured");
+    expect(screen.queryByRole("combobox", { name: "Update-Kanal" })).toBeNull();
   });
 });
 
