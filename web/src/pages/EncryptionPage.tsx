@@ -6,7 +6,7 @@ import { api } from "../lib/api";
 import { useT } from "../i18n";
 import { homeIsRemote, useAuth } from "../stores/auth";
 import { useAuthFlow } from "../stores/authFlow";
-import { e2eeContext, useE2ee } from "../stores/e2ee";
+import { e2eeContext, isDeviceKeyLost, markDeviceLost, signOut, useE2ee } from "../stores/e2ee";
 import { describeError } from "../stores/toasts";
 import { passkeyEntryIds, resetIdentity, setupAccount, takePrf, unlockWithPasskeyPrf, unlockWithRecoveryKey } from "../crypto/e2ee";
 import { evaluatePrf, passkeysSupported } from "../lib/passkeys";
@@ -31,7 +31,7 @@ export function skipUnlockChosen(): boolean {
   }
 }
 
-type Mode = "loading" | "setup" | "unlock" | "reset";
+type Mode = "loading" | "setup" | "unlock" | "reset" | "lost";
 
 /**
  * After every sign-in and whenever this device cannot read encrypted data: sets up encryption for a new
@@ -70,6 +70,8 @@ export function EncryptionPage() {
       if (!me.data.has_identity_key) return setMode(status === "locked" ? "unlock" : "setup");
       // Opened from the security settings ("Reset security key", ENCRYPTION.md §9).
       if (params.get("reset") === "1") return setMode("reset");
+      // The device's key is gone (tavrn-web#83): no unlock brings it back, the session signs in again as a new device.
+      if (useE2ee.getState().deviceLost) return setMode("lost");
       if (status === "unlocked") return done();
       // A passkey used for this login may unlock right away (same ceremony, ENCRYPTION.md §2.4).
       const pending = takePrf();
@@ -79,7 +81,11 @@ export function EncryptionPage() {
           await unlockWithPasskeyPrf(await e2eeContext(), pending.credentialId, pending.prf);
           useE2ee.getState().set("unlocked");
           return done();
-        } catch {
+        } catch (e) {
+          if (isDeviceKeyLost(e)) {
+            markDeviceLost();
+            return setMode("lost");
+          }
           /* no entry for this passkey or no PRF: ask for the recovery key */
         } finally {
           pending.prf.fill(0);
@@ -93,6 +99,15 @@ export function EncryptionPage() {
 
   if (!token || !user) return <Navigate to="/login" replace />;
 
+  const skip = () => {
+    try {
+      sessionStorage.setItem(SKIP_UNLOCK_KEY, "1");
+    } catch {
+      /* ignore */
+    }
+    done();
+  };
+
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
     setError(null);
@@ -102,6 +117,12 @@ export function EncryptionPage() {
       useE2ee.getState().set("unlocked");
       done();
     } catch (e) {
+      // The unlock worked, but this device's key is gone: it signs in again instead of asking for the key once more.
+      if (isDeviceKeyLost(e)) {
+        markDeviceLost();
+        setMode("lost");
+        return;
+      }
       setError(describeError(e));
       // The account is set up already (local master secret or recovery entry): unlock instead.
       if ((e as { name?: string; code?: string }).name === "E2eeError" && (e as { code?: string }).code === "already_set_up") setMode("unlock");
@@ -116,7 +137,7 @@ export function EncryptionPage() {
       <div className="mt-3 flex items-center gap-2">
         <BrandIcon size={28} />
         <h1 className="text-base font-semibold" data-testid="encryption-title">
-          {mode === "setup" ? t("e2ee.setup_title") : mode === "reset" ? t("e2ee.reset_title") : t("e2ee.unlock_title")}
+          {mode === "setup" ? t("e2ee.setup_title") : mode === "reset" ? t("e2ee.reset_title") : mode === "lost" ? t("e2ee.device_lost_title") : t("e2ee.unlock_title")}
         </h1>
       </div>
       <p className="mt-1 break-all text-xs text-fg-2" data-testid="encryption-account">
@@ -126,17 +147,43 @@ export function EncryptionPage() {
         {me.isError && <ErrorText>{describeError(me.error)}</ErrorText>}
         {mode === "loading" && !me.isError && <p className="text-sm text-fg-2">{busy ? t("e2ee.unlocking") : t("common.loading")}</p>}
         {mode === "setup" && <SetupView account={user.address} busy={busy} error={error} onConfirm={(fn) => void run(fn)} />}
-        {mode === "unlock" && <UnlockView busy={busy} error={error} onRun={(fn) => void run(fn)} onReset={() => { setError(null); setMode("reset"); }} onSkip={() => {
-          try {
-            sessionStorage.setItem(SKIP_UNLOCK_KEY, "1");
-          } catch {
-            /* ignore */
-          }
-          done();
-        }} />}
+        {mode === "unlock" && <UnlockView busy={busy} error={error} onRun={(fn) => void run(fn)} onReset={() => { setError(null); setMode("reset"); }} onSkip={skip} />}
+        {mode === "lost" && <DeviceLostView onSkip={skip} />}
         {mode === "reset" && <ResetView account={user.address} next={next} busy={busy} error={error} onRun={(fn) => void run(fn)} onBack={() => { setError(null); if (params.get("reset") === "1" && useE2ee.getState().status === "unlocked") done(); else setMode("unlock"); }} />}
       </div>
     </AuthCard>
+  );
+}
+
+/**
+ * This session's device lost its key (tavrn-web#83): a device key is immutable (ENCRYPTION.md §3.1), so neither the
+ * recovery key nor a passkey makes this device readable again. Signing in again (the device is forgotten with its
+ * local data) gives a new device that unlocks as usual.
+ */
+function DeviceLostView({ onSkip }: { onSkip: () => void }) {
+  const t = useT();
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="space-y-4" data-testid="device-lost">
+      <p className="text-sm text-fg-1">{t("e2ee.device_lost_intro")}</p>
+      <Button
+        className="w-full"
+        disabled={busy}
+        data-testid="device-lost-sign-in"
+        onClick={() => {
+          setBusy(true);
+          void signOut().finally(() => setBusy(false));
+        }}
+      >
+        {t("e2ee.sign_in_again")}
+      </Button>
+      <div className="space-y-2 border-t border-line pt-3 text-sm">
+        <button type="button" className="block min-h-9 text-left text-fg-2 hover:text-fg-0" onClick={onSkip} data-testid="skip-unlock">
+          {t("e2ee.skip")}
+        </button>
+        <p className="text-xs text-fg-2">{t("e2ee.device_lost_skip_hint")}</p>
+      </div>
+    </div>
   );
 }
 

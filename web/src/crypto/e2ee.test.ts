@@ -11,6 +11,7 @@ import {
   addPasskeySecret,
   ensureDevice,
   loadClient,
+  localDeviceLost,
   localStatus,
   passkeyEntryIds,
   regenerateRecoveryKey,
@@ -46,7 +47,9 @@ function fakeNode(username: string) {
     keys: {
       get: async (u: string) => {
         state.calls.push(`get ${u}`);
-        return { user: address, identity_public_key: state.identity, devices: [] };
+        // Attested devices, as the node lists them (ENCRYPTION.md §2.3).
+        const devices = [...state.devices].map(([device_id, d]) => ({ device_id, device_public_key: d.key, identity_signature: d.sig, created_at: "" }));
+        return { user: address, identity_public_key: state.identity, devices };
       },
       putIdentity: async ({ identity_public_key }: { identity_public_key: string }) => {
         state.calls.push("putIdentity");
@@ -144,6 +147,28 @@ describe("e2ee flows", () => {
     expect(cryptoStore.masterSecret()).toEqual(original);
     expect(state.devices.has(DEV_B)).toBe(true);
     expect(state.keyPackages.get(DEV_B)).toBe(20);
+  });
+
+  it("a session whose local store was lost: no second key for its device, the unlock reports device_key_lost (#83)", async () => {
+    const { ctx, state, address } = account();
+    const recovery = RecoveryKey.generate();
+    await setupAccount(ctx, recovery);
+    const attested = state.devices.get(DEV_A)!.key;
+    // The app died before IndexedDB reached the disk; the session (localStorage) survived.
+    await wipeLocal(address);
+    expect(await localStatus(address, DEV_A)).toBe("none");
+    expect(await localDeviceLost(ctx)).toBe(true);
+    const err = await unlockWithRecoveryKey(ctx, recovery.toWords()).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(E2eeError);
+    expect((err as E2eeError).code).toBe("device_key_lost");
+    expect(await loadClient()).toBeNull();
+    expect(state.devices.get(DEV_A)!.key).toBe(attested);
+    // Signed in again: a new device unlocks with the same recovery key.
+    await wipeLocal(address);
+    const fresh = { ...ctx, deviceId: DEV_B };
+    expect(await localDeviceLost(fresh)).toBe(false);
+    await unlockWithRecoveryKey(fresh, recovery.toWords());
+    expect(b64urlEncode((await loadClient())!.devicePublicKey)).toBe(state.devices.get(DEV_B)!.key);
   });
 
   it("refuses a master secret whose identity key differs from the published one", async () => {

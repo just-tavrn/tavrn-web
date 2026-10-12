@@ -51,7 +51,10 @@ The rules of the desktop shell hold ([DESKTOP.md](DESKTOP.md) "Security of the s
 | The node discovery (address first) checks certificates against Mozilla's root store (`webpki-roots`): reqwest's platform verifier needs a Kotlin component on Android. A node with a certificate from a private CA installed on the phone cannot be found by address; its URL in "Advanced: node URL" still works (the webview trusts the system's store). | `src/resolve.rs` |
 
 The local key store stays in IndexedDB as in a browser (the Android Keystore for it is the next step, together with
-biometric unlock): Settings → App shows the browser's protection.
+biometric unlock): Settings → App shows the browser's protection. If the key store does not survive while the session
+does (the device or emulator dies before the webview's storage reached the disk), the device's key is gone for good:
+the app says so and offers "Sign in again" (a new device, unlocked with the recovery key), see
+[CLIENT.md](CLIENT.md) "Accounts and sign-in".
 
 ## Permissions
 

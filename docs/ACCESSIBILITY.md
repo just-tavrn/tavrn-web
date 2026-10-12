@@ -23,7 +23,7 @@ member list, a modal dialog (create channel), the search panel with results, a f
 room settings tabs, all user settings tabs, Discover, Home; friends with an incoming request, a direct message,
 the whiteboard, a joined voice channel (fake microphone and camera) muted and unmuted, the voice bar and account
 bar; the room header menu, the account menu (also a node admin's) and the settings navigation with the admin link;
-every admin tab. `e2e/tests/files-e2ee.spec.ts` scans an end-to-end encrypted files channel with entries, the "Your
+every admin tab; the banner and the encryption page of a device that lost its keys ("Sign in again"). `e2e/tests/files-e2ee.spec.ts` scans an end-to-end encrypted files channel with entries, the "Your
 files" panel of a locked device (checkboxes named by kind, size and date; the delete buttons name their entry) and the
 channel deletion dialog with its file facts (the keep option is a labelled checkbox).
 
