@@ -258,6 +258,7 @@ test.describe("Screen shares are joined", () => {
     expect(started[0]).toMatchObject({ tokenParts: 3, keyLength: 32, max_side: 1920, fps: 30, audio: false });
     // The sharer gets no tile of her own publisher.
     await expect(alice.page.getByTestId("screen-tile")).toHaveCount(0);
+    await axeStage(alice.page);
 
     // Bob: one stream under Alice's name, Alice listed once (streaming), nothing received before he joins.
     const alices = streamTile(bob.page, alice.address);
@@ -266,6 +267,7 @@ test.describe("Screen shares are joined", () => {
     await expect(row(bob.page, alice.address)).toHaveCount(1);
     await expect(row(bob.page, alice.address).getByTestId("flag-streaming")).toBeAttached({ timeout: 15_000 });
     await expect(bob.page.locator('[data-testid="voice-tile"][data-identity$="#screen"]')).toHaveCount(0);
+    await axeStage(bob.page);
     await alices.getByTestId("stream-join").click();
     await expect(alices).toHaveAttribute("data-state", "watching");
     await expect(alices.getByTestId("video-screen")).toBeVisible({ timeout: 30_000 });
