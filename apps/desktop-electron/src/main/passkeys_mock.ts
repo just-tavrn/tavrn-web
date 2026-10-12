@@ -107,6 +107,7 @@ export class SoftKey implements PasskeyNative {
     const rp = pk.rp as { id: string };
     if (!covers(rp.id, origin)) throw new Error("passkey.refused");
     this.#run(onDone, async (step) => {
+      await step(0);
       const sel = (pk.authenticatorSelection ?? {}) as { userVerification?: string };
       await this.#verify(sel.userVerification, onEvent, step);
       onEvent(JSON.stringify({ kind: "touch" }));
@@ -150,6 +151,8 @@ export class SoftKey implements PasskeyNative {
     const rpId = typeof pk.rpId === "string" ? pk.rpId : new URL(origin).hostname;
     if (!covers(rpId, origin)) throw new Error("passkey.refused");
     this.#run(onDone, async (step) => {
+      // Like the module: events and the answer come later, never during the call.
+      await step(0);
       await this.#verify(pk.userVerification as string | undefined, onEvent, step);
       onEvent(JSON.stringify({ kind: "touch" }));
       await step(30);

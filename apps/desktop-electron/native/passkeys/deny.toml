@@ -12,7 +12,7 @@ unused-allowed-license = "allow"
 [advisories]
 yanked = "deny"
 ignore = [
-  # serde_cbor is archived. Mozilla's authenticator crate (Firefox's CTAP2 library) encodes and decodes the keys'
+  # serde_cbor is archived. Mozilla's authenticator crate (the CTAP2 library) encodes and decodes the keys'
   # CBOR with it, and so does this crate for the attestation object; no vulnerability is known. Revisit when the
   # authenticator crate moves to another CBOR library.
   { id = "RUSTSEC-2021-0127", reason = "unmaintained, used by the authenticator crate; no known vulnerability" },

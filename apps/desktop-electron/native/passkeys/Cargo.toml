@@ -1,6 +1,6 @@
 # @tavrn/passkeys-native: native passkeys of the Linux app (docs/DESKTOP.md "Passkeys on Linux"), a Node-API module
-# around the crate `fido/` (FIDO2 security keys over USB HID through Mozilla's authenticator library, the one Firefox
-# uses on Linux). Built with `napi build --release` into a .node file; its own Cargo workspace, like the key listener.
+# around the crate `fido/` (FIDO2 security keys over USB HID through Mozilla's authenticator crate, a browser's
+# CTAP2 library on Linux). Built with `napi build --release` into a .node file; its own Cargo workspace, like the key listener.
 [workspace]
 members = ["fido"]
 

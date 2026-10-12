@@ -970,7 +970,9 @@ of the app without any native API ("Sign in on \<node>'s page"), and the app tak
 there also unlocks the encrypted messages, and "Unlock with a passkey" on the app's unlock screen runs just the passkey
 on that page; on nodes without app sessions the password with TOTP or a recovery code is what works. The Windows app
 runs passkeys natively instead (the Windows WebAuthn API with the node's web origin, DESKTOP.md "Passkeys"): there the
-passkey buttons work in the app itself and the node's page is optional. Web push is not offered. Details in DESKTOP.md
+passkey buttons work in the app itself and the node's page is optional. The Linux app does the same with FIDO2
+security keys on USB while one is plugged in (the PIN in a dialog of the app, DESKTOP.md "Passkeys on Linux"); any
+other passkey goes through the node's page in the browser. Web push is not offered. Details in DESKTOP.md
 "Signing in" and "Limitations".
 
 The app keeps the key that unlocks the local key store in the OS keychain (Secret Service, Credential Manager) instead

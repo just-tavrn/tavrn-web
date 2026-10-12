@@ -122,7 +122,7 @@ test("one ceremony at a time; refusals are the Windows app's codes", async () =>
   await assert.rejects(first, (e) => e === "passkey.exists");
   // The module refuses options at once (an rp id outside the origin).
   await assert.rejects(passkeys.run("get", { publicKey: { challenge: "refuse-me" } }), (e) => e === "passkey.refused");
-  assert.equal(d.done(), 2, "the dialog closes after a refusal too");
+  assert.equal(d.opened.length, 1, "no dialog for options the module refuses");
   // An answer without a credential, an odd error.
   const odd = passkeys.run("get", OPTIONS);
   n.finish(null, "{}");

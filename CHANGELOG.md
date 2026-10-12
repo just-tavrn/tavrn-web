@@ -17,7 +17,8 @@ First public release of the web client and the desktop apps.
   page with passkey unlock, the OS keychain, global hotkeys (push-to-talk, priority speaker, mute, deafen), tray,
   native notifications and downloads.
 - **Desktop app for Linux** (Electron): `.AppImage` and `.deb` with the same client in Chromium (voice, video and
-  screen sharing as in the browser), the desktop's keyring, tray, notifications, global hotkeys and its own updater.
+  screen sharing as in the browser), the desktop's keyring, tray, notifications, global hotkeys, passkeys on FIDO2
+  security keys and its own updater.
 - **Android app** (Tauri, `org.tavrn.app`, Android 8 and newer, an APK for arm64 on the release): the same client with
   push through UnifiedPush (no Google services; ntfy or another distributor, or a kept connection without one), voice
   in the background with a notification (mute, leave), permissions asked right before their first use, the back
@@ -78,6 +79,14 @@ First public release of the web client and the desktop apps.
   every use needs the system's prompt, StrongBox where the phone has one, gone with the screen lock); the next
   start asks for a fingerprint, the face or the phone's PIN, with the recovery key as the alternative. Settings → App
   turns it off; signing out deletes the sealed key ([docs/ANDROID.md](docs/ANDROID.md)).
+- Linux app: **passkeys on a security key in the app** (tavrn-web#97). With a FIDO2 security key plugged in (USB), the
+  passkey sign-in and second factor, adding a passkey in Settings → Security, re-authentication and "Unlock with a
+  passkey" run in the app with the node's web origin, as in the Windows app; the key's PIN is typed into a small dialog
+  of the app (never into the web page), which also asks to touch the key and to choose between several keys or
+  passkeys. The key's `hmac-secret` gives the same PRF output as in a browser, so the passkey unlocks the encrypted
+  messages in the app too. Without a key the passkey goes through the browser as before (phones, password managers),
+  and the app says it takes security keys; a key the system does not let the app open is named, with the udev rule
+  in [docs/DESKTOP.md](docs/DESKTOP.md) "Passkeys on Linux". The `.deb` now depends on `libudev1`.
 - Android app: an audio output switch in the voice controls (**Speaker**, **Earpiece**, **Wired headset**, **Bluetooth
   headset**, the one in use shown). A connected headset plays the call, otherwise the speaker (also in voice channels:
   a group call is not held to the ear); the choice holds while its device is connected and with the screen off.

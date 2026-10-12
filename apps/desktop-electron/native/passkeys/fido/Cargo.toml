@@ -19,7 +19,7 @@ serde_json = "1"
 base64 = "0.22"
 sha2 = "0.10"
 url = "2"
-# CTAP2 over USB HID: Firefox's library (MPL-2.0), with the RustCrypto backend for the PIN protocol and hmac-secret.
+# CTAP2 over USB HID: Mozilla's library (MPL-2.0), with the RustCrypto backend for the PIN protocol and hmac-secret.
 authenticator = { version = "0.5", default-features = false, features = ["crypto_rust"] }
 serde_cbor = "0.11"
 

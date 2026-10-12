@@ -242,16 +242,21 @@ export class Passkeys {
           native.cancel();
         }
       };
-      this.#prompt.open(ceremony, relyingParty(options, origin), answer);
       const onEvent = (raw: string) => {
         const event = parseEvent(raw);
         if (event && !over) this.#prompt.show(viewOf(event));
       };
+      // Options the module refuses (bounds, a relying party outside the origin) never open the dialog. The module's
+      // events and its answer arrive later (on the event loop), so the dialog is open before the first of them.
       try {
         native[ceremony](json, origin, onEvent, (error, result) => finish(error, result));
       } catch (e) {
-        finish(e, null);
+        over = true;
+        this.#busy = false;
+        reject(codeOf(e));
+        return;
       }
+      this.#prompt.open(ceremony, relyingParty(options, origin), answer);
     });
   }
 }

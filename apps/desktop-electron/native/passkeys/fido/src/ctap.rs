@@ -26,7 +26,7 @@ pub struct Prepared<A> {
     pub args: A,
     pub client_data_json: String,
     pub timeout_ms: u32,
-    /// Registration: the attestation is replaced by `none` (the node asks for none; Firefox and Chromium do the same).
+    /// Registration: the attestation is replaced by `none` (the node asks for none; browsers do the same).
     anonymize: bool,
     /// Assertion: the allowed credential ids (a CTAP2.0 key may leave the credential out of its answer).
     allow: Vec<Vec<u8>>,

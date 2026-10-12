@@ -230,7 +230,9 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         if: ${{ runner.environment == 'github-hosted' }}
         with:
-          workspaces: apps/desktop-electron/native/keywatch -> target
+          workspaces: |
+            apps/desktop-electron/native/keywatch -> target
+            apps/desktop-electron/native/passkeys -> target
       - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         if: ${{ runner.environment == 'github-hosted' }}
         with:
@@ -239,20 +241,22 @@ jobs:
         if: ${{ runner.environment == 'self-hosted' }}
         run: |
           missing=()
-          for t in cargo cargo-deny xvfb-run xdotool livekit-server docker dbus-run-session gnome-keyring-daemon; do
+          for t in cargo cargo-deny xvfb-run xdotool livekit-server docker dbus-run-session gnome-keyring-daemon pkg-config perl make; do
             command -v "$t" >/dev/null || missing+=("$t")
           done
+          # The passkeys module finds the security keys through udev (libudev-dev for its build).
+          pkg-config --exists libudev || missing+=("libudev-dev")
           if [ "${#missing[@]}" -gt 0 ]; then
             echo "::error::not in the runner image (just-tavrn/.github, runner/Dockerfile): ${missing[*]}"; exit 1
           fi
           [ "$(node -p 'process.versions.node.split(".")[0]')" = 24 ] || { echo "::error::the runner image has Node.js $(node --version), the job wants 24"; exit 1; }
           rustc --version && node --version && pnpm --version && livekit-server --version
       - run: pnpm install --frozen-lockfile
-      - name: System packages (xvfb, xdotool, gnome-keyring)
+      - name: System packages (xvfb, xdotool, gnome-keyring, libudev-dev)
         if: ${{ runner.environment == 'github-hosted' }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends xvfb xdotool gnome-keyring dbus
+          sudo apt-get install -y --no-install-recommends xvfb xdotool gnome-keyring dbus libudev-dev
           # Chromium's sandbox needs unprivileged user namespaces, which Ubuntu 24.04 restricts to AppArmor profiles that
           # allow them; the runner VM is thrown away after the job (the self-hosted VM sets the same, runner/README.md).
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
@@ -275,6 +279,16 @@ jobs:
           cargo deny check
           pnpm run build
           xvfb-run -a pnpm test
+      - name: Passkeys module (fmt, clippy, cargo deny, the mapping against a software authenticator, napi build, node test)
+        working-directory: apps/desktop-electron/native/passkeys
+        run: |
+          # The crate's tests build webauthn-rs and the software authenticator with a vendored OpenSSL (tests only).
+          cargo fmt --all --check
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+          cargo test -p tavrn-fido --locked
+          cargo deny check
+          pnpm run build
+          pnpm test
       - name: Packages (.AppImage, .deb, latest-linux.yml)
         run: |
           # The working directory outlives the job on a self-hosted runner only in its cache slot: start clean.

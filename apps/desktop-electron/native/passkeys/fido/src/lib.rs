@@ -13,7 +13,7 @@
 //!   hmac-secret) apart, base64url, for the key store only; it never reaches the node.
 //!
 //! The authenticators are **FIDO2 security keys over USB HID** (CTAP2 with the PIN protocol, resident keys, hmac-secret;
-//! CTAP1/U2F keys sign in but have no PRF) through Mozilla's `authenticator` crate, Firefox's own on Linux, with its
+//! CTAP1/U2F keys sign in but have no PRF) through Mozilla's `authenticator` crate (a browser's CTAP2 library on Linux), with its
 //! RustCrypto backend. Platform authenticators (fingerprint readers through fprintd), phones (hybrid) and NFC readers
 //! are not supported: those passkeys keep going through the browser.
 //!
