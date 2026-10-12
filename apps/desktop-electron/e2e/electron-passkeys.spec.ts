@@ -122,7 +122,12 @@ test("the bridge: the node's options, the PIN in the shell's dialog, the node ac
   const cancelled = ceremony(page, "passkeyGet", login2.options);
   const dialog3 = await opened3;
   await expect(dialog3.locator("#passkey-pin")).toBeFocused();
-  await dialog3.keyboard.press("Escape");
+  // The dialog closes on the key going down, so the key's release may find no page any more.
+  const gone = dialog3.waitForEvent("close");
+  await dialog3.keyboard.press("Escape").catch((e: unknown) => {
+    if (!dialog3.isClosed()) throw e;
+  });
+  await gone;
   expect(await cancelled).toEqual({ refused: "passkey.cancelled" });
   const noDialog = run.nextWindow(2_000);
   expect(await ceremony(page, "passkeyGet", { publicKey: { challenge: "AAAAAAAAAAAAAAAAAAAAAA", rpId: "evil.example" } })).toEqual({ refused: "passkey.refused" });

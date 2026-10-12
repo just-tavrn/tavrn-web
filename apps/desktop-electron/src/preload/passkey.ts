@@ -39,6 +39,9 @@ function render(content: DialogContent): void {
     root.append(alert);
   }
   let focus: HTMLElement | null = null;
+  const cancel = el("button", { type: "button", textContent: content.cancel });
+  cancel.dataset.action = content.final ? "close" : "cancel";
+  cancel.addEventListener("click", () => send({ type: "cancel" }));
   if (content.pin) {
     const input = el("input", { type: "password", id: "passkey-pin", name: "pin", autocomplete: "off", required: true, minLength: 4, maxLength: 63 });
     input.spellcheck = false;
@@ -48,7 +51,8 @@ function render(content: DialogContent): void {
       { noValidate: true },
       el("label", { htmlFor: "passkey-pin", textContent: content.pin.label }),
       input,
-      el("div", { className: "actions" }, el("button", { type: "submit", className: "primary", textContent: content.pin.submit })),
+      // Cancel next to Continue, Continue last (the primary action at the end of the row).
+      el("div", { className: "actions" }, cancel, el("button", { type: "submit", className: "primary", textContent: content.pin.submit })),
     );
     form.addEventListener("submit", (e) => {
       e.preventDefault();
@@ -71,10 +75,7 @@ function render(content: DialogContent): void {
     root.append(list);
     focus ??= list.querySelector("button");
   }
-  const cancel = el("button", { type: "button", textContent: content.cancel });
-  cancel.dataset.action = content.final ? "close" : "cancel";
-  cancel.addEventListener("click", () => send({ type: "cancel" }));
-  root.append(el("div", { className: "actions" }, cancel));
+  if (!content.pin) root.append(el("div", { className: "actions" }, cancel));
   (focus ?? cancel).focus();
 }
 
