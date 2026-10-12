@@ -132,9 +132,9 @@ export function ReportsInbox({ client, mode, meId }: { client: TavrnApi; mode: I
                     {r.evidence_count > 0 && <span className="rounded bg-warn/20 px-1.5 py-0.5 text-[11px]">{t("reports.evidence_badge", { count: r.evidence_count })}</span>}
                   </span>
                   <span className="block truncate text-fg-1">{targetLine(r, t)}</span>
-                  <span className="block truncate text-xs text-fg-2">{[placeLine(r, t), reporterLine(r, t)].filter(Boolean).join(" · ")}</span>
+                  <span className={`block truncate text-xs ${selected === r.id ? "text-fg-1" : "text-fg-2"}`}>{[placeLine(r, t), reporterLine(r, t)].filter(Boolean).join(" · ")}</span>
                 </span>
-                <time className="text-xs text-fg-2" dateTime={r.created_at}>
+                <time className={`text-xs ${selected === r.id ? "text-fg-1" : "text-fg-2"}`} dateTime={r.created_at}>
                   {new Date(r.created_at).toLocaleString(intlLocale())}
                 </time>
               </button>
