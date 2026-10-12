@@ -922,6 +922,26 @@ volumes, mute and deafen, the speaking rings and the notification sounds. Audio 
 soundboard clips and the priority speaker are not available with the native engine, and their buttons say so
 (DESKTOP.md "Voice").
 
+## The Android app
+
+The same client runs as the Android app ([ANDROID.md](ANDROID.md)), the Tauri shell built for Android: the node picker,
+the address-first sign-in and the connect flow work as in the desktop app, with the node's page in the browser instead
+of a window ("Sign in on \<node>'s page"). What is different in the client:
+
+- **Push** under Settings → Notifications comes through UnifiedPush (a distributor app such as ntfy, no Google
+  services); the client registers the distributor's endpoint at the home node like a browser subscription. Without a
+  distributor the section says where to get one and offers "Keep a connection for notifications" (a permanent
+  notification keeps the app connected; it costs battery) and the battery-optimisation exemption.
+- **Voice** keeps running in the background with a notification "In voice channel X" (Mute/Unmute, Leave); joining
+  asks for the microphone, headsets (nearby devices) and once for notifications right before the first use, and a
+  permission Android no longer asks for is explained with the way to the system settings.
+- **The back gesture** closes the open dialog, menu or drawer, then goes back; from the first page it sends the app to
+  the background. **Invite and add links** of app.tavrn.org (and `tavrn://` links of any node) open in the app.
+- **Safe areas**: the layout pads itself with `--safe-top`, `--safe-bottom`, … (the system bars the app reports; the
+  browser's `env(safe-area-inset-*)` otherwise); the keyboard shortens the page, so the composer stays above it.
+- **Downloads** use Android's document picker; **updates** are announced from the project's releases and download in
+  the browser. Passkeys run on the node's page in the browser (ANDROID.md "Passkeys").
+
 ## Translations
 
 The web client ships English and German. It takes the language saved on this device, else the first of the browser's

@@ -18,6 +18,12 @@ First public release of the web client and the desktop apps.
   native notifications and downloads.
 - **Desktop app for Linux** (Electron): `.AppImage` and `.deb` with the same client in Chromium (voice, video and
   screen sharing as in the browser), the desktop's keyring, tray, notifications, global hotkeys and its own updater.
+- **Android app** (Tauri, `org.tavrn.app`, Android 8 and newer, an APK for arm64 on the release): the same client with
+  push through UnifiedPush (no Google services; ntfy or another distributor, or a kept connection without one), voice
+  in the background with a notification (mute, leave), permissions asked right before their first use, the back
+  gesture, safe areas and the keyboard, invite links of app.tavrn.org and `tavrn://` links, downloads through the
+  document picker and update notices from the releases; passkeys, single sign-on and the captcha on the node's page
+  in the browser ([docs/ANDROID.md](docs/ANDROID.md)).
 
 ### Changed
 
