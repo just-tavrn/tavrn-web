@@ -5,7 +5,9 @@ import { test } from "node:test";
 import { scaled, timeoutFactor } from "./timeouts.ts";
 
 test("the timeout factor defaults to 1 and takes positive numbers", () => {
-  assert.equal(timeoutFactor(undefined), 1);
+  // `undefined` would fall back to the process environment (the runners set a factor), so the unset case is an
+  // empty string here.
+  assert.equal(timeoutFactor(""), 1);
   assert.equal(timeoutFactor(" "), 1);
   assert.equal(timeoutFactor("3"), 3);
   assert.equal(timeoutFactor("1.5"), 1.5);
