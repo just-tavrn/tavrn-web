@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
 // With its extension: the Electron shell's smoke test (apps/desktop-electron, module resolution "nodenext") imports this file.
-import { NODE, openNavIfMobile, registerViaUi, tokenOf } from "./helpers.ts";
+import { NODE, openNavIfMobile, registerViaUi, tokenOf, type UiAccount } from "./helpers.ts";
 import { scaled } from "./timeouts.ts";
 
 /** A short 16-bit mono WAV (a 440 Hz tone). */
@@ -39,6 +39,8 @@ export interface VoiceUser {
   page: Page;
   address: string;
   username: string;
+  /** Credentials, second factor and recovery key of the account (signing in again, unlocking). */
+  account: UiAccount;
 }
 
 /** Contexts opened by a test; the spec closes them afterwards (each holds LiveKit ports of the node). */
@@ -55,7 +57,7 @@ export async function voiceUser(browser: Browser, prefix: string, console?: stri
   const page = await context.newPage();
   if (console) page.on("console", (m) => (m.type() === "error" || m.type() === "warning") && console.push(`[${prefix}] ${m.type()}: ${m.text()}`));
   const account = await registerViaUi(page, { prefix });
-  return { page, address: account.address, username: account.username };
+  return { page, address: account.address, username: account.username, account };
 }
 
 /** `a` and `b` become friends (API). */

@@ -307,6 +307,21 @@ test.describe("Accessibility (axe, WCAG 2.2 AA)", () => {
     await scan(page, "voice bar and account bar");
   });
 
+  test("a device that lost its encryption keys: banner and the sign-in-again page", async ({ page }) => {
+    test.setTimeout(scaled(120_000));
+    await registerViaUi(page, { prefix: "a11ylost" });
+    // The local key store is gone while the session lives on (tavrn-web#83); the deletion completes with the page.
+    await page.evaluate(() => void indexedDB.deleteDatabase("tavrn-crypto"));
+    const next = await page.context().newPage();
+    await page.close();
+    await next.goto("/");
+    await expect(next.getByTestId("e2ee-banner")).toHaveAttribute("data-device-lost", "true");
+    await scan(next, "banner: device lost its keys");
+    await next.goto("/encryption");
+    await expect(next.getByTestId("device-lost")).toBeVisible();
+    await scan(next, "encryption: device lost its keys");
+  });
+
   test("keyboard: skip link, focus trap and return in dialogs, pickers and the media viewer", async ({ page, request }) => {
     test.skip(phone(page), "hardware keyboards are tested on the desktop and tablet layouts");
     const owner = await registerViaApi(request, "a11yk");
