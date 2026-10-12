@@ -153,6 +153,24 @@ describe("fullscreen on phones follows the orientation", () => {
     expect(orientation.lock).not.toHaveBeenCalled();
   });
 
+  it("a whiteboard tile says itself whether it is wider than tall (no video): wide turns to landscape, tall does not", async () => {
+    installFullscreenApi();
+    const orientation = device(true);
+    const board = (wide: boolean) => {
+      const el = document.createElement("div");
+      el.dataset.wide = String(wide);
+      document.body.append(el);
+      return el;
+    };
+    await enterFullscreen(board(false));
+    expect(orientation.lock).not.toHaveBeenCalled();
+    await exitFullscreen();
+    await enterFullscreen(board(true));
+    expect(orientation.lock).toHaveBeenCalledWith("landscape");
+    await exitFullscreen();
+    expect(orientation.unlock).toHaveBeenCalled();
+  });
+
   it("a refused lock (iOS Safari has none, a browser may say no) still gives fullscreen", async () => {
     installFullscreenApi();
     const orientation = device(true, { lock: () => Promise.reject(new DOMException("not supported", "NotSupportedError")) });

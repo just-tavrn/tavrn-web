@@ -597,11 +597,11 @@ Tauri app uses its native voice engine ("The desktop app" below).
 ### Voice channels
 
 Clicking a voice channel joins it. While connected, the voice channel shows the stage: one tile per participant with
-avatar or camera, a glowing border and level meter while someone speaks, screen shares as large tiles that are
-joined on demand ("Streams are joined" below; enlarge, picture-in-picture); phones get a swipeable grid of four and a
-bottom control bar. Joined streams, camera tiles, the whiteboard and the whole stage can go full screen ("F" toggles,
+avatar or camera, a glowing border and level meter while someone speaks, screen shares and the whiteboard as tiles
+of their own that are joined on demand ("Streams are joined" below; enlarge, picture-in-picture); phones get a
+swipeable grid of four and a bottom control bar. Joined streams, camera tiles, the whiteboard and the whole stage can go full screen ("F" toggles,
 Escape leaves) with mute, deafen, leave and exit at hand; iOS uses its native video full screen. On phones and
-tablets a stream wider than tall turns the screen to landscape in full screen (Screen Orientation API; browsers
+tablets a stream (or a whiteboard) wider than tall turns the screen to landscape in full screen (Screen Orientation API; browsers
 without it, like iOS Safari, simply rotate with the device) and the lock ends with full screen; the full screen view
 follows every rotation and fills the screen (the whole width and height, the video contained, no scrolling); the
 stage keeps its layout while something is in full screen, so turning a phone past the phone breakpoint does not
@@ -637,6 +637,19 @@ the same person is joined anew. Cameras are not affected: a camera still replace
 The sharer has no permanent self view: their share shows as a preview tile they can hide (and a double-click on
 themselves in the member list brings it back), and a small "You are streaming" bar on the stage offers **Show
 preview** / **Hide preview** and **Stop**.
+
+The whiteboard of a voice channel (one per channel, "The whiteboard" below) is joined the same way. It is a tile of
+its own next to the participants, never on the presenter's tile: every camera tile, the presenter's included, stays
+as it is. Before joining the tile shows the board badge, "Whiteboard · <who started it>", the presenter's live
+thumbnail and **Join whiteboard** (a double-click on the tile joins as well; so does a double-click or Enter on the
+presenter in the member list, who carries a small board badge next to where LIVE would be, again only from inside the
+channel; elsewhere "Join the voice channel to open the whiteboard."). Joined, the board fills a large tile with focus
+(the board takes the whole stage), maximize, popout, full screen and **Leave whiteboard** (on the tile, in the
+board's menu as "Leave session" and in the full screen controls), which returns to the placeholder, any number of
+times. A joined whiteboard and a focused stream sit side by side (stacked on phones), the other tiles in a strip
+below. The presenter's own board is a preview tile they can hide; a "Whiteboard is open" bar shows how many joined
+and offers **Show preview** / **Hide preview** and **Close** (for everyone, after a confirmation). One person
+presents either a screen share or a whiteboard.
 
 In the browser engine (`web/src/voice/streams.ts`, `session.ts`) the room connects without LiveKit's auto-subscription;
 microphones, cameras and every other track are subscribed as they are published, a screen share's video and audio
@@ -703,6 +716,17 @@ controls on phones and tablets) to lower everybody else to 25 % for all listener
 under Room settings → Soundboard (at most 5 seconds, 1 MB and 50 clips per room); members with `use_soundboard` play
 them from the call controls into their own (encrypted) microphone track, which also needs `speak`. Personal clips
 (Settings → Sounds) and other rooms' clips need `use_external_sounds` and are greyed out without it.
+
+### The whiteboard
+
+Every conversation has a shared whiteboard (the 🖍 button in the header opens it full screen; in a voice channel the
+🖍 of the call controls presents one on the stage). Opening one needs `use_whiteboard` (in voice channels also
+`connect`); one board runs per conversation at a time. The presenter decides who may edit (open for everyone, locked,
+or single participants), keeps scenes in an encrypted library and sets a background; everybody can save the board as
+an image or share it to a channel. Members with `manage_whiteboard` may close someone else's board. In encrypted
+conversations everything on the board travels end-to-end encrypted. On the voice stage the board is a tile of its
+own that is joined like a stream ("Streams are joined" above): the camera tiles stay as they are, the presenter keeps
+a hideable preview and the "Whiteboard is open" bar, and the member list marks the presenter with a board badge.
 
 ### Settings → Voice & video
 

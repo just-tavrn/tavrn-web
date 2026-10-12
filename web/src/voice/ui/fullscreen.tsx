@@ -2,8 +2,8 @@
 /**
  * Real fullscreen for the voice stage (polish round 2): screen shares, camera tiles, the whiteboard and the
  * whole stage can go fullscreen through the Fullscreen API (`F` toggles, Escape leaves); inside, a controls
- * overlay (mute, deafen, leave, exit) appears on mouse movement or a tap. On touch devices a video wider than
- * tall turns the screen to landscape (Screen Orientation API, where it exists; refusals are ignored) until
+ * overlay (mute, deafen, leave, exit) appears on mouse movement or a tap. On touch devices a video (or a whiteboard)
+ * wider than tall turns the screen to landscape (Screen Orientation API, where it exists; refusals are ignored) until
  * fullscreen ends; the fullscreen element follows every rotation (`orientation`, 100dvw × 100dvh, contained).
  * iOS Safari only knows fullscreen for a `<video>`: there the element's video goes fullscreen natively.
  */
@@ -26,8 +26,12 @@ const orientationApi = (): LockableOrientation | undefined => (typeof window ===
 /** A touch device (phones, tablets): their screen turns for a wide stream. */
 const touchDevice = () => typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
 
-/** The video of a fullscreen element is wider than tall (a screen share or a landscape camera). */
+/**
+ * The content of a fullscreen element is wider than tall: its video (a screen share or a landscape camera), or what
+ * the element says itself in `data-wide` (the whiteboard tile, which has no video).
+ */
 function wideVideo(el: HTMLElement): boolean {
+  if (el.dataset.wide !== undefined) return el.dataset.wide === "true";
   const video = el instanceof HTMLVideoElement ? el : el.querySelector("video");
   return !!video && video.videoWidth > video.videoHeight;
 }
@@ -235,10 +239,11 @@ export const CONTROLS_HIDE_MS = 2500;
 
 /**
  * The controls inside a fullscreen element: mute, deafen and leave of the call plus "exit fullscreen", and on a
- * joined stream "leave stream" (`onLeaveStream`). They show on mouse movement or a tap on the fullscreen element
- * and fade out after a moment; keyboard focus keeps them visible.
+ * joined stream "leave stream" (`onLeaveStream`; a joined whiteboard passes "leave whiteboard" as `leaveLabel`). They
+ * show on mouse movement or a tap on the fullscreen element and fade out after a moment; keyboard focus keeps them
+ * visible.
  */
-export function FullscreenControls({ onExit, onLeaveStream }: { onExit: () => void; onLeaveStream?: () => void }) {
+export function FullscreenControls({ onExit, onLeaveStream, leaveLabel, leaveTestId = "fullscreen-stream-leave" }: { onExit: () => void; onLeaveStream?: () => void; leaveLabel?: string; leaveTestId?: string }) {
   const t = useT();
   const muted = useVoice((s) => s.muted);
   const deafened = useVoice((s) => s.deafened);
@@ -285,12 +290,12 @@ export function FullscreenControls({ onExit, onLeaveStream }: { onExit: () => vo
         </ControlButton>
         {onLeaveStream && (
           <ControlButton
-            label={t("voice.stream.leave")}
+            label={leaveLabel ?? t("voice.stream.leave")}
             onClick={() => {
               void exitFullscreen();
               onLeaveStream();
             }}
-            testid="fullscreen-stream-leave"
+            testid={leaveTestId}
             className="min-h-11 min-w-11"
           >
             <ScreenOffIcon size={20} />
