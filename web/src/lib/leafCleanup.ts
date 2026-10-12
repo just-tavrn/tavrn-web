@@ -76,6 +76,8 @@ export interface CleanupOptions {
   online?: Iterable<string> | null;
   /** The channel's effective "no bots" flag: bot leaves are ghosts and go like departed members (APPLICATIONS.md §3.5). */
   noBots?: boolean;
+  /** Content waits for the removal: no election wait (`LeafCleaner`, `urgent`). */
+  urgent?: boolean;
 }
 
 /** Cleans the group of `q` (qualified id); null without a session manager or local group. */
@@ -88,9 +90,32 @@ export async function cleanupConversation(q: string, opts: CleanupOptions): Prom
     const gone = new Set(pending.filter((p) => p.reason === "not_member").map((p) => splitIdentity(p.identity).address));
     members = [...new Set(mls.roster(q).map((i) => splitIdentity(i).address))].filter((a) => !gone.has(a));
   }
-  const result = await cleanerFor(mls).clean({ q, members, mayManage: opts.mayManage, pending, online: opts.online ?? null, noBots: opts.noBots });
+  const result = await cleanerFor(mls).clean({ q, members, mayManage: opts.mayManage, pending, online: opts.online ?? null, noBots: opts.noBots, urgent: opts.urgent });
   if (result.outcome === "removed") void loadPending(q);
   return result;
+}
+
+/** Whether an error is the session manager refusing content because of an unacknowledged ghost (ENCRYPTION.md §4.6). */
+export function isGhostRefusal(e: unknown): boolean {
+  return !!e && typeof e === "object" && (e as { name?: string }).name === "MlsError" && (e as { code?: string }).code === "ghost";
+}
+
+/**
+ * Runs `attempt` (encrypting content of `q`); when the ghost check refuses it, the ghost leaves this user may remove go
+ * at once and it runs once more. Right after a member left, the departed member's leaf stays in the group until a
+ * removal commit: the device elected to commit it may be away, every other device waits ten seconds (§4.7), and the
+ * content would be refused meanwhile (issue #86). A refusal the cleanup cannot settle (a leaf this user may not
+ * remove, an unattested device of a member) stands: the view shows the warning.
+ */
+export async function withDepartedLeavesGone<T>(q: string, opts: { members: string[] | null; mayManage: boolean; noBots?: boolean }, attempt: () => Promise<T>): Promise<T> {
+  try {
+    return await attempt();
+  } catch (e) {
+    if (!isGhostRefusal(e)) throw e;
+    const cleaned = await cleanupConversation(q, { members: opts.members ?? undefined, mayManage: opts.mayManage, noBots: opts.noBots, urgent: true }).catch(() => null);
+    if (cleaned?.outcome !== "removed" && cleaned?.outcome !== "clean") throw e;
+    return attempt();
+  }
 }
 
 /**

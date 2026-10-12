@@ -24,6 +24,7 @@ import { SearchButton } from "../search/SearchPanel";
 import { useDecrypted, useE2eeConversation, usePlainSignatures } from "../hooks/useE2eeConversation";
 import { encryptAttachment, encryptCommandArgs, qualify, signedAttachments, type ContentAttachment, type MessageContext } from "@tavrn/e2ee";
 import { withFreshEpoch } from "../lib/epochRetry";
+import { withDepartedLeavesGone } from "../lib/leafCleanup";
 import { historyReceive } from "../crypto/history";
 import { useChannelHistory } from "../hooks/useChannelHistory";
 import { HistoryRestoreBanner } from "./HistoryRestoreBanner";
@@ -364,8 +365,10 @@ export function ConversationView(p: ConversationViewProps) {
     if (!p.encrypted) return { content };
     if (!e2ee.mls) throw new Error(t("e2ee.composer_locked"));
     if (gate.blocked) throw new Error(t("e2ee.composer_ghost"));
+    const mls = e2ee.mls;
     try {
-      return await e2ee.mls.encrypt(q, content, { ctx, ...(p.members ? { members: p.members, noBots } : {}) });
+      // Right after a member left, the departed member's leaf goes first (issue #86).
+      return await withDepartedLeavesGone(q, { members: p.members, mayManage: p.mayManage, noBots }, () => mls.encrypt(q, content, { ctx, ...(p.members ? { members: p.members, noBots } : {}) }));
     } catch (e) {
       // A device joined that nobody was shown yet: the warning has to be acknowledged again.
       if (isGhostRefusal(e)) forgetGhostAck(q);
