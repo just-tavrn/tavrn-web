@@ -60,7 +60,7 @@ export function resetNodeWebauthn(): void {
 
 /**
  * Why passkeys cannot run here, or null when they can:
- * - `platform`: no WebAuthn here (the Linux app, Android below 14 or a webview without it, a browser without it);
+ * - `platform`: no passkeys here (the Linux app, Android below 14, a browser without WebAuthn);
  * - `pending`: the Android app does not know yet whether the node accepts its origin;
  * - `node`: the Android app could, but the node does not list the app's origin in `webauthn.origins`.
  * In each case the apps sign in with a passkey on the node's page in the browser (the connect flow).
@@ -68,17 +68,18 @@ export function resetNodeWebauthn(): void {
 export type PasskeyBlocker = "platform" | "pending" | "node";
 
 /**
- * Passkeys in the Windows app run natively (`p.passkeys`); the other desktop shells have none. The Android app uses
- * its webview's WebAuthn (Android 14+), which signs with the app's origin: only while the home node accepts that
- * origin (docs/ANDROID.md "Passkeys"). Browsers need `navigator.credentials`.
+ * Passkeys in the Windows app run natively (`p.passkeys`); the other desktop shells have none. The Android app runs
+ * them through Android's Credential Manager (Android 14+), which signs with the app's origin: only while the home node
+ * accepts that origin (docs/ANDROID.md "Passkeys"). Browsers need `navigator.credentials`.
  */
 export function passkeyBlocker(p: Platform = platform(), origins: readonly string[] | null = useNodeWebauthn.getState().origins): PasskeyBlocker | null {
-  if (p.passkeys) return null;
   if (p.android) {
-    if (!p.android.webauthn || !p.android.origin) return "platform";
+    if (!p.passkeys || !p.android.origin) return "platform";
     if (!origins) return "pending";
-    if (!origins.includes(p.android.origin)) return "node";
-  } else if (p.isDesktop) return "platform";
+    return origins.includes(p.android.origin) ? null : "node";
+  }
+  if (p.passkeys) return null;
+  if (p.isDesktop) return "platform";
   return typeof window !== "undefined" && typeof window.PublicKeyCredential !== "undefined" && !!navigator.credentials ? null : "platform";
 }
 
@@ -93,7 +94,7 @@ export function usePasskeyBlocker(): PasskeyBlocker | null {
   const loaded = useNodeWebauthn((s) => s.loaded);
   const answered = useNodeWebauthn((s) => s.answered);
   const p = platform();
-  const asks = !!p.android && p.android.webauthn && !!p.android.origin;
+  const asks = !!p.android && !!p.passkeys && !!p.android.origin;
   useEffect(() => {
     if (asks) void loadNodeWebauthn();
   }, [asks]);

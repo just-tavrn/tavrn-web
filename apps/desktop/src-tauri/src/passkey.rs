@@ -1,18 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Passkeys of the Windows app (docs/DESKTOP.md "Passkeys"). The webview's origin (`https://tauri.localhost`) can never
-//! be under the node's relying party id, so the browser's WebAuthn cannot run in the app. The shell runs the ceremony
-//! natively through the Windows WebAuthn API (webauthn.dll, Windows 10 1903 and newer) instead and, like a browser,
-//! writes `clientDataJSON` itself: with the **web origin of the node the app is connected to** (its settings, never an
-//! origin from the page) and only for a relying party id that this origin's host is equal to or a subdomain of
-//! (PROTOCOL.md §5a.4). The node verifies the result as it verifies a browser's, so it needs no setting for the app.
+//! Native passkeys of the apps, whose webview origin (`https://tauri.localhost`) can never be under the node's relying
+//! party id, so the webview's WebAuthn refuses the node's passkeys (`SecurityError`):
 //!
-//! The client (`web/src/platform/tauriPasskeys.ts`) passes the node's options (`{ publicKey }` with base64url values)
-//! and gets the credential back as `PublicKeyCredential.toJSON()`; the PRF output (the hmac-secret of the
-//! authenticator, for the key store) travels apart and never inside the credential the client sends to the node.
+//! - **Windows** (docs/DESKTOP.md "Passkeys on Windows"): the Windows WebAuthn API (webauthn.dll, Windows 10 1903 and
+//!   newer). Like a browser, the shell writes `clientDataJSON` itself: with the **web origin of the node the app is
+//!   connected to** (its settings, never an origin from the page). The node verifies it as a browser's.
+//! - **Android** (docs/ANDROID.md "Passkeys"): Android's Credential Manager (`Passkeys.kt`, Android 14 and newer). It
+//!   writes `clientDataJSON` with the app's origin (`android:apk-key-hash:…`), which the node must list in
+//!   `webauthn.origins` (`TAVRN_WEBAUTHN_APP_ORIGINS`), and checks the relying party's `assetlinks.json` itself.
 //!
-//! Everything here except the calls into webauthn.dll is platform independent and tested on every platform: parsing
-//! the options, the relying party check, `clientDataJSON` and the JSON of the results. Other platforms answer
-//! `passkey.unavailable` (Linux has no native path yet; macOS has no Tauri build).
+//! On both, the shell passes on only a relying party id that the connected node's web origin is equal to or a
+//! subdomain of (PROTOCOL.md §5a.4). The client (`web/src/platform/tauriPasskeys.ts`) passes the node's options
+//! (`{ publicKey }` with base64url values) and gets the credential back as `PublicKeyCredential.toJSON()`; the PRF
+//! output (for the key store) travels apart and never inside the credential the client sends to the node.
+//!
+//! Everything here except the calls into webauthn.dll and the Kotlin side is platform independent and tested on every
+//! platform: parsing the options, the relying party check, `clientDataJSON` and the JSON of the results. Other
+//! platforms answer `passkey.unavailable` (Linux has no native path yet; macOS has no Tauri build).
 
 use base64::Engine as _;
 use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
@@ -412,7 +416,8 @@ fn main_window<R: Runtime>(app: &AppHandle<R>) -> Result<isize, String> {
     window.hwnd().map(|h| h.0 as isize).map_err(|_| FAILED.to_string())
 }
 
-/// Whether the shell can run passkeys natively (`app_info.passkeys`): Windows with webauthn.dll.
+/// Whether the desktop shell can run passkeys natively (`app_info.passkeys`): Windows with webauthn.dll. The Android
+/// app reports its own (`android_info.passkeys`: Android 14 and newer).
 pub fn available() -> bool {
     #[cfg(windows)]
     {
@@ -427,19 +432,28 @@ pub fn available() -> bool {
 /// Registration (Settings → Security, registration): `options` is the node's `{ publicKey }`.
 #[tauri::command]
 pub async fn passkey_create<R: Runtime>(app: AppHandle<R>, settings: State<'_, Settings>, options: Value) -> Result<NativeResult, String> {
-    let options = parse_creation(&options)?;
-    let origin = origin_for(&settings, &options.rp.id)?;
-    let client_data = client_data(Ceremony::Create, &options.challenge.0, &origin);
+    let parsed = parse_creation(&options)?;
+    let origin = origin_for(&settings, &parsed.rp.id)?;
     #[cfg(windows)]
     {
+        let _ = options;
+        let client_data = client_data(Ceremony::Create, &parsed.challenge.0, &origin);
         let hwnd = main_window(&app)?;
         let data = client_data.clone();
-        let raw = tauri::async_runtime::spawn_blocking(move || win::make_credential(hwnd, &options, &data)).await.map_err(|_| FAILED.to_string())??;
+        let raw = tauri::async_runtime::spawn_blocking(move || win::make_credential(hwnd, &parsed, &data)).await.map_err(|_| FAILED.to_string())??;
         Ok(registration_json(&raw, &client_data))
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "android")]
     {
-        let _ = (app, client_data);
+        // Android writes clientDataJSON itself, with the app's origin (PROTOCOL.md §5a.4).
+        let _ = (parsed, origin);
+        let request = serde_json::to_string(&options["publicKey"]).map_err(|_| FAILED.to_string())?;
+        let answer = android_bridge(&app)?.passkey(true, request).await?;
+        android_result(&answer)
+    }
+    #[cfg(not(any(windows, target_os = "android")))]
+    {
+        let _ = (app, options, parsed, origin);
         Err(UNAVAILABLE.into())
     }
 }
@@ -448,22 +462,55 @@ pub async fn passkey_create<R: Runtime>(app: AppHandle<R>, settings: State<'_, S
 /// own one for the PRF.
 #[tauri::command]
 pub async fn passkey_get<R: Runtime>(app: AppHandle<R>, settings: State<'_, Settings>, options: Value) -> Result<NativeResult, String> {
-    let options = parse_request(&options)?;
-    let rp_id = request_rp_id(&options, &settings)?;
+    let parsed = parse_request(&options)?;
+    let rp_id = request_rp_id(&parsed, &settings)?;
     let origin = origin_for(&settings, &rp_id)?;
-    let client_data = client_data(Ceremony::Get, &options.challenge.0, &origin);
     #[cfg(windows)]
     {
+        let _ = options;
+        let client_data = client_data(Ceremony::Get, &parsed.challenge.0, &origin);
         let hwnd = main_window(&app)?;
         let data = client_data.clone();
-        let raw = tauri::async_runtime::spawn_blocking(move || win::get_assertion(hwnd, &rp_id, &options, &data)).await.map_err(|_| FAILED.to_string())??;
+        let raw = tauri::async_runtime::spawn_blocking(move || win::get_assertion(hwnd, &rp_id, &parsed, &data)).await.map_err(|_| FAILED.to_string())??;
         Ok(assertion_json(&raw, &client_data))
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "android")]
     {
-        let _ = (app, client_data);
+        let _ = (parsed, origin);
+        let mut public_key = options["publicKey"].clone();
+        // The Credential Manager needs the relying party id; a local PRF request of an older node may lack it.
+        public_key["rpId"] = Value::String(rp_id);
+        let request = serde_json::to_string(&public_key).map_err(|_| FAILED.to_string())?;
+        let answer = android_bridge(&app)?.passkey(false, request).await?;
+        android_result(&answer)
+    }
+    #[cfg(not(any(windows, target_os = "android")))]
+    {
+        let _ = (app, options, parsed, rp_id, origin);
         Err(UNAVAILABLE.into())
     }
+}
+
+#[cfg(target_os = "android")]
+fn android_bridge<R: Runtime>(app: &AppHandle<R>) -> Result<tauri::State<'_, crate::android::Android<R>>, String> {
+    use tauri::Manager as _;
+    app.try_state::<crate::android::Android<R>>().ok_or_else(|| UNAVAILABLE.to_string())
+}
+
+/// The Credential Manager's `RegistrationResponseJSON` / `AuthenticationResponseJSON` (a string) as the client's
+/// answer: the PRF output (`clientExtensionResults.prf.results.first`) taken out of the credential and kept apart.
+pub fn android_result(answer: &str) -> Result<NativeResult, String> {
+    let mut credential: Value = serde_json::from_str(answer).map_err(|_| FAILED.to_string())?;
+    if !credential["id"].is_string() || !credential["response"]["clientDataJSON"].is_string() {
+        return Err(FAILED.into());
+    }
+    let mut prf = None;
+    if let Some(p) = credential.get_mut("clientExtensionResults").and_then(|e| e.get_mut("prf")).and_then(Value::as_object_mut)
+        && let Some(results) = p.remove("results")
+    {
+        prf = results["first"].as_str().and_then(|f| b64().decode(f).ok()).filter(|f| f.len() == 32).map(|f| b64url(&f));
+    }
+    Ok(NativeResult { credential, prf })
 }
 
 /// The calls into webauthn.dll. The library is loaded at the first use (`LoadLibraryExW` from System32 only), so the
@@ -997,6 +1044,29 @@ mod tests {
         };
         let o = parse_request(&serde_json::to_value(&request).unwrap_or_default()).unwrap_or_else(|e| unreachable!("{e}"));
         assert_eq!(o.rp_id.as_deref(), Some("tavrn.org"));
+    }
+
+    #[test]
+    fn the_credential_managers_answer_keeps_the_prf_apart() {
+        let prf = b64url(&[5; 32]);
+        let answer = json!({
+            "id": "Y3JlZC0x", "rawId": "Y3JlZC0x", "type": "public-key", "authenticatorAttachment": "platform",
+            "response": { "clientDataJSON": "e30", "authenticatorData": "AQ", "signature": "Ag", "userHandle": "Aw" },
+            "clientExtensionResults": { "prf": { "results": { "first": prf } } }
+        })
+        .to_string();
+        let r = android_result(&answer).unwrap_or_else(|e| unreachable!("{e}"));
+        assert_eq!(r.prf.as_deref(), Some(prf.as_str()));
+        assert_eq!(r.credential["clientExtensionResults"], json!({ "prf": {} }), "the PRF output never goes to the node");
+        let parsed: Result<webauthn_rs_proto::PublicKeyCredential, _> = serde_json::from_value(r.credential);
+        assert!(parsed.is_ok());
+        // A registration with the PRF enabled but no output; answers that are not a credential.
+        let registration = json!({ "id": "Y3JlZC0x", "rawId": "Y3JlZC0x", "type": "public-key", "response": { "clientDataJSON": "e30", "attestationObject": "owEC" }, "clientExtensionResults": { "prf": { "enabled": true } } });
+        let r = android_result(&registration.to_string()).unwrap_or_else(|e| unreachable!("{e}"));
+        assert_eq!((r.prf, r.credential["clientExtensionResults"]["prf"]["enabled"].as_bool()), (None, Some(true)));
+        for bad in ["", "null", "{}", r#"{"id":"x","response":{}}"#] {
+            assert_eq!(android_result(bad).err().as_deref(), Some(FAILED), "{bad}");
+        }
     }
 
     #[test]

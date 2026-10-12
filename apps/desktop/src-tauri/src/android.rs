@@ -29,6 +29,17 @@ impl<R: Runtime> Android<R> {
         self.call("openUrl", json!({ "url": url, "tab": tab })).await
     }
 
+    /// A passkey ceremony through the Credential Manager (`Passkeys.kt`): `request` is the options' JSON (without the
+    /// `publicKey` wrapper), the answer the credential's JSON as Android returns it.
+    pub async fn passkey(&self, create: bool, request: String) -> Result<String, String> {
+        #[derive(Deserialize)]
+        struct Answer {
+            response: String,
+        }
+        let answer: Answer = self.call(if create { "passkeyCreate" } else { "passkeyGet" }, json!({ "request": request })).await?;
+        Ok(answer.response)
+    }
+
     async fn call<T: serde::de::DeserializeOwned>(&self, command: &str, payload: serde_json::Value) -> Result<T, String> {
         self.0.run_mobile_plugin_async(command, payload).await.map_err(|e| match e {
             tauri::plugin::mobile::PluginInvokeError::InvokeRejected(r) => r.code.unwrap_or_else(|| "android.failed".into()),
@@ -69,6 +80,9 @@ pub struct AndroidInfo {
     pub sdk: u32,
     /// The webview runs WebAuthn for the app (Android 14+ with a webview that supports it; docs/ANDROID.md "Passkeys").
     pub webauthn: bool,
+    /// Passkeys run through Android's Credential Manager (Android 14+, `Passkeys.kt`).
+    #[serde(default)]
+    pub passkeys: bool,
     /// The app's WebAuthn origin (`android:apk-key-hash:<base64url>` of its signing certificate, checked by
     /// `mobile::app_origin`): the client offers in-app passkeys only while the node lists it in `webauthn.origins`.
     #[serde(default)]

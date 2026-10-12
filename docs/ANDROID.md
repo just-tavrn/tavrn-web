@@ -32,7 +32,8 @@ page work as described there. This document covers what is different on Android.
 - Tauri 2's own floor is API 24; nothing gained from 24 and 25 is worth two more code paths. Phones on Android 7 are
   now a fraction of a percent of active devices and get no security updates.
 - Everything newer is handled where it matters: runtime permission for notifications (13), foreground service types
-  (10, 14), the nearby-devices permission for headsets (12), passkeys in the webview (14), edge-to-edge (15).
+  (10, 14), the nearby-devices permission for headsets (12), passkeys through the Credential Manager (14),
+  edge-to-edge (15).
 
 Only 64-bit ARM (`arm64-v8a`) is released: every phone of the last years. The emulator uses an x86_64 debug build.
 
@@ -83,13 +84,20 @@ appears as "Android app" in the account's devices.
 
 ### Passkeys
 
-On Android 14 and newer, when the system webview supports it, the shell turns on WebAuthn for the app
-(`WebSettingsCompat.setWebAuthenticationSupport(…, WEB_AUTHENTICATION_SUPPORT_FOR_APP)`, androidx.webkit 1.14). The
-webview then uses passkeys **as the app**: for a relying party whose domain lists the app in its `assetlinks.json`
-with `delegate_permission/common.get_login_creds`, and `clientDataJSON` names the app's origin
-`android:apk-key-hash:<base64url of the SHA-256 of the signing certificate>`, not the node's web origin
+The app runs passkeys **natively, through Android's Credential Manager** (androidx.credentials 1.6, the framework's
+own on Android 14 and newer; Google's companion library for older systems is not included), as any native app does
+(`Passkeys.kt`, reached through `passkey_create` / `passkey_get` in `src-tauri/src/passkey.rs`, the same commands
+and checks as the Windows app's). Android lets the app use the passkeys of a relying party whose domain lists the
+app in its `assetlinks.json` with `delegate_permission/common.get_login_creds`, and `clientDataJSON` names the app's
+origin `android:apk-key-hash:<base64url of the SHA-256 of the signing certificate>`, not the node's web origin
 (PROTOCOL.md §5a.4). The shell reads that origin from the installed APK's signer at runtime (`AppOrigin.kt`, checked
-again in Rust) and reports it with `android_info`.
+again in Rust) and reports it with `android_info`; it passes on only a relying party id that the connected node's
+web origin is equal to or a subdomain of. The PRF output (the key store unlock) comes back apart from the credential
+and never reaches the node.
+
+The webview's own WebAuthn (`WEB_AUTHENTICATION_SUPPORT_FOR_APP`, which the shell still turns on) cannot be used for
+this: measured on Android 16 with WebView 133, it checks the relying party id against the page's origin
+(`https://tauri.localhost`) and refuses `tavrn.org` with `SecurityError`.
 
 A node accepts the app's origin when its operator lists it (`TAVRN_WEBAUTHN_APP_ORIGINS`, tavrn-node HANDBOOK
 "Passkeys in the apps"); it publishes every accepted origin as `webauthn.origins` in `GET /node`. The client asks its
@@ -100,8 +108,7 @@ home node once and compares (`passkeyBlocker` in `web/src/lib/passkeys.ts`):
 - the node does not list it (or is older and publishes no list): "Sign in with a passkey" opens the node's page in
   the browser as before, and the login page and Settings → Security say "This node does not accept the app's
   passkeys yet";
-- below Android 14, with a webview without WebAuthn, or when the app has several signers: the browser, without that
-  note.
+- below Android 14, or when the app has several signers: the browser, without that note.
 
 Every signing key is its own origin: a debug build (the debug keystore of the build machine) has another origin than
 the release APK, so a development node needs the debug origin in `TAVRN_WEBAUTHN_APP_ORIGINS` (and the relying

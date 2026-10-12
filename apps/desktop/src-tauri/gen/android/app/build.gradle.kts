@@ -87,6 +87,9 @@ dependencies {
     implementation("androidx.browser:browser:1.9.0")
     // Push without Google: the UnifiedPush connector with WebPush (RFC 8291 decryption in the app), docs/ANDROID.md.
     implementation("org.unifiedpush.android:connector:3.3.5")
+    // Passkeys through Android's Credential Manager (Passkeys.kt): the framework's on Android 14+, without Google's
+    // companion library for older systems (the app must work on de-googled phones).
+    implementation("androidx.credentials:credentials:1.6.0")
     testImplementation("junit:junit:4.13.2")
     // The real org.json for the JVM unit tests (android.jar has only stubs).
     testImplementation("org.json:json:20250517")

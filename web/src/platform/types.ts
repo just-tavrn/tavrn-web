@@ -54,9 +54,9 @@ export interface Platform {
   /** Android: permissions, the back gesture, app links, the system bars, push without Google (docs/ANDROID.md). */
   readonly android?: PlatformAndroid;
   /**
-   * Windows app: passkeys through the operating system's WebAuthn API (docs/DESKTOP.md "Passkeys"), because the
-   * webview's origin can never be under the node's relying party id. Absent elsewhere (the browser and the Android
-   * app use `navigator.credentials`; Linux has no native path yet).
+   * The apps' native passkeys, because the webview's origin can never be under the node's relying party id: the
+   * Windows WebAuthn API (docs/DESKTOP.md "Passkeys on Windows") and Android's Credential Manager (docs/ANDROID.md
+   * "Passkeys", Android 14+). Absent elsewhere (the browser uses `navigator.credentials`; Linux has no native path yet).
    */
   readonly passkeys?: PlatformPasskeys;
 }
@@ -410,6 +410,8 @@ export interface AndroidStatus {
   sdk: number;
   /** The webview runs WebAuthn for the app (Android 14+). */
   webauthn: boolean;
+  /** Passkeys run through Android's Credential Manager (Android 14+). */
+  passkeys: boolean;
   /** The app's WebAuthn origin (`android:apk-key-hash:<base64url>`, from its signing certificate), null if unknown. */
   origin: string | null;
   /** Installed UnifiedPush distributors (package names). */
@@ -469,10 +471,12 @@ export interface AndroidAudio {
 export interface PlatformAndroid {
   /** The Android API level at start. */
   readonly sdk: number;
-  /** The webview runs WebAuthn for the app (Android 14+ and a webview that supports it). */
+  /** The webview runs WebAuthn for the app (Android 14+ and a webview that supports it); not used for passkeys. */
   readonly webauthn: boolean;
+  /** Passkeys run through Android's Credential Manager (Android 14+): `platform.passkeys` is set (docs/ANDROID.md). */
+  readonly passkeys: boolean;
   /**
-   * The origin the webview's WebAuthn puts into `clientDataJSON`: `android:apk-key-hash:<base64url SHA-256 of the
+   * The origin Android's Credential Manager puts into `clientDataJSON`: `android:apk-key-hash:<base64url SHA-256 of the
    * signing certificate>` (PROTOCOL.md §5a.4). In-app passkeys need the node to list it in `webauthn.origins`.
    */
   readonly origin: string | null;

@@ -259,6 +259,9 @@ pub fn run() {
             android::close_connect,
             android::notify,
             android::android_info,
+            // Passkeys through Android's Credential Manager (passkey.rs → Passkeys.kt).
+            passkey::passkey_create,
+            passkey::passkey_get,
             android::android_permission,
             android::android_open_settings,
             android::android_battery_exemption,

@@ -183,6 +183,8 @@ fn the_android_capability_grants_only_the_app_commands_of_the_android_app() {
             "allow-android-audio-routes",
             "allow-android-audio-route",
             "allow-android-orientation",
+            "allow-passkey-create",
+            "allow-passkey-get",
         ]
     );
     // Only the app's own commands: the Kotlin plugin (`plugin:tavrn-android|…`) and every other plugin stay out of

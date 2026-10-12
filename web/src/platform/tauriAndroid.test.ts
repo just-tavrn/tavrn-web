@@ -9,7 +9,7 @@ import type { ShellEvent } from "./shellEvents";
 
 type Calls = Array<{ cmd: string; args: Record<string, unknown> }>;
 
-function android(release: unknown = null) {
+function android(release: unknown = null, info: Record<string, unknown> = {}) {
   const calls: Calls = [];
   const state: { channel: Channel<ShellEvent> | null } = { channel: null };
   mockWindows("main");
@@ -22,7 +22,9 @@ function android(release: unknown = null) {
       case "app_info":
         return { version: "0.4.0", updater: false, os: "android" };
       case "android_info":
-        return { sdk: 34, webauthn: true, distributors: ["io.heckel.ntfy"], distributor: null, notifications: "prompt", battery_exempt: false, keep_connection: false, insets: { top: 24, right: 0, bottom: 48, left: 0, keyboard: 0 } };
+        return { sdk: 34, webauthn: true, distributors: ["io.heckel.ntfy"], distributor: null, notifications: "prompt", battery_exempt: false, keep_connection: false, insets: { top: 24, right: 0, bottom: 48, left: 0, keyboard: 0 }, ...info };
+      case "passkey_get":
+        return { credential: { id: "Y3JlZA", response: { clientDataJSON: "e30" } }, prf: null };
       case "shell_events":
         state.channel = a.onEvent as Channel<ShellEvent>;
         return null;
@@ -77,10 +79,24 @@ describe("the Android app's platform", () => {
     expect(p.isDesktop).toBe(true);
     expect(p.android?.sdk).toBe(34);
     expect(p.android?.webauthn).toBe(true);
+    // An older shell reports no Credential Manager: no native passkeys.
+    expect(p.android?.passkeys).toBe(false);
+    expect(p.passkeys).toBeUndefined();
     expect(p.android?.insets()).toEqual({ top: 24, right: 0, bottom: 48, left: 0, keyboard: 0 });
     for (const desktopOnly of ["hotkeys", "voice", "keystore"] as const) expect(p[desktopOnly]).toBeUndefined();
     expect(calls.map((c) => c.cmd)).not.toContain("listen_hotkeys");
     expect(p.updater).toBeDefined();
+  });
+
+  it("runs passkeys through the Credential Manager where the shell reports it, with the app's origin", async () => {
+    const origin = `android:apk-key-hash:${"A".repeat(43)}`;
+    const { calls } = android(null, { passkeys: true, origin });
+    const p = await createTauriPlatform(document.implementation.createHTMLDocument("app"));
+    expect(p.android?.origin).toBe(origin);
+    expect(p.android?.passkeys).toBe(true);
+    const r = await p.passkeys!.get({ publicKey: { challenge: "AAAA" } });
+    expect(r.credential.id).toBe("Y3JlZA");
+    expect(calls.find((c) => c.cmd === "passkey_get")?.args).toEqual({ options: { publicKey: { challenge: "AAAA" } } });
   });
 
   it("signs in on the node's page in the browser as the Android app", async () => {

@@ -244,15 +244,6 @@ describe("desktop login: address first", () => {
 });
 
 describe("app login: passkeys in the app itself", () => {
-  const bytes = (n: number, fill: number) => new Uint8Array(n).fill(fill).buffer;
-  const assertion = {
-    id: "Y3JlZA",
-    rawId: bytes(4, 9),
-    type: "public-key",
-    authenticatorAttachment: "platform",
-    response: { clientDataJSON: bytes(8, 1), authenticatorData: bytes(8, 2), signature: bytes(8, 3), userHandle: bytes(16, 4) },
-    getClientExtensionResults: () => ({ prf: { results: { first: bytes(32, 5) } } }),
-  };
   const passkeyRoutes = (origins: string[] | null) => ({
     "/api/v1/node": { body: nodeInfo({ webauthn: origins ? { rp_id: "t.local", origins } : { rp_id: "t.local" } }) },
     "/.well-known/tavrn": { body: wellKnown(["connect.app"]) },
@@ -260,10 +251,16 @@ describe("app login: passkeys in the app itself", () => {
     "/api/v1/auth/webauthn/login/finish": { body: session },
   });
 
-  function android(): { signIn: ReturnType<typeof vi.fn> } {
+  /** The Android app with the Credential Manager; its `get` answers like the shell (`passkey_get`). */
+  function android(): { signIn: ReturnType<typeof vi.fn>; get: ReturnType<typeof vi.fn> } {
     const signIn = vi.fn(() => new Promise<NodePageResult | null>(() => {}));
-    setPlatform({ ...androidPlatform(fakeAndroid({ webauthn: true }), "t.local"), auth: { signInOnNodePage: signIn, reopen: vi.fn(async () => {}) } });
-    return { signIn };
+    const get = vi.fn(async (_o: Record<string, unknown>) => ({
+      credential: { id: "Y3JlZA", rawId: "Y3JlZA", type: "public-key", authenticatorAttachment: "platform", response: { clientDataJSON: "AQ", authenticatorData: "Ag", signature: "Aw", userHandle: "BA" }, clientExtensionResults: { prf: {} } },
+      prf: new Uint8Array(32).fill(5),
+    }));
+    const native = { create: vi.fn(), get };
+    setPlatform({ ...androidPlatform(fakeAndroid({ passkeys: true }), "t.local", native), auth: { signInOnNodePage: signIn, reopen: vi.fn(async () => {}) } });
+    return { signIn, get };
   }
 
   beforeEach(() => {
@@ -274,16 +271,14 @@ describe("app login: passkeys in the app itself", () => {
   });
 
   it("Android: the node accepts the app's origin, so the passkey runs in the app and unlocks with its PRF", async () => {
-    const { signIn } = android();
-    const get = vi.fn(async () => assertion);
-    Object.defineProperty(navigator, "credentials", { value: { get }, configurable: true });
+    const { signIn, get } = android();
     const calls = mockFetch(passkeyRoutes(["https://t.local", FAKE_APP_ORIGIN]));
     renderLogin();
     const u = userEvent.setup();
     await waitFor(() => expect(calls.some((c) => c.url.endsWith("/api/v1/node"))).toBe(true));
     await u.click(await screen.findByRole("button", { name: "Mit Passkey anmelden" }));
     expect(await screen.findByText("Verschlüsselungsseite")).toBeInTheDocument();
-    expect(get).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledWith({ publicKey: expect.objectContaining({ challenge: "AAAA", rpId: "t.local" }) });
     expect(signIn).not.toHaveBeenCalled();
     expect(screen.queryByTestId("passkey-app-origin")).toBeNull();
     const finish = calls.find((c) => c.url.endsWith("/webauthn/login/finish"))!;
@@ -293,9 +288,7 @@ describe("app login: passkeys in the app itself", () => {
   });
 
   it("Android: a node that does not list the app's origin gets the passkey on its page, with the reason", async () => {
-    const { signIn } = android();
-    const get = vi.fn(async () => assertion);
-    Object.defineProperty(navigator, "credentials", { value: { get }, configurable: true });
+    const { signIn, get } = android();
     mockFetch(passkeyRoutes(["https://t.local"]));
     renderLogin();
     const u = userEvent.setup();

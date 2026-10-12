@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
- * Passkeys in the Android app's webview (docs/ANDROID.md "Passkeys"): only on Android 14+ with a webview that runs
- * WebAuthn for the app, and only while the home node lists the app's origin in `webauthn.origins` (PROTOCOL.md
- * §5a.4); otherwise the browser's connect flow.
+ * Passkeys in the Android app (docs/ANDROID.md "Passkeys"): through Android's Credential Manager on Android 14+, and
+ * only while the home node lists the app's origin in `webauthn.origins` (PROTOCOL.md §5a.4); otherwise the browser's
+ * connect flow.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
@@ -28,9 +28,9 @@ afterEach(() => {
 });
 
 describe("passkeys in the Android app", () => {
-  const app = (opts: Parameters<typeof fakeAndroid>[0] = {}) => androidPlatform(fakeAndroid({ webauthn: true, ...opts }), "tavrn.org");
+  const app = (opts: Parameters<typeof fakeAndroid>[0] = {}) => androidPlatform(fakeAndroid({ passkeys: true, ...opts }), "tavrn.org");
 
-  it("run in the webview when the node accepts the app's origin", () => {
+  it("run in the app when the node accepts the app's origin", () => {
     expect(passkeyBlocker(app(), [WEB, FAKE_APP_ORIGIN])).toBeNull();
     expect(passkeysSupported(app(), [WEB, OTHER_APP, FAKE_APP_ORIGIN])).toBe(true);
   });
@@ -41,8 +41,8 @@ describe("passkeys in the Android app", () => {
     expect(passkeysSupported(app(), [WEB])).toBe(false);
   });
 
-  it("go through the browser below Android 14, without the webview's WebAuthn or without a known origin", () => {
-    expect(passkeyBlocker(app({ webauthn: false }), [WEB, FAKE_APP_ORIGIN])).toBe("platform");
+  it("go through the browser below Android 14 (no Credential Manager) or without a known origin", () => {
+    expect(passkeyBlocker(app({ passkeys: false }), [WEB, FAKE_APP_ORIGIN])).toBe("platform");
     expect(passkeyBlocker(app({ origin: null }), [WEB, FAKE_APP_ORIGIN])).toBe("platform");
   });
 

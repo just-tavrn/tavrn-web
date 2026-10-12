@@ -1004,8 +1004,8 @@ of a window ("Sign in on \<node>'s page"). What is different in the client:
 - **Safe areas**: the layout pads itself with `--safe-top`, `--safe-bottom`, … (the system bars the app reports; the
   browser's `env(safe-area-inset-*)` otherwise); the keyboard shortens the page, so the composer stays above it.
 - **Downloads** use Android's document picker; **updates** are announced from the project's releases and download in
-  the browser. **Passkeys** run in the app (registration, sign-in, re-authentication, the PRF unlock) on Android 14+
-  when the home node lists the app's origin in `webauthn.origins`; otherwise on the node's page in the browser, with
+  the browser. **Passkeys** run in the app through Android's Credential Manager (registration, sign-in,
+  re-authentication, the PRF unlock) on Android 14+ when the home node lists the app's origin in `webauthn.origins`; otherwise on the node's page in the browser, with
   "This node does not accept the app's passkeys yet" where the node is the reason (ANDROID.md "Passkeys").
 
 ## Translations
