@@ -7,10 +7,12 @@ import { resetPlatform, setPlatform } from "../../platform";
 import type { Platform } from "../../platform";
 import { renderWithProviders } from "../../test/render";
 import { cryptoStore } from "../../crypto";
-import type { KeyProtection } from "../../crypto/store";
+import type { BiometricState, KeyProtection } from "../../crypto/store";
 import type { AppUpdater, KeychainStatus, UpdateChannel } from "../../platform/types";
 import { updateFailure } from "../../platform/updateErrors";
 import { useAuth } from "../../stores/auth";
+import { useE2ee } from "../../stores/e2ee";
+import { UnlockError } from "../../platform/unlockError";
 
 function desktop(updater?: AppUpdater): Platform {
   const p: Platform = {
@@ -179,5 +181,91 @@ describe("AppTab: keys, tray and quit", () => {
     withShell("keychain", "secret-service", t);
     renderWithProviders(<AppTab />);
     expect(await screen.findByTestId("app-tray-unavailable")).toBeInTheDocument();
+  });
+});
+
+describe("AppTab in the Android app: unlock with fingerprint, face or PIN", () => {
+  const unlock = { status: async () => ({ available: "ready" as const, stored: "none" as const }), store: async () => {}, get: async () => new Uint8Array(32), clear: async () => {} };
+
+  function android(state: BiometricState, protection: KeyProtection, status: "unlocked" | "locked" = "unlocked") {
+    setPlatform({ ...desktop(), kind: "android", unlock });
+    useAuth.setState({ user: { address: "alice@tavrn.example" } as never });
+    useE2ee.setState({ status });
+    const current = { state, protection };
+    vi.spyOn(cryptoStore, "keyProtection").mockImplementation(async () => current.protection);
+    vi.spyOn(cryptoStore, "biometricState").mockImplementation(async () => current.state);
+    const enable = vi.spyOn(cryptoStore, "enableBiometric").mockImplementation(async () => {
+      current.state = { ...current.state, on: true };
+      current.protection = "biometric";
+    });
+    const disable = vi.spyOn(cryptoStore, "disableBiometric").mockImplementation(async () => {
+      current.state = { ...current.state, on: false };
+      current.protection = "browser";
+    });
+    return { enable, disable };
+  }
+
+  const off: BiometricState = { available: "ready", on: false, invalidated: false, lockOnClose: false };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    useAuth.setState({ user: null });
+  });
+
+  it("turns it on through the prompt and off again, and says where the key is", async () => {
+    const { enable, disable } = android(off, "browser");
+    renderWithProviders(<AppTab />);
+    const box = await screen.findByRole("checkbox", { name: /^Mit Fingerabdruck, Gesicht oder PIN entsperren/ });
+    expect(screen.getByTestId("app-keys")).toHaveTextContent("im Speicher der App");
+    await vi.waitFor(() => expect(box).toBeEnabled());
+    const u = userEvent.setup();
+    await u.click(box);
+    expect(enable).toHaveBeenCalledWith({ title: "Entsperren mit Fingerabdruck, Gesicht oder PIN einschalten", subtitle: "alice@tavrn.example" });
+    await vi.waitFor(() => expect(box).toBeChecked());
+    expect(await screen.findByText(/im Schlüsselspeicher von Android versiegelt: Er öffnet sich nur/)).toBeInTheDocument();
+    await u.click(box);
+    expect(disable).toHaveBeenCalledWith("alice@tavrn.example");
+    await vi.waitFor(() => expect(box).not.toBeChecked());
+  });
+
+  it("a closed prompt changes nothing and shows no error", async () => {
+    const { enable } = android(off, "browser");
+    enable.mockRejectedValueOnce(new UnlockError("cancelled"));
+    renderWithProviders(<AppTab />);
+    const box = await screen.findByRole("checkbox", { name: /^Mit Fingerabdruck, Gesicht oder PIN entsperren/ });
+    await vi.waitFor(() => expect(box).toBeEnabled());
+    await userEvent.setup().click(box);
+    await vi.waitFor(() => expect(box).not.toBeChecked());
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it.each([
+    [{ ...off, available: "no_lock" as const }, "unlocked" as const, /Displaysperre/],
+    [{ ...off, available: "unsupported" as const }, "unlocked" as const, /Android 11/],
+    [off, "locked" as const, /Entsperre zuerst/],
+  ])("cannot be turned on: %o (%s)", async (state, status, reason) => {
+    android(state, "browser", status);
+    renderWithProviders(<AppTab />);
+    const box = await screen.findByRole("checkbox", { name: /^Mit Fingerabdruck, Gesicht oder PIN entsperren/ });
+    expect(box).toBeDisabled();
+    expect(screen.getByTestId("app-biometric-reason")).toHaveTextContent(reason);
+  });
+
+  it("can always be turned off, also while locked", async () => {
+    const { disable } = android({ ...off, on: true }, "biometric", "locked");
+    renderWithProviders(<AppTab />);
+    const box = await screen.findByRole("checkbox", { name: /^Mit Fingerabdruck, Gesicht oder PIN entsperren/ });
+    await vi.waitFor(() => expect(box).toBeChecked());
+    expect(box).toBeEnabled();
+    await userEvent.setup().click(box);
+    expect(disable).toHaveBeenCalled();
+  });
+
+  it("is not there on the desktop", async () => {
+    setPlatform(desktop());
+    useAuth.setState({ user: { address: "alice@tavrn.example" } as never });
+    renderWithProviders(<AppTab />);
+    await screen.findByTestId("app-version");
+    expect(screen.queryByTestId("app-biometric")).toBeNull();
   });
 });

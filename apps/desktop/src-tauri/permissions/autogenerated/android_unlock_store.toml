@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-android-unlock-store"
+description = "Enables the android_unlock_store command without any pre-configured scope."
+commands.allow = ["android_unlock_store"]
+
+[[permission]]
+identifier = "deny-android-unlock-store"
+description = "Denies the android_unlock_store command without any pre-configured scope."
+commands.deny = ["android_unlock_store"]

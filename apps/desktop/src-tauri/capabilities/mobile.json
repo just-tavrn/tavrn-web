@@ -34,6 +34,10 @@
     "allow-android-audio-routes",
     "allow-android-audio-route",
     "allow-android-orientation",
+    "allow-android-unlock-status",
+    "allow-android-unlock-store",
+    "allow-android-unlock-get",
+    "allow-android-unlock-clear",
     "allow-passkey-create",
     "allow-passkey-get"
   ]

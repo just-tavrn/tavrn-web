@@ -357,10 +357,140 @@ pub fn parse_native(json: &str) -> Option<ShellEvent> {
     serde_json::from_str::<NativeEvent>(json).ok().and_then(shell_event)
 }
 
+// ---- Unlock with fingerprint, face or PIN (docs/ANDROID.md, `BiometricUnlock.kt`) ----
+
+/// Length of the secret the biometric unlock keeps: the client's local storage key (AES-256), as the desktop keychain.
+pub const UNLOCK_SECRET_LEN: usize = 32;
+
+/// The entry of an account's biometric unlock: the home node of the settings (never one the page names) and the
+/// account, as the desktop keychain scopes its entries, so the page reaches only the entries of the node it talks to.
+pub fn unlock_entry(node: Option<&str>, account: &str) -> Result<String, &'static str> {
+    if !crate::node_url::valid_account(account) {
+        return Err("unlock.invalid");
+    }
+    let node = crate::node_url::validate(node.ok_or("unlock.no_node")?).map_err(|_| "unlock.no_node")?;
+    Ok(format!("unlock/{node}/{}", account.to_ascii_lowercase()))
+}
+
+/// The texts of the system's prompt, in the client's language.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnlockPrompt {
+    pub title: String,
+    pub subtitle: String,
+}
+
+impl UnlockPrompt {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if text_ok(&self.title, MAX_TEXT) && text_ok(&self.subtitle, MAX_TEXT) { Ok(()) } else { Err("unlock.invalid") }
+    }
+}
+
+fn b64() -> base64::engine::GeneralPurpose {
+    base64::engine::general_purpose::STANDARD
+}
+
+/// The secret for the Kotlin side (standard base64): exactly [`UNLOCK_SECRET_LEN`] bytes.
+pub fn unlock_secret_out(secret: &[u8]) -> Result<String, &'static str> {
+    use base64::Engine;
+    if secret.len() == UNLOCK_SECRET_LEN { Ok(b64().encode(secret)) } else { Err("unlock.invalid") }
+}
+
+/// The secret the Kotlin side opened, or none when it is not a local storage key.
+pub fn unlock_secret_in(encoded: &str) -> Option<Vec<u8>> {
+    use base64::Engine;
+    if encoded.len() > 64 {
+        return None;
+    }
+    b64().decode(encoded).ok().filter(|s| s.len() == UNLOCK_SECRET_LEN)
+}
+
+/// Whether the phone can unlock with fingerprint, face or PIN.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UnlockAvailability {
+    /// A strong biometric or a screen lock is set up.
+    Ready,
+    /// The phone has no screen lock.
+    NoLock,
+    /// Older than Android 11 (a key of one operation with the device credential needs API 30).
+    Unsupported,
+    /// Anything else (a pending security update, the hardware is busy).
+    Unavailable,
+}
+
+/// What is stored for the account.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UnlockStored {
+    Ready,
+    None,
+    /// The keystore key was invalidated (new biometrics, the screen lock removed); the entry is wiped.
+    Invalidated,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnlockStatus {
+    pub available: UnlockAvailability,
+    pub stored: UnlockStored,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn unlock_entries_are_scoped_by_the_home_node_and_the_account() {
+        assert_eq!(unlock_entry(Some("https://tavrn.example"), "Alice@Tavrn.Example"), Ok("unlock/https://tavrn.example/alice@tavrn.example".into()));
+        assert_eq!(unlock_entry(Some("http://localhost:8900"), "bob@localhost:8900"), Ok("unlock/http://localhost:8900/bob@localhost:8900".into()));
+        assert_ne!(unlock_entry(Some("https://a.example"), "x@a.example"), unlock_entry(Some("https://b.example"), "x@a.example"));
+        assert_eq!(unlock_entry(None, "alice@tavrn.example"), Err("unlock.no_node"));
+        assert_eq!(unlock_entry(Some("http://evil.example"), "alice@tavrn.example"), Err("unlock.no_node"));
+        for bad in ["", "alice", "a/b@x", "alice@x/y", "alice@x:123456", "ä@x", "a\nb@x"] {
+            assert_eq!(unlock_entry(Some("https://tavrn.example"), bad), Err("unlock.invalid"), "{bad:?}");
+        }
+        let long = format!("{}@x", "a".repeat(crate::node_url::MAX_ACCOUNT));
+        assert_eq!(unlock_entry(Some("https://tavrn.example"), &long), Err("unlock.invalid"));
+        // The longest entry fits the Kotlin side's bound (UnlockVault.MAX_ENTRY = 1024).
+        let node = format!("https://{}.example", "n".repeat(250));
+        let account = format!("{}@x", "a".repeat(crate::node_url::MAX_ACCOUNT - 2));
+        assert!(unlock_entry(Some(&node), &account).is_ok_and(|e| e.len() <= 1024));
+    }
+
+    #[test]
+    fn the_prompt_texts_are_short_plain_text() {
+        let ok = UnlockPrompt { title: "Unlock tavrn".into(), subtitle: "alice@tavrn.example".into() };
+        assert_eq!(ok.validate(), Ok(()));
+        for (title, subtitle) in [("", "x"), ("x", " "), ("a\u{0}b", "x"), ("x", "line\nbreak")] {
+            let p = UnlockPrompt { title: title.into(), subtitle: subtitle.into() };
+            assert_eq!(p.validate(), Err("unlock.invalid"), "{title:?} {subtitle:?}");
+        }
+        assert_eq!(UnlockPrompt { title: "x".repeat(MAX_TEXT + 1), subtitle: "x".into() }.validate(), Err("unlock.invalid"));
+    }
+
+    #[test]
+    fn only_32_byte_secrets_cross_the_bridge() {
+        let secret = [7u8; UNLOCK_SECRET_LEN];
+        let encoded = unlock_secret_out(&secret).unwrap_or_default();
+        assert_eq!(unlock_secret_in(&encoded), Some(secret.to_vec()));
+        for len in [0, 16, 31, 33, 64] {
+            assert_eq!(unlock_secret_out(&vec![1; len]), Err("unlock.invalid"), "{len}");
+        }
+        use base64::Engine;
+        let short = base64::engine::general_purpose::STANDARD.encode([1u8; 31]);
+        assert_eq!(unlock_secret_in(&short), None);
+        assert_eq!(unlock_secret_in("not base64!"), None);
+        assert_eq!(unlock_secret_in(&"A".repeat(100)), None);
+    }
+
+    #[test]
+    fn the_unlock_status_takes_only_known_values() {
+        let status: Result<UnlockStatus, _> = serde_json::from_value(json!({ "available": "ready", "stored": "invalidated" }));
+        assert_eq!(status.ok(), Some(UnlockStatus { available: UnlockAvailability::Ready, stored: UnlockStored::Invalidated }));
+        assert!(serde_json::from_value::<UnlockStatus>(json!({ "available": "maybe", "stored": "none" })).is_err());
+        assert!(serde_json::from_value::<UnlockStatus>(json!({ "available": "no_lock", "stored": "somewhere" })).is_err());
+        assert_eq!(serde_json::to_value(UnlockAvailability::NoLock).ok(), Some(json!("no_lock")));
+    }
 
     #[test]
     fn the_app_origin_is_the_hash_of_a_signing_certificate() {

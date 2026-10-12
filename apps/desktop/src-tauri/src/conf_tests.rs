@@ -183,6 +183,10 @@ fn the_android_capability_grants_only_the_app_commands_of_the_android_app() {
             "allow-android-audio-routes",
             "allow-android-audio-route",
             "allow-android-orientation",
+            "allow-android-unlock-status",
+            "allow-android-unlock-store",
+            "allow-android-unlock-get",
+            "allow-android-unlock-clear",
             "allow-passkey-create",
             "allow-passkey-get",
         ]

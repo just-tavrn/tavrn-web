@@ -17,11 +17,18 @@
  * migrated on the first start (the key goes into the keychain, verified by reading it back, then the IndexedDB copy is
  * removed); a keychain that fails keeps or restores the browser's behaviour, which {@link CryptoStore.keyProtection}
  * reports for Settings → App.
+ *
+ * The Android app seals the local key behind fingerprint, face or PIN instead (`platform().unlock`, docs/ANDROID.md
+ * "Unlock with fingerprint, face or PIN"): after an unlock the user may turn it on (the system's prompt), and the
+ * IndexedDB copy is removed; the next start asks for the prompt (or the recovery key, the alternative) because the
+ * shell opens the sealed key only right after the user authenticated. It is never migrated silently: storing needs
+ * the prompt too.
  */
 import { LocalKeyMismatchError, localAad, localStorageKey, type CryptoStatus, type KeyStore } from "@tavrn/e2ee";
 import { STORE_ACCOUNTS, STORE_SECRETS, idbDelete, idbGet, idbPut, openDb } from "./idb";
 import { platform } from "../platform";
-import type { PlatformKeystore } from "../platform/types";
+import type { PlatformKeystore, PlatformUnlock, UnlockAvailability, UnlockPromptTexts } from "../platform/types";
+import { UnlockError, asUnlockError, unlockErrorCode } from "../platform/unlockError";
 
 export { LocalKeyMismatchError, type CryptoStatus };
 
@@ -38,6 +45,8 @@ interface AccountRecord {
   key?: CryptoKey;
   /** Desktop app: the local key is in the OS keychain. */
   keychain?: boolean;
+  /** Android app: the local key is sealed behind fingerprint, face or PIN (the shell's Android Keystore). */
+  biometric?: boolean;
   master: Sealed;
 }
 
@@ -45,7 +54,19 @@ interface AccountRecord {
  * Where the persisted local key of an account is: the OS keychain, IndexedDB because the keychain failed (desktop),
  * IndexedDB (browser), nowhere (lock on close), or there is no local data.
  */
-export type KeyProtection = "keychain" | "fallback" | "browser" | "lock_on_close" | "none";
+export type KeyProtection = "keychain" | "biometric" | "fallback" | "browser" | "lock_on_close" | "none";
+
+/**
+ * The Android app's biometric unlock of an account (null elsewhere, or without local data): whether the phone can,
+ * whether it is on, and whether the shell just found it invalidated (new biometrics, the screen lock removed), which
+ * turned it off: the user unlocks once with the recovery key and may turn it on again.
+ */
+export interface BiometricState {
+  available: UnlockAvailability;
+  on: boolean;
+  invalidated: boolean;
+  lockOnClose: boolean;
+}
 
 interface SecretRecord {
   account: string;
@@ -85,10 +106,11 @@ export class CryptoStore implements KeyStore {
   private dbPromise: Promise<IDBDatabase> | null = null;
   private current: Unlocked | null = null;
 
-  /** `keychain`: the OS keychain of the desktop app (undefined in the browser). */
+  /** `keychain`: the OS keychain of the desktop app, `unlock`: the Android app's biometric unlock (undefined elsewhere). */
   constructor(
     private readonly dbName = "tavrn-crypto",
     private readonly keychain: () => PlatformKeystore | undefined = () => platform().keystore,
+    private readonly unlock: () => PlatformUnlock | undefined = () => platform().unlock,
   ) {}
 
   private db(): Promise<IDBDatabase> {
@@ -211,6 +233,7 @@ export class CryptoStore implements KeyStore {
     const rec = await this.record(account);
     if (!rec) return "none";
     if (rec.lockOnClose) return "lock_on_close";
+    if (rec.biometric) return "biometric";
     if (rec.keychain) return "keychain";
     return this.keychain() ? "fallback" : "browser";
   }
@@ -253,8 +276,9 @@ export class CryptoStore implements KeyStore {
       }
       stored.fill(0);
       this.setCurrent({ account, deviceId: rec.deviceId, key, master: master.slice() });
-      // Desktop app: the keychain entry was missing or unreadable; store it again (or fall back to IndexedDB).
-      if (rec.keychain && !rec.lockOnClose) {
+      // Desktop app: the keychain entry was missing or unreadable; store it again (or fall back to IndexedDB). A key
+      // stored nowhere (the biometric unlock turned off while locked, or invalidated) goes back to IndexedDB.
+      if (!rec.lockOnClose && !rec.biometric && (rec.keychain || !rec.key)) {
         await this.persistKey(rec, raw, key);
         await idbPut(await this.db(), STORE_ACCOUNTS, rec);
       }
@@ -277,6 +301,7 @@ export class CryptoStore implements KeyStore {
   async wipe(account: string): Promise<void> {
     if (this.current?.account === account) this.lock();
     await this.dropKeychainEntry(account);
+    await this.dropBiometric(account);
     const db = await this.db();
     await idbDelete(db, STORE_ACCOUNTS, account);
     await idbDelete(db, STORE_SECRETS, IDBKeyRange.bound([account, ""], [account, "￿"]));
@@ -296,6 +321,8 @@ export class CryptoStore implements KeyStore {
       delete rec.key;
       if (rec.keychain) await this.dropKeychainEntry(cur.account);
       delete rec.keychain;
+      if (rec.biometric) await this.dropBiometric(cur.account);
+      delete rec.biometric;
     } else {
       const raw = await localStorageKey(cur.master, cur.deviceId);
       try {
@@ -305,6 +332,112 @@ export class CryptoStore implements KeyStore {
       }
     }
     await idbPut(await this.db(), STORE_ACCOUNTS, rec);
+  }
+
+  /** Removes the account's sealed key in the Android app; never fails (sign-out must not depend on it). */
+  private async dropBiometric(account: string): Promise<void> {
+    try {
+      await this.unlock()?.clear(account);
+    } catch {
+      /* the next store replaces it; an orphaned blob opens nothing without its record */
+    }
+  }
+
+  /**
+   * The Android app's biometric unlock of `account` (null elsewhere or without local data). A record that says "on"
+   * while the shell has nothing usable any more (invalidated, or gone) is turned off here.
+   */
+  async biometricState(account: string): Promise<BiometricState | null> {
+    const u = this.unlock();
+    if (!u) return null;
+    const rec = await this.record(account);
+    if (!rec) return null;
+    let status;
+    try {
+      status = await u.status(account);
+    } catch {
+      return { available: "unavailable", on: !!rec.biometric, invalidated: false, lockOnClose: rec.lockOnClose };
+    }
+    let invalidated = false;
+    if (rec.biometric && status.stored !== "ready") {
+      invalidated = status.stored === "invalidated";
+      delete rec.biometric;
+      await idbPut(await this.db(), STORE_ACCOUNTS, rec);
+    }
+    return { available: status.available, on: !!rec.biometric, invalidated, lockOnClose: rec.lockOnClose };
+  }
+
+  /**
+   * Android app: seals the open account's local key behind fingerprint, face or PIN (the system's prompt shows
+   * `prompt`) and removes it from IndexedDB; turns "lock on close" off. Rejects with an {@link UnlockError}
+   * (`cancelled`: nothing changed).
+   */
+  async enableBiometric(prompt: UnlockPromptTexts): Promise<void> {
+    const cur = this.require();
+    const u = this.unlock();
+    if (!u) throw new UnlockError("unavailable");
+    const rec = await this.record(cur.account);
+    if (!rec) throw new Error("no local data for this account");
+    const raw = await localStorageKey(cur.master, cur.deviceId);
+    try {
+      await u.store(cur.account, raw, prompt).catch(asUnlockError);
+    } finally {
+      raw.fill(0);
+    }
+    delete rec.key;
+    delete rec.keychain;
+    rec.lockOnClose = false;
+    rec.biometric = true;
+    await idbPut(await this.db(), STORE_ACCOUNTS, rec);
+  }
+
+  /**
+   * Android app: turns the biometric unlock off and wipes the sealed key. An open store keeps its key in IndexedDB
+   * again (as in a browser); a locked one stores it there at the next unlock with the recovery key or a passkey.
+   */
+  async disableBiometric(account: string): Promise<void> {
+    await this.unlock()?.clear(account);
+    const rec = await this.record(account);
+    if (!rec) return;
+    delete rec.biometric;
+    if (this.current?.account === account && !rec.lockOnClose) rec.key = this.current.key;
+    await idbPut(await this.db(), STORE_ACCOUNTS, rec);
+  }
+
+  /**
+   * Android app: opens the store with the sealed key after the system's prompt. Rejects with an {@link UnlockError};
+   * `invalidated` (the shell wiped the key, or it did not open this store) turns the biometric unlock off.
+   */
+  async unlockWithBiometric(account: string, prompt: UnlockPromptTexts): Promise<void> {
+    const u = this.unlock();
+    const rec = await this.record(account);
+    if (!u) throw new UnlockError("unavailable");
+    if (!rec?.biometric) throw new UnlockError("none");
+    const off = async () => {
+      delete rec.biometric;
+      await idbPut(await this.db(), STORE_ACCOUNTS, rec);
+    };
+    let raw: Uint8Array;
+    try {
+      raw = await u.get(account, prompt);
+    } catch (e) {
+      const code = unlockErrorCode(e);
+      if (code === "invalidated" || code === "none") await off();
+      throw new UnlockError(code === "none" ? "invalidated" : code);
+    }
+    let key: CryptoKey;
+    let master: Uint8Array;
+    try {
+      key = await importLocalKey(raw);
+      master = await unseal(key, account, MASTER, rec.master);
+    } catch {
+      await this.dropBiometric(account);
+      await off();
+      throw new UnlockError("invalidated");
+    } finally {
+      raw.fill(0);
+    }
+    this.setCurrent({ account, deviceId: rec.deviceId, key, master });
   }
 
   /** Account address of the open store, or null. */

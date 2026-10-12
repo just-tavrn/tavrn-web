@@ -46,6 +46,9 @@ import org.unifiedpush.android.connector.UnifiedPush
 @InvokeArg class OrientationArgs { var lock: String? = null }
 @InvokeArg class RouteArgs { lateinit var route: String }
 @InvokeArg class PasskeyArgs { lateinit var request: String }
+@InvokeArg class UnlockEntryArgs { var entry: String? = null }
+@InvokeArg class UnlockStoreArgs { lateinit var entry: String; lateinit var secret: String; lateinit var title: String; lateinit var subtitle: String }
+@InvokeArg class UnlockGetArgs { lateinit var entry: String; lateinit var title: String; lateinit var subtitle: String }
 @InvokeArg class VoiceArgs {
   lateinit var state: String
   lateinit var title: String
@@ -159,6 +162,61 @@ class ShellPlugin(private val activity: Activity) : Plugin(activity) {
     Passkeys.get(activity, request) { json, error ->
       if (json != null) invoke.resolve(JSObject().put("response", json)) else invoke.reject(error, error)
     }
+  }
+
+  /**
+   * Unlock with fingerprint, face or PIN (`BiometricUnlock.kt`): whether the phone can (`available`) and what is stored
+   * for the entry (`stored`: `ready`, `none`, or `invalidated`, which wiped it). Never shows a prompt.
+   */
+  @Command
+  fun unlockStatus(invoke: Invoke) {
+    val entry = invoke.parseArgs(UnlockEntryArgs::class.java).entry
+    val available = BiometricUnlock.availability(activity)
+    val stored = if (entry == null || Build.VERSION.SDK_INT < 30) "none" else try {
+      BiometricUnlock.vault(activity).stored(entry).code
+    } catch (e: Exception) {
+      return invoke.reject("bad entry", "unlock.invalid")
+    }
+    invoke.resolve(JSObject().put("available", available).put("stored", stored))
+  }
+
+  /** Seals the local storage key (base64, 32 bytes) for the entry behind the prompt. */
+  @Command
+  fun unlockStore(invoke: Invoke) {
+    val args = invoke.parseArgs(UnlockStoreArgs::class.java)
+    if (Build.VERSION.SDK_INT < 30) return invoke.reject("unsupported", BiometricUnlock.UNAVAILABLE)
+    val secret = try { android.util.Base64.decode(args.secret, android.util.Base64.NO_WRAP) } catch (e: Exception) { null }
+    if (secret == null || secret.size != UnlockVault.SECRET_LEN) return invoke.reject("bad secret", "unlock.invalid")
+    BiometricUnlock.store(activity, args.entry, secret, args.title, args.subtitle) { error ->
+      if (error == null) invoke.resolve() else invoke.reject(error, error)
+    }
+  }
+
+  /** The entry's local storage key (base64) after the prompt. */
+  @Command
+  fun unlockGet(invoke: Invoke) {
+    val args = invoke.parseArgs(UnlockGetArgs::class.java)
+    if (Build.VERSION.SDK_INT < 30) return invoke.reject("unsupported", BiometricUnlock.UNAVAILABLE)
+    BiometricUnlock.get(activity, args.entry, args.title, args.subtitle) { secret, error ->
+      if (secret == null) return@get invoke.reject(error, error)
+      val encoded = android.util.Base64.encodeToString(secret, android.util.Base64.NO_WRAP)
+      secret.fill(0)
+      invoke.resolve(JSObject().put("secret", encoded))
+    }
+  }
+
+  /** Removes the entry's blob and key (turned off, sign-out). */
+  @Command
+  fun unlockClear(invoke: Invoke) {
+    val entry = invoke.parseArgs(UnlockEntryArgs::class.java).entry ?: return invoke.reject("no entry", "unlock.invalid")
+    if (Build.VERSION.SDK_INT >= 30) {
+      try {
+        BiometricUnlock.vault(activity).clear(entry)
+      } catch (e: Exception) {
+        return invoke.reject("bad entry", "unlock.invalid")
+      }
+    }
+    invoke.resolve()
   }
 
   @Command

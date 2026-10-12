@@ -58,6 +58,11 @@ First public release of the web client and the desktop apps.
 - The camera button has a quick menu (a long press on touch, a right-click): **Front camera** and **Back camera** on
   phones and tablets (the front one by default, remembered on the device), the cameras and **Settings…** on desktops.
   A switch while the camera is on swaps the video without leaving the call; the back camera's preview is not mirrored.
+- Android app: **unlock with fingerprint, face or PIN** (Android 11 and newer, tavrn-web#78). After an unlock with the
+  recovery key or a passkey the app offers to seal the key of the local key store in Android's keystore (AES-256-GCM,
+  every use needs the system's prompt, StrongBox where the phone has one, gone with the screen lock); the next
+  start asks for a fingerprint, the face or the phone's PIN, with the recovery key as the alternative. Settings → App
+  turns it off; signing out deletes the sealed key ([docs/ANDROID.md](docs/ANDROID.md)).
 - Android app: an audio output switch in the voice controls (**Speaker**, **Earpiece**, **Wired headset**, **Bluetooth
   headset**, the one in use shown). A connected headset plays the call, otherwise the speaker (also in voice channels:
   a group call is not held to the ear); the choice holds while its device is connected and with the screen off.

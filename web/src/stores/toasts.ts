@@ -47,6 +47,8 @@ export function describeError(e: unknown): string {
   const named = e as { name?: string; code?: string } | null;
   // Encryption flows (crypto/e2ee) and the browser's WebAuthn API.
   if (named?.name === "E2eeError" && named.code) return t(`e2ee.error.${named.code}`);
+  // The Android app's biometric unlock (platform/unlockError.ts).
+  if (named?.name === "UnlockError" && named.code) return t(`unlock.error.${named.code}`);
   if (named?.name === "MlsError" && (named.code === "catch_up_failed" || named.code === "ghost")) return t(`e2ee.mls_error.${named.code}`);
   if (named?.name === "NotAllowedError" || named?.name === "AbortError") return t("passkey.error.not_allowed");
   if (named?.name === "InvalidStateError") return t("passkey.error.exists");

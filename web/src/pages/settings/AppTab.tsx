@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
  * Settings → App, desktop app only: version, the home node (node picker), the signed updates and their channel, where the keys of this
- * device are kept (OS keychain or the visible fallback), close to tray and quit.
+ * device are kept (OS keychain or the visible fallback; in the Android app the unlock with fingerprint, face or PIN), close to tray and quit.
  */
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -14,6 +14,8 @@ import { Button, ErrorText, Field } from "../../components/ui";
 import { Section, Select } from "./common";
 import { cryptoStore } from "../../crypto";
 import { useAuth } from "../../stores/auth";
+import { useE2ee } from "../../stores/e2ee";
+import { unlockErrorCode } from "../../platform/unlockError";
 
 type UpdateState = { kind: "idle" } | { kind: "checking" } | { kind: "current" } | { kind: "available"; update: AvailableUpdate } | { kind: "installing"; update: AvailableUpdate };
 
@@ -101,6 +103,7 @@ export function AppTab() {
         <ErrorText>{error}</ErrorText>
       </Section>
       <KeysSection />
+      <BiometricSection />
       <TraySection />
     </div>
   );
@@ -156,6 +159,85 @@ function KeysSection() {
         {protection.data === "lock_on_close" && <p className="text-sm text-fg-1">{t("desktop.keys_lock_on_close")}</p>}
         {protection.data === "none" && <p className="text-sm text-fg-2">{t("desktop.keys_none")}</p>}
       </div>
+    </Section>
+  );
+}
+
+/**
+ * Android app: where the key of the local key store is, and the switch of the unlock with fingerprint, face or PIN
+ * (docs/ANDROID.md). Turning it on shows the system's prompt and needs the open store; turning it off wipes the sealed
+ * key at once.
+ */
+function BiometricSection() {
+  const t = useT();
+  const unlock = platform().unlock;
+  const address = useAuth((s) => s.user?.address ?? null);
+  const unlocked = useE2ee((s) => s.status) === "unlocked";
+  const queryClient = useQueryClient();
+  const enabled = !!unlock && !!address;
+  const protection = useQuery({ queryKey: ["app-key-protection", address], queryFn: () => cryptoStore.keyProtection(address!), enabled });
+  const state = useQuery({ queryKey: ["app-biometric", address], queryFn: () => cryptoStore.biometricState(address!), enabled, retry: false });
+  const [pending, setPending] = useState<boolean | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  if (!unlock || !address) return null;
+  const s = state.data;
+  const toggle = async (on: boolean) => {
+    setError(null);
+    setPending(on);
+    try {
+      if (on) await cryptoStore.enableBiometric({ title: t("unlock.enable_prompt_title"), subtitle: address });
+      else await cryptoStore.disableBiometric(address);
+    } catch (e) {
+      if (unlockErrorCode(e) !== "cancelled") setError(describeError(e));
+    }
+    await queryClient.invalidateQueries({ queryKey: ["app-biometric", address] });
+    await queryClient.invalidateQueries({ queryKey: ["app-key-protection", address] });
+    setPending(null);
+  };
+  const hint = !s
+    ? null
+    : s.available === "no_lock"
+      ? t("unlock.setting_no_lock")
+      : s.available === "unsupported"
+        ? t("unlock.setting_unsupported")
+        : s.available === "unavailable"
+          ? t("unlock.setting_unavailable")
+          : !s.on && !unlocked
+            ? t("unlock.setting_locked")
+            : null;
+  return (
+    <Section title={t("desktop.keys")}>
+      <div data-testid="app-keys" data-protection={protection.data ?? "loading"}>
+        {protection.data === "biometric" && <p className="text-sm text-fg-1">{t("unlock.keys_biometric")}</p>}
+        {protection.data === "browser" && <p className="text-sm text-fg-1">{t("unlock.keys_app_storage")}</p>}
+        {protection.data === "lock_on_close" && <p className="text-sm text-fg-1">{t("desktop.keys_lock_on_close")}</p>}
+        {protection.data === "none" && <p className="text-sm text-fg-2">{t("desktop.keys_none")}</p>}
+      </div>
+      {s && (
+        <label className="flex items-start gap-3 border-t border-line pt-3 text-sm">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4"
+            checked={pending ?? s.on}
+            disabled={pending !== null || (!s.on && (s.available !== "ready" || !unlocked))}
+            onChange={(e) => void toggle(e.target.checked)}
+            aria-describedby="app-biometric-hint"
+            data-testid="app-biometric"
+          />
+          <span>
+            <span className="block font-medium">{t("unlock.setting")}</span>
+            <span id="app-biometric-hint" className="block text-xs text-fg-2">
+              {t("unlock.setting_hint")}
+              {hint && (
+                <span className="mt-1 block" data-testid="app-biometric-reason">
+                  {hint}
+                </span>
+              )}
+            </span>
+          </span>
+        </label>
+      )}
+      <ErrorText>{error}</ErrorText>
     </Section>
   );
 }
