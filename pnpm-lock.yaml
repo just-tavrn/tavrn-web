@@ -163,8 +163,8 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@tavrn/sdk': github:just-tavrn/tavrn-js#8d1899d3ec9b1b52d9ed38ff2b52574811316c61&path:sdk
-  '@tavrn/e2ee': github:just-tavrn/tavrn-js#8d1899d3ec9b1b52d9ed38ff2b52574811316c61&path:e2ee
+  '@tavrn/sdk': github:just-tavrn/tavrn-js#8c1a0666191cdd2f49ab9c85d84b8f7e6437d398&path:sdk
+  '@tavrn/e2ee': github:just-tavrn/tavrn-js#8c1a0666191cdd2f49ab9c85d84b8f7e6437d398&path:e2ee
   '@tavrn/crypto': github:just-tavrn/tavrn-crypto#19ac87b4b42b13ec07e0eec5f8c17a2b47f70f37&path:pkg
   nanoid@>=3.0.0 <3.3.18: ^3.3.20
   '@excalidraw/excalidraw>@excalidraw/mermaid-to-excalidraw': '-'
@@ -223,17 +223,17 @@ importers:
         specifier: ^1.56.0
         version: 1.63.0
       '@tavrn/bot':
-        specifier: github:just-tavrn/tavrn-js#8d1899d3ec9b1b52d9ed38ff2b52574811316c61&path:bot
-        version: git+https://github.com/just-tavrn/tavrn-js.git#8d1899d3ec9b1b52d9ed38ff2b52574811316c61&path:bot
+        specifier: github:just-tavrn/tavrn-js#8c1a0666191cdd2f49ab9c85d84b8f7e6437d398&path:bot
+        version: https://codeload.github.com/just-tavrn/tavrn-js/tar.gz/8c1a0666191cdd2f49ab9c85d84b8f7e6437d398#path:bot
       '@tavrn/crypto':
         specifier: github:just-tavrn/tavrn-crypto#19ac87b4b42b13ec07e0eec5f8c17a2b47f70f37&path:pkg
-        version: git+https://github.com/just-tavrn/tavrn-crypto.git#19ac87b4b42b13ec07e0eec5f8c17a2b47f70f37&path:pkg
+        version: https://codeload.github.com/just-tavrn/tavrn-crypto/tar.gz/19ac87b4b42b13ec07e0eec5f8c17a2b47f70f37#path:pkg
       '@tavrn/e2ee':
-        specifier: github:just-tavrn/tavrn-js#8d1899d3ec9b1b52d9ed38ff2b52574811316c61&path:e2ee
-        version: git+https://github.com/just-tavrn/tavrn-js.git#8d1899d3ec9b1b52d9ed38ff2b52574811316c61&path:e2ee
+        specifier: github:just-tavrn/tavrn-js#8c1a0666191cdd2f49ab9c85d84b8f7e6437d398&path:e2ee
+        version: https://codeload.github.com/just-tavrn/tavrn-js/tar.gz/8c1a0666191cdd2f49ab9c85d84b8f7e6437d398#path:e2ee
       '@tavrn/sdk':
-        specifier: github:just-tavrn/tavrn-js#8d1899d3ec9b1b52d9ed38ff2b52574811316c61&path:sdk
-        version: git+https://github.com/just-tavrn/tavrn-js.git#8d1899d3ec9b1b52d9ed38ff2b52574811316c61&path:sdk
+        specifier: github:just-tavrn/tavrn-js#8c1a0666191cdd2f49ab9c85d84b8f7e6437d398&path:sdk
+        version: https://codeload.github.com/just-tavrn/tavrn-js/tar.gz/8c1a0666191cdd2f49ab9c85d84b8f7e6437d398#path:sdk
       '@types/libsodium-wrappers':
         specifier: ^0.8.2
         version: 0.8.2
@@ -272,13 +272,13 @@ importers:
         version: 2.12.1
       '@tavrn/crypto':
         specifier: github:just-tavrn/tavrn-crypto#19ac87b4b42b13ec07e0eec5f8c17a2b47f70f37&path:pkg
-        version: git+https://github.com/just-tavrn/tavrn-crypto.git#19ac87b4b42b13ec07e0eec5f8c17a2b47f70f37&path:pkg
+        version: https://codeload.github.com/just-tavrn/tavrn-crypto/tar.gz/19ac87b4b42b13ec07e0eec5f8c17a2b47f70f37#path:pkg
       '@tavrn/e2ee':
-        specifier: github:just-tavrn/tavrn-js#8d1899d3ec9b1b52d9ed38ff2b52574811316c61&path:e2ee
-        version: git+https://github.com/just-tavrn/tavrn-js.git#8d1899d3ec9b1b52d9ed38ff2b52574811316c61&path:e2ee
+        specifier: github:just-tavrn/tavrn-js#8c1a0666191cdd2f49ab9c85d84b8f7e6437d398&path:e2ee
+        version: https://codeload.github.com/just-tavrn/tavrn-js/tar.gz/8c1a0666191cdd2f49ab9c85d84b8f7e6437d398#path:e2ee
       '@tavrn/sdk':
-        specifier: github:just-tavrn/tavrn-js#8d1899d3ec9b1b52d9ed38ff2b52574811316c61&path:sdk
-        version: git+https://github.com/just-tavrn/tavrn-js.git#8d1899d3ec9b1b52d9ed38ff2b52574811316c61&path:sdk
+        specifier: github:just-tavrn/tavrn-js#8c1a0666191cdd2f49ab9c85d84b8f7e6437d398&path:sdk
+        version: https://codeload.github.com/just-tavrn/tavrn-js/tar.gz/8c1a0666191cdd2f49ab9c85d84b8f7e6437d398#path:sdk
       dompurify:
         specifier: ^3.4.16
         version: 3.4.16
@@ -1739,21 +1739,21 @@ packages:
     engines: {node: '>= 10'}
     hasBin: true
 
-  '@tavrn/bot@git+https://github.com/just-tavrn/tavrn-js.git#8d1899d3ec9b1b52d9ed38ff2b52574811316c61&path:bot':
-    resolution: {commit: 8d1899d3ec9b1b52d9ed38ff2b52574811316c61, path: bot, repo: https://github.com/just-tavrn/tavrn-js.git, type: git}
+  '@tavrn/bot@https://codeload.github.com/just-tavrn/tavrn-js/tar.gz/8c1a0666191cdd2f49ab9c85d84b8f7e6437d398#path:bot':
+    resolution: {gitHosted: true, integrity: sha512-i5h9wb2mOJghAuHrrtq7dD7eR7e+hhOPhM7YXf1AWDAzNBBbXsgGmThje1/y6EpW076bK143GGqZqkIbFCin4Q==, path: bot, tarball: https://codeload.github.com/just-tavrn/tavrn-js/tar.gz/8c1a0666191cdd2f49ab9c85d84b8f7e6437d398}
     version: 0.2.1
     engines: {node: '>=20'}
 
-  '@tavrn/crypto@git+https://github.com/just-tavrn/tavrn-crypto.git#19ac87b4b42b13ec07e0eec5f8c17a2b47f70f37&path:pkg':
-    resolution: {commit: 19ac87b4b42b13ec07e0eec5f8c17a2b47f70f37, path: pkg, repo: https://github.com/just-tavrn/tavrn-crypto.git, type: git}
+  '@tavrn/crypto@https://codeload.github.com/just-tavrn/tavrn-crypto/tar.gz/19ac87b4b42b13ec07e0eec5f8c17a2b47f70f37#path:pkg':
+    resolution: {gitHosted: true, integrity: sha512-vU0AAMQNSmhN0Q5yHGvVMazzaf9leFEYdQr76mI9C6xT1MMa6gaEg9ZmH+5N7IMb6ApJYaRfovcQIEpoCOTpIg==, path: pkg, tarball: https://codeload.github.com/just-tavrn/tavrn-crypto/tar.gz/19ac87b4b42b13ec07e0eec5f8c17a2b47f70f37}
     version: 0.1.0
 
-  '@tavrn/e2ee@git+https://github.com/just-tavrn/tavrn-js.git#8d1899d3ec9b1b52d9ed38ff2b52574811316c61&path:e2ee':
-    resolution: {commit: 8d1899d3ec9b1b52d9ed38ff2b52574811316c61, path: e2ee, repo: https://github.com/just-tavrn/tavrn-js.git, type: git}
+  '@tavrn/e2ee@https://codeload.github.com/just-tavrn/tavrn-js/tar.gz/8c1a0666191cdd2f49ab9c85d84b8f7e6437d398#path:e2ee':
+    resolution: {gitHosted: true, integrity: sha512-i5h9wb2mOJghAuHrrtq7dD7eR7e+hhOPhM7YXf1AWDAzNBBbXsgGmThje1/y6EpW076bK143GGqZqkIbFCin4Q==, path: e2ee, tarball: https://codeload.github.com/just-tavrn/tavrn-js/tar.gz/8c1a0666191cdd2f49ab9c85d84b8f7e6437d398}
     version: 0.2.1
 
-  '@tavrn/sdk@git+https://github.com/just-tavrn/tavrn-js.git#8d1899d3ec9b1b52d9ed38ff2b52574811316c61&path:sdk':
-    resolution: {commit: 8d1899d3ec9b1b52d9ed38ff2b52574811316c61, path: sdk, repo: https://github.com/just-tavrn/tavrn-js.git, type: git}
+  '@tavrn/sdk@https://codeload.github.com/just-tavrn/tavrn-js/tar.gz/8c1a0666191cdd2f49ab9c85d84b8f7e6437d398#path:sdk':
+    resolution: {gitHosted: true, integrity: sha512-i5h9wb2mOJghAuHrrtq7dD7eR7e+hhOPhM7YXf1AWDAzNBBbXsgGmThje1/y6EpW076bK143GGqZqkIbFCin4Q==, path: sdk, tarball: https://codeload.github.com/just-tavrn/tavrn-js/tar.gz/8c1a0666191cdd2f49ab9c85d84b8f7e6437d398}
     version: 0.2.1
 
   '@testing-library/dom@10.4.2':
@@ -4945,20 +4945,20 @@ snapshots:
       '@tauri-apps/cli-win32-ia32-msvc': 2.12.1
       '@tauri-apps/cli-win32-x64-msvc': 2.12.1
 
-  '@tavrn/bot@git+https://github.com/just-tavrn/tavrn-js.git#8d1899d3ec9b1b52d9ed38ff2b52574811316c61&path:bot':
+  '@tavrn/bot@https://codeload.github.com/just-tavrn/tavrn-js/tar.gz/8c1a0666191cdd2f49ab9c85d84b8f7e6437d398#path:bot':
     dependencies:
-      '@tavrn/crypto': git+https://github.com/just-tavrn/tavrn-crypto.git#19ac87b4b42b13ec07e0eec5f8c17a2b47f70f37&path:pkg
-      '@tavrn/e2ee': git+https://github.com/just-tavrn/tavrn-js.git#8d1899d3ec9b1b52d9ed38ff2b52574811316c61&path:e2ee
-      '@tavrn/sdk': git+https://github.com/just-tavrn/tavrn-js.git#8d1899d3ec9b1b52d9ed38ff2b52574811316c61&path:sdk
+      '@tavrn/crypto': https://codeload.github.com/just-tavrn/tavrn-crypto/tar.gz/19ac87b4b42b13ec07e0eec5f8c17a2b47f70f37#path:pkg
+      '@tavrn/e2ee': https://codeload.github.com/just-tavrn/tavrn-js/tar.gz/8c1a0666191cdd2f49ab9c85d84b8f7e6437d398#path:e2ee
+      '@tavrn/sdk': https://codeload.github.com/just-tavrn/tavrn-js/tar.gz/8c1a0666191cdd2f49ab9c85d84b8f7e6437d398#path:sdk
 
-  '@tavrn/crypto@git+https://github.com/just-tavrn/tavrn-crypto.git#19ac87b4b42b13ec07e0eec5f8c17a2b47f70f37&path:pkg': {}
+  '@tavrn/crypto@https://codeload.github.com/just-tavrn/tavrn-crypto/tar.gz/19ac87b4b42b13ec07e0eec5f8c17a2b47f70f37#path:pkg': {}
 
-  '@tavrn/e2ee@git+https://github.com/just-tavrn/tavrn-js.git#8d1899d3ec9b1b52d9ed38ff2b52574811316c61&path:e2ee':
+  '@tavrn/e2ee@https://codeload.github.com/just-tavrn/tavrn-js/tar.gz/8c1a0666191cdd2f49ab9c85d84b8f7e6437d398#path:e2ee':
     dependencies:
-      '@tavrn/crypto': git+https://github.com/just-tavrn/tavrn-crypto.git#19ac87b4b42b13ec07e0eec5f8c17a2b47f70f37&path:pkg
-      '@tavrn/sdk': git+https://github.com/just-tavrn/tavrn-js.git#8d1899d3ec9b1b52d9ed38ff2b52574811316c61&path:sdk
+      '@tavrn/crypto': https://codeload.github.com/just-tavrn/tavrn-crypto/tar.gz/19ac87b4b42b13ec07e0eec5f8c17a2b47f70f37#path:pkg
+      '@tavrn/sdk': https://codeload.github.com/just-tavrn/tavrn-js/tar.gz/8c1a0666191cdd2f49ab9c85d84b8f7e6437d398#path:sdk
 
-  '@tavrn/sdk@git+https://github.com/just-tavrn/tavrn-js.git#8d1899d3ec9b1b52d9ed38ff2b52574811316c61&path:sdk': {}
+  '@tavrn/sdk@https://codeload.github.com/just-tavrn/tavrn-js/tar.gz/8c1a0666191cdd2f49ab9c85d84b8f7e6437d398#path:sdk': {}
 
   '@testing-library/dom@10.4.2':
     dependencies:
