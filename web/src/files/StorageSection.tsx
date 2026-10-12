@@ -30,8 +30,16 @@ interface Form {
   encrypt_files: boolean;
 }
 
+/**
+ * The kind the form starts with: the stored one, or for a channel without a store (`none`: the node keeps no files of
+ * files channels, FILES.md §5) the first external kind.
+ */
+export function initialKind(b: Pick<BackendInfo, "kind" | "external_allowed">): Kind {
+  return b.kind === "none" ? "webdav" : (b.kind as Kind);
+}
+
 function formOf(b: BackendInfo): Form {
-  return { kind: b.kind as Kind, url: b.url, username: b.username, password: "", access_key: b.access_key, secret_key: "", region: b.region, bucket: b.bucket, prefix: b.prefix, encrypt_files: b.encrypt_files };
+  return { kind: initialKind(b), url: b.url, username: b.username, password: "", access_key: b.access_key, secret_key: "", region: b.region, bucket: b.bucket, prefix: b.prefix, encrypt_files: b.encrypt_files };
 }
 
 /** The request for the node: only the fields of the chosen kind; empty secrets keep the stored ones. */
@@ -83,9 +91,9 @@ export function StorageSection({ room, channel }: { room: RoomDetail; channel: C
   return (
     <Section title={t("files.storage")} description={t("files.storage_hint")}>
       <div className="space-y-3" data-testid="files-storage">
-        <Field label={t("files.storage_kind")} hint={locked ? t("files.storage_locked") : !b.external_allowed ? t("files.external_off") : undefined}>
+        <Field label={t("files.storage_kind")} hint={locked ? t("files.storage_locked") : !b.external_allowed ? t("files.external_off") : !b.internal_allowed ? t("files.internal_off") : undefined}>
           <Select value={form.kind} onChange={(e) => set({ kind: e.target.value as Kind })} data-testid="files-storage-kind">
-            <option value="internal" disabled={locked && b.kind !== "internal"}>
+            <option value="internal" disabled={!b.internal_allowed || (locked && b.kind !== "internal")}>
               {t("files.backend.internal")}
             </option>
             <option value="webdav" disabled={!b.external_allowed || (locked && b.kind !== "webdav")}>

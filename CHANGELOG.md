@@ -27,6 +27,9 @@ First public release of the web client and the desktop apps.
 
 ### Changed
 
+- **Files channels on nodes without their own storage for them** (`TAVRN_FILES_INTERNAL=off`, protocol FILES.md §5):
+  a channel without an external store shows "Choose a store first" instead of the upload button (a link to its
+  storage settings for its managers, a note for everybody else), and the storage settings offer only WebDAV and S3.
 - **Update channels for the desktop apps.** "Check for updates" of the rc builds said "Something went wrong": the apps
   asked GitHub's "latest" release, which never is a pre-release. Both shells now read the website's feed of their
   channel (`https://tavrn.org/updates/desktop/<stable|beta>/…`, a redirect to the right release's signed feed on

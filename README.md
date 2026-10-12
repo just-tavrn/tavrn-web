@@ -151,7 +151,7 @@ E2E_NODE_BIN=… just e2e tests/chat.spec.ts --project chromium   # one spec, on
 ([docs/GITHUB.md](docs/GITHUB.md)). The two-node and single sign-on specs need Chromium (host mapping of `a.test` and
 `b.test` to 127.0.0.1). The nodes keep their SQLite databases and keys in `data-dev/` (`just e2e-clean` starts over).
 Ports follow `E2E_NODE_PORT` (default 8080) and `E2E_WEB_PORT` (default 5173): the other nodes use the next ports
-(+1, +2, +4 to +6) and LiveKit, ICE over TCP and TURN ports derived from them, so several checkouts can run at once
+(+1 to +6) and LiveKit, ICE over TCP and TURN ports derived from them, so several checkouts can run at once
 with different base ports. `E2E_VOICE=false` skips voice where no `livekit-server` is available.
 
 Waits scale with `TAVRN_TEST_TIMEOUT_FACTOR` (default 1; the organization's self-hosted runners set 3): the test and

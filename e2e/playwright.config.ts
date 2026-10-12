@@ -125,6 +125,12 @@ export const legal = {
   nodePort: process.env.E2E_NODE_PORT_LEGAL ?? plus(nodePort, 6),
   webPort: process.env.E2E_WEB_PORT_LEGAL ?? plus(webPort, 6),
 };
+// Files channels on external stores only (FILES.md §5, files-external-only.spec.ts): a node with
+// TAVRN_FILES_INTERNAL=off, which keeps no files of files channels itself. Ports follow the main ones (+3).
+export const filesPolicy = {
+  nodePort: process.env.E2E_NODE_PORT_FILES ?? plus(nodePort, 3),
+  webPort: process.env.E2E_WEB_PORT_FILES ?? plus(webPort, 3),
+};
 const oidcEnv = { TAVRN_OIDC_ISSUER: `http://127.0.0.1:${sso.providerPort}`, TAVRN_OIDC_CLIENT_ID: "tavrn-e2e", TAVRN_OIDC_CLIENT_SECRET: "e2e-secret" };
 const webA = `http://a.test:${fed.webPortA}`;
 const webB = `http://b.test:${fed.webPortB}`;
@@ -263,6 +269,25 @@ export default defineConfig({
       reuseExistingServer: !ci,
       timeout: 120_000,
       env: { E2E_NODE_PORT: legal.nodePort, E2E_WEB_PORT: legal.webPort },
+    },
+    nodeServer(filesPolicy.nodePort, {
+        TAVRN_LISTEN: `127.0.0.1:${filesPolicy.nodePort}`,
+        TAVRN_DATABASE_URL: "sqlite://data-dev/e2e-files.db?mode=rwc",
+        TAVRN_DATA_DIR: "data-dev/e2e-files",
+        TAVRN_WEBAUTHN_ORIGIN: `http://localhost:${filesPolicy.webPort}`,
+        TAVRN_FILES_INTERNAL: "off",
+        TAVRN_FILES_EXTERNAL: "on",
+        // The spec's WebDAV store listens on 127.0.0.1.
+        TAVRN_FILES_EXTERNAL_PRIVATE: "on",
+        TAVRN_VOICE_ENABLED: "false",
+    }),
+    {
+      command: "pnpm --filter @tavrn/web dev",
+      cwd: root,
+      url: `http://localhost:${filesPolicy.webPort}`,
+      reuseExistingServer: !ci,
+      timeout: 120_000,
+      env: { E2E_NODE_PORT: filesPolicy.nodePort, E2E_WEB_PORT: filesPolicy.webPort },
     },
     fedNode("a.test", fed.nodePortA, webA),
     fedNode("b.test", fed.nodePortB, webB),
