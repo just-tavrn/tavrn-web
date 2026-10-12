@@ -8,6 +8,7 @@ import { expect, test, type Browser, type BrowserContext, type Page } from "@pla
 // With its extension: the Electron shell's smoke test (apps/desktop-electron, module resolution "nodenext") imports this file.
 import { NODE, openNavIfMobile, registerViaUi, tokenOf, type UiAccount } from "./helpers.ts";
 import { scaled } from "./timeouts.ts";
+import { speechWav } from "./fake-audio.ts";
 
 /** A short 16-bit mono WAV (a 440 Hz tone). */
 export function toneWav(seconds = 0.5, rate = 16000): Buffer {
@@ -29,11 +30,11 @@ export function toneWav(seconds = 0.5, rate = 16000): Buffer {
   return buf;
 }
 
-// Fake microphone (a continuous tone from a file, so LiveKit counts it as speech) and camera, no
-// permission prompts, audio without a user gesture.
-const FAKE_TONE = join(tmpdir(), "tavrn-calls-e2e-tone.wav");
-writeFileSync(FAKE_TONE, toneWav(5, 48000));
-export const FAKE_MEDIA = ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", `--use-file-for-fake-audio-capture=${FAKE_TONE}`, "--autoplay-policy=no-user-gesture-required"];
+// Fake microphone (speech-like sound from a file, `fake-audio.ts`: LiveKit and the speaking light count it as speech,
+// and the browser's noise suppression keeps it) and camera, no permission prompts, audio without a user gesture.
+const FAKE_VOICE = join(tmpdir(), "tavrn-calls-e2e-voice.wav");
+writeFileSync(FAKE_VOICE, speechWav(5));
+export const FAKE_MEDIA = ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", `--use-file-for-fake-audio-capture=${FAKE_VOICE}`, "--autoplay-policy=no-user-gesture-required"];
 
 export interface VoiceUser {
   page: Page;

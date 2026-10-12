@@ -89,6 +89,10 @@ First public release of the web client and the desktop apps.
   (`@/tmp/.X11-unix/X<n>`, for example Xvfb under WSL2 with WSLg, where `/tmp/.X11-unix` is read-only). The key
   listener tried only the file socket and TCP and said "Global hotkeys unavailable" while the window itself showed;
   it now tries the display's abstract socket as well, with the same Xauthority cookie.
+- Push-to-talk (#47): the other side's speaking light did light up after every press; the tests that sometimes saw it
+  stay dark fed a steady test tone as the microphone, which the browser's noise suppression takes down by about 20 dB,
+  close to the speaking threshold. The test microphone now plays speech-like sound, and a test covers the other side
+  of push-to-talk (every press seen within five seconds, the voice well above the threshold).
 
 ### Security
 
