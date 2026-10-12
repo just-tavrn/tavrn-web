@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
-import { ADULT_DOB, type Account, createRoomViaApi, enrollTotp, ensureDateOfBirth, loginViaApi, registerViaApi, uniqueName } from "./helpers";
-import { A, B, FEDERATION_BROWSER, NODE_A, NODE_B, WEB_A, chromiumOnly, federatedSession, loginOn } from "./federation-helpers";
+import { type Account, createRoomViaApi, registerViaApi, uniqueName } from "./helpers";
+import { A, B, FEDERATION_BROWSER, NODE_A, NODE_B, WEB_A, chromiumOnly, fedAdmin, federatedSession, loginOn, openAdminOn, withNodeLock } from "./federation-helpers";
 import { scaled } from "./timeouts";
 
 test.use(FEDERATION_BROWSER);
@@ -12,78 +10,19 @@ test.use(FEDERATION_BROWSER);
 // never-answering c.test, blocks and unblocks it; the web client warns about and hides a node its home
 // node blocks or that failed the check (§9.2).
 
-const DIR = resolve(dirname(new URL(import.meta.url).pathname), "../../data-dev/e2e-a");
-
 /** Serializes a section across workers and projects (they share the nodes). */
-async function withLock<T>(name: string, fn: () => Promise<T>): Promise<T> {
-  mkdirSync(DIR, { recursive: true });
-  const lock = resolve(DIR, `${name}.lock`);
-  for (;;) {
-    try {
-      mkdirSync(lock);
-      break;
-    } catch {
-      try {
-        if (Date.now() - statSync(lock).mtimeMs > 120_000) rmSync(lock, { recursive: true, force: true });
-      } catch {
-        /* lock vanished meanwhile */
-      }
-      await new Promise((r) => setTimeout(r, 250));
-    }
-  }
-  try {
-    return await fn();
-  } finally {
-    rmSync(lock, { recursive: true, force: true });
-  }
+function withLock<T>(name: string, fn: () => Promise<T>): Promise<T> {
+  return withNodeLock(A, name, fn);
 }
 
 /** The node admin of a.test (`TAVRN_ADMIN_USERS=fedadmin`), cached next to its database across runs. */
-async function adminOfA(request: APIRequestContext): Promise<Account> {
-  const username = "fedadmin";
-  const password = "passwort-fedadmin-xyz";
-  const cache = resolve(DIR, "fedadmin.json");
-  return withLock("fedadmin", async () => {
-    const cached: Account | null = existsSync(cache) ? JSON.parse(readFileSync(cache, "utf8")) : null;
-    if (cached) {
-      const me = await request.get(`${NODE_A}/api/v1/users/me`, { headers: { Authorization: `Bearer ${cached.token}` } });
-      if (me.ok()) {
-        await ensureDateOfBirth(request, cached.token, NODE_A);
-        return cached;
-      }
-    }
-    let account: Account;
-    const reg = await request.post(`${NODE_A}/api/v1/auth/register`, { data: { username, password, device_name: "e2e", date_of_birth: ADULT_DOB } });
-    if (reg.ok()) {
-      const totp = await enrollTotp(request, (await reg.json()).preauth_token, NODE_A);
-      const s = totp.session!;
-      account = { username, password, token: s.access_token, refresh: s.refresh_token, userId: s.user.id, isNodeAdmin: s.user.is_node_admin, deviceId: s.device_id, totpSecret: totp.secret, recoveryCodes: totp.recoveryCodes, lastStep: totp.lastStep };
-    } else if (reg.status() === 409 && cached) {
-      const s = await loginViaApi(request, cached, "e2e", NODE_A);
-      account = { ...cached, token: s.token, refresh: s.refresh, deviceId: s.deviceId };
-    } else {
-      throw new Error(`fedadmin on a.test: ${reg.status()} ${await reg.text()} (delete data-dev/e2e-a.db and data-dev/e2e-a to start over)`);
-    }
-    expect(account.isNodeAdmin).toBeTruthy();
-    writeFileSync(cache, JSON.stringify(account));
-    return account;
-  });
+function adminOfA(request: APIRequestContext): Promise<Account> {
+  return fedAdmin(request, A);
 }
 
 /** Opens a.test's admin page as `admin`. */
 async function openAdmin(page: Page, admin: Account) {
-  await loginOn(page, WEB_A, admin, { domain: A, remote: false });
-  // `loginOn` stores a non-admin user; the admin page needs the flag.
-  await page.addInitScript(
-    ({ origin }) => {
-      if (location.origin !== origin) return;
-      const state = JSON.parse(localStorage.getItem("tavrn.auth") ?? "{}");
-      if (state.user) state.user.is_node_admin = true;
-      localStorage.setItem("tavrn.auth", JSON.stringify(state));
-    },
-    { origin: WEB_A },
-  );
-  await page.goto(`${WEB_A}/admin/federation`);
+  await openAdminOn(page, A, admin, "/admin/federation");
   await expect(page.getByRole("heading", { name: "Andere Knoten" })).toBeVisible();
 }
 

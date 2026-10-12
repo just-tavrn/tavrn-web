@@ -25,6 +25,13 @@ First public release of the web client and the desktop apps.
   document picker and update notices from the releases; passkeys, single sign-on and the captcha on the node's page
   in the browser ([docs/ANDROID.md](docs/ANDROID.md)).
 
+### Added
+
+- **Forwarding reports to the reported user's home node** (protocol MODERATION.md §1.6, `reports.v2`): node admins
+  forward a report about a user of another node from Admin → Reports after a confirmation that says what is shared
+  (never the reporter's address); forwarded reports show where they went, and reports other nodes forwarded show
+  their origin and the reporter's pseudonym.
+
 ### Changed
 
 - **A limit per external store** (protocol FILES.md §5): the storage settings of a files channel on WebDAV or S3 get
