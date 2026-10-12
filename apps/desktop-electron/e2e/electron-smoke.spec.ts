@@ -12,7 +12,7 @@
  *  5. voice with the browser engine (Chromium's fake microphone): the other side sees the app's tile speaking;
  *  6. the camera (Chromium's fake camera): the other side sees the video;
  *  7. a screen share through the shell's own picker (the axe gate on the picker window, the first source chosen): the
- *     other side sees the share;
+ *     other side joins the stream (screen shares are opt-in) and sees it;
  *  8. the system-wide hotkey: push-to-talk bound to the left Ctrl alone, the app's window without focus (the other
  *     user's Chromium window has it), real key presses of the X server (xdotool) open and close the microphone, seen
  *     on the other side;
@@ -33,7 +33,7 @@ import { createRoomViaApi, inviteCode, nextTotpCode, registerViaApi, registerVia
 import { scaled } from "../../../e2e/tests/timeouts.ts";
 import { FAKE_MEDIA } from "../../../e2e/tests/voice-helpers.ts";
 import { nodeUrl } from "./harness.ts";
-import { packagedApp, smokePackaged, startApp, type ElectronApp } from "./launch.ts";
+import { chooseInPicker, packagedApp, smokePackaged, startApp, type ElectronApp } from "./launch.ts";
 
 const PARTIAL = process.env.E2E_ELECTRON_PARTIAL === "1";
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
@@ -275,6 +275,12 @@ test("the Linux app end to end: picker, sign-in, encrypted chat, media, voice, c
     await chooseFirstSource(picker);
     const share = bob.page.getByTestId("screen-tile").and(bob.page.locator(`[data-user="${appAddress}"]`));
     await expect(share).toBeVisible({ timeout: 45_000 });
+    // Screen shares are opt-in (docs/CLIENT.md "Streams are joined"): the other side first sees a placeholder with
+    // "Join stream" and receives nothing; joining subscribes the video.
+    await expect(share).toHaveAttribute("data-state", "available");
+    await expect(share.locator("video")).toHaveCount(0);
+    await share.getByTestId("stream-join").click();
+    await expect(share).toHaveAttribute("data-state", "watching", { timeout: 15_000 });
     await expect.poll(() => share.locator("video").evaluate((v) => (v as HTMLVideoElement).videoWidth).catch(() => 0), { timeout: 30_000 }).toBeGreaterThan(0);
     await shot(bob.page, info, "screen-share-on-the-other-side");
   });
@@ -402,5 +408,5 @@ const otherPid = () => server!.process().pid!;
 async function chooseFirstSource(picker: Page): Promise<void> {
   const screen = picker.locator('button.source[data-kind="screen"]').first();
   await expect(screen).toBeVisible();
-  await screen.click();
+  await chooseInPicker(picker, screen);
 }

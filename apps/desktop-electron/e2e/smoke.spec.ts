@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { FAKE_MEDIA, nodePort, nodeUrl, webOrigin } from "./harness.ts";
-import { packagedApp, startApp, type ElectronApp } from "./launch.ts";
+import { chooseInPicker, packagedApp, startApp, type ElectronApp } from "./launch.ts";
 import { devices, nextCode, registerAccount, type Account } from "./node-api.ts";
 
 let run: ElectronApp | null = null;
@@ -208,7 +208,7 @@ test("the microphone and camera without a prompt; screen sharing through the she
   // The picker meets WCAG 2.2 AA (axe; legacy mode: an Electron app opens no extra page for the results).
   const axe = await new AxeBuilder({ page: first }).setLegacyMode().withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();
   expect(axe.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
-  await screen.click();
+  await chooseInPicker(first, screen);
   expect(await page.evaluate(() => (window as unknown as { __share: Promise<unknown> }).__share)).toMatchObject({ kind: "video", live: "live" });
 
   // Escape cancels: the page is refused (Electron rejects with AbortError, which the client takes as a closed picker).
