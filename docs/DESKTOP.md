@@ -724,7 +724,8 @@ others (layout, bridge, profile, packages) exist for this shell only.
 
 The preload exposes one object to the bundled client, `window.tavrnShell`, with `kind: "electron"` and
 `window: "main"` (the only window with a preload) and the namespaces `shell`, `updater`, `files`, `keychain`, `notify`,
-`tray`, `hotkeys`, `passkeys` (Linux; [Passkeys on Linux](#passkeys-on-linux)) and `events`. Its TypeScript shape is `TavrnShellBridge` in the client
+`tray`, `hotkeys`, `passkeys` (Linux; [Passkeys on Linux](#passkeys-on-linux)) and `events`. Its TypeScript shape is
+`TavrnShellBridge` in the client
 ([`web/src/platform/electronBridge.ts`](../web/src/platform/electronBridge.ts), types only, without imports); the
 preload type-checks against it through a path alias of its `tsconfig.json` (`@tavrn/web/electronBridge`), and a
 compile-time check keeps the method list of `src/shared/bridge.ts` equal to it. The method names are the Tauri
