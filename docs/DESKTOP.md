@@ -6,7 +6,8 @@ for Linux and one for Windows and macOS.
 
 - **Tauri (Windows, macOS)**: a [Tauri 2](https://v2.tauri.app) shell in [`apps/desktop`](../apps/desktop), the pnpm
   package `@tavrn/desktop` (the Tauri CLI) and the Rust crate `tavrn-desktop` in `apps/desktop/src-tauri` with a Cargo
-  workspace of its own; Windows installers `.msi` and NSIS `.exe`, macOS is not supported yet. On Linux it still builds
+  workspace of its own; Windows installers `.msi` and NSIS `.exe`, and an experimental, unsigned universal build for
+  macOS (`.dmg`, [macOS](#macos)). On Linux it still builds
   for development and its tests, but ships no packages ([Builds and releases](#builds-and-releases)).
 - **Electron (Linux)**: an [Electron](https://www.electronjs.org) shell in
   [`apps/desktop-electron`](../apps/desktop-electron), the pnpm package `@tavrn/desktop-electron`, packaged as `.AppImage`
@@ -370,7 +371,7 @@ browser does on Windows (`src-tauri/src/passkey.rs`, the commands `passkey_creat
   an excluded authenticator → "already holds a passkey".
 
 On Linux the Electron shell runs passkeys on FIDO2 security keys itself ([Passkeys on Linux](#passkeys-on-linux));
-macOS has no build.
+on macOS they go through the node's page in the browser ([macOS](#macos)).
 
 ### Passkeys on Linux
 
@@ -1251,7 +1252,8 @@ like `just e2e`.
 | `Desktop (Linux, Electron)` | self-hosted `tavrn-heavy` (`ubuntu-latest` for forks, Dependabot and release tags) | as above; release tags | the Electron shell's checks, the key listener module, `.AppImage`, `.deb` and `latest-linux.yml` (uploaded with their sums before the specs run), every Playwright spec (the full smoke test against a copy of the AppImage); artifact `desktop-linux-electron` ([Builds and releases (Electron)](#builds-and-releases-electron)) |
 | `Desktop (Windows)` | GitHub-hosted `windows-latest` | release tags; by hand with `windows: true` | the Tauri `.msi` and NSIS installers, built without any secret; artifact `desktop-windows` |
 | `Desktop (Windows, Electron fallback)` | GitHub-hosted `windows-latest` | release tags; by hand with `electron-windows: true` | the Electron shell's NSIS installer `tavrn-electron_<version>_x64-setup.exe`, its block map and `latest.yml` (the key listener module built with the MSVC toolchain of the runner); artifact `desktop-windows-electron` |
-| `Release assets` | GitHub-hosted `ubuntu-latest`, environment `release` | release tags, once the owner approved | the only job with the updater key: signs the Tauri installers and the Electron feeds, writes the checksums and `latest.json`, verifies every signature, attests the build provenance, checks the asset set and attaches it to the release ([The release procedure](#the-release-procedure)) |
+| `Desktop (macOS, universal, unsigned)` | GitHub-hosted `macos-latest` | release tags; by hand with `macos: true` | the Tauri app as one universal build (Apple Silicon and Intel): `Tavrn_<version>_universal.dmg` and the updater's app archive `Tavrn_<version>_universal.app.tar.gz`, signed ad hoc only, built without any secret; artifact `desktop-macos`. `continue-on-error`: a failure never fails a release ([macOS](#macos)) |
+| `Release assets` | GitHub-hosted `ubuntu-latest`, environment `release` | release tags, once the owner approved | the only job with the updater key: signs the Tauri installers (and the macOS app archive) and the Electron feeds, writes the checksums and `latest.json`, verifies every signature, attests the build provenance, checks the asset set and attaches it to the release ([The release procedure](#the-release-procedure)) |
 
 All artifacts are kept for 7 days.
 
@@ -1281,7 +1283,7 @@ All artifacts are kept for 7 days.
   `.msi` needs WiX, which runs on Windows), x86_64 only, built but not started (no Windows on the runner), no updater
   signature. It is for testing by hand; releases ship the installers of `windows-latest`.
 - By hand for any branch: `gh workflow run desktop.yml --ref <branch> -f windows=true -f electron-windows=true` adds
-  the `windows-latest` builds of both shells.
+  the `windows-latest` builds of both shells; `-f macos=true` the macOS build.
 
 ### What a release carries
 
@@ -1292,7 +1294,9 @@ All artifacts are kept for 7 days.
 | Windows (fallback) | `tavrn-electron_<version>_x64-setup.exe`: the Electron app, **marked as the fallback** for computers where WebView2 causes trouble ("full version", about 100 MB larger) | `.sha256`, `.blockmap` (electron-updater's differential download) |
 | Linux | `Tavrn-<version>.AppImage`: the Electron app, runs without installing | `.sha256` |
 | Linux (Debian, Ubuntu) | `tavrn_<version>_amd64.deb`: the Electron app with the sandbox profile for Ubuntu, the recommended Linux package there ([Packages and the Chromium sandbox](#packages-and-the-chromium-sandbox)) | `.sha256` |
-| Update feeds | `latest.json` (the Tauri updater: the Windows installers with their `.sig`), `latest.yml` (the Windows fallback), `latest-linux.yml` (Linux) | `latest.yml.minisig`, `latest-linux.yml.minisig` ([Updates](#updates)) |
+| macOS (experimental, when its build succeeded) | `Tavrn_<version>_universal.dmg`: the Tauri app for Apple Silicon and Intel, **not signed or notarized** ([macOS](#macos)) | `.sha256` |
+| macOS (update) | `Tavrn_<version>_universal.app.tar.gz`: the app archive the Tauri updater installs | `.sig`, `.sha256` |
+| Update feeds | `latest.json` (the Tauri updater: the Windows installers and the macOS app archive with their `.sig`), `latest.yml` (the Windows fallback), `latest-linux.yml` (Linux) | `latest.yml.minisig`, `latest-linux.yml.minisig` ([Updates](#updates)) |
 | Node operators | `tavrn-web-<version>.tar.gz`: the web client bundle (from `release.yml`) | `.sha256` |
 
 The names are the ones the website's download page reads (tavrn-website `src/lib/releases.ts`): every Linux package and
@@ -1310,6 +1314,32 @@ either Windows installer); the project applies for one once the repositories are
 with `CSC_LINK` and `CSC_KEY_PASSWORD` or Azure Trusted Signing, Tauri with `bundle.windows.certificateThumbprint` or a
 `signCommand`, and electron-updater checks the publisher of a downloaded Windows installer). Until then the updater
 signatures are the only signatures.
+
+### macOS
+
+The Tauri app (macOS 11 or newer) builds for macOS on GitHub's `macos-latest` runner (the repositories are public, so these runners cost
+no minutes): `tauri build --target universal-apple-darwin --bundles app,dmg`, one universal binary for Apple Silicon and
+Intel. **Nobody of the maintainers has a Mac**: the job is `continue-on-error`, so a failed macOS build never fails a
+release (the release then has no macOS files; `release-assets.mjs` accepts the macOS group complete or absent, never
+half), and a contributor with a Mac verifies the builds (help wanted: issue just-tavrn/tavrn-web#91).
+
+**Not signed, not notarized.** Without an Apple Developer ID (99 USD a year, not planned) the app is signed ad hoc only
+(`signingIdentity: "-"`). Gatekeeper therefore blocks the first start of a downloaded copy:
+
+- macOS 14 and older: right-click (or Control-click) the app in Applications → **Open** → **Open**;
+- macOS 15 and newer: open it once, then System Settings → **Privacy & Security** → "Tavrn was blocked…" → **Open
+  Anyway**, and confirm;
+- if macOS calls the app "damaged" (an older download, a copy without its signature): `xattr -dr com.apple.quarantine
+  /Applications/Tavrn.app` in Terminal.
+
+Check the download first: `shasum -a 256 -c Tavrn_<version>_universal.dmg.sha256`. Updates come through the Tauri
+updater like on Windows (`latest.json`'s `darwin-aarch64` and `darwin-x86_64` entries name the signed
+`.app.tar.gz`), checked with the update key; the updater's own download carries no quarantine flag, so Gatekeeper
+does not ask again after an update.
+
+What differs from Windows: no global hotkeys yet (the key listener has no macOS backend; the keys work while the
+window has focus), passkeys on the node's page in the browser, the key store in the macOS keychain
+(`apple-native-keyring-store`). The native voice engine is built in as on the other systems but untested on a Mac.
 
 ### The release procedure
 

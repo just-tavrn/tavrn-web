@@ -391,6 +391,17 @@ fn installers_for_windows_only() {
 }
 
 #[test]
+fn macos_builds_are_unsigned_and_need_macos_11() {
+    // desktop.yml's macos job builds the .app and .dmg with an ad hoc signature on the command line (docs/DESKTOP.md
+    // "macOS"); the config names no Apple identity, no provider and no entitlements.
+    let mac = &conf()["bundle"]["macOS"];
+    assert_eq!(mac["minimumSystemVersion"], "11.0", "Apple Silicon starts with macOS 11");
+    for key in ["signingIdentity", "providerShortName", "entitlements", "hardenedRuntime"] {
+        assert!(mac.get(key).is_none(), "{key} in bundle.macOS");
+    }
+}
+
+#[test]
 fn the_installers_show_the_licence_and_terms() {
     let c = conf();
     assert_eq!(c["bundle"]["licenseFile"], "../LICENSE.txt", "NSIS shows it as the licence page to accept, the MSI as its licence dialog");

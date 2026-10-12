@@ -52,3 +52,14 @@ test("refuses a release without any signed installer and odd tags", () => {
   assert.throws(() => latestJson({ dir: dirWith({ "tavrn_0.3.0_amd64.deb": "", "Tavrn-0.3.0.AppImage": "" }), tag: "v0.3.0", repo: "a/b" }), /no signed installer/);
   assert.throws(() => latestJson({ dir: dirWith(files), tag: "latest", repo: "a/b" }), /tag/);
 });
+
+test("macOS: the universal app archive serves Apple Silicon and Intel, when the macOS build delivered it", () => {
+  const base = "https://github.com/just-tavrn/tavrn-web/releases/download/v0.3.0";
+  const p = platformsOf(dirWith({ ...files, "Tavrn_0.3.0_universal.dmg": "", "Tavrn_0.3.0_universal.app.tar.gz": "", "Tavrn_0.3.0_universal.app.tar.gz.sig": "sig-mac" }), base);
+  const mac = { signature: "sig-mac", url: `${base}/Tavrn_0.3.0_universal.app.tar.gz` };
+  for (const key of ["darwin-aarch64-app", "darwin-aarch64", "darwin-x86_64-app", "darwin-x86_64"]) assert.deepEqual(p[key], mac, key);
+  // The disk image is a download, never the update.
+  assert.ok(!Object.values(p).some((e) => e.url.endsWith(".dmg")));
+  // Without the macOS build: Windows only, as before.
+  assert.ok(!Object.keys(platformsOf(dirWith(files), base)).some((k) => k.startsWith("darwin")));
+});

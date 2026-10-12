@@ -32,11 +32,35 @@ const RELEASE_0_3_0 = [
   "tavrn-web-0.3.0.tar.gz.sha256",
 ];
 
+/** The macOS files: present when the macOS build succeeded, all or none. */
+const MACOS_0_3_0 = [
+  "Tavrn_0.3.0_universal.dmg",
+  "Tavrn_0.3.0_universal.dmg.sha256",
+  "Tavrn_0.3.0_universal.app.tar.gz",
+  "Tavrn_0.3.0_universal.app.tar.gz.sha256",
+  "Tavrn_0.3.0_universal.app.tar.gz.sig",
+];
+
 test("a release carries exactly these files", () => {
-  assert.deepEqual(expectedAssets("0.3.0").map((a) => a.name).sort(), [...RELEASE_0_3_0].sort());
+  assert.deepEqual(expectedAssets("0.3.0").map((a) => a.name).sort(), [...RELEASE_0_3_0, ...MACOS_0_3_0].sort());
   assert.deepEqual(checkAssets(RELEASE_0_3_0, "0.3.0"), []);
   const desktop = RELEASE_0_3_0.filter((n) => !n.startsWith("tavrn-web-"));
   assert.deepEqual(checkAssets(desktop, "0.3.0", ["desktop"]), [], "the desktop job's directory before the upload");
+});
+
+test("macOS is complete or absent: a failed macOS build never fails the release, half of it does", () => {
+  assert.deepEqual(checkAssets([...RELEASE_0_3_0, ...MACOS_0_3_0], "0.3.0"), []);
+  assert.deepEqual(checkAssets(RELEASE_0_3_0, "0.3.0"), []);
+  const half = [...RELEASE_0_3_0, "Tavrn_0.3.0_universal.dmg", "Tavrn_0.3.0_universal.dmg.sha256"];
+  assert.deepEqual(checkAssets(half, "0.3.0"), [
+    "missing: Tavrn_0.3.0_universal.app.tar.gz",
+    "missing: Tavrn_0.3.0_universal.app.tar.gz.sha256",
+    "missing: Tavrn_0.3.0_universal.app.tar.gz.sig",
+  ]);
+  assert.deepEqual(websiteEntry("Tavrn_0.3.0_universal.dmg"), { os: "macos", shell: "tauri", kind: "dmg", arch: "universal" });
+  assert.deepEqual(websiteEntry("Tavrn_0.3.0_universal.app.tar.gz"), { os: "macos", shell: "tauri", kind: "app-tar", arch: "universal" });
+  const notes = releaseNotes("v0.3.0", "just-tavrn/tavrn-web");
+  assert.match(notes, /\| macOS \(experimental\) \| \[`Tavrn_0\.3\.0_universal\.dmg`\].*\*\*not signed or notarized\*\*/);
 });
 
 test("the download page reads every installer as the right system, shell, format and architecture", () => {
@@ -80,7 +104,7 @@ test("pre-release tags", () => {
 
 test("the release notes name every download with its platform, the fallback marked, and explain sums and feeds", () => {
   const notes = releaseNotes("v0.3.0", "just-tavrn/tavrn-web");
-  for (const a of expectedAssets("0.3.0").filter((x) => x.installer || x.name.endsWith(".tar.gz"))) {
+  for (const a of expectedAssets("0.3.0").filter((x) => (x.installer || x.name.endsWith(".tar.gz")) && !x.name.endsWith(".app.tar.gz"))) {
     assert.ok(notes.includes(`[\`${a.name}\`](https://github.com/just-tavrn/tavrn-web/releases/download/v0.3.0/${a.name})`), a.name);
   }
   assert.match(notes, /\| Android \| \[`Tavrn_0\.3\.0_android-arm64\.apk`\]/);
@@ -110,9 +134,10 @@ test("collect copies exactly the files each build job may deliver, which with re
   assert.deepEqual(readdirSync(out).sort(), copied);
   assert.equal(readFileSync(join(out, "latest-linux.yml"), "utf8"), "linux:latest-linux.yml");
   // What release-assets writes itself: signatures, the remaining sums and latest.json.
-  const own = RELEASE_0_3_0.filter((n) => !copied.includes(n) && !n.startsWith("tavrn-web-"));
+  const own = [...RELEASE_0_3_0, ...MACOS_0_3_0].filter((n) => !copied.includes(n) && !n.startsWith("tavrn-web-"));
   assert.deepEqual(own.sort(), [
     "Tavrn_0.3.0_android-arm64.apk", "Tavrn_0.3.0_android-arm64.apk.sha256",
+    "Tavrn_0.3.0_universal.app.tar.gz.sha256", "Tavrn_0.3.0_universal.app.tar.gz.sig", "Tavrn_0.3.0_universal.dmg.sha256",
     "Tavrn_0.3.0_x64-setup.exe.sha256", "Tavrn_0.3.0_x64-setup.exe.sig", "Tavrn_0.3.0_x64_en-US.msi.sha256",
     "Tavrn_0.3.0_x64_en-US.msi.sig", "latest-linux.yml.minisig", "latest.json", "latest.yml.minisig",
     "tavrn-electron_0.3.0_x64-setup.exe.sha256",
@@ -140,4 +165,18 @@ test("the Android build hands in the unsigned APK; release-assets signs it under
   assert.deepEqual(sourceAssets("0.3.0").android, ["Tavrn_0.3.0_android-arm64-unsigned.apk"]);
   assert.equal(websiteEntry("Tavrn_0.3.0_android-arm64-unsigned.apk")?.os, "android");
   assert.deepEqual(checkAssets([...RELEASE_0_3_0, "Tavrn_0.3.0_android-arm64-unsigned.apk"], "0.3.0"), ["unexpected: Tavrn_0.3.0_android-arm64-unsigned.apk"], "never published");
+});
+
+test("collect: a failed macOS build delivers nothing and the release goes on; a partial one fails", () => {
+  const { dirs, out } = artifacts("0.3.0", (d) => {
+    for (const name of readdirSync(d.macos)) rmSync(join(d.macos, name));
+  });
+  const copied = collectAssets("0.3.0", dirs, out);
+  assert.ok(!copied.some((n) => n.includes("universal")));
+  const gone = artifacts("0.3.0", (d) => rmSync(d.macos, { recursive: true }));
+  assert.ok(collectAssets("0.3.0", gone.dirs, gone.out).length > 0, "no artifact at all (the job failed before its upload)");
+  const half = artifacts("0.3.0", (d) => rmSync(join(d.macos, "Tavrn_0.3.0_universal.app.tar.gz")));
+  assert.throws(() => collectAssets("0.3.0", half.dirs, half.out), /macos: missing Tavrn_0\.3\.0_universal\.app\.tar\.gz/);
+  const signed = artifacts("0.3.0", (d) => writeFileSync(join(d.macos, "Tavrn_0.3.0_universal.app.tar.gz.sig"), "x"));
+  assert.throws(() => collectAssets("0.3.0", signed.dirs, signed.out), /macos: unexpected Tavrn_0\.3\.0_universal\.app\.tar\.gz\.sig/);
 });

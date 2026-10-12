@@ -24,6 +24,8 @@ export function versionOf(tag) {
 /**
  * Every file of a release. `from`: the job that attaches it (`release` for release.yml's web bundle, `desktop` for
  * desktop.yml's release-assets job). `installer`: what the download page lists (it also needs `<name>.sha256`).
+ * `optional`: a group that is complete or absent: the macOS build (`macos`) may fail without failing the release
+ * (docs/DESKTOP.md "macOS").
  */
 export function expectedAssets(version) {
   const v = version;
@@ -36,6 +38,10 @@ export function expectedAssets(version) {
     { name: `tavrn_${v}_amd64.deb`, from: "desktop", installer: { os: "linux", shell: "electron", kind: "deb" } },
     // The Android app (docs/ANDROID.md "Releases"): signed by release-assets with apksigner, no updater signature.
     { name: `Tavrn_${v}_android-arm64.apk`, from: "desktop", installer: { os: "android", shell: "tauri", kind: "apk", arch: "arm64" } },
+    // macOS (unsigned, one universal build for Apple Silicon and Intel): the disk image, and the app archive that the
+    // Tauri updater installs (signed with the update key like the Windows installers).
+    { name: `Tavrn_${v}_universal.dmg`, from: "desktop", optional: "macos", installer: { os: "macos", shell: "tauri", kind: "dmg", arch: "universal" } },
+    { name: `Tavrn_${v}_universal.app.tar.gz`, from: "desktop", optional: "macos", installer: { os: "macos", shell: "tauri", kind: "app-tar", arch: "universal" }, signed: true },
     { name: "latest.json", from: "desktop" },
     { name: "latest.yml", from: "desktop" },
     { name: "latest.yml.minisig", from: "desktop" },
@@ -45,8 +51,8 @@ export function expectedAssets(version) {
     { name: `tavrn-web-${v}.tar.gz.sha256`, from: "release" },
   ].flatMap((a) => [
     a,
-    ...(a.installer ? [{ name: `${a.name}.sha256`, from: a.from }] : []),
-    ...(a.signed ? [{ name: `${a.name}.sig`, from: a.from }] : []),
+    ...(a.installer ? [{ name: `${a.name}.sha256`, from: a.from, ...(a.optional ? { optional: a.optional } : {}) }] : []),
+    ...(a.signed ? [{ name: `${a.name}.sig`, from: a.from, ...(a.optional ? { optional: a.optional } : {}) }] : []),
   ]);
 }
 
@@ -66,8 +72,13 @@ export function sourceAssets(version) {
     "electron-windows": [`tavrn-electron_${v}_x64-setup.exe`, `tavrn-electron_${v}_x64-setup.exe.blockmap`, "latest.yml"],
     // android (the APK, unsigned: release-assets signs it as Tavrn_<version>_android-arm64.apk)
     android: [`Tavrn_${v}_android-arm64-unsigned.apk`],
+    // desktop-macos (the disk image and the app archive, universal; optional: OPTIONAL_SOURCES)
+    macos: [`Tavrn_${v}_universal.dmg`, `Tavrn_${v}_universal.app.tar.gz`],
   };
 }
+
+/** Sources that may be absent or empty (their build job may fail without failing the release). */
+export const OPTIONAL_SOURCES = ["macos"];
 
 /**
  * Copies the files of every source directory into `out`: each source must hold exactly its allowed names as regular
@@ -82,6 +93,8 @@ export function collectAssets(version, dirs, out) {
     const dir = dirs[source];
     if (!dir) { problems.push(`source ${source} not given`); continue; }
     const present = existsSync(dir) ? readdirSync(dir) : [];
+    // An optional build that failed delivers nothing; one that delivers anything delivers everything.
+    if (OPTIONAL_SOURCES.includes(source) && present.length === 0) continue;
     for (const name of present) {
       if (!names.includes(name)) problems.push(`${source}: unexpected ${name}`);
       else if (!lstatSync(join(dir, name)).isFile()) problems.push(`${source}: ${name} is not a regular file`);
@@ -92,6 +105,7 @@ export function collectAssets(version, dirs, out) {
   mkdirSync(out, { recursive: true });
   const copied = [];
   for (const [source, names] of Object.entries(allowed)) {
+    if (OPTIONAL_SOURCES.includes(source) && (!existsSync(dirs[source]) || readdirSync(dirs[source]).length === 0)) continue;
     for (const name of names) {
       if (existsSync(join(out, name))) throw new Error(`${name} exists twice`);
       copyFileSync(join(dirs[source], name), join(out, name));
@@ -133,8 +147,11 @@ export function websiteEntry(name) {
 
 /** Compares asset names with the expected set; also checks that the page reads every expected installer as intended. */
 export function checkAssets(names, version, from = ["desktop", "release"]) {
-  const expected = expectedAssets(version).filter((a) => from.includes(a.from));
   const have = new Set(names);
+  const all = expectedAssets(version).filter((a) => from.includes(a.from));
+  // An optional group counts when any of its files is there; then all of them must be.
+  const groups = new Set(all.filter((a) => a.optional && have.has(a.name)).map((a) => a.optional));
+  const expected = all.filter((a) => !a.optional || groups.has(a.optional));
   const want = new Set(expected.map((a) => a.name));
   const problems = [];
   for (const a of expected) {
@@ -163,6 +180,7 @@ export function releaseNotes(tag, repo) {
     ["Linux", link(`Tavrn-${v}.AppImage`), "Runs without installing on most distributions (Electron); on Ubuntu 24.04 and later prefer the .deb"],
     ["Linux (Debian, Ubuntu)", link(`tavrn_${v}_amd64.deb`), "Package with a sandbox profile for Ubuntu (Electron); recommended on Ubuntu"],
     ["Android", link(`Tavrn_${v}_android-arm64.apk`), "The Android app (Android 8 and newer, 64-bit ARM); push notifications through a UnifiedPush app such as ntfy, no Google services needed"],
+    ["macOS (experimental)", link(`Tavrn_${v}_universal.dmg`), "Apple Silicon and Intel, **not signed or notarized**: open it the first time with right-click → Open (macOS 15: System Settings → Privacy & Security → Open Anyway); missing when the macOS build of this release failed"],
     ["Node operators", link(`tavrn-web-${v}.tar.gz`), "The web client bundle (`web/dist`) for building a node image"],
   ];
   return [
@@ -172,9 +190,9 @@ export function releaseNotes(tag, repo) {
     "|---|---|---|",
     ...rows.map((r) => `| ${r.join(" | ")} |`),
     "",
-    "Every installer and the web bundle have a `<file>.sha256` next to them: check a download with `sha256sum -c <file>.sha256` in its folder. The installers are not signed with an OS code-signing certificate yet, so Windows SmartScreen warns on the first start.",
+    "Every installer and the web bundle have a `<file>.sha256` next to them: check a download with `sha256sum -c <file>.sha256` in its folder (`shasum -a 256 -c` on macOS). The installers are not signed with an OS code-signing certificate yet, so Windows SmartScreen warns on the first start and macOS Gatekeeper blocks the app until it is opened once by hand.",
     "",
-    "The installed apps update themselves from these files: `latest.json` with the `.sig` signatures (Windows, Tauri), `latest.yml` (Windows fallback) and `latest-linux.yml` (Linux), each with a `.minisig` signature made with the same update key. They are not downloads.",
+    "The installed apps update themselves from these files: `latest.json` with the `.sig` signatures (Windows and macOS, Tauri; macOS installs `Tavrn_<version>_universal.app.tar.gz`), `latest.yml` (Windows fallback) and `latest-linux.yml` (Linux), each with a `.minisig` signature made with the same update key. They are not downloads.",
     "",
   ].join("\n");
 }

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
  * Checks the Tauri updater signatures of a release before the upload (desktop.yml, release-assets): every Tauri
- * installer (`*.msi`, `*-setup.exe` without "electron" in the name) needs a `<installer>.sig` that verifies with the
+ * installer (`*.msi`, `*-setup.exe` without "electron" in the name, the macOS `*.app.tar.gz`) needs a `<installer>.sig` that verifies with the
  * update key of tauri.conf.json and names the installer in its trusted comment, and every platform of `latest.json`
  * must carry exactly that signature for the file its URL names. This is what tauri-plugin-updater checks before it
  * installs an update (the minisign crate: `ED`/`Ed` Ed25519 signatures over the whole installer); the `.sig` file
@@ -24,7 +24,7 @@ export function updateKey(conf = TAURI_CONF) {
 /** The Tauri installers of a release directory (the Electron fallback for Windows is never a Tauri update). */
 export function tauriInstallers(dir) {
   return readdirSync(dir)
-    .filter((n) => (n.endsWith(".msi") || n.endsWith("-setup.exe")) && !/electron/i.test(n))
+    .filter((n) => (n.endsWith(".msi") || n.endsWith("-setup.exe") || n.endsWith(".app.tar.gz")) && !/electron/i.test(n))
     .sort();
 }
 

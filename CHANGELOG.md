@@ -52,6 +52,12 @@ First public release of the web client and the desktop apps.
   the game closes. Only the game's name from the list is sent, never window titles or other programs; nothing is
   published with "Hide my activity". Windows and X11 (also games under XWayland); native Wayland windows and macOS
   show nothing ([docs/DESKTOP.md](docs/DESKTOP.md) "Game activity").
+- **macOS builds (experimental)**: releases carry the Tauri app as one universal build for Apple Silicon and Intel
+  (`Tavrn_<version>_universal.dmg`, and the `.app.tar.gz` the updater installs, signed with the update key). Not signed
+  with an Apple Developer ID and not notarized: Gatekeeper blocks the first start until the app is opened by hand
+  (right-click → Open; macOS 15: System Settings → Privacy & Security → Open Anyway). A failed macOS build never fails
+  a release; the maintainers have no Mac, so these builds wait for a contributor with one to verify them
+  ([docs/DESKTOP.md](docs/DESKTOP.md) "macOS").
 
 ### Changed
 

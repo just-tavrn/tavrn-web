@@ -93,3 +93,15 @@ test("refuses a latest.json whose signature or URL does not match the signed ins
 test("the update key is tauri.conf.json's and parses", () => {
   assert.equal(parsePublicKey(updateKey()).keyId.length, 8);
 });
+
+test("the macOS app archive is a Tauri installer and needs its signature", () => {
+  const { sign, pubkey } = fixtureKey();
+  const dir = release(sign);
+  const mac = "Tavrn_0.3.0_universal.app.tar.gz";
+  writeFileSync(join(dir, mac), "app archive");
+  writeFileSync(join(dir, "Tavrn_0.3.0_universal.dmg"), "disk image");
+  assert.throws(() => verifyRelease(dir, pubkey), /universal\.app\.tar\.gz: no signature/);
+  writeFileSync(join(dir, `${mac}.sig`), Buffer.from(sign(mac, Buffer.from("app archive"))).toString("base64"));
+  withManifest(dir);
+  assert.deepEqual(verifyRelease(dir, pubkey), [mac, NSIS, MSI].sort());
+});
