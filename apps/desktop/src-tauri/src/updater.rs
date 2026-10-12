@@ -98,6 +98,8 @@ pub fn code_of(e: &tauri_plugin_updater::Error) -> Option<&'static str> {
         E::Reqwest(e) if e.is_decode() => FAILED,
         E::Reqwest(_) => UNREACHABLE,
         E::Minisign(_) | E::Base64(_) | E::SignatureUtf8(_) | E::SignedVersionMismatch { .. } | E::MissingSignedVersion => SIGNATURE_INVALID,
+        // The channel's release has no build for this platform (a release without the Windows installers).
+        E::TargetNotFound(_) | E::TargetsNotFound(_) => NO_RELEASE,
         _ => FAILED,
     })
 }
@@ -224,7 +226,8 @@ mod tests {
         assert_eq!(code_of(&E::SignedVersionMismatch { signed: "1.0.0".into(), announced: "2.0.0".into() }), Some(SIGNATURE_INVALID));
         assert_eq!(code_of(&E::SignatureUtf8("x".into())), Some(SIGNATURE_INVALID));
         assert_eq!(code_of(&E::Network("Download request failed with status: 404".into())), Some(FAILED));
-        assert_eq!(code_of(&E::TargetNotFound("windows-x86_64".into())), Some(FAILED));
+        assert_eq!(code_of(&E::TargetNotFound("windows-x86_64".into())), Some(NO_RELEASE), "no build for this platform in the channel");
+        assert_eq!(code_of(&E::TargetsNotFound(vec!["linux-x86_64".into()])), Some(NO_RELEASE));
         assert_eq!(code_of(&E::Io(std::io::Error::other("disk full"))), Some(FAILED));
     }
 }

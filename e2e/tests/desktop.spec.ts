@@ -257,7 +257,7 @@ test.describe("Desktop app (simulated shell)", () => {
     await expect(channel).toHaveValue("stable");
     await expect(page.getByTestId("app-update")).toHaveCount(0);
     await page.getByRole("button", { name: "Nach Updates suchen" }).click();
-    await expect(page.getByText("In diesem Update-Kanal gibt es noch kein Release.", { exact: false })).toBeVisible();
+    await expect(page.getByText("In diesem Update-Kanal gibt es noch kein Release dieser App.", { exact: false })).toBeVisible();
     await expect(page.getByText("Etwas ist schiefgelaufen")).toHaveCount(0);
     // The choice sticks (the shell's settings).
     await page.reload();

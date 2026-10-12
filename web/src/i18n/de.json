@@ -2354,7 +2354,7 @@
   "errors.connect.unlock_failed": "Der Passkey hat die App nicht entsperrt. Versuche es erneut oder nutze deinen Wiederherstellungsschlüssel.",
   "errors.update.signature_invalid": "Das Update wurde abgelehnt: Seine Update-Dateien sind nicht mit dem Update-Schlüssel dieser App signiert. Versuche es später erneut oder lade die App von den Releases des Projekts herunter.",
   "errors.update.unreachable": "Der Update-Server ist nicht erreichbar. Prüfe deine Internetverbindung und versuche es später erneut.",
-  "errors.update.no_release": "In diesem Update-Kanal gibt es noch kein Release. Versuche es später erneut oder wähle einen anderen Kanal.",
+  "errors.update.no_release": "In diesem Update-Kanal gibt es noch kein Release dieser App. Versuche es später erneut oder wähle einen anderen Kanal.",
   "errors.update.failed": "Das Update hat nicht geklappt. Versuche es später erneut oder lade die App von den Releases des Projekts herunter.",
   "errors.update.not_configured": "Dieser Build hat keinen Update-Schlüssel: Updates werden von Hand installiert.",
   "errors.update.none": "Es gibt keine neuere Version mehr.",
