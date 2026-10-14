@@ -393,17 +393,35 @@ a day without a time, an end before its start, a time that has passed, a close t
 stays open with the node's message when sending fails.
 
 **The poll in the message list** (`polls/PollView.tsx`) shows the question, the kind ("Poll", "Multiple choice", "Date
-poll"), "Closes in …" (the exact time on hover) or **Closed**, and the number of votes. Choice polls list the options
-as radio buttons or check boxes (44 px rows) with **Vote**, then **Change vote** and **Retract vote**; with the results
-visible every option shows a bar, the count and the share, the own vote is marked "✓ Your vote", and with public votes
-the voters' names follow ("and n more" expands them). Date polls show every slot in the viewer's time zone (with the
-creator's time when the offsets differ; all-day slots keep the creator's date) with Yes / Maybe / No (text and icon,
-never colour alone) and "✓ n · ? n"; the best slots (most yes, then most maybe) are summarised on top and marked
-★, and **Show all answers** opens the grid of members × slots. Hidden results read "Results are shown after you vote"
-or "… when the poll closes", hidden voters "Who voted for what is hidden until the poll closes". A closed poll takes no
-votes. The author, or a member with *Manage messages*, can **Close poll now** (after a confirmation), also a poll without a
-close time; a close time only ever moves earlier. The author always sees the results of their own poll, also with
-"after voting" before they voted. Polls cannot be edited.
+poll"), "Closes in …" (the exact time on hover) or **Closed**, and the number of votes. It has two views
+(`polls/grid.ts`, `pollMode`): members see the **vote form** until they voted and the **results** afterwards (right
+away: the own vote is applied before the node confirms it). **Change vote** returns to the form prefilled with the own
+vote (choice: the own options checked; date: the own yes / maybe / no per slot); **Keep** and **Save** return to the
+results (saving an unchanged vote sends nothing), **Retract vote** stays in the form and leaves the empty form. A vote
+the node refuses is rolled back and the form stays open with the choice. Before voting, **Show results** looks at the
+results (when they are visible) and **Vote** goes back. Closed polls and members who cannot vote see the results only,
+without **Change vote**.
+
+- **Choice polls**: the form lists the options as radio buttons or check boxes (44 px rows), with the bars, counts
+  and shares while the results are visible. The results keep the bars, counts and shares and, with public votes, the
+  voters' names ("and n more" expands them); the own vote is marked with a filled ✓, a thicker accent border, bold
+  text and "Your vote", in the form too.
+- **Date polls**: the form groups the slots by day (the viewer's time zone, with the creator's time when the offsets
+  differ; all-day slots keep the creator's date), one line per slot with Yes / Maybe / No (44 px, text and icon,
+  never colour alone). The results (`polls/DateResults.tsx`) stay compact with many slots: the best slots (most yes,
+  then most maybe) are summarised on top (up to three with their counts, "and n more equally good"), then a grid with
+  the days as columns and the times as rows (all day first). Every slot is one cell with ✓ yes and ? maybe counts, a
+  totals bar (yes, maybe, no of all votes), ★ for the best slots and the own answer as a badge with its icon; a legend
+  explains the marks. The grid is one tab stop (arrow keys between slots, Home / End) and Enter, Space or a click
+  opens the slot's answers below it (each answer with its count and, with public votes, the names; the cell's tooltip
+  lists the names too); its accessible name says the slot, the counts, "best date" and the own answer. On phones the
+  grid scrolls sideways inside the poll with the times sticky. **Show all answers** adds the table of members ×
+  slots. With the results hidden the cells show the own answers only.
+
+Hidden results read "Results are shown after you vote" or "… when the poll closes", hidden voters "Who voted for what
+is hidden until the poll closes". The author, or a member with *Manage messages*, can **Close poll now** (after a
+confirmation), also a poll without a close time; a close time only ever moves earlier. The author always sees the
+results of their own poll, also with "after voting" before they voted. Polls cannot be edited.
 
 **Votes** are records next to the message, one per member and poll (`polls/votes.ts`): loaded when a poll is shown
 (`GET …/poll/votes`), kept current by `poll.vote` and `poll.vote.delete`, never counted as unread and never notifying.

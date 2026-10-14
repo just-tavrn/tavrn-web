@@ -94,6 +94,13 @@ First public release of the web client and the desktop apps.
 
 ### Changed
 
+- **Polls show the results after voting** (#156): once you voted a poll shows its results instead of the vote form;
+  **Change vote** reopens the form with your vote filled in, **Keep** or **Save** return to the results and **Retract
+  vote** stays in the form; closed polls show the results only. Date polls with many slots are compact: the form
+  groups the slots by day with the answers on one line, and the results are a grid with the days as columns and the
+  times as rows (yes / maybe counts, a totals bar, ★ for the best slots summarised on top, your answer as a badge;
+  arrow keys move between the slots and a slot opens its answers; phones scroll the grid sideways with the times
+  fixed). Your own vote is clearly marked in the results of choice polls.
 - **The talking-while-muted hint is off by default on Android** (#147): it keeps the microphone capture open while
   muted, which holds an Android device in its call audio mode, so in the browser on Android and in the Android app
   it now starts off; Settings → Voice & video turns it on. Elsewhere it stays on by default, and a choice made in
