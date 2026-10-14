@@ -22,7 +22,7 @@
  */
 import { platform } from "../platform";
 import { displayMediaAudio, type ScreenAudio } from "./screenAudio";
-import { cleanupConversation } from "../lib/leafCleanup";
+import { cleanupBeforeVoice } from "../lib/leafCleanup";
 import {
   ConnectionQuality,
   DisconnectReason,
@@ -731,11 +731,10 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
   const q = qualify(target.domain, target.channelId);
   if ((await mls.ensureJoined(q, { canCreate })) === "no_group") throw new VoiceError("no_group");
   // Ghost leaves (deleted devices, this user's old devices) go before the new voice key (ENCRYPTION.md §4.7); the
-  // node lists who is in the channel, so only those devices are online for the election. Best effort.
-  if (!opts.rejoin) {
-    const online = participantsOf(useVoicePresence.getState(), target.domain, target.channelId).map((p) => p.identity);
-    await cleanupConversation(q, { members: null, mayManage: false, online }).catch(() => null);
-  }
+  // node lists who is in the channel, so only those devices are online for the election. Never waits for the
+  // election: when another device is elected the cleanup runs in the background once connected. Best effort.
+  const online = () => participantsOf(useVoicePresence.getState(), target.domain, target.channelId).map((p) => p.identity);
+  const cleanupLater = opts.rejoin ? () => undefined : await cleanupBeforeVoice(q, { online });
   // A fresh key for every voice session (ENCRYPTION.md §5a); best effort, the current epoch also works.
   // A rejoin after a dropped connection continues the session on the current epoch.
   if (!opts.rejoin) await mls.selfUpdate(q).catch(() => false);
@@ -852,6 +851,7 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
     for (const p of room.remoteParticipants.values()) followPriorityClaim(s, p);
     const { muted, deafened } = useVoice.getState();
     cue(opts.rejoin ? "connection_restored" : "join", true);
+    cleanupLater();
     await reportState(s, { muted: muted || !canSpeak, deafened });
     if (import.meta.env.DEV) exposeForTests(s);
   } catch (e) {
