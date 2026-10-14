@@ -120,6 +120,14 @@ First public release of the web client and the desktop apps.
   elected the join goes on and the cleanup follows in the background. Background cleanups elect only devices that may
   do the removal (room managers for departed members) and users the presence lists show online.
 
+- **Room administration answers at once and costs one request** (#153, #155): saving a role, creating a category or
+  channel and saving overrides no longer reload the whole room before the confirmation and again on the realtime
+  event. The client writes the node's answer and the events' payloads into its cached room; only changes of a role
+  the viewer holds, the own membership and a new owner fetch the room again, once per burst (250 ms), and the room
+  list and the command palettes refresh only on the events that change them (measured with 60 ms latency: 4 requests,
+  55 KiB and 145 to 195 ms per action before, 1 request, under 1 KiB and 30 to 120 ms after). The channel list
+  evaluates permissions and access marks once per room version instead of per row and render, and its rows render
+  only when they change.
 - **The talking-while-muted hint is off by default on Android** (#147): it keeps the microphone capture open while
   muted, which holds an Android device in its call audio mode, so in the browser on Android and in the Android app
   it now starts off; Settings → Voice & video turns it on. Elsewhere it stays on by default, and a choice made in
@@ -193,6 +201,9 @@ First public release of the web client and the desktop apps.
 
 ### Fixed
 
+- **The room views no longer render twice per room update after a "view as role" preview** (#154): the previewed
+  room was handed on as a copy of the whole query result, which subscribed the sidebar, the channel page and the
+  settings to every fetch-status change for the rest of the session.
 - **A passkey added later unlocks the messages too** (#120): Settings → Security now says for every passkey whether it
   *unlocks messages* (its secret storage entry exists), *can unlock messages: not enabled yet* with **Enable message
   unlock** (one PRF assertion with that passkey from an unlocked device stores the entry: a passkey added while the
