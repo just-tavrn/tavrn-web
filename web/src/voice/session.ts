@@ -24,6 +24,7 @@ import { platform } from "../platform";
 import { displayMediaAudio, type ScreenAudio } from "./screenAudio";
 import { cleanupBeforeVoice, loadPending } from "../lib/leafCleanup";
 import { BackgroundLeaves, earlyPipeline, startJoin, type EarlyPipeline, type Releasable } from "./joinFlow";
+import { vjMark } from "./joinTimings";
 import {
   ConnectionQuality,
   DisconnectReason,
@@ -738,9 +739,11 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
   set(opts.rejoin ? { target, error: null } : { status: "joining", target, error: null, e2eeBlocked: false });
   // E2EE is mandatory: without insertable streams (or RTCRtpScriptTransform) there is no voice.
   if (!isE2ESupportedSafe()) throw new VoiceError("e2ee_unsupported");
+  vjMark("connect_start", { rejoin: !!opts.rejoin });
   // The media start at the click, in parallel with the MLS work and the node's join (joinFlow.ts).
   const media = startMedia(target);
   const mls = await getMls().catch(() => null);
+  vjMark("mls_ready");
   if (!mls) {
     await media.release();
     throw new VoiceError("locked");
@@ -765,6 +768,7 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
     pending: () => loadPending(q),
     cleanup: (pending) => cleanupBeforeVoice(q, { online, pending }),
     media,
+    mark: vjMark,
   });
   const { info } = flow;
   const music = isMusic(info.limits.audio_bitrate_kbps);
@@ -775,6 +779,7 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
   try {
     const s0 = settings();
     pipeline = await media.pipeline.take(music);
+    vjMark("capture_ready");
     // The key of the current epoch for what the others send meanwhile; the session's own (fresh) key follows with the
     // self update through the re-key subscription below, before anything is published (`publishMic`).
     const keyProvider = new TavrnKeyProvider();
@@ -785,6 +790,7 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
     } finally {
       vk.key.fill(0);
     }
+    vjMark("frame_key_ready", { epoch: vk.epoch });
     room = new Room({
       adaptiveStream: true,
       dynacast: true,
@@ -858,22 +864,34 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
     );
     void rekey(s);
     wire(s);
+    room.once(RoomEvent.SignalConnected, () => vjMark("lk_signal_connected"));
+    room.once(RoomEvent.Connected, () => vjMark("lk_connected_event"));
+    room.once(RoomEvent.LocalTrackPublished, () => vjMark("lk_local_track_published"));
+    vjMark("room_created");
     await room.setE2EEEnabled(true);
+    vjMark("e2ee_enabled");
     if (!room.localParticipant.isE2EEEnabled) throw new VoiceError("e2ee_failed");
     // Extra addresses of the media server (TAVRN_RTC_ADVERTISE_IPS, VOICE.md §10.2) for this call's connections.
     setIcePolicy({ aliases: info.ice_aliases ?? [] });
     // Screen shares are opt-in: nothing is subscribed by itself, `streams` subscribes what this viewer wants.
+    vjMark("lk_connect_start");
     await room.connect(info.url, info.token, { autoSubscribe: false });
+    vjMark("lk_connect_done");
     s.streams.applyAll();
     await confirmE2ee(room);
+    vjMark("e2ee_confirmed");
     // The session's fresh epoch (self update) is the sending key before "connected" and before anything is published.
     await flow.fresh;
     await keyCurrent(s);
+    vjMark("fresh_key_ready", { epoch: mls.epoch(q) });
     if (current !== s) return;
     await room.startAudio().catch(() => undefined);
+    vjMark("start_audio_done");
     const canSpeak = canPublish(room, Track.Source.Microphone);
     set({ status: "connected", identity: room.localParticipant.identity, limits: info.limits, canSpeak, serverMuted: !canSpeak, e2ee: true });
+    vjMark("store_connected");
     if (canSpeak) await publishMic(s);
+    vjMark("mic_published");
     applyVolumes(s);
     refreshMedia(s);
     follow(s);
@@ -884,6 +902,7 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
     cue(opts.rejoin ? "connection_restored" : "join", true);
     flow.cleanupLater();
     await reportState(s, { muted: muted || !canSpeak, deafened });
+    vjMark("state_reported");
     if (import.meta.env.DEV) exposeForTests(s);
   } catch (e) {
     const s = current;
@@ -989,9 +1008,11 @@ export async function leave(): Promise<void> {
     if (target && status === "reconnecting") await endpoints(apiFor(target.domain), target).leave().catch(() => undefined);
     return;
   }
+  vjMark("leave_start");
   await cleanup(s);
   cue("leave", true);
   await s.ep.leave().catch(() => undefined);
+  vjMark("leave_done");
   set({ ...IDLE, muted: useVoice.getState().muted, deafened: useVoice.getState().deafened });
 }
 

@@ -12,6 +12,7 @@ import { useVoice, type VoiceTarget } from "./store";
 import { currentEngineKind, useVoiceEngine, type EngineKind, type VoiceEngine } from "./engine";
 import type { ScreenShareOptions } from "./session";
 import { prepareAndroidMedia } from "./androidMedia";
+import { beginJoinTimings, finishJoinTimings, vjMark } from "./joinTimings";
 
 /** Both engines export the same functions (`engine.ts`). */
 type SessionModule = VoiceEngine;
@@ -54,14 +55,22 @@ export async function joinVoice(target: VoiceTarget, opts: { canCreate: boolean;
     toastPreviewRefused();
     return false;
   }
+  // Join timings (docs/CLIENT.md "Voice troubleshooting"): only with the debug flag on.
+  beginJoinTimings({ channel: target.channelId });
   try {
     // Android: the microphone (and headsets) right before the first use (docs/ANDROID.md "Permissions").
     await prepareAndroidMedia("microphone");
-    await (await loadSession()).join(target, opts);
+    vjMark("android_media");
+    const session = await loadSession();
+    vjMark("session_module");
+    await session.join(target, opts);
+    vjMark("join_resolved");
     return true;
   } catch (e) {
     warn(e);
     return false;
+  } finally {
+    void finishJoinTimings();
   }
 }
 

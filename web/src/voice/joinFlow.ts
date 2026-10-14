@@ -80,6 +80,7 @@ export async function startJoin(d: JoinFlowDeps): Promise<JoinFlow> {
     // Ghost leaves go before the fresh voice key (ENCRYPTION.md §4.7), then the self update (§5a). Never rejects.
     const update = pending
       ? (async () => {
+          mark("cleanup_start");
           later = await d.cleanup(pending).catch(() => () => undefined);
           mark("cleanup_done");
           await d.mls.selfUpdate(d.q).catch(() => false);

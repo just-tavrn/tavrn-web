@@ -14,6 +14,7 @@ import type { MicPipeline } from "../../voice/audio";
 import { LOOPBACK_MAX_MS, Loopback, type LoopbackState, type LoopbackStopReason } from "../../voice/loopback";
 import { CUES, RING_LOOP, previewCue, startRingtone } from "../../voice/cues";
 import { ConnectionTestPanel } from "../../voice/ui/ConnectionTestPanel";
+import { setVoiceDebug, voiceDebugEnabled } from "../../voice/joinTimings";
 import { platform } from "../../platform";
 import { MoreHotkeysSection } from "./MoreHotkeysSection";
 import { HotkeyRecorder } from "./HotkeyRecorder";
@@ -342,6 +343,8 @@ export function VoiceSettingsTab() {
   const setStreamVolume = useVoiceSettings((s) => s.setStreamVolume);
   const autoOff = useVoice((s) => s.backgroundAutoOff);
   const [refresh, setRefresh] = useState(0);
+  // Join timings in the console (voice/joinTimings.ts, docs/CLIENT.md "Voice troubleshooting"): per browser profile.
+  const [logJoinTimings, setLogJoinTimings] = useState(voiceDebugEnabled);
   // The native voice engine (desktop app on Linux, or the Windows setting) has devices of its own (`nativeDevices.ts`).
   const native = useNativeVoice();
   const engine = useVoiceEngine();
@@ -422,6 +425,16 @@ export function VoiceSettingsTab() {
 
       <Section title={t("voice.test.title")} description={t("voice.test.description")}>
         <ConnectionTestPanel />
+        <Check
+          label={t("voice.settings.log_join_timings")}
+          hint={t("voice.settings.log_join_timings_hint")}
+          checked={logJoinTimings}
+          onChange={(v) => {
+            setVoiceDebug(v);
+            setLogJoinTimings(voiceDebugEnabled());
+          }}
+          testid="log-join-timings"
+        />
       </Section>
 
       <Section title={t("voice.settings.processing")}>

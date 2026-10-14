@@ -1000,6 +1000,39 @@ microphone is published as mono and heard in the middle, and a two-channel inter
 input is folded onto both sides (the gate worklet's channel guard: one side below −70 dBFS while the other carries
 signal), so nobody is ever heard on one side only.
 
+### Voice troubleshooting
+
+**What a join does.** Clicking a voice channel starts the microphone, the playback and the encryption worker at once,
+while the device joins the channel's encryption group (MLS, ENCRYPTION.md §4) and the node's pending leaf removals
+are fetched. As soon as the device is in the group the client asks the node for its seat (`voice/join`); meanwhile it
+removes ghost leaves it may remove (deleted devices, its own old devices) and commits a self update, so every voice
+session starts on a fresh key (§5a). The call connects to the media server in parallel; only the device's own sending
+key and the microphone's publication wait for the fresh key. The ghost cleanup never holds a join: when another device
+was elected to remove a leaf (§4.7, the lowest device id among the participants who may do it), the join goes on and
+the cleanup follows in the background once connected; the removal later moves the group to a new epoch, which
+re-keys the call. Switching channels leaves the previous one in the background. A join on the same machine takes
+about 0.2 seconds; with 40 ms to the node about half a second, most of it the media server's own connection set-up.
+
+**Log join timings.** Settings → Voice & video → Connection test → **Log join timings** (or
+`localStorage.setItem("tavrn.debug.voice", "1")` in the browser console, `removeItem` to turn it off) makes every
+join print one table to the browser console (`console.info`, developer tools: F12 or Ctrl+Shift+I; in the desktop app
+the same shortcut), once connected:
+
+- every stage since the click with its duration (`ensure_joined_done`, `cleanup_done`, `self_update_done`,
+  `voice_join_response`, `capture_ready`, `lk_signal_connected`, `lk_connected_event`, `fresh_key_ready`,
+  `store_connected`, `mic_published`, …), also as `performance.mark("vj:<stage>")` entries for the browser's
+  performance panel;
+- how long the media server's signalling WebSocket (`/rtc`) took to open;
+- each peer connection from its creation through ICE checking to connected;
+- the selected candidate pair: local and remote candidate type (`host`, `srflx`, `relay`), UDP or TCP and the
+  round-trip time.
+
+Reading it: slow MLS stages (`ensure_joined`, `cleanup`, `self_update`) point at the node or the network to it (each
+is one or two requests); a slow `/rtc` open or `lk_signal_connected` at the reverse proxy in front of the media server;
+a long ICE phase, a `relay` pair or TCP instead of UDP at blocked UDP ports (the connection test above tells which
+paths work). Nothing is recorded, wrapped or printed while the switch is off, and the setting stays in this browser
+profile.
+
 ## Roles and permissions
 
 Roles with "show separately in the member list" get their own section there; the role list in the room settings is

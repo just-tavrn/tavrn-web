@@ -386,6 +386,8 @@
   "voice.settings.test_tone": "Testton abspielen",
   "voice.settings.keep_screen_on": "Bildschirm im Sprachchat anlassen",
   "voice.settings.keep_screen_on_hint": "Der Browser hält den Bildschirm nur an, solange diese Seite sichtbar ist.",
+  "voice.settings.log_join_timings": "Beitrittszeiten protokollieren",
+  "voice.settings.log_join_timings_hint": "Zur Fehlersuche bei langsamen Beitritten: Nach jedem Beitritt zeigt die Browser-Konsole (Entwicklerwerkzeuge), wie lange jeder Schritt gedauert hat und wie die Medienverbindung aufgebaut wurde. Gilt nur auf diesem Gerät.",
   "voice.settings.processing": "Sprachverarbeitung",
   "voice.settings.auto_gain": "Automatische Lautstärkeregelung",
   "voice.settings.echo": "Echounterdrückung",
