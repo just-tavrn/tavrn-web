@@ -57,6 +57,9 @@ import { isAutomodBlock } from "../moderation/blocked";
 import { wasDeleted } from "../moderation/deletedIds";
 import { LockMark } from "./Badges";
 import { sendsTyping, usePresence } from "../stores/presence";
+import { useRoomPreview } from "../stores/rolePreview";
+import { cutHistory, previewHistoryStart } from "../lib/previewRoom";
+import { assertNotPreviewing } from "../lib/previewGuard";
 
 /** An error that was already shown to the user. */
 class AlreadyReported extends Error {}
@@ -149,10 +152,18 @@ export function ConversationView(p: ConversationViewProps) {
   const fetched = useMemo(() => flatten(messages.data), [messages.data]);
   // A thread starts with its root message (the channel message it was started from) once its history is complete.
   const threadRoot = p.threadRoot;
-  const loaded = useMemo(
+  const all = useMemo(
     () => (threadRoot && messages.data && !messages.hasNextPage ? [...fetched, threadRoot] : fetched),
     [fetched, threadRoot, messages.data, messages.hasNextPage],
   );
+  // Role preview (docs/CLIENT.md): encrypted messages from before the window a new member with the role would get are
+  // cut; plaintext messages never are. Nothing older is loaded once the cut lies within the loaded pages.
+  const preview = useRoomPreview(p.roomId);
+  const previewChannel = p.room?.channels.find((c) => c.id === conversationId);
+  const historyStart = preview && previewChannel ? previewHistoryStart(previewChannel, p.permissions ?? 0n, preview.joinedAt) : null;
+  const windowed = useMemo(() => cutHistory(all, historyStart), [all, historyStart]);
+  const loaded = windowed.items;
+  const historyCut = historyStart !== null && (windowed.cut || (!!messages.data && !messages.hasNextPage));
   const detached = isDetached(messages.data);
   const setPages = (fn: (d: MessagePages<Message> | undefined) => MessagePages<Message> | undefined) => queryClient.setQueryData<MessagePages<Message>>(messageKey, fn);
   const emojis = useRoomEmojis(p.roomId ?? "");
@@ -298,8 +309,9 @@ export function ConversationView(p: ConversationViewProps) {
     useMlsUi.setState({ open: conversationId });
     return () => useMlsUi.setState((s) => (s.open === conversationId ? { open: null } : s));
   }, [conversationId, threadId]);
-  useMarkRead(threadId ? "" : conversationId, fetched[0]?.id);
-  useThreadMarkRead(threadId, fetched[0]?.id);
+  // The preview reads nothing as the role: no read markers (the guard would refuse them anyway).
+  useMarkRead(threadId || preview ? "" : conversationId, fetched[0]?.id);
+  useThreadMarkRead(preview ? undefined : threadId, fetched[0]?.id);
 
   const ready = !p.encrypted || e2ee.phase === "ready" || e2ee.phase === "no_group";
   const waiting = p.encrypted && e2ee.waiting.length > 0;
@@ -343,6 +355,8 @@ export function ConversationView(p: ConversationViewProps) {
   };
 
   const upload = async (file: File, onProgress: (f: number) => void): Promise<Attachment> => {
+    // Uploads go by XMLHttpRequest (progress), past the fetch guard: refused here while previewing.
+    assertNotPreviewing();
     if (!p.encrypted) {
       const stored = await api.attachments.uploadToConversation(conversationId, file, file.name, onProgress);
       uploads.current.set(stored.id, stored);
@@ -388,6 +402,8 @@ export function ConversationView(p: ConversationViewProps) {
   /** Seals, signs and sends a content object (text, `/me` actions) with the given uploads (some as spoilers). */
   const deliver = async (content: Record<string, unknown>, attachmentIds: string[] = [], spoilerIds: string[] = []) => {
     try {
+      // Before anything is encrypted: the role preview sends nothing.
+      assertNotPreviewing();
       // Mentions travel in the plaintext envelope (PROTOCOL.md §7), extracted from the text.
       const text = typeof content.body === "string" ? content.body : "";
       // External emojis (design note 4.13): the node checks plaintext bodies; encrypted ones only the client can.
@@ -435,6 +451,7 @@ export function ConversationView(p: ConversationViewProps) {
   deliverRef.current = deliver;
   const edit = async (m: Message, body: string) => {
     try {
+      assertNotPreviewing();
       const previous = m.encrypted ? (decrypted[m.id]?.ok ? (decrypted[m.id] as { content: Record<string, unknown> }).content : null) : (m.content as Record<string, unknown>);
       if (!previous) return;
       const next = { ...previous, type: previous.type === "action" ? "action" : "text", body };
@@ -628,7 +645,8 @@ export function ConversationView(p: ConversationViewProps) {
         usersById={usersById}
         canStartThreads={!threadId && !!p.canStartThreads}
         currentAddress={user?.address}
-        hasMore={!!messages.hasNextPage}
+        hasMore={!!messages.hasNextPage && !historyCut}
+        historyCut={historyCut ? t("roleview.history_start") : undefined}
         loadingOlder={messages.isFetchingNextPage}
         onLoadOlder={loadOlder}
         onAtBottom={() => setPages((old) => trimPages(old))}
@@ -672,12 +690,12 @@ export function ConversationView(p: ConversationViewProps) {
         onSend={send}
         encrypted={p.encrypted}
         onTyping={() => {
-          // Invisible users appear offline: no typing indicator either.
-          if (!sendsTyping(usePresence.getState().mine)) return;
+          // Invisible users appear offline: no typing indicator either; the role preview sends none.
+          if (!sendsTyping(usePresence.getState().mine) || preview) return;
           if (p.roomId) socket?.typing(p.roomId, conversationId);
           else socket?.typingIn(conversationId);
         }}
-        canAttach={p.canAttach && (node.data?.policies.uploads_enabled ?? true)}
+        canAttach={p.canAttach && !preview && (node.data?.policies.uploads_enabled ?? true)}
         // Ciphertext is 16 bytes (GCM tag) larger than the file.
         uploadLimitBytes={uploadLimit && p.encrypted ? uploadLimit - 16 : uploadLimit}
         onUpload={upload}

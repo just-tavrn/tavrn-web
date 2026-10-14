@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+import { useRoomPreview } from "../../stores/rolePreview";
+import { PreviewRights } from "../../components/PreviewRights";
 import { ghostNoBots } from "../../lib/botAccess";
 import { cleanupConversation, useLabelledGhosts } from "../../lib/leafCleanup";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -219,6 +221,7 @@ export function VoiceStage({ room, channel }: { room: RoomDetail; channel: Chann
   const memberAddresses = useMemo(() => members.data?.map((m) => m.user.address) ?? null, [members.data]);
   const voiceChannelId = useVoice((s) => ownVoiceChannel(s, domain, room.id));
   const perms = channelPermissions(room, channel.id, me?.id ?? "", voiceChannelId);
+  const preview = useRoomPreview(room.id);
   // Held in fullscreen: a phone turned to landscape keeps the stage's layout, so the stream in fullscreen stays.
   const phone = useHeldInFullscreen(useIsPhone());
   const [page, setPage] = useState(0);
@@ -380,15 +383,30 @@ export function VoiceStage({ room, channel }: { room: RoomDetail; channel: Chann
               {error}
             </p>
           )}
+          {preview && (
+            <PreviewRights
+              perms={perms}
+              testId="preview-voice-rights"
+              rights={[
+                { label: t("roleview.voice.connect"), bit: Permission.CONNECT },
+                { label: t("roleview.voice.speak"), bit: Permission.SPEAK },
+                { label: t("roleview.voice.stream"), bit: Permission.STREAM },
+                { label: t("roleview.voice.camera"), bit: Permission.USE_CAMERA },
+                { label: t("roleview.voice.soundboard"), bit: Permission.USE_SOUNDBOARD },
+                { label: t("roleview.voice.whiteboard"), bit: Permission.USE_WHITEBOARD },
+              ]}
+            />
+          )}
           <Button
             className="min-w-40"
-            disabled={status === "joining" || !canConnect || blocked}
+            disabled={status === "joining" || !canConnect || blocked || !!preview}
             data-testid="voice-join"
             onClick={() => void joinVoice({ domain, roomId: room.id, channelId: channel.id }, { canCreate: hasPermission(perms, Permission.SEND_MESSAGES) })}
           >
             {status === "joining" ? t("voice.status.joining") : t("voice.join")}
           </Button>
           {!canConnect && <p className="text-xs text-fg-2">{t("errors.voice.connect_forbidden")}</p>}
+          {preview && canConnect && <p className="text-xs text-fg-2">{t("roleview.voice.join_off")}</p>}
           <p className="text-xs text-fg-2">
             <Link to="/settings/voice" className="text-accent hover:underline">
               {t("voice.settings_link")}

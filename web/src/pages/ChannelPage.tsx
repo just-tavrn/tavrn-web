@@ -2,7 +2,7 @@
 import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Navigate, useNavigate, useParams } from "react-router";
-import { Permission, hasPermission, isBotKind, type Member, type Message, type TavrnApi } from "@tavrn/sdk";
+import { Permission, hasPermission, isBotKind, type Member, type Message, type RoomDetail, type TavrnApi } from "@tavrn/sdk";
 import { channelPermissions } from "../lib/channelPermissions";
 import { useT } from "../i18n";
 import { useNode } from "../components/NodeScope";
@@ -26,6 +26,7 @@ import { useFollowedThreads } from "../threads/useFollowedThreads";
 import { useChannelLock } from "../lib/age";
 import { LockedChannel } from "../components/age/LockedChannel";
 import { useHiddenChannels } from "../lib/hiddenChannels";
+import { useRoomPreview } from "../stores/rolePreview";
 
 // Files channels (design note 4.13 item 9): the file browser, loaded on demand.
 const FilesView = lazy(() => import("../files/FilesView"));
@@ -92,6 +93,7 @@ export function ChannelPage() {
   // Lost access (`channel.delete` with `hidden`): said as such, not as "not found".
   const hidden = useHiddenChannels((s) => s.ids[channelId] === true);
   const voiceChannelId = useVoice((s) => ownVoiceChannel(s, domain, roomId));
+  const preview = useRoomPreview(roomId);
   const mentionBase = useMemo(
     () => ({ users: (members.data ?? []).map((m) => ({ address: m.user.address })), roles: roles ?? [], memberRoles: Object.fromEntries((members.data ?? []).map((m) => [m.user.address, m.roles])) }),
     [members.data, roles],
@@ -100,7 +102,15 @@ export function ChannelPage() {
   if (room.isPending) return <p className="p-4 text-sm text-fg-2">{t("room.loading")}</p>;
   if (room.isError) return <p className="p-4 text-sm text-danger">{describeError(room.error)}</p>;
   const channel = room.data.channels.find((c) => c.id === channelId);
-  if (!channel) return <p className="p-4 text-sm text-fg-2">{t(hidden ? "room.channel_hidden" : "room.channel_not_found")}</p>;
+  if (!channel) {
+    // A role preview hides it (lib/previewRoom.ts): a deep link, a notification or a search hit into it lands here.
+    const previewHidden = !!preview && !!queryClient.getQueryData<RoomDetail>(["room", roomId])?.channels.some((c) => c.id === channelId);
+    return (
+      <p className="p-4 text-sm text-fg-2" data-testid="channel-hidden" data-preview={previewHidden || undefined}>
+        {t(previewHidden ? "roleview.channel_hidden" : hidden ? "room.channel_hidden" : "room.channel_not_found")}
+      </p>
+    );
+  }
   const perms = channelPermissions(room.data, channelId, user?.id ?? "", voiceChannelId);
   // Announcement channels: only members with manage_messages post; the others react and reply in threads.
   const announcementBlocked = channel.kind === "announcement" && !hasPermission(perms, Permission.MANAGE_MESSAGES);

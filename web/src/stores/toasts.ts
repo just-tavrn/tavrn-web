@@ -35,6 +35,8 @@ export const useToasts = create<ToastState>((set) => ({
 /** Error of an API call as a toast: known codes translated, otherwise the server's description. */
 export function toastError(e: unknown, fallbackTitle?: string) {
   const err = e as { problem?: { code?: string; title?: string; detail?: string; request_id?: string }; message?: string };
+  // Refused by the role preview's write guard (lib/previewGuard.ts), which has shown its own toast.
+  if (err?.problem?.code === "roleview.read_only") return;
   const title = fallbackTitle ?? err.problem?.title ?? t("common.error");
   // Encryption refusals carry a code as their message: their readable text comes from describeError.
   const named = (e as { name?: string } | null)?.name;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { RoomIcon } from "../components/Avatar";
 import { NavLink } from "react-router";
@@ -15,6 +15,7 @@ import { describeError, toastError, useToasts } from "../stores/toasts";
 import { useUnread } from "../stores/unread";
 import { syncInboxChannels } from "../stores/mls";
 import { useE2ee } from "../stores/e2ee";
+import { usePreviewedRoom } from "../stores/rolePreview";
 import { joinRoomGroups } from "../crypto/groupJoins";
 import { AccessMark, BotsAllowedIcon, LockMark, NoBotsIcon, UnreadBadges, useHasUnread } from "../components/Badges";
 import { botMarker } from "../lib/botAccess";
@@ -30,7 +31,11 @@ import { useRoomMenu } from "../components/menus/RoomMenu";
 import { ChevronDownIcon } from "../components/icons";
 import { badgeText, useCapabilities, useOpenRoomReports } from "../moderation/hooks";
 
-/** Room detail; its `read_states` seed the unread counts of the channels (design note 4.4). */
+/**
+ * Room detail; its `read_states` seed the unread counts of the channels (design note 4.4). While a role preview of
+ * the room is active (stores/rolePreview.ts) the data is the room as those roles see it (lib/previewRoom.ts), so every
+ * room view follows the simulated permissions; the session work below keeps using the real detail.
+ */
 export function useRoom(roomId: string) {
   const { api, domain } = useNode();
   const query = useQuery({
@@ -53,7 +58,8 @@ export function useRoom(roomId: string) {
   useEffect(() => {
     if (channels && e2eeStatus === "unlocked") joinRoomGroups(domain, channels);
   }, [domain, channels, e2eeStatus]);
-  return query;
+  const previewed = usePreviewedRoom(query.data);
+  return useMemo(() => (previewed === query.data ? query : ({ ...query, data: previewed } as typeof query)), [query, previewed]);
 }
 
 /**

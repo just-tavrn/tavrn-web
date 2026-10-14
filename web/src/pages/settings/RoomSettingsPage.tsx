@@ -21,6 +21,7 @@ import { ReportsInbox } from "../../moderation/ReportsInbox";
 import { badgeText, useCapabilities, useOpenRoomReports } from "../../moderation/hooks";
 import { HistoryRequestsTab } from "./HistoryRequestsTab";
 import { RESTORE_CAPABILITY, useRestoreRequests } from "../../history/restore";
+import { useRoomPreview } from "../../stores/rolePreview";
 
 /** `anyOf`: one of these bits is enough; `cap`: only on nodes announcing the capability (MODERATION.md). */
 const TABS: readonly { id: string; needs: bigint; label?: string; anyOf?: bigint[]; cap?: string }[] = [
@@ -49,6 +50,7 @@ export function RoomSettingsPage() {
   const navigate = useNavigate();
   const { roomPath, api, home, domain, me } = useNode();
   const caps = useCapabilities(home ? null : domain);
+  const previewing = !!useRoomPreview(roomId);
   const moderates = hasPermission(parsePermissions(room.data?.my_permissions), Permission.MODERATE_MEMBERS);
   const openReports = badgeText(useOpenRoomReports(api, home ? null : domain, roomId, moderates && !!caps?.includes("reports.v1")));
   const restores = hasPermission(parsePermissions(room.data?.my_permissions), Permission.RESTORE_HISTORY);
@@ -90,6 +92,12 @@ export function RoomSettingsPage() {
         {/* `relative`: the scroll container is the containing block of positioned helpers inside a tab (`sr-only`
             legends); otherwise they are placed against the app shell, which grows and scrolls (tavrn-web#116). */}
         <div className="relative min-h-0 flex-1 overflow-y-auto p-4" tabIndex={0}>
+          {/* Role preview: the tabs and controls the roles would get; every change is refused (lib/previewGuard.ts). */}
+          {previewing && (
+            <p className="mb-4 rounded-md border border-accent/50 bg-accent-soft px-3 py-2 text-sm text-fg-0" data-testid="preview-settings-note">
+              {t("roleview.settings_read_only")}
+            </p>
+          )}
           {tab === "overview" && <OverviewTab key={room.data.id} room={room.data} />}
           {tab === "profile" && <RoomProfileTab room={room.data} />}
           {tab === "roles" && <RolesTab room={room.data} />}
