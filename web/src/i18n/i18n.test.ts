@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { PERMISSION_LABELS } from "@tavrn/sdk";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_LOCALE, LOCALES, errorMessage, format, translate, useLocale } from "./index";
 
@@ -10,6 +11,13 @@ describe("i18n", () => {
       const missing = base.filter((k) => !keys.includes(k));
       const extra = keys.filter((k) => !base.includes(k));
       expect({ code, missing, extra }).toEqual({ code, missing: [], extra: [] });
+    }
+  });
+
+  it("every permission the editors list is translated in every language (perm.<NAME>)", () => {
+    for (const [code, { messages }] of Object.entries(LOCALES)) {
+      const missing = PERMISSION_LABELS.map((p) => `perm.${p.name}`).filter((k) => !(k in messages));
+      expect({ code, missing }).toEqual({ code, missing: [] });
     }
   });
 
