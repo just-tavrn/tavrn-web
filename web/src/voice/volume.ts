@@ -8,6 +8,7 @@
  * - voice  = per-person voice volume × output volume, 0 while deafened
  * - stream = per-streamer stream volume × output volume; while deafened 0, unless the user is watching the
  *            stream and "stream audio while deafened" is on (the default)
+ * - both 0 while the person is muted for this user (`localMute.ts`, issue #124)
  */
 import type { VoiceSettings } from "./settings";
 
@@ -23,6 +24,8 @@ export interface VolumeInput {
   watched: boolean;
   /** Settings switch: a watched stream stays audible while deafened. */
   streamWhileDeafened: boolean;
+  /** The person is muted for this user (`localMute.ts`): nothing of them is heard. */
+  localMuted?: boolean;
 }
 
 /** Gains (1 = unchanged) of a participant's microphone and stream audio. */
@@ -32,6 +35,7 @@ export interface Volumes {
 }
 
 export function playbackVolumes(i: VolumeInput): Volumes {
+  if (i.localMuted) return { microphone: 0, stream: 0 };
   const output = i.output / 100;
   const streamAudible = !i.deafened || (i.watched && i.streamWhileDeafened);
   return {
@@ -41,8 +45,9 @@ export function playbackVolumes(i: VolumeInput): Volumes {
 }
 
 /** The volumes of the user `address` (without device) from the settings. */
-export function participantVolumes(s: VoiceSettings, address: string, state: { deafened: boolean; watched: boolean }): Volumes {
+export function participantVolumes(s: VoiceSettings, address: string, state: { deafened: boolean; watched: boolean; localMuted?: boolean }): Volumes {
   return playbackVolumes({
+    localMuted: state.localMuted,
     deafened: state.deafened,
     voice: s.userVolumes[address] ?? 100,
     stream: s.streamVolumes[address] ?? 100,

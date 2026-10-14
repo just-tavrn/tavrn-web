@@ -20,7 +20,8 @@ import { phoneCameras, useVoiceSettings } from "../settings";
 import { ownVoiceChannel, useVoice } from "../store";
 import { joinVoice } from "../index";
 import { AvatarTile } from "./AvatarTile";
-import { ConnectionGlyph, LevelMeterBars, ParticipantFlags, SoundOverlay, levelStyle, useMemberLooks, useParticipantStatus, usePriority } from "./common";
+import { ConnectionGlyph, LevelMeterBars, LocalMuteMark, ParticipantFlags, SoundOverlay, levelStyle, useMemberLooks, useParticipantStatus, usePriority } from "./common";
+import { localMutedCount, useLocalMute } from "../localMute";
 import { MegaphoneIcon, SpeakerIcon } from "./icons";
 import { FullscreenButton, FullscreenControls, exitFullscreen, useFullscreen, useFullscreenShortcut, useHeldInFullscreen } from "./fullscreen";
 import { StageGrid } from "./StageGrid";
@@ -100,7 +101,9 @@ export function ParticipantTile({ roomId, tile, menu }: { roomId?: string; tile:
   const backCamera = useVoiceSettings((s) => s.settings.cameraFacing === "environment" && !s.settings.cameraDeviceId) && phoneCameras();
   const mirror = mirrorSetting && !backCamera;
   const priority = usePriority(tile.identity);
-  const { status, level } = useParticipantStatus({ identity: tile.identity, connection: tile.connection, muted: tile.flags.muted, server_muted: tile.flags.server_muted });
+  // The own tile's microphone flag pulses while the user talks muted (issue #125).
+  const mutedTalk = useVoice((s) => tile.self && s.mutedTalk);
+  const { status, level, localMuted } = useParticipantStatus({ identity: tile.identity, user: tile.self ? undefined : tile.address, connection: tile.connection, muted: tile.flags.muted, server_muted: tile.flags.server_muted });
   const speaking = status === "speaking";
   const reconnecting = status === "reconnecting";
   // A dropped camera keeps its last frame (the node still says `camera` while the participant reconnects).
@@ -115,6 +118,8 @@ export function ParticipantTile({ roomId, tile, menu }: { roomId?: string; tile:
       data-identity={tile.identity}
       data-speaking={speaking || undefined}
       data-priority={priority || undefined}
+      data-local-muted={localMuted || undefined}
+      data-muted-talk={mutedTalk || undefined}
       data-connection={reconnecting ? "reconnecting" : undefined}
       {...menu?.triggerProps}
       style={levelStyle(level)}
@@ -147,6 +152,7 @@ export function ParticipantTile({ roomId, tile, menu }: { roomId?: string; tile:
           </span>
           <ParticipantFlags p={{ ...tile.flags, streaming: false, camera: false }} size={12} />
         </span>
+        {localMuted && <LocalMuteMark address={tile.address} name={tile.name} className="rounded-md bg-black/60 text-warn hover:bg-black/80" />}
         {menu && (
           <MenuButton
             menu={menu}
@@ -221,6 +227,8 @@ export function VoiceStage({ room, channel }: { room: RoomDetail; channel: Chann
   const ghosts = useGhosts(q, memberAddresses, connected, online, ghostNoBots(channel, room));
   const acked = useMlsUi((s) => s.ghostAck[q]);
   const ghostAck = ghosts.every((g) => acked?.includes(ghostAckId(g)));
+  // People of this call muted for this user only (issue #124): a quiet reminder in the header.
+  const localMuted = useLocalMute((s) => localMutedCount(s, participants.filter((p) => p.identity !== identity).map((p) => p.user)));
 
   const tiles = useMemo(() => {
     const out: Tile[] = [];
@@ -320,6 +328,11 @@ export function VoiceStage({ room, channel }: { room: RoomDetail; channel: Chann
       </h1>
       <LockMark size={18} title={t("voice.encrypted")} testId="voice-lock" />
       <span className="ml-auto" />
+      {connected && localMuted > 0 && (
+        <span className="truncate text-[11px] text-warn" title={t("voice.local_mute.reminder_hint")} data-testid="local-mute-reminder">
+          {t("voice.local_mute.reminder", { count: localMuted })}
+        </span>
+      )}
       <WhiteboardButton conversationId={channel.id} encrypted />
       {connected && (
         <span className="text-[11px] text-ok" data-testid="voice-e2ee">

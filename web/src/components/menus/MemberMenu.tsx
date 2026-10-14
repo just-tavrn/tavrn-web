@@ -2,7 +2,7 @@
 /**
  * The context menu of a room member (design note 4.11): profile, message, call, friend request, invite to room, mention, copy
  * address; for moderators kick, ban (with reason), timeout, roles, and for members in voice server mute,
- * disconnect, move and the per-user voice volume (plus the stream volume while they stream); block. Gated by permissions and the role hierarchy
+ * disconnect, move, the per-user voice volume (plus the stream volume while they stream) and "mute for you"; block. Gated by permissions and the role hierarchy
  * (`lib/menus.ts`); the node enforces the same rules. Voice list rows and stage tiles open the same menu
  * (design note 4.13 item 3).
  */
@@ -22,6 +22,7 @@ import { toastError, useToasts } from "../../stores/toasts";
 import { participantsOf, useVoicePresence, voiceChannelOfUser } from "../../voice/presence";
 import { useVoice } from "../../voice/store";
 import { useVoiceSettings } from "../../voice/settings";
+import { setLocalMute, useLocalMute } from "../../voice/localMute";
 import { VolumeSlider } from "../../voice/ui/StreamAudio";
 import { ContextMenu, useContextMenu, type ContextMenuTrigger, type MenuEntry } from "../ContextMenu";
 import { ProfileCard } from "../ProfilePopover";
@@ -68,6 +69,8 @@ export function useMemberMenu(room: RoomDetail, member: Member | null, voiceTarg
   const setUserVolume = useVoiceSettings((s) => s.setUserVolume);
   const setStreamVolume = useVoiceSettings((s) => s.setStreamVolume);
   const streaming = !!(participant && "streaming" in participant && participant.streaming);
+  // Muted for this user only (voice/localMute.ts, issue #124).
+  const localMuted = useLocalMute((s) => !!s.muted[address]);
   const name = member ? member.nickname || member.user.display_name : localPart(address);
   const currentRoles = roles ?? member?.roles ?? [];
   // "Invite to room": the user's other rooms (the target is in this one).
@@ -97,6 +100,7 @@ export function useMemberMenu(room: RoomDetail, member: Member | null, voiceTarg
     moveTo: (target: string) => voiceChannelId && void run(() => api.voice.move(room.id, voiceChannelId, address, target)),
     volume: (v: number): MenuEntry => ({ kind: "custom", id: "volume", render: () => <VolumeSlider label={t("menu.member.volume")} value={v} onChange={(p) => setUserVolume(address, p)} testid="menu-volume" /> }),
     streamVolume: (v: number): MenuEntry => ({ kind: "custom", id: "stream-volume", render: () => <VolumeSlider label={t("menu.member.stream_volume")} value={v} onChange={(p) => setStreamVolume(address, p)} testid="menu-stream-volume" /> }),
+    localMute: (muted: boolean) => setLocalMute(address, muted),
     copyAddress: () => void copyWithToast(address, t("menu.copied")),
   };
   const copyId = voiceTarget ? () => void copyWithToast(userId, t("menu.copied")) : undefined;
@@ -104,7 +108,7 @@ export function useMemberMenu(room: RoomDetail, member: Member | null, voiceTarg
   let entries: MenuEntry[] = [];
   if (menu.open && !member) {
     entries = voiceParticipantMenu(
-      { self: userId === me?.id, perms: parsePermissions(room.my_permissions), serverMuted: !!participant?.server_muted, inMyCall, volume, streaming, streamVolume, channels: otherVoiceChannels },
+      { self: userId === me?.id, perms: parsePermissions(room.my_permissions), serverMuted: !!participant?.server_muted, inMyCall, volume, streaming, streamVolume, localMuted, channels: otherVoiceChannels },
       { ...voiceActions, copyId: copyId ?? (() => undefined) },
       t,
     );
@@ -116,7 +120,7 @@ export function useMemberMenu(room: RoomDetail, member: Member | null, voiceTarg
         self,
         target: { address, name, isOwner: member.user.id === room.owner_id, top: topPosition(room.roles, currentRoles), roles: currentRoles, timedOut: !!member.timeout_until && Date.parse(member.timeout_until) > Date.now(), bot: isBotKind(member.user.kind) },
         room: { perms: parsePermissions(room.my_permissions), isOwner: room.is_owner, myTop: topPosition(room.roles, room.my_roles, room.is_owner), roles: room.roles },
-        voice: voiceChannelId ? { channelId: voiceChannelId, serverMuted: !!participant?.server_muted, channels: otherVoiceChannels, inMyCall, volume, streaming, streamVolume } : undefined,
+        voice: voiceChannelId ? { channelId: voiceChannelId, serverMuted: !!participant?.server_muted, channels: otherVoiceChannels, inMyCall, volume, streaming, streamVolume, localMuted } : undefined,
         friend: !!friendList?.friends.some((f) => f.user.address === address),
         friendPending: !!friendList?.outgoing.some((r) => r.user.address === address),
         callsAvailable: false,

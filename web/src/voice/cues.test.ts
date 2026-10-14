@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CUES, CUE_GAP, CueEngine, LEAD, PATTERNS, cueAllowed, cueLength, cueEngine, installCueUnlock, playCue, previewCue, scheduleCue, type CueContext } from "./cues";
+import { ATTACK, PEAK, CUES, CUE_GAP, CueEngine, LEAD, PATTERNS, cueAllowed, cueLength, cueEngine, installCueUnlock, playCue, previewCue, scheduleCue, type Cue, type CueContext } from "./cues";
 import { mockEngineContext } from "../test/audio";
 import { DEFAULT_SETTINGS, normalizeSettings, useVoiceSettings } from "./settings";
 
@@ -49,6 +49,34 @@ describe("notification sounds (design note 4.9)", () => {
     expect(PATTERNS.leave[1]!.freq).toBeLessThan(PATTERNS.leave[0]!.freq);
   });
 
+  it("join, leave and the stream cues are the present ones: full gain, a clearer attack, still under the ceiling (issue #123)", () => {
+    const loudest = (cue: Cue) => Math.max(...PATTERNS[cue].map((x) => x.gain));
+    for (const cue of ["join", "leave", "stream_on", "stream_off"] as const) {
+      expect(loudest(cue), cue).toBeGreaterThanOrEqual(0.85);
+      // A clearer attack than the ticks (shorter than the default of 12 ms) on every note.
+      for (const note of PATTERNS[cue]) expect(note.attack ?? ATTACK, cue).toBeLessThanOrEqual(0.006);
+    }
+    // The ticks and the connection tones stay quieter than the people cues.
+    for (const cue of ["mute", "unmute", "deafen", "undeafen", "connection_lost", "ptt_on", "ptt_off", "priority_on", "priority_off", "muted_talk"] as const) {
+      expect(loudest(cue), cue).toBeLessThan(loudest("join"));
+    }
+    // Join and stream start differ: the stream climbs higher.
+    expect(Math.max(...PATTERNS.stream_on.map((x) => x.freq))).toBeGreaterThan(Math.max(...PATTERNS.join.map((x) => x.freq)));
+    // The attack is scheduled as the note says.
+    const { ctx, events } = mockContext(1);
+    scheduleCue(ctx, "join", 1);
+    const first = events.find((e) => e.op === "gain.linear")!;
+    expect(first.args[1]).toBeCloseTo(1 + LEAD + PATTERNS.join[0]!.attack!, 5);
+  });
+
+  it("the talking-while-muted cue is a soft, short double tap (issue #125)", () => {
+    expect(CUES).toContain("muted_talk");
+    expect(PATTERNS.muted_talk).toHaveLength(2);
+    expect(PATTERNS.muted_talk[0]!.freq).toBe(PATTERNS.muted_talk[1]!.freq);
+    expect(cueLength("muted_talk")).toBeLessThan(0.25);
+    for (const note of PATTERNS.muted_talk) expect(note.gain).toBeLessThanOrEqual(0.6);
+  });
+
   it("push-to-talk and priority speaker: one soft tone each, rising when the microphone opens, falling when it closes (issue #37)", () => {
     for (const [on, off] of [
       ["ptt_on", "ptt_off"],
@@ -86,12 +114,12 @@ describe("notification sounds (design note 4.9)", () => {
     const gains = events.filter((e) => e.op.startsWith("gain."));
     expect(gains[0]).toMatchObject({ op: "gain.set", args: [0, starts[0]] });
     const peak = gains.find((g) => g.op === "gain.linear")!.args[0] as number;
-    expect(peak).toBeCloseTo(0.5 * 0.25, 5);
+    expect(peak).toBeCloseTo(0.5 * PEAK, 5);
     expect(gains.some((g) => g.op === "gain.exp")).toBe(true);
     // Louder at full volume, but still moderate.
     const loud = mockContext(0);
     scheduleCue(loud.ctx, "join", 1);
-    expect(loud.events.find((g) => g.op === "gain.linear")!.args[0]).toBeLessThanOrEqual(0.25);
+    expect(loud.events.find((g) => g.op === "gain.linear")!.args[0]).toBeLessThanOrEqual(PEAK);
   });
 
   it("gates cues by the switches; while deafened only the user's own cues play", () => {
@@ -260,6 +288,6 @@ describe("cue engine: one context, resumed before every cue, queued (design note
     expect(m.calls).toEqual(["resume"]);
     expect(m.ctx.state).toBe("running");
     expect(await previewCue("stream_on", { cueVolume: 100, outputDeviceId: "" }, engine)).toBe(true);
-    expect(Math.max(...m.peaks)).toBeLessThanOrEqual(0.25);
+    expect(Math.max(...m.peaks)).toBeLessThanOrEqual(PEAK);
   });
 });

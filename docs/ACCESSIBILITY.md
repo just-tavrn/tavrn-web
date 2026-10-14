@@ -45,6 +45,7 @@ on the desktop and the phone project unless noted:
 | `reports.spec.ts` | a report's detail with its action row |
 | `voice-stream-join.spec.ts` | the voice stage with a stream placeholder ("Join stream") and with a joined stream |
 | `whiteboard-voice.spec.ts` | the voice stage with a whiteboard placeholder ("Join whiteboard"), a joined whiteboard, the presenter's preview with the "Whiteboard is open" bar, and a whiteboard next to a focused stream |
+| `voice-ux.spec.ts` | the voice stage with a participant muted for you (marker, header count) and while talking muted (the pulsing microphone button, the notice) |
 | `desktop-voice.spec.ts` | the Tauri app's Settings → Voice & video and a joined voice channel with the native engine (axe-core inside the app's WebKitGTK webview) |
 | `apps/desktop-electron/e2e/smoke.spec.ts`, `electron-smoke.spec.ts` | the Linux app's screen-share picker window (axe-core inside the Electron shell; `smoke.spec.ts` fails on any WCAG violation, `electron-smoke.spec.ts` on serious and critical ones) |
 

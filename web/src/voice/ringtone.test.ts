@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CueEngine, RINGTONES, RING_LOOP, RING_VIBRATION, ringtonePlaying, scheduleRingLoop, startRingtone, stopRingtone } from "./cues";
+import { CueEngine, RINGTONES, RING_EIGHTH, RING_LOOP, RING_VIBRATION, ringtonePlaying, scheduleRingLoop, startRingtone, stopRingtone } from "./cues";
 import { mockEngineContext } from "../test/audio";
 
 const PENTATONIC = ["C", "D", "E", "G", "A"];
@@ -19,7 +19,7 @@ describe("ringtone (design note 4.11)", () => {
     vi.useRealTimers();
   });
 
-  it("is a gentle two-bar pentatonic motif that fits its loop", () => {
+  it("is a melodic two-bar pentatonic motif that fits its loop (issue #123)", () => {
     for (const [variant, notes] of Object.entries(RINGTONES)) {
       const end = Math.max(...notes.map((n) => n.at + n.dur));
       expect(end, variant).toBeLessThan(RING_LOOP - 0.1);
@@ -29,8 +29,21 @@ describe("ringtone (design note 4.11)", () => {
         expect(n.freq).toBeGreaterThan(200);
         expect(n.freq).toBeLessThan(900);
       }
+      // A melody, not an arpeggio: steps and leaps, nothing wider than a sixth, a rest before the loop repeats.
+      const semitones = notes.slice(1).map((n, i) => Math.round(12 * Math.log2(n.freq / notes[i]!.freq)));
+      expect(semitones.some((s) => Math.abs(s) <= 2), variant).toBe(true);
+      expect(semitones.some((s) => Math.abs(s) >= 3), variant).toBe(true);
+      for (const s of semitones) expect(Math.abs(s), variant).toBeLessThanOrEqual(9);
+      // In time: notes start on the eighth-note grid and never overlap.
+      for (const [i, n] of notes.entries()) {
+        expect(Math.round((n.at / RING_EIGHTH) * 1e6) / 1e6, `${variant} note ${i}`).toBeCloseTo(Math.round(n.at / RING_EIGHTH), 5);
+        if (i > 0) expect(n.at, `${variant} note ${i}`).toBeGreaterThanOrEqual(notes[i - 1]!.at + notes[i - 1]!.dur - 1e-9);
+      }
+      // Ends on the tonic, held longest.
+      expect(noteName(notes.at(-1)!.freq), variant).toBe("C");
+      expect(notes.at(-1)!.dur, variant).toBe(Math.max(...notes.map((n) => n.dur)));
     }
-    expect(RING_LOOP).toBeCloseTo(2.4);
+    expect(RING_LOOP).toBeCloseTo(16 * RING_EIGHTH);
     // The group variant is softer and calmer.
     const loudness = (v: "direct" | "group") => Math.max(...RINGTONES[v].map((n) => n.gain));
     expect(loudness("group")).toBeLessThan(loudness("direct"));

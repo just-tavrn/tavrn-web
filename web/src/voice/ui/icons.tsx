@@ -76,6 +76,14 @@ export const SpeakerIcon = (p: IconProps) => (
   </Svg>
 );
 
+/** A speaker with a cross: muted for this user (issue #124). */
+export const SpeakerOffIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M11 5 6 9H2v6h4l5 4V5z" />
+    <path d="m16 9 5 5M21 9l-5 5" />
+  </Svg>
+);
+
 export const BluetoothIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="m7 7 10 10-5 5V2l5 5L7 17" />

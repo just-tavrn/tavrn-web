@@ -44,9 +44,10 @@ export function useCallNames(): { channel: string; room: string } {
 /**
  * A round toggle button of the voice controls; `menu` adds a quick menu (right-click, long press); `compact` = 36 px (the
  * voice bar). `unavailable` names why the action cannot be used here (the native voice engine has no camera): the
- * button stays focusable and announces the reason instead of failing.
+ * button stays focusable and announces the reason instead of failing. `pulse` draws attention for a moment (the
+ * microphone while talking muted, issue #125; a static ring with reduced motion).
  */
-export function ControlButton({ label, active = false, danger = false, solid = false, onClick, children, testid, className = "", menu, compact = false, unavailable }: { label: string; active?: boolean; danger?: boolean; solid?: boolean; onClick: () => void; children: React.ReactNode; testid?: string; className?: string; menu?: ContextMenuTrigger["triggerProps"]; compact?: boolean; unavailable?: string }) {
+export function ControlButton({ label, active = false, danger = false, solid = false, onClick, children, testid, className = "", menu, compact = false, unavailable, pulse = false }: { label: string; active?: boolean; danger?: boolean; solid?: boolean; onClick: () => void; children: React.ReactNode; testid?: string; className?: string; menu?: ContextMenuTrigger["triggerProps"]; compact?: boolean; unavailable?: string; pulse?: boolean }) {
   const look = unavailable ? "cursor-not-allowed text-fg-2 opacity-60" : solid ? "bg-danger-solid text-white hover:bg-danger-solid-hover" : danger ? "text-danger hover:bg-danger/15" : active ? "bg-danger/15 text-danger hover:bg-danger/25" : "text-fg-1 hover:bg-bg-3 hover:text-fg-0";
   const name = unavailable ? `${label}: ${unavailable}` : label;
   return (
@@ -58,9 +59,10 @@ export function ControlButton({ label, active = false, danger = false, solid = f
       aria-disabled={unavailable ? true : undefined}
       data-testid={testid}
       data-unavailable={unavailable ? true : undefined}
+      data-pulse={pulse || undefined}
       onClick={unavailable ? undefined : onClick}
       {...menu}
-      className={`inline-flex ${compact ? "min-h-9 min-w-9" : "min-h-10 min-w-10"} items-center justify-center rounded-md ${look} ${className}`}
+      className={`inline-flex ${compact ? "min-h-9 min-w-9" : "min-h-10 min-w-10"} items-center justify-center rounded-md ${look} ${pulse ? "voice-muted-talk" : ""} ${className}`}
     >
       {children}
     </button>
@@ -76,6 +78,7 @@ export function VoiceBar() {
   const status = useVoice((s) => s.status);
   const target = useVoice((s) => s.target);
   const muted = useVoice((s) => s.muted);
+  const mutedTalk = useVoice((s) => s.mutedTalk);
   const deafened = useVoice((s) => s.deafened);
   const quality = useVoice((s) => s.quality);
   // Deafened while a watched stream with audio keeps playing (issue #20).
@@ -136,7 +139,7 @@ export function VoiceBar() {
         )}
       </button>
       <div className="absolute right-1 top-1 flex items-center">
-        <ControlButton label={muted ? t("voice.unmute") : t("voice.mute")} active={muted} onClick={() => void toggleMute()} testid="voice-bar-mute" menu={micMenu.triggerProps} compact>
+        <ControlButton label={muted ? t("voice.unmute") : t("voice.mute")} active={muted} pulse={mutedTalk} onClick={() => void toggleMute()} testid="voice-bar-mute" menu={micMenu.triggerProps} compact>
           {muted ? <MicOffIcon /> : <MicIcon />}
         </ControlButton>
         <ControlButton label={deafened ? t("voice.undeafen") : t("voice.deafen")} active={deafened} onClick={() => void toggleDeafen()} testid="voice-bar-deafen" menu={outputMenu.triggerProps} compact>

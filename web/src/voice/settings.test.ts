@@ -149,6 +149,11 @@ describe("voice & video settings (design note 4.9)", () => {
 
 describe("keep the screen on during voice calls", () => {
   it("is on by default; stored values are kept, invalid ones fall back to on", () => {
+    // The talking-while-muted hint (issue #125) is on by default.
+    expect(DEFAULT_SETTINGS.mutedTalkHint).toBe(true);
+    expect(normalizeSettings({}).mutedTalkHint).toBe(true);
+    expect(normalizeSettings({ mutedTalkHint: false }).mutedTalkHint).toBe(false);
+    expect(normalizeSettings({ mutedTalkHint: "no" }).mutedTalkHint).toBe(true);
     expect(DEFAULT_SETTINGS.keepScreenOn).toBe(true);
     expect(normalizeSettings({}).keepScreenOn).toBe(true);
     expect(normalizeSettings({ keepScreenOn: false }).keepScreenOn).toBe(false);

@@ -13,7 +13,9 @@
  * Music mode (VOICE.md §4a) captures without the microphone processing and RNNoise and keeps two channels
  * when the device delivers them (`quality.ts`); the gate then also guards against a one-sided capture.
  * While muted the session releases the capture (`capture.ts`, `releaseCapture`): the graph and the published track
- * stay, only the microphone in front of them is closed until the unmute re-acquires it.
+ * stay, only the microphone in front of them is closed until the unmute re-acquires it. With the talking-while-muted
+ * hint (`mutedTalk.ts`, issue #125) the capture and the graph keep running while muted so the level reports go on;
+ * the gate is then held closed (`setMuted`), so no audio reaches the published (muted) track either way.
  * Loaded lazily (voice session and settings tab only).
  */
 import gateWorkletUrl from "./gate.worklet.ts?worker&url";
@@ -51,6 +53,8 @@ export class MicPipeline {
   private pttTimer: ReturnType<typeof setTimeout> | null = null;
   /** Push-to-talk holds the gate open (key down or within the release delay). */
   private pttOpen = false;
+  /** Muted: the gate stays closed whatever the mode (the level reports continue). */
+  private muted = false;
   /** Hears the push-to-talk gate open and close (the push-to-talk cues, issue #37). */
   onPtt: ((open: boolean) => void) | null = null;
   private closed = false;
@@ -131,7 +135,22 @@ export class MicPipeline {
     this.input.gain.value = settings.inputVolume / 100;
     this.gate.port.postMessage({ threshold: gateThreshold(settings), holdMs: settings.inputMode === "ptt" ? 0 : 300 });
     if (settings.inputMode !== "ptt") this.setPttOpen(false);
-    this.gate.port.postMessage({ mode: gateModeFor(settings.inputMode, this.pttOpen, this.test) });
+    this.postMode();
+  }
+
+  /** The gate's mode: closed while muted, else as the input mode and push-to-talk say. */
+  private postMode(): void {
+    this.gate.port.postMessage({ mode: this.muted ? "closed" : gateModeFor(this.settings.inputMode, this.pttOpen, this.test) });
+  }
+
+  /**
+   * Holds the gate closed while muted (issue #125): the graph may keep running for the level reports, the published
+   * track gets silence from the gate as well as being muted in LiveKit.
+   */
+  setMuted(muted: boolean): void {
+    if (this.muted === muted) return;
+    this.muted = muted;
+    this.postMode();
   }
 
   /**
@@ -218,13 +237,13 @@ export class MicPipeline {
     this.pttTimer = null;
     if (pressed) {
       this.setPttOpen(true);
-      this.gate.port.postMessage({ mode: gateModeFor("ptt", true, this.test) });
+      this.postMode();
       return;
     }
     this.pttTimer = setTimeout(() => {
       this.pttTimer = null;
       this.setPttOpen(false);
-      this.gate.port.postMessage({ mode: gateModeFor("ptt", false, this.test) });
+      this.postMode();
     }, this.settings.pttReleaseMs);
   }
 
