@@ -34,7 +34,8 @@ export function AccountBar() {
   const navigate = useNavigate();
   const { closeNav } = useShell();
   return (
-    <div className="flex items-center gap-1 border-t border-line bg-bg-0 p-2" data-testid="account-bar">
+    // `relative`: the account menu is positioned against the whole bar, so it never grows wider than the sidebar (tavrn-web#115).
+    <div className="relative flex items-center gap-1 border-t border-line bg-bg-0 p-2" data-testid="account-bar">
       <PresenceMenu />
       <div className="min-w-0 flex-1 pl-1">
         <p className="truncate text-sm font-medium" data-testid="me-name" title={user?.display_name}>

@@ -75,4 +75,21 @@ describe("account bar", () => {
     await u.click(screen.getByTestId("presence-menu-button"));
     expect(within(screen.getByRole("menu")).queryByRole("menuitem", { name: "Knotenverwaltung" })).toBeNull();
   });
+
+  it("the account menu stays inside the sidebar: the bar is its containing block and it stretches to the bar's edges (tavrn-web#115)", async () => {
+    // A 256 px menu anchored to the 40 px avatar button overflowed the 240 px sidebar, whose vertical scroll container
+    // then grew a horizontal scrollbar at the bottom of the app.
+    const u = userEvent.setup();
+    renderBar();
+    const bar = screen.getByTestId("account-bar");
+    expect(bar.className).toMatch(/\brelative\b/);
+    await u.click(screen.getByTestId("presence-menu-button"));
+    const menu = screen.getByTestId("presence-menu");
+    expect(menu.className).toMatch(/\babsolute\b/);
+    expect(menu.className).toMatch(/\bleft-1\b/);
+    expect(menu.className).toMatch(/\bright-1\b/);
+    expect(menu.className).not.toMatch(/\bw-\d+\b/);
+    // Nothing between the bar and the menu may be positioned, or the bar would not be the containing block.
+    for (let el = menu.parentElement; el && el !== bar; el = el.parentElement) expect(el.className).not.toMatch(/\b(relative|absolute|fixed)\b/);
+  });
 });

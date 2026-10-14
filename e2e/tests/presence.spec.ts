@@ -73,4 +73,28 @@ test.describe("Presence", () => {
     await expect(bobPage.getByTestId("friends-list").getByTestId("presence-dot")).toHaveAttribute("data-status", "online");
     await bobPage.context().close();
   });
+
+  test("the account menu stays inside the sidebar without a horizontal scrollbar (tavrn-web#115)", async ({ page, request }) => {
+    const alice = await registerViaApi(request, "alice");
+    await loginAs(page, alice);
+    await page.goto("/");
+    await expect(page.getByTestId("me-name")).toBeVisible();
+    await openNavIfMobile(page);
+    await page.getByTestId("presence-menu-button").click();
+    const menu = page.getByTestId("presence-menu");
+    await expect(menu).toBeVisible();
+    const box = (await menu.boundingBox())!;
+    const sidebar = (await page.getByRole("complementary", { name: "Channels" }).boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(sidebar.x);
+    expect(box.x + box.width).toBeLessThanOrEqual(sidebar.x + sidebar.width + 0.5);
+    const overflow = await page.evaluate(() => {
+      const d = document.documentElement;
+      const aside = document.querySelector("aside[aria-label=Channels]")!;
+      return { page: d.scrollWidth - d.clientWidth, sidebar: aside.scrollWidth - aside.clientWidth };
+    });
+    expect(overflow.page).toBeLessThanOrEqual(0);
+    expect(overflow.sidebar).toBeLessThanOrEqual(0);
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+  });
 });

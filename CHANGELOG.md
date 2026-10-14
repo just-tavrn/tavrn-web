@@ -119,6 +119,8 @@ First public release of the web client and the desktop apps.
   on Windows 11 24H2/25H2 with the February 2026 update or newer). Before, the badge followed the node's flag alone
   and a missing entry could not be added afterwards.
 
+- The account menu (status, custom status, activity, sign out) no longer adds a horizontal scrollbar at the bottom of
+  the sidebar: it spans the account bar instead of a fixed width wider than the sidebar (#115).
 - Settings pages no longer scroll the whole app: the content of a tab (user settings, room settings, node
   administration) is the containing block of its positioned helpers, so a long Roles tab scrolls inside its own
   container and the app shell keeps its height (#116).
