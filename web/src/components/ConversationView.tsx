@@ -624,6 +624,7 @@ export function ConversationView(p: ConversationViewProps) {
     if (plainInEncrypted(m, p.encrypted)) return t("messages.not_e2ee_short");
     const c = m.encrypted ? (pinDecrypted[m.id]?.ok ? (pinDecrypted[m.id] as { content: Record<string, unknown> }).content : null) : (m.content as Record<string, unknown> | null);
     if (m.encrypted && !c) return t("messages.encrypted_short");
+    if (c?.type === "poll" && typeof c.question === "string") return `📊 ${c.question}`;
     return typeof c?.body === "string" ? c.body : t("channel.attachment");
   };
 

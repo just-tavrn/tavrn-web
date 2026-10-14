@@ -10,7 +10,7 @@
  * (stored sealed in the index, mirrored in {@link useLocalSearch} for the UI).
  */
 import { create } from "zustand";
-import { SearchIndex, contentAttachments, searchKeysFromStore, type Coverage, type Decrypted, type IndexedMessage } from "@tavrn/e2ee";
+import { SearchIndex, contentAttachments, parsePoll, searchKeysFromStore, type Coverage, type Decrypted, type IndexedMessage } from "@tavrn/e2ee";
 import type { Message } from "@tavrn/sdk";
 import { cryptoStore } from "../crypto/store";
 import { IdbSearchBackend } from "./idbBackend";
@@ -121,8 +121,15 @@ export async function refreshLocalState(index?: SearchIndex | null): Promise<voi
   }
 }
 
-/** The searchable text of a decrypted content object: body, embed titles and descriptions (text and actions). */
+/**
+ * The searchable text of a decrypted content object: body, embed titles and descriptions (text and actions); the
+ * question and the option labels of a poll (PROTOCOL.md §7g).
+ */
 export function contentText(content: Record<string, unknown>): string | null {
+  if (content.type === "poll") {
+    const poll = parsePoll(content);
+    return poll ? [poll.question, ...(poll.kind === "choice" ? poll.options.map((o) => o.label) : [])].join("\n") : null;
+  }
   if (content.type !== "text" && content.type !== "action") return null;
   const parts: string[] = [];
   if (typeof content.body === "string") parts.push(content.body);

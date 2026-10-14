@@ -32,7 +32,9 @@ const PREVIEW = 140;
  */
 export function plainPreview(m: Pick<Message, "encrypted" | "content">, conversationEncrypted = false): string | null {
   if (m.encrypted || plainInEncrypted(m, conversationEncrypted)) return null;
-  const c = m.content as { type?: unknown; body?: unknown } | null;
+  const c = m.content as { type?: unknown; body?: unknown; question?: unknown } | null;
+  // A plaintext poll (PROTOCOL.md §7g) reads as its question.
+  if (c?.type === "poll" && typeof c.question === "string") return `📊 ${c.question.replace(/\s+/g, " ").trim().slice(0, PREVIEW - 3)}`;
   if (!c || c.type !== "text" || typeof c.body !== "string") return null;
   const body = c.body.replace(/\s+/g, " ").trim();
   return body.length > PREVIEW ? `${body.slice(0, PREVIEW - 1)}…` : body;
