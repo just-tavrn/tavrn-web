@@ -2038,6 +2038,7 @@
   "legal.data.cat.encrypted_messages": "Encrypted messages (unreadable for the node)",
   "legal.data.cat.attachments": "Attachments",
   "legal.data.cat.reactions": "Reactions",
+  "legal.data.cat.poll_votes": "Poll votes",
   "legal.data.cat.personal_emojis": "Personal emojis",
   "legal.data.cat.personal_sounds": "Personal sounds",
   "legal.data.cat.whiteboards": "Whiteboards",

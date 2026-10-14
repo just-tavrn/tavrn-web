@@ -2038,6 +2038,7 @@
   "legal.data.cat.encrypted_messages": "Verschlüsselte Nachrichten (für den Knoten unlesbar)",
   "legal.data.cat.attachments": "Anhänge",
   "legal.data.cat.reactions": "Reaktionen",
+  "legal.data.cat.poll_votes": "Umfrage-Stimmen",
   "legal.data.cat.personal_emojis": "Persönliche Emojis",
   "legal.data.cat.personal_sounds": "Persönliche Sounds",
   "legal.data.cat.whiteboards": "Whiteboards",
