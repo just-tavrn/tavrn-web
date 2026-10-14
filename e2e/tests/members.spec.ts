@@ -67,7 +67,7 @@ test.describe("Member list and roles (design note 4.11)", () => {
     const row = list.getByTestId("member-row").filter({ hasText: "Maximiliane" });
     await expect(row).toBeVisible();
     const box = await row.evaluate((el) => {
-      const name = Array.from(el.querySelectorAll("span")).find((s) => s.textContent?.startsWith("Maximiliane"))!;
+      const name = Array.from(el.querySelectorAll("span.truncate")).find((s) => s.textContent?.startsWith("Maximiliane"))!;
       const drawer = el.closest("aside")!.getBoundingClientRect();
       const r = el.getBoundingClientRect();
       return { truncated: name.scrollWidth > name.clientWidth, overflow: getComputedStyle(name).textOverflow, rowRight: r.right, drawerRight: drawer.right, drawerWidth: drawer.width };

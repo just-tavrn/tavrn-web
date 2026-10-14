@@ -294,13 +294,13 @@ test.describe("Emojis, sounds and formatting (design note 4.13)", () => {
     const owner = await registerViaApi(request, "own");
     const room = await createRoomViaApi(request, owner.token, "Emoji-Raum");
     const channel = room.channels.find((c: { kind: string }) => c.kind === "text");
-    await postMessage(request, owner.token, channel.id, "Nur Text ohne alles");
-    await postMessage(request, owner.token, channel.id, "Mit Emoji 😀 im Text und einer Flagge 🇩🇪");
+    await postMessage(request, owner.token, channel.id, "Nur Text");
+    await postMessage(request, owner.token, channel.id, "Mit 😀 und 🇩🇪");
     const party = await postMessage(request, owner.token, channel.id, "🎉🎉");
     await loginAs(page, owner);
     await page.goto(`/rooms/${room.id}`);
-    const plain = page.getByTestId("message").filter({ hasText: "Nur Text ohne alles" });
-    const mixed = page.getByTestId("message").filter({ hasText: "Mit Emoji" });
+    const plain = page.getByTestId("message").filter({ hasText: "Nur Text" });
+    const mixed = page.getByTestId("message").filter({ hasText: "Mit 😀" });
     const only = page.locator(`[data-message-id="${party.id}"]`);
     await expect(only.locator("p.emoji-only")).toBeVisible();
     const sizes = await mixed.evaluate((row, plainRow) => {
@@ -309,7 +309,7 @@ test.describe("Emojis, sounds and formatting (design note 4.13)", () => {
       return { text: parseFloat(getComputedStyle(text).fontSize), emoji: parseFloat(getComputedStyle(emoji).fontSize), line: text.getBoundingClientRect().height, plainLine: plainRow!.querySelector(".markdown")!.getBoundingClientRect().height };
     }, await plain.elementHandle());
     expect(sizes.emoji).toBeCloseTo(sizes.text * 1.25, 1);
-    // No line-height jump: the line with an emoji is as tall as the line of plain text.
+    // No line-height jump: the (one-line) text with emojis is as tall as the one-line plain text.
     expect(sizes.line).toBe(sizes.plainLine);
     const jumbo = await only.locator(".emoji-text").first().evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
     expect(jumbo).toBeCloseTo(sizes.text * 2, 1);
