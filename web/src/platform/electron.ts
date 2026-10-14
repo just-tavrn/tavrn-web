@@ -15,6 +15,7 @@ import { externalUrl, installLinkHandler } from "./links";
 import { nativePasskeys } from "./tauriPasskeys";
 import { updateFailure } from "./updateErrors";
 import type { AppUpdater, HotkeyAction, HotkeyEvent, Platform, PlatformHotkeys, PlatformKeystore, PlatformNotifications, PlatformPasskeys, PlatformTray, TrayAction } from "./types";
+import { shellOs } from "./shellOs";
 
 const TRAY_ACTIONS: readonly string[] = ["mute", "deafen", "leave"] satisfies TrayAction[];
 const HOTKEY_ACTIONS: readonly string[] = ["push_to_talk", "priority", "toggle_mute", "toggle_deafen"] satisfies HotkeyAction[];
@@ -142,6 +143,7 @@ export async function createElectronPlatform(bridge: TavrnShellBridge | null = e
   const platform: Platform = {
     kind: "desktop",
     isDesktop: true,
+    shell: { kind: "electron", os: shellOs(info.os) },
     links: { subscribe: events.onLink },
     games: { watch: (entries) => bridge.games.gamesWatch(entries), onGame: events.onGame },
     nodeBase: () => node ?? "",

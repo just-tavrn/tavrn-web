@@ -51,10 +51,14 @@ export async function closeOpened(): Promise<void> {
   for (const c of opened.splice(0)) await c.close().catch(() => undefined);
 }
 
-/** A new account (with encryption set up) in its own browser context with fake media. */
-export async function voiceUser(browser: Browser, prefix: string, console?: string[]): Promise<VoiceUser> {
+/**
+ * A new account (with encryption set up) in its own browser context with fake media. `settings` are voice settings
+ * stored before the client loads (`tavrn.voice.settings`), for example `{ cuesOff: true }`.
+ */
+export async function voiceUser(browser: Browser, prefix: string, console?: string[], settings?: Record<string, unknown>): Promise<VoiceUser> {
   const context = await browser.newContext({ ...test.info().project.use, permissions: ["microphone", "camera"] });
   opened.push(context);
+  if (settings) await context.addInitScript((s) => localStorage.setItem("tavrn.voice.settings", JSON.stringify(s)), settings);
   const page = await context.newPage();
   if (console) page.on("console", (m) => (m.type() === "error" || m.type() === "warning") && console.push(`[${prefix}] ${m.type()}: ${m.text()}`));
   const account = await registerViaUi(page, { prefix });
@@ -93,8 +97,11 @@ export const cues = (page: Page) => page.evaluate(() => (window as unknown as { 
 export interface HookState {
   e2eeEnabled: boolean;
   localEncrypted: boolean;
-  /** The microphone capture is open (released a moment after a mute). */
+  /** The microphone capture is open (released a moment after a mute, unless the talking-while-muted hint listens). */
   capturing?: boolean;
+  /** The talking-while-muted hint listens right now (muted with the setting on, issue #125). */
+  mutedTalkListening?: boolean;
+  local?: { identity: string; tracks: { source: string; encrypted: boolean }[] };
   remote: { identity: string; isSpeaking: boolean; isEncrypted: boolean; tracks: { source: string; encrypted: boolean; subscribed: boolean }[] }[];
 }
 

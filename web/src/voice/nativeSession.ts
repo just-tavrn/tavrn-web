@@ -27,6 +27,7 @@ import { useVoiceSettings, type VoiceSettings } from "./settings";
 import { withEntitlementCaps } from "./entitlementCaps";
 import { IDLE, SpeakingBatcher, useVoice, type ParticipantMedia, type VoiceTarget } from "./store";
 import { participantVolumes } from "./volume";
+import { isLocallyMuted, useLocalMute } from "./localMute";
 import { SPEAKING_POLL_MS, SpeakingDetector, combineLevels, localLevel } from "./speaking";
 import { DEFAULT_GRACE_MS, RejoinSchedule } from "./reconnect";
 import { playCue, type Cue } from "./cues";
@@ -111,7 +112,10 @@ function emitSpeakers(s: Session, now = performance.now()) {
 function applyVolumes(s: Session, deafened = useVoice.getState().deafened) {
   const conf = settings();
   const gains: Record<string, number> = {};
-  for (const identity of s.remotes) gains[identity] = participantVolumes(conf, splitIdentity(identity).address, { deafened, watched: false }).microphone;
+  for (const identity of s.remotes) {
+    const address = splitIdentity(identity).address;
+    gains[identity] = participantVolumes(conf, address, { deafened, watched: false, localMuted: isLocallyMuted(useLocalMute.getState(), address) }).microphone;
+  }
   void s.voice.setVolumes(gains).catch(() => undefined);
 }
 
@@ -135,8 +139,9 @@ function onEvent(s: Session, e: NativeVoiceEvent) {
     case "level": {
       s.level = { level: e.level ?? Number.NEGATIVE_INFINITY, open: e.open };
       const state = useVoice.getState();
-      if (state.transmitting !== e.open) set({ transmitting: e.open });
-      if (e.open && !state.muted && state.canSpeak) talking();
+      const open = e.open && !state.muted;
+      if (state.transmitting !== open) set({ transmitting: open });
+      if (open && state.canSpeak) talking();
       emitSpeakers(s);
       return;
     }
@@ -211,6 +216,10 @@ function follow(s: Session) {
       if (epoch != null && local != null && epoch > local) void s.mls.catchUp(s.q).catch(() => undefined);
     }),
     useVoiceSettings.subscribe((now, prev) => void applySettings(s, now.settings, prev.settings)),
+    // "Mute for you" (issue #124) is applied like a volume.
+    useLocalMute.subscribe(() => {
+      if (current === s) applyVolumes(s);
+    }),
   );
   // The speaking rings fade without new levels (somebody stopped talking): the detector's hold runs out.
   const timer = setInterval(() => emitSpeakers(s), SPEAKING_POLL_MS * 2);

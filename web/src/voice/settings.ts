@@ -16,7 +16,7 @@ export type Resolution = "360p" | "720p" | "1080p" | "1440p" | "4k";
 export type CameraFacing = "user" | "environment";
 
 /** Notification sounds (`cues.ts`). */
-export const CUE_NAMES = ["join", "leave", "mute", "unmute", "deafen", "undeafen", "stream_on", "stream_off", "connection_lost", "connection_restored", "ptt_on", "ptt_off", "priority_on", "priority_off"] as const;
+export const CUE_NAMES = ["join", "leave", "mute", "unmute", "deafen", "undeafen", "stream_on", "stream_off", "connection_lost", "connection_restored", "ptt_on", "ptt_off", "priority_on", "priority_off", "muted_talk"] as const;
 export type Cue = (typeof CUE_NAMES)[number];
 
 /**
@@ -76,6 +76,8 @@ export interface VoiceSettings {
   ringVolume: number;
   /** Push-to-talk, priority speaker (held), mute and deafen (toggles): one binding each, window and system-wide. */
   hotkeys: Hotkeys;
+  /** A soft cue and a pulsing microphone button when the user talks while muted (`mutedTalk.ts`, issue #125). */
+  mutedTalkHint: boolean;
   /** Keep the screen on while in a voice channel or call (Screen Wake Lock, `wakeLock.ts`; browsers: visible page only). */
   keepScreenOn: boolean;
   /** Desktop app on Windows: voice through the shell's native engine (`engine.ts`; Linux always uses it). */
@@ -115,6 +117,7 @@ export const DEFAULT_SETTINGS: VoiceSettings = {
   cuesDisabled: [],
   ringVolume: 60,
   hotkeys: { push_to_talk: "Backquote", priority: "", toggle_mute: "", toggle_deafen: "" },
+  mutedTalkHint: true,
   keepScreenOn: true,
   nativeEngine: false,
   nativeInputDeviceId: "",
@@ -224,6 +227,7 @@ export function normalizeSettings(raw: unknown): VoiceSettings {
     cuesDisabled: Array.isArray(r.cuesDisabled) ? CUE_NAMES.filter((c) => (r.cuesDisabled as unknown[]).includes(c)) : [],
     ringVolume: num(r.ringVolume, d.ringVolume, 0, 100),
     hotkeys: hotkeys(r),
+    mutedTalkHint: bool(r.mutedTalkHint, d.mutedTalkHint),
     keepScreenOn: bool(r.keepScreenOn, d.keepScreenOn),
     nativeEngine: bool(r.nativeEngine, d.nativeEngine),
     nativeInputDeviceId: str(r.nativeInputDeviceId, d.nativeInputDeviceId, 512),

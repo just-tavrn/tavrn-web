@@ -454,6 +454,7 @@ export function VoiceSettingsTab() {
             {t("voice.settings.ptt")}
           </label>
         </div>
+        <Check label={t("voice.settings.muted_talk_hint")} hint={t("voice.settings.muted_talk_hint_hint")} checked={settings.mutedTalkHint} onChange={(v) => update({ mutedTalkHint: v })} testid="muted-talk-hint" />
         {settings.inputMode === "vad" ? (
           <Slider label={t("voice.settings.threshold")} value={settings.vadThreshold} min={-100} max={0} unit="dB" onChange={(v) => update({ vadThreshold: v })} testid="vad-threshold" />
         ) : (

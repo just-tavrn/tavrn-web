@@ -64,6 +64,8 @@ export interface VoiceState {
   media: Record<string, ParticipantMedia>;
   /** The own gate lets the voice through (voice activation / push-to-talk indicator). */
   transmitting: boolean;
+  /** The user talks while muted (`mutedTalk.ts`, issue #125): the microphone button pulses for a moment. */
+  mutedTalk: boolean;
   /** Last error (translated). */
   error: string | null;
   /** Insertable streams are missing: voice cannot be end-to-end encrypted here (blocking warning). */
@@ -102,6 +104,7 @@ export const IDLE: VoiceState = {
   e2ee: false,
   media: {},
   transmitting: false,
+  mutedTalk: false,
   error: null,
   e2eeBlocked: false,
   focus: null,

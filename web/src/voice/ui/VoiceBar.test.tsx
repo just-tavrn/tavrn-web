@@ -202,6 +202,19 @@ describe("VoiceBar quick menus", () => {
   });
 });
 
+describe("VoiceBar talking while muted (issue #125)", () => {
+  it("pulses the microphone button while the session flags talking while muted", () => {
+    useVoice.setState({ muted: true });
+    renderBar();
+    expect(screen.getByTestId("voice-bar-mute")).not.toHaveAttribute("data-pulse");
+    act(() => useVoice.setState({ mutedTalk: true }));
+    expect(screen.getByTestId("voice-bar-mute")).toHaveAttribute("data-pulse", "true");
+    expect(screen.getByTestId("voice-bar-mute")).toHaveClass("voice-muted-talk");
+    act(() => useVoice.setState({ mutedTalk: false }));
+    expect(screen.getByTestId("voice-bar-mute")).not.toHaveAttribute("data-pulse");
+  });
+});
+
 describe("VoiceBar encryption indicator", () => {
   it("shows the padlock inside the signal bars with a text alternative, no lock emoji", () => {
     useVoice.setState({ quality: "excellent" });

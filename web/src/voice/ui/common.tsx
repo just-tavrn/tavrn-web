@@ -9,7 +9,8 @@ import { parseClipEmoji } from "../soundSignal";
 import { emojiImageUrl, useEmojiImage, useReducedMotion, useRoomEmojis } from "../../lib/emojis";
 import { useNode } from "../../components/NodeScope";
 import { participantStatus, type ParticipantStatus } from "../reconnect";
-import { HeadphonesOffIcon, MicOffIcon, PlugOffIcon, ScreenIcon, SignalBars, VideoIcon } from "./icons";
+import { setLocalMute, useLocalMute } from "../localMute";
+import { HeadphonesOffIcon, MicOffIcon, PlugOffIcon, ScreenIcon, SignalBars, SpeakerOffIcon, VideoIcon } from "./icons";
 
 /**
  * Name, role colour and rank of the room's members by address, like the member list (design note 4.13 item 3):
@@ -77,15 +78,46 @@ export function useAddressSpeaking(address: string): boolean {
   return useSpeaking((s) => Object.keys(s.levels).some((id) => id.startsWith(`${address}/`)));
 }
 
+/** Whether `address` is muted for this user (`localMute.ts`, issue #124). */
+export function useLocalMuted(address: string): boolean {
+  return useLocalMute((s) => !!s.muted[address]);
+}
+
 /**
  * Display state of a participant (design note 4.5 items 6 and 7) with its speaking level: reconnecting
- * (plug glyph, never speaking), poor connection, speaking (ring) or idle.
+ * (plug glyph, never speaking), poor connection, speaking (ring) or idle. A participant muted for this user
+ * (`user` = their address, issue #124) is never shown speaking: their marker says "muted for you" instead of a
+ * ring for a voice that is not heard; `localMuted` tells the caller to show it.
  */
-export function useParticipantStatus(p: { identity: string; connection?: string | null; muted?: boolean; server_muted?: boolean }): { status: ParticipantStatus; level: number } {
+export function useParticipantStatus(p: { identity: string; user?: string; connection?: string | null; muted?: boolean; server_muted?: boolean }): { status: ParticipantStatus; level: number; localMuted: boolean } {
   const level = useLevel(p.identity);
   const quality = useVoice((s) => s.qualities[p.identity]);
-  const status = participantStatus(p, quality, level);
-  return { status, level: status === "speaking" ? level : 0 };
+  const localMuted = useLocalMuted(p.user ?? "");
+  const status = participantStatus(p, quality, localMuted ? 0 : level);
+  return { status, level: status === "speaking" ? level : 0, localMuted };
+}
+
+/**
+ * The "muted for you" marker (issue #124): a speaker with a cross that is also the one-click undo. The accessible
+ * name says what the click does, the tooltip what the marker means.
+ */
+export function LocalMuteMark({ address, name, size = 14, className = "" }: { address: string; name: string; size?: number; className?: string }) {
+  const t = useT();
+  return (
+    <button
+      type="button"
+      className={`inline-flex min-h-6 min-w-6 shrink-0 items-center justify-center rounded text-warn hover:bg-bg-3 hover:text-fg-0 ${className}`}
+      title={`${t("voice.local_mute.muted")} – ${t("voice.local_mute.unmute", { name })}`}
+      aria-label={t("voice.local_mute.unmute", { name })}
+      data-testid="local-mute-mark"
+      onClick={(e) => {
+        e.stopPropagation();
+        setLocalMute(address, false);
+      }}
+    >
+      <SpeakerOffIcon size={size} />
+    </button>
+  );
 }
 
 /** Connection problems: a softly pulsing amber plug while reconnecting, static amber bars when poor. */

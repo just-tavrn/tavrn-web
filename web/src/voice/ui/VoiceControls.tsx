@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { Permission, hasPermission, type Channel, type RoomDetail } from "@tavrn/sdk";
 import { useT } from "../../i18n";
@@ -19,25 +19,29 @@ import { AudioRouteButton } from "./AudioRouteButton";
 import { WhiteboardControl } from "../../whiteboard/WhiteboardStage";
 import { beforeScreenShare } from "../../whiteboard/stage";
 import { platform } from "../../platform";
+import { currentScreenAudioEnv, screenAudioSupport, type ScreenAudio } from "../screenAudio";
 import { GearIcon, HeadphonesIcon, HeadphonesOffIcon, LeaveIcon, MicIcon, MicOffIcon, ScreenIcon, SoundboardIcon, VideoIcon } from "./icons";
 
 const SCREEN_RESOLUTIONS = ["720p", "1080p", "1440p", "4k"];
 const FRAME_RATES = [5, 15, 30, 60];
 
 /**
- * Screen share options before the browser's own source picker (screen, window or tab). In the Android app the whole
- * screen is shared after Android's own consent dialog (VOICE.md §4b); the sound of other apps is off by default there
- * and needs Android 10 or newer.
+ * Screen share options before the browser's own source picker (screen, window or tab): resolution, frame rate and
+ * the sound, one choice of "No sound", "This window" and "Whole system", offered as the platform can capture them
+ * (`screenAudio.ts`, docs/CLIENT.md "Screen share audio"), with one line that says what the choice means here. In the
+ * Android app the whole screen is shared after Android's own consent dialog (VOICE.md §4b); "Whole system" is the
+ * sound of other apps there (Android 10 or newer), never the call.
  */
 export function ScreenShareDialog({ open, onClose, maxResolution, maxFps }: { open: boolean; onClose: () => void; maxResolution: string; maxFps: number }) {
   const t = useT();
   const android = platform().android?.screenShare;
+  const sound = useMemo(() => screenAudioSupport(currentScreenAudioEnv(platform())), []);
   const allowed = SCREEN_RESOLUTIONS.slice(0, Math.max(1, SCREEN_RESOLUTIONS.indexOf(maxResolution) + 1));
   const rates = FRAME_RATES.filter((f) => f <= maxFps);
   const [resolution, setResolution] = useState(allowed.includes("1080p") ? "1080p" : allowed.at(-1)!);
   const [fps, setFps] = useState(rates.includes(30) ? 30 : (rates.at(-1) ?? maxFps));
-  const [audio, setAudio] = useState(!android);
-  const audioAvailable = !android || android.audio;
+  const [audio, setAudio] = useState<ScreenAudio>(sound.initial);
+  const audioLabel = (choice: ScreenAudio) => t(choice === "system" && android ? "voice.screen.audio_android" : `voice.screen.audio_${choice}`);
   return (
     <Dialog title={t("voice.screen.title")} open={open} onClose={onClose}>
       <div className="space-y-3 text-sm" data-testid="screen-share-dialog" data-native={android ? "android" : undefined}>
@@ -62,15 +66,18 @@ export function ScreenShareDialog({ open, onClose, maxResolution, maxFps }: { op
             ))}
           </select>
         </label>
-        <label className="flex min-h-9 items-center gap-2">
-          <input type="checkbox" checked={audio && audioAvailable} disabled={!audioAvailable} onChange={(e) => setAudio(e.target.checked)} className="h-4 w-4" aria-describedby={audioAvailable ? undefined : "screen-audio-unavailable"} data-testid="screen-share-audio" />
-          {t(android ? "voice.screen.audio_android" : "voice.screen.audio")}
-        </label>
-        {!audioAvailable && (
-          <p id="screen-audio-unavailable" className="text-xs text-fg-2">
-            {t("voice.screen.audio_android_unavailable")}
+        <fieldset className="space-y-1" data-testid="screen-share-audio" data-choice={audio} aria-describedby="screen-share-sound-note">
+          <legend className="text-fg-1">{t("voice.screen.sound")}</legend>
+          {sound.choices.map((choice) => (
+            <label key={choice} className="flex min-h-9 items-center gap-2">
+              <input type="radio" name="screen-share-audio" value={choice} checked={audio === choice} onChange={() => setAudio(choice)} className="h-4 w-4" data-testid={`screen-share-audio-${choice}`} />
+              {audioLabel(choice)}
+            </label>
+          ))}
+          <p id="screen-share-sound-note" className="text-xs text-fg-2" data-testid="screen-share-sound-note" data-note={sound.note}>
+            {t(`voice.screen.sound_${sound.note}`)}
           </p>
-        )}
+        </fieldset>
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
             {t("common.cancel")}
@@ -79,7 +86,7 @@ export function ScreenShareDialog({ open, onClose, maxResolution, maxFps }: { op
             data-testid="screen-share-start"
             onClick={() => {
               onClose();
-              void startScreenShare({ audio: audio && audioAvailable, resolution, fps });
+              void startScreenShare({ audio, resolution, fps });
             }}
           >
             {t(android ? "voice.screen.start_android" : "voice.screen.start")}
@@ -160,6 +167,7 @@ export function VoiceControls({ room, channel, perms }: { room: RoomDetail; chan
   const t = useT();
   const navigate = useNavigate();
   const muted = useVoice((s) => s.muted);
+  const mutedTalk = useVoice((s) => s.mutedTalk);
   const deafened = useVoice((s) => s.deafened);
   const camera = useVoice((s) => s.camera);
   // The webview's own share, or the Android app's through the shell (starting counts: a second tap stops it).
@@ -178,7 +186,7 @@ export function VoiceControls({ room, channel, perms }: { room: RoomDetail; chan
   const nativeOnly = useVoiceEngine((s) => s.kind === "native") ? t("voice.native.unavailable") : undefined;
   return (
     <div className="flex shrink-0 flex-wrap items-center justify-center gap-1 border-t border-line bg-bg-1 px-2 py-2 pb-[max(0.5rem,var(--safe-bottom))] md:gap-2" data-testid="voice-controls">
-      <ControlButton label={muted ? t("voice.unmute") : t("voice.mute")} active={muted} onClick={() => void toggleMute()} testid="voice-mute" className="min-h-11 min-w-11" menu={micMenu.triggerProps}>
+      <ControlButton label={muted ? t("voice.unmute") : t("voice.mute")} active={muted} pulse={mutedTalk} onClick={() => void toggleMute()} testid="voice-mute" className="min-h-11 min-w-11" menu={micMenu.triggerProps}>
         {muted ? <MicOffIcon size={20} /> : <MicIcon size={20} />}
       </ControlButton>
       <ControlButton label={deafened ? t("voice.undeafen") : t("voice.deafen")} active={deafened} onClick={() => void toggleDeafen()} testid="voice-deafen" className="min-h-11 min-w-11" menu={outputMenu.triggerProps}>

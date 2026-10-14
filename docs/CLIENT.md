@@ -657,7 +657,11 @@ the other voice channels to this one; with a confirmation; the target's user lim
 every voice channel the moderator may move into, also channels the member may neither view nor join (VOICE.md §7
 "Moved participations"). A member moved into such a channel follows the move as usual: the channel shows up in their
 channel list while they are in it (with the stage and the whiteboard), and disappears again when they leave; they
-cannot rejoin by themselves. Everybody can set a per-person volume there. A dropped connection rejoins by itself
+cannot rejoin by themselves. Everybody can drag their own row onto another voice channel they may join, which
+switches to it (the same as clicking the channel; `connect` there decides, the node has the last word); while a
+drag is over a channel it is highlighted, a channel that cannot take the drop (no `connect` for yourself, no
+`move_members` for a moderator's drag) shows a red outline and refuses it, and the source channel is no target.
+Everybody can set a per-person volume there. A dropped connection rejoins by itself
 (after 0.5, 1, 2, 4 and then every 8 seconds, as long as the node's grace period keeps the seat, 45 seconds by
 default); others see an amber plug on your avatar meanwhile
 instead of you vanishing.
@@ -747,6 +751,19 @@ closes only the gate between key presses, never the capture: a new `getUserMedia
 milliseconds and cut off the first syllable. While unmuted (voice activation or push-to-talk) with echo cancellation
 on, Android stays in the call audio mode: the volume keys set the call volume during a call.
 
+**Talking while muted** (`web/src/voice/mutedTalk.ts`): with "Remind me when I talk while muted" (Settings → Voice &
+video → Input mode, on by default) the capture and the microphone graph keep running while you are muted, so the
+client can tell that your voice is being picked up; the gate is held closed and the published track is muted, so
+nothing is sent (the other side decodes silence). Once the input stays above the voice activation threshold for
+about 0.7 seconds (short dips between words do not count), a soft double tap plays (the cue "Talking while muted",
+with its own switch and preview like every cue), the microphone button in the controls and in the voice bar and the
+microphone flag on your own tile pulse for a moment (a static amber ring with reduced motion), and once per mute a
+short notice says "You are talking, but your microphone is muted." (announced politely). The cue repeats at most
+every ten seconds while the talking goes on. The hint applies to the mute toggle only: a released push-to-talk key is
+not a mute; it does not listen while deafened (you stepped away) or server-muted (you could not unmute). With the
+setting off the mute releases the capture as described above; on Android in the browser this also means the phone
+stays in its call audio mode while muted as long as the hint is on.
+
 ### Voice and stream audio
 
 A participant's voice (microphone) and their screen share's audio each have their own volume (0–200 %, kept per
@@ -758,6 +775,14 @@ watching (joined, and its tile is on screen) keeps playing: the tile shows a spe
 the stream keeps playing". A stream that is not on screen (you opened a text channel or the settings) goes silent
 while deafened. The switch "Streams stay audible while deafened" in the voice settings (on by default) turns this
 off, so that deafen silences everything.
+
+**Mute for you** (`web/src/voice/localMute.ts`) in a participant's menu (next to the volume, on the row in the
+channel list and on the stage tile) silences that person's voice and their stream's audio on this device only;
+nobody else is told and the node is not involved. It is kept in memory for the session, never in storage: a reload
+starts with everybody audible, so a forgotten mute cannot outlive the day. A person muted for you carries a crossed
+speaker on their tile and in the member list (amber; the tooltip says "Muted for you", a click on it or "Unmute for
+you" in the menu lifts it), they are never shown speaking (there is nothing to hear), and the stage header shows
+"Muted for you: n" while anybody in the call is muted this way.
 
 ### Calls in DMs and group DMs
 
@@ -777,12 +802,37 @@ tab's connection open; the service worker shows them only while no page of the c
 
 ### Screen sharing, the priority speaker and the soundboard
 
-Before the browser's picker, sharing the screen asks for resolution, frame rate and "Share audio too (if the browser
-allows it)". Members with the priority speaker permission hold the priority key (or the megaphone toggle in the call
+Before the browser's picker, sharing the screen asks for resolution, frame rate and the sound ("Screen share audio"
+below). Members with the priority speaker permission hold the priority key (or the megaphone toggle in the call
 controls on phones and tablets) to lower everybody else to 25 % for all listeners. Room owners upload soundboard clips
 under Room settings → Soundboard (at most 5 seconds, 1 MB and 50 clips per room); members with `use_soundboard` play
 them from the call controls into their own (encrypted) microphone track, which also needs `speak`. Personal clips
 (Settings → Sounds) and other rooms' clips need `use_external_sounds` and are greyed out without it.
+
+### Screen share audio
+
+The share dialog has one choice for the sound: **No sound**, **Whole system** (everything the computer plays) and,
+on a platform that can capture it, **This window only**; a line under the choice says what it means where the client
+runs (`web/src/voice/screenAudio.ts` decides from the platform, `ui/VoiceControls.tsx` shows it). Only the choices the
+platform supports are shown, and "Whole system" starts selected only where the call's own playback is left out of it
+(nobody hears themselves); elsewhere it is off by default and the note warns. What each platform does (October 2026):
+
+| Where | Whole system | Own playback left out | This window |
+|---|---|---|---|
+| Chrome, Edge and other Chromium browsers on Windows (and ChromeOS) | yes, with a shared screen (the browser's "share system audio" box; a shared window carries the system's sound as well) | since Chrome 141 (`restrictOwnAudio`, read from the browser's supported constraints); older browsers include the call, and the note says so | no: no Chromium captures one window's sound (`windowAudio` knows "system" and "exclude" only) |
+| Chromium browsers on macOS | since Chrome 141 | since Chrome 141 | no |
+| Chromium browsers on Linux | a browser tab's sound only; a shared screen or window is silent | the tab's sound never carries the call | no |
+| Firefox, Safari | no sound with a screen | — | no |
+| The Windows app (Tauri, WebView2) | as Chromium on Windows: Edge's picker with the system audio box | with a WebView2 runtime of Edge 141 or newer | no |
+| The Linux app (Electron) | no: Electron captures system audio on Windows only, and neither X11 nor the PipeWire portal gives it any | — | no |
+| The Windows fallback (Electron) | yes (Electron's loopback capture) | **no**: Electron cannot leave a process out; use headphones or share without sound | no |
+| The macOS app (Tauri, WebKit) | no sound with a screen | — | no |
+| The Android app | the sound of other apps (Android 10 or newer, apps that allow capture) | yes: Android's playback capture takes media, game and unknown usages only, the call plays as voice communication | no |
+
+"Whole system" asks the browser for audio with `restrictOwnAudio: true` and `systemAudio: "include"`; "No sound" asks
+for none and keeps the system's sound out of the browser's picker. A viewer receives the sound only after joining the
+stream ("Streams are joined" above) and has a stream volume of its own. The Android app's sound is the device's screen
+publisher's audio track (docs/ANDROID.md "Screen sharing").
 
 ### The whiteboard
 
@@ -811,14 +861,17 @@ The voice settings are kept per device and applied live:
 - a test tone, input and output volume, automatic gain, echo cancellation, noise suppression (off, the browser's, or
   RNNoise running locally as a WASM audio worklet), a noise gate with its threshold;
 - voice activation with a live "transmitting" light, or push-to-talk (key, default `Backquote`, and a release delay,
-  default 250 ms; on touch screens a "Hold to talk" button in the call controls);
+  default 250 ms; on touch screens a "Hold to talk" button in the call controls), and "Remind me when I talk while
+  muted" ("Mute and the microphone capture" above);
 - camera with preview, resolution and frame rate within the node's limits, mirroring and background blur (strength
   slider, quality fast/balanced/high with mask smoothing) or an image (MediaPipe served by the node, turned off
   automatically on machines that cannot keep up, with the measured numbers);
 - soft notification sounds (join, leave, mute, deafen, streams, connection, and a soft rising and falling tone when
   push-to-talk or the priority key opens and closes the microphone, heard only by you, never while the server keeps
   the microphone closed), with a volume, a switch and a preview per sound and "All notification sounds off", and the
-  ringtone volume;
+  ringtone volume. The sounds are synthesized (`web/src/voice/cues.ts` explains the notes): join, leave and the
+  stream cues are the present ones (a fifth and a triad with a clear onset), the ticks for your own switches stay
+  quiet, and the ringtone is a two-bar tune in C major pentatonic;
 - "Volumes of other people" ("Voice and stream audio" above), "Keep the screen on during voice calls" (below) and a
   **connection test** that tries every path to the node's media server (UDP per address, TCP, TURN) and says what to
   fix when one fails.
@@ -1037,7 +1090,8 @@ Downloads", with **Show in folder**); DESKTOP.md "Downloads".
 
 **Voice and video:** the Linux app (Electron) runs voice, video, screen sharing, the soundboard and the background
 effects in Chromium exactly as the browser does; sharing a screen opens the app's own picker of screens and windows (on
-Wayland the desktop's portal dialog), without system audio (DESKTOP.md "Voice, video and screen sharing (Electron)").
+Wayland the desktop's portal dialog), without sound ("Screen share audio": Electron captures system audio on Windows
+only; DESKTOP.md "Voice, video and screen sharing (Electron)").
 
 **Native voice engine (Tauri app):** the Tauri app can send and play voice through its own native engine (LiveKit's
 Rust SDK in the shell), always in its Linux bundles, whose web view has no WebRTC, and on Windows with the setting

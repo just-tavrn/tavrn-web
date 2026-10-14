@@ -28,6 +28,17 @@ First public release of the web client and the desktop apps.
 
 ### Added
 
+- **A hint when you talk while muted** (#125): with "Remind me when I talk while muted" (Settings → Voice & video →
+  Input mode, on by default) the client keeps listening to your microphone locally while it is muted (nothing is sent:
+  the gate is closed and the track muted) and, once your voice is picked up for about 0.7 seconds, plays a soft double
+  tap (the new cue "Talking while muted"), pulses the microphone button and your tile's microphone flag, and says
+  "You are talking, but your microphone is muted." once per mute; the sound repeats at most every ten seconds. Not
+  while deafened or server-muted, and a released push-to-talk key is not a mute.
+- **Mute for you** (#124): a participant's menu (the row in the channel list, the stage tile) offers "Mute for you",
+  which silences their voice and their stream's audio on this device only, remembered until the page is reloaded;
+  nobody else is told. A muted person carries a crossed speaker on their tile and in the member list (the marker is
+  the one-click undo, the tooltip says "Muted for you"), they are never shown speaking, and the stage header counts
+  "Muted for you: n" so a forgotten mute is noticed.
 - **Forwarding reports to the reported user's home node** (protocol MODERATION.md §1.6, `reports.v2`): node admins
   forward a report about a user of another node from Admin → Reports after a confirmation that says what is shared
   (never the reporter's address); forwarded reports show where they went, and reports other nodes forwarded show
@@ -67,6 +78,19 @@ First public release of the web client and the desktop apps.
 - **Mentions stand out**: `@name`, `@name@domain`, `@Role` and `@everyone`/`@here` in messages are pills; mentions
   of yourself and @everyone/@here use the warning colour with a border, and a message that mentions you keeps its
   left border with a stronger tint (#122).
+- **Voice cues and the ringtone** (#123): the ringtone of incoming calls is a tune now, two bars in C major
+  pentatonic that climb to a question and walk back down to the tonic (group calls get the calmer, lower variant);
+  the join, leave and stream cues are a little louder with a clearer onset, so they are not lost in a lively call,
+  while the mute, deafen, connection and push-to-talk tones stay as quiet as before. The volume, the switch and the
+  preview per sound in Settings → Voice & video are unchanged.
+- **The apps are called "tavrn"** wherever the system shows the name (tavrn-web#114): the Windows start menu and
+  desktop shortcut, the installer and its uninstall entry, the Linux menu entry and window class, the macOS bundle and
+  the Android launcher said "Tavrn" before. An update from an earlier release keeps everything: the identifiers
+  (`org.tavrn.desktop`, `org.tavrn.app`), the settings and profile directories, the keychain entries and the
+  `tavrn://` links never carried the product name; the MSI's upgrade code is pinned to the one the earlier installers
+  carry (the bundler would otherwise derive a new one from the new name and install a second product); the NSIS
+  installer finds the old installation in registry keys and folders that Windows compares without case. The release
+  files and the update feeds keep their names (`Tavrn_<version>_x64-setup.exe`, `Tavrn-<version>.AppImage`, …).
 - **A limit per external store** (protocol FILES.md §5): the storage settings of a files channel on WebDAV or S3 get
   "Limit on the store (GB)" (empty = no limit), which the channel's meter shows; the node's own quota no longer
   applies to external stores.
@@ -144,6 +168,19 @@ First public release of the web client and the desktop apps.
 - Settings pages no longer scroll the whole app: the content of a tab (user settings, room settings, node
   administration) is the containing block of its positioned helpers, so a long Roles tab scrolls inside its own
   container and the app shell keeps its height (#116).
+- Voice: your own row in the channel list can be dragged onto another voice channel to switch to it (#119); it used
+  to be the only row that could not be dragged. A drag over a voice channel highlights it, a channel that cannot take
+  the drop (you may not join it, or a moderator's drag without `move_members` there) shows a red outline and refuses
+  it. Clicking the channel and the participant menu remain the non-drag ways.
+- **Screen share sound** (tavrn-web#128): the share dialog has one choice, **No sound** or **Whole system** (and
+  **This window only** where a platform can capture it, which no browser or app does today), instead of a box that
+  depended on what the browser's own picker offered; a line under the choice says what it means where the client
+  runs. With the whole system's sound the call's own playback is left out (`restrictOwnAudio`, Chrome and Edge 141 or
+  newer on Windows and macOS, the Windows app's WebView2 included), so nobody hears themselves; where it cannot be
+  left out (the Windows fallback with Electron, older browsers) the dialog starts without sound and warns. The Linux
+  app, the macOS app, Firefox and Safari share no sound and say so; the Android app offers the sound of other apps
+  as before ([docs/CLIENT.md](docs/CLIENT.md) "Screen share audio").
+
 - An image pasted from the clipboard no longer keeps the name the system made up (`image.png`, `{GUID}.png` on
   Windows): it is named "Image <date> <time>.<ext>" (de: "Bild …"); a file copied from a file manager keeps its
   real name, nobody is asked (#95).

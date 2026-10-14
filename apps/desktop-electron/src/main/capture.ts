@@ -6,10 +6,11 @@
  * closing the window refuses (Electron rejects the page's request with `AbortError`, which the client takes as "the
  * user closed the picker"). With nothing to share the picker says so. Only the main window's own page may ask. On Wayland
  * `desktopCapturer` goes through the desktop portal (PipeWire): the portal's own dialog picks, and the shell takes its
- * one source without a second picker.
+ * one source without a second picker. The sound follows the page's request as `captureAudio` of `picker.ts` says
+ * (the system's sound on Windows only).
  */
 import { BrowserWindow, desktopCapturer, ipcMain, type Session } from "electron";
-import { pickerChoice, pickerLabels, pickerSources, pickerUrl, type PickerData, type PickerSource } from "./picker.ts";
+import { captureAudio, pickerChoice, pickerLabels, pickerSources, pickerUrl, type PickerData, type PickerSource } from "./picker.ts";
 
 const PICKER_SOURCES = "tavrn-picker:sources";
 const PICKER_CHOOSE = "tavrn-picker:choose";
@@ -106,7 +107,8 @@ export function installDisplayMediaHandler(ses: Session, options: CaptureOptions
           if (wayland() && offered.length <= 1) id = offered[0]?.id ?? null;
           else id = await pick(main, { labels: pickerLabels(options.locale()), sources: offered }, options);
           const source = id ? listed.find((s) => s.id === id) : undefined;
-          callback(source ? { video: source } : null);
+          const audio = captureAudio(process.platform, request.audioRequested);
+          callback(source ? { video: source, ...(audio ? { audio } : {}) } : null);
         } catch (e) {
           console.error("tavrn: screen sharing failed", e);
           callback(null);

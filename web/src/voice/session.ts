@@ -21,6 +21,7 @@
  * are subscribed as they are published, a screen share's video and audio only once this viewer joined it.
  */
 import { platform } from "../platform";
+import { displayMediaAudio, type ScreenAudio } from "./screenAudio";
 import { cleanupConversation } from "../lib/leafCleanup";
 import {
   ConnectionQuality,
@@ -54,6 +55,7 @@ import { cameraOptions, phoneCameras, resolutionSize, useVoiceSettings, type Voi
 import { withEntitlementCaps } from "./entitlementCaps";
 import { IDLE, SpeakingBatcher, isWatched, useSoundOverlays, useVoice, useWatchedStreams, type ParticipantMedia, type Quality, type VoiceTarget } from "./store";
 import { participantVolumes, type Volumes } from "./volume";
+import { isLocallyMuted, useLocalMute } from "./localMute";
 import { ANALYSER_SIZE, SPEAKING_POLL_MS, SpeakingDetector, analysersAvailable, combineLevels, localLevel, rmsDb } from "./speaking";
 import { PriorityTracker, claimsPriority, duckGain, rampTo, verifyPriority } from "./priority";
 import { SOUND_TOPIC, SignalLimiter, encodeSoundSignal, parseClipEmoji, parseSoundSignal } from "./soundSignal";
@@ -65,6 +67,7 @@ import { setIcePolicy } from "./ice";
 import { hotkeyHeld } from "./hotkeys";
 import { PttCues } from "./pttCues";
 import { CaptureRelease } from "./capture";
+import { MutedTalkDetector } from "./mutedTalk";
 import type { BackgroundHandle } from "./background";
 import { endpoints, followOthers as followOthersOf, type Endpoints, type JoinInfo } from "./sessionShared";
 import { StreamSubscriptions, streamIdentity } from "./streams";
@@ -86,6 +89,10 @@ interface Session {
   pipeline: MicPipeline;
   /** Releases the microphone capture while muted (`capture.ts`). */
   capture: CaptureRelease;
+  /** Talking while muted (`mutedTalk.ts`, issue #125): the detector, the pulse timer and whether the toast was shown this mute. */
+  mutedTalk: MutedTalkDetector;
+  mutedTalkPulse: ReturnType<typeof setTimeout> | null;
+  mutedTalkSaid: boolean;
   keyProvider: TavrnKeyProvider;
   info: JoinInfo;
   offs: Array<() => void>;
@@ -294,11 +301,41 @@ function startSpeakingLoop(s: Session) {
 function onLevel(r: LevelReport) {
   lastReport = r;
   const state = useVoice.getState();
-  if (state.transmitting !== r.open) set({ transmitting: r.open });
+  const open = r.open && !state.muted;
+  if (state.transmitting !== open) set({ transmitting: open });
   const s = current;
   if (!s) return;
-  if (r.open && !state.muted && state.canSpeak) talking();
+  if (open && state.canSpeak) talking();
+  if (mutedTalkListens(state)) {
+    if (s.mutedTalk.push(r.level, performance.now())) mutedTalkHint(s);
+  } else {
+    s.mutedTalk.reset();
+    s.mutedTalkSaid = false;
+  }
   emitSpeakers(s);
+}
+
+/**
+ * The talking-while-muted hint (issue #125) listens while the user muted the microphone (the toggle; a released
+ * push-to-talk key is not a mute) with the setting on, not while deafened (the user stepped away) or server-muted
+ * (they could not unmute anyway).
+ */
+function mutedTalkListens(state = useVoice.getState()): boolean {
+  return state.muted && !state.deafened && !state.serverMuted && state.canSpeak && settings().mutedTalkHint;
+}
+
+/** The hint: the soft cue, the microphone button pulses for a moment, and once per mute a short notice (announced). */
+function mutedTalkHint(s: Session) {
+  cue("muted_talk", true);
+  set({ mutedTalk: true });
+  if (s.mutedTalkPulse) clearTimeout(s.mutedTalkPulse);
+  s.mutedTalkPulse = setTimeout(() => {
+    s.mutedTalkPulse = null;
+    if (current === s) set({ mutedTalk: false });
+  }, 2_500);
+  if (s.mutedTalkSaid) return;
+  s.mutedTalkSaid = true;
+  useToasts.getState().push({ kind: "info", title: t("voice.muted_talk.toast"), testId: "muted-talk-hint" });
 }
 
 // ---------------------------------------------------------------- priority speaker (design note 4.13 item 3)
@@ -369,10 +406,12 @@ const applied = new Map<string, Volumes>();
 /**
  * Playback volumes of a remote participant (`volume.ts`, issue #20): the voice volume on the microphone, the
  * stream volume on the screen share audio, both times the output volume; deafen silences the voice, and the
- * stream too unless it is watched (and "stream audio while deafened" is on).
+ * stream too unless it is watched (and "stream audio while deafened" is on). A person muted for this user
+ * (`localMute.ts`, issue #124) gets zero on both.
  */
 function applyVolume(p: RemoteParticipant, deafened = useVoice.getState().deafened) {
-  const v = participantVolumes(settings(), splitIdentity(p.identity).address, { deafened, watched: isWatched(useWatchedStreams.getState(), p.identity) });
+  const address = splitIdentity(p.identity).address;
+  const v = participantVolumes(settings(), address, { deafened, watched: isWatched(useWatchedStreams.getState(), p.identity), localMuted: isLocallyMuted(useLocalMute.getState(), address) });
   p.setVolume(v.microphone, Track.Source.Microphone);
   p.setVolume(v.stream, Track.Source.ScreenShareAudio);
   applied.set(p.identity, v);
@@ -417,8 +456,8 @@ async function publishMic(s: Session) {
   });
   if (useVoice.getState().muted) {
     await pub.mute();
-    await s.pipeline.setPaused(true);
-    await s.capture.setMuted(true);
+    s.pipeline.setMuted(true);
+    await applyMutedCapture(s, true);
   }
 }
 
@@ -545,6 +584,10 @@ function follow(s: Session) {
     useWatchedStreams.subscribe(() => {
       if (current === s && useVoice.getState().deafened) applyVolumes(s);
     }),
+    // "Mute for you" (issue #124) is applied like a volume.
+    useLocalMute.subscribe(() => {
+      if (current === s) applyVolumes(s);
+    }),
   );
 }
 
@@ -557,6 +600,8 @@ async function applySettings(s: Session, next: VoiceSettings, prev: VoiceSetting
       await s.pipeline.setOutputDevice(next.outputDeviceId);
     }
     if (next.outputVolume !== prev.outputVolume || next.userVolumes !== prev.userVolumes || next.streamVolumes !== prev.streamVolumes || next.streamWhileDeafened !== prev.streamWhileDeafened) applyVolumes(s);
+    // The talking-while-muted hint switched while muted: start or stop listening (the capture and the graph).
+    if (next.mutedTalkHint !== prev.mutedTalkHint && useVoice.getState().muted) await applyMutedCapture(s, true);
     if (useVoice.getState().camera) {
       if (next.cameraDeviceId !== prev.cameraDeviceId || next.cameraFacing !== prev.cameraFacing) await switchCamera(s, next);
       if (next.background !== prev.background || next.backgroundImage !== prev.backgroundImage || next.backgroundQuality !== prev.backgroundQuality) await startBackground(s);
@@ -589,6 +634,7 @@ async function switchCamera(s: Session, next: VoiceSettings) {
 }
 
 async function cleanup(s: Session) {
+  if (s.mutedTalkPulse) clearTimeout(s.mutedTalkPulse);
   s.leaving = true;
   // The screen publisher ends with the voice session (the node also removes it with this device).
   void s.nativeScreen?.dispose();
@@ -735,6 +781,9 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
       pipeline,
       // The Android app keeps the capture while muted: its notification unmutes in the background (capture.ts).
       capture: new CaptureRelease(pipeline, undefined, !!platform().android),
+      mutedTalk: new MutedTalkDetector(() => settings().vadThreshold),
+      mutedTalkPulse: null,
+      mutedTalkSaid: false,
       keyProvider,
       info,
       offs: [],
@@ -894,7 +943,7 @@ export async function setMuted(muted: boolean): Promise<void> {
   }
   // Unmuting while deafened also undeafens (as everywhere else).
   const deafened = !muted && state.deafened ? false : state.deafened;
-  set(muted ? { muted, deafened, transmitting: false } : { muted, deafened });
+  set(muted ? { muted, deafened, transmitting: false } : { muted, deafened, mutedTalk: false });
   if (s) cue(muted ? "mute" : "unmute", true);
   if (!s) return;
   // The own ring goes dark at once (the paused gate reports nothing any more).
@@ -923,9 +972,22 @@ async function applyMute(s: Session, muted: boolean): Promise<boolean> {
   }
   const pub = s.room.localParticipant.getTrackPublication(Track.Source.Microphone);
   if (pub) await (muted ? pub.mute() : pub.unmute());
-  await s.pipeline.setPaused(muted);
-  if (muted) await s.capture.setMuted(true);
+  s.pipeline.setMuted(muted);
+  await applyMutedCapture(s, muted);
   return true;
+}
+
+/**
+ * The capture and the graph while muted: asleep and released (`capture.ts`), unless the talking-while-muted hint
+ * listens (`mutedTalkListens`): then both keep running on the closed gate, so the level reports go on. Unmuted:
+ * running (the capture was re-acquired by the caller).
+ */
+async function applyMutedCapture(s: Session, muted: boolean): Promise<void> {
+  const listen = muted && mutedTalkListens();
+  await s.pipeline.setPaused(muted && !listen);
+  if (muted && !listen) await s.capture.setMuted(true);
+  // Listening again (the setting turned on, undeafened while muted): the capture may have been released meanwhile.
+  else if (listen) await s.capture.setMuted(false).catch(() => undefined);
 }
 
 export async function setDeafened(deafened: boolean): Promise<void> {
@@ -983,7 +1045,8 @@ export async function setCamera(on: boolean): Promise<void> {
 }
 
 export interface ScreenShareOptions {
-  audio: boolean;
+  /** The sound: none, the shared window's or the whole system's (`screenAudio.ts`). */
+  audio: ScreenAudio;
   /** `720p` … `4k`, lowered to the node's maximum. */
   resolution: string;
   fps: number;
@@ -1025,7 +1088,7 @@ function nativeScreenFor(s: Session): NativeScreenShare | null {
 async function setNativeScreenShare(s: Session, native: NativeScreenShare, on: boolean, opts: ScreenShareOptions): Promise<void> {
   if (!on) return native.stop();
   try {
-    await native.start(opts, s.info.limits.screenshare);
+    await native.start({ ...opts, audio: opts.audio === "system" }, s.info.limits.screenshare);
   } catch (e) {
     // The user declined Android's dialog: nothing to report.
     if (e === "screen.cancelled") return;
@@ -1042,7 +1105,7 @@ export function leaveStream(identity: string): void {
   refreshMedia(s);
 }
 
-export async function setScreenShare(on: boolean, opts: ScreenShareOptions = { audio: true, resolution: "1080p", fps: 30 }): Promise<void> {
+export async function setScreenShare(on: boolean, opts: ScreenShareOptions = { audio: "none", resolution: "1080p", fps: 30 }): Promise<void> {
   const s = current;
   if (!s) return;
   const limit = s.info.limits.screenshare;
@@ -1057,7 +1120,9 @@ export async function setScreenShare(on: boolean, opts: ScreenShareOptions = { a
       const fps = Math.max(1, Math.min(opts.fps, limit.max_fps));
       await s.room.localParticipant.setScreenShareEnabled(
         true,
-        { audio: opts.audio, resolution: { ...size, frameRate: fps }, contentHint: fps > 15 ? "motion" : "detail", selfBrowserSurface: "exclude", systemAudio: "include" },
+        // The sound choice as getDisplayMedia constraints (`screenAudio.ts`): with the whole system's sound the
+        // call's own playback is left out (`restrictOwnAudio`, where the browser knows it).
+        { ...displayMediaAudio(opts.audio), resolution: { ...size, frameRate: fps }, contentHint: fps > 15 ? "motion" : "detail", selfBrowserSurface: "exclude" },
         { videoCodec: "vp8", screenShareEncoding: { maxBitrate: bitrate(size.width, size.height, fps, 0.05), maxFramerate: fps } },
       );
     } else {
@@ -1278,8 +1343,9 @@ function exposeForTests(s: Session) {
       epoch: s.mls.epoch(s.q),
       local: { identity: s.room.localParticipant.identity, isSpeaking: s.room.localParticipant.isSpeaking, tracks: [...s.room.localParticipant.trackPublications.values()].map((p) => ({ source: p.source, encrypted: p.isEncrypted })) },
       speaking: analysing(s) ? "analyser" : "livekit",
-      // The microphone capture is open (released while muted, `capture.ts`).
+      // The microphone capture is open (released while muted, `capture.ts`; kept while the muted-talk hint listens).
       capturing: s.pipeline.capturing,
+      mutedTalkListening: mutedTalkListens(),
       priority: [...s.priority.active],
       ducking: Object.fromEntries([...s.taps.values()].map((t) => [t.identity, t.duck.gain.value])),
       // Volumes as applied (`volume.ts`) and the gains LiveKit's Web Audio mix plays them with.

@@ -15,6 +15,7 @@ import { createTauriSaveFile } from "./tauriFiles";
 import { voiceMember } from "./tauriVoice";
 import { nativePasskeys } from "./tauriPasskeys";
 import type { AppUpdater, HotkeyEvent, Platform, PlatformHotkeys, ResolvedNode, UpdateChannel } from "./types";
+import { shellOs } from "./shellOs";
 import { updateFailure } from "./updateErrors";
 
 /** Shared with the Electron shell (`links.ts`); kept here for the existing callers. */
@@ -107,6 +108,7 @@ export async function createTauriPlatform(doc: Document = document): Promise<Pla
   const platform: Platform = {
     kind: android ? "android" : "desktop",
     isDesktop: true,
+    shell: { kind: "tauri", os: shellOs(info.os) },
     // Deep links (`tavrn://`, Android's App Links): the shell checked them and keeps those of the start until the
     // client listens.
     links: linkEvents(events),

@@ -181,6 +181,15 @@ html[data-flag-font] :is(.markdown, .emoji-font) { font-family: "Twemoji Country
 /* Priority speaker (design note 4.13 item 3): accent border on the tile and the list row while active. */
 .voice-tile[data-priority] { border-color: var(--color-accent); box-shadow: inset 0 0 0 1px var(--color-accent); }
 .voice-priority-row { box-shadow: inset 2px 0 0 var(--color-accent); background: color-mix(in srgb, var(--color-accent) 12%, transparent); }
+/* Talking while muted (issue #125): the microphone button and the own tile's microphone flag pulse for a moment in
+   the warning colour; with reduced motion a static ring and the colour only. */
+@keyframes voice-muted-talk-ring { from { box-shadow: 0 0 0 2px var(--color-warn), 0 0 0 2px color-mix(in srgb, var(--color-warn) 70%, transparent); } to { box-shadow: 0 0 0 2px var(--color-warn), 0 0 0 10px transparent; } }
+.voice-muted-talk { box-shadow: 0 0 0 2px var(--color-warn); animation: voice-muted-talk-ring 0.8s ease-out 3; }
+@keyframes voice-muted-talk-flag { from { opacity: 0.45; } to { opacity: 1; } }
+.voice-tile[data-muted-talk] [data-testid="flag-muted"] { color: var(--color-warn); animation: voice-muted-talk-flag 0.4s ease-in-out 6 alternate; }
+@media (prefers-reduced-motion: reduce) {
+  .voice-muted-talk, .voice-tile[data-muted-talk] [data-testid="flag-muted"] { animation: none; }
+}
 /* Soundboard clip emoji on the sender's tile: pops in once, static with reduced motion. */
 @keyframes voice-sound-pop { from { transform: scale(0.4); opacity: 0; } 60% { transform: scale(1.15); opacity: 1; } to { transform: scale(1); } }
 .voice-sound { animation: voice-sound-pop 260ms ease-out; filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.6)); }
