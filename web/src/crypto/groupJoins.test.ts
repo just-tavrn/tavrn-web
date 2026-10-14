@@ -83,3 +83,32 @@ describe("createGroupJoiner", () => {
     expect(f.calls).toHaveLength(2);
   });
 });
+
+describe("the group joins pause while a voice join runs", () => {
+  it("no probe starts while a hold is pending; they go on once it settled", async () => {
+    const f = fakeMls();
+    let release!: () => void;
+    const hold = new Promise<void>((r) => (release = r));
+    const holds = new Set<Promise<unknown>>([hold]);
+    const j = createGroupJoiner({ mls: async () => f.mls, pauseMs: 0, sleep: async () => undefined, held: async () => void (await Promise.all(holds)) });
+    const done = j.enqueue("t.local", [ch("c1"), ch("c2")]);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(f.calls).toEqual([]);
+    release();
+    await done;
+    expect(f.calls.map((c) => c.q)).toEqual(["t.local/c1", "t.local/c2"]);
+  });
+
+  it("holdGroupJoins: a failed join releases the hold too", async () => {
+    const { holdGroupJoins, groupJoinsHeld } = await import("./groupJoins");
+    let fail!: (e: Error) => void;
+    holdGroupJoins(new Promise((_, rej) => (fail = rej)));
+    let free = false;
+    const waiting = groupJoinsHeld().then(() => (free = true));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(free).toBe(false);
+    fail(new Error("no_group"));
+    await waiting;
+    expect(free).toBe(true);
+  });
+});

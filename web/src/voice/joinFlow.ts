@@ -6,23 +6,25 @@
  * Order of a join:
  *
  * 1. At the click the media of the session start (the microphone pipeline, the playback context and LiveKit's E2EE
- *    worker, `session.ts`), and the node's pending removals are requested while this device joins the channel's MLS
- *    group (`ensureJoined`).
- * 2. Once this device is in the group, `voice/join` goes out. Meanwhile the ghost cleanup runs (never waiting for the
- *    election, `cleanupBeforeVoice`) and then the self update that gives the session its fresh epoch.
+ *    worker, `session.ts`); `voice/join` goes out and the node's pending removals are requested while this device
+ *    joins the channel's MLS group (`ensureJoined`, in the MLS manager's priority lane: background work such as the
+ *    group-join probes waits, and the probes pause while a join runs).
+ * 2. Once this device is in the group the ghost cleanup runs (never waiting for the election, `cleanupBeforeVoice`)
+ *    and then the self update that gives the session its fresh epoch.
  * 3. Only the frame key of the fresh epoch and publishing wait for that (`fresh`): the call connects meanwhile with
  *    the key of the current epoch, and the re-key subscription of the session picks up the new epoch. Nothing is
  *    published before the fresh key is the sending key.
  *
- * Failures: a group that cannot be joined or a refused `voice/join` release the media (no seat was taken). Every later
- * failure (the catch-up to the node's epoch, the frame key, the connection) frees the seat and releases the media
- * (`abandon`); a rejoin after a dropped connection keeps the seat the node holds for the grace period.
+ * Failures: a refused `voice/join` releases the media (no seat was taken); a group that cannot be joined releases them
+ * and frees the seat the node may have given meanwhile. Every later failure (the catch-up to the node's epoch, the
+ * frame key, the connection) frees the seat and releases the media (`abandon`). A rejoin after a dropped connection
+ * keeps the seat the node holds for the grace period.
  */
 import type { MlsManager, PendingRemovalLike } from "@tavrn/e2ee";
 import { VoiceError } from "./errors";
 import type { JoinInfo } from "./sessionShared";
 
-/** What a join needs from the session manager. */
+/** What a join needs from the session manager (`ensureJoined` and `selfUpdate` in its priority lane). */
 export type JoinMls = Pick<MlsManager, "ensureJoined" | "selfUpdate" | "epoch" | "catchUp">;
 
 /** Something started at the click that a failed join gives back (idempotent). */
@@ -49,6 +51,8 @@ export interface JoinFlowDeps {
   media?: Releasable;
   /** Stage marks of the join timings (`joinTimings.ts`). */
   mark?(stage: string, detail?: Record<string, unknown>): void;
+  /** Holds background MLS work (the group-join probes) until the promise settles (`holdGroupJoins`). */
+  hold?(until: Promise<unknown>): void;
 }
 
 export interface JoinFlow {
@@ -68,52 +72,70 @@ export interface JoinFlow {
 /** Runs steps 1 and 2 above; resolves with the node's answer while the self update may still run. */
 export async function startJoin(d: JoinFlowDeps): Promise<JoinFlow> {
   const mark = d.mark ?? (() => undefined);
+  // Requested while the group is joined (one round trip less before the cleanup).
+  const pending = d.rejoin ? null : d.pending().catch(() => []);
+  mark("voice_join_sent");
+  const answer = d.join();
+  // A seat the node gave is freed when the join fails before the session takes over (not on a rejoin).
+  const freeSeat = () => (d.rejoin ? Promise.resolve() : answer.then(() => d.leave()).then(() => undefined, () => undefined));
+  let joined: "joined" | "no_group";
   try {
-    // Requested while the group is joined (one round trip less before voice/join).
-    const pending = d.rejoin ? null : d.pending().catch(() => []);
     mark("ensure_joined_start", { epoch: d.mls.epoch(d.q) });
-    if ((await d.mls.ensureJoined(d.q, { canCreate: d.canCreate })) === "no_group") throw new VoiceError("no_group");
-    mark("ensure_joined_done", { epoch: d.mls.epoch(d.q) });
-    mark("voice_join_sent");
-    const answer = d.join();
-    let later: () => void = () => undefined;
-    // Ghost leaves go before the fresh voice key (ENCRYPTION.md §4.7), then the self update (§5a). Never rejects.
-    const update = pending
-      ? (async () => {
-          mark("cleanup_start");
-          later = await d.cleanup(pending).catch(() => () => undefined);
-          mark("cleanup_done");
-          await d.mls.selfUpdate(d.q).catch(() => false);
-          mark("self_update_done", { epoch: d.mls.epoch(d.q) });
-        })()
-      : Promise.resolve();
-    const info = await answer;
-    mark("voice_join_response", { epoch: info.epoch, participants: info.participants.length });
-    const fresh = update.then(async () => {
-      // Commits this device has not seen yet (the node's epoch is ahead): the frame key must be the group's current one.
-      if (info.epoch != null && (d.mls.epoch(d.q) ?? -1) < info.epoch) {
-        await d.mls.catchUp(d.q);
-        mark("catch_up_done", { epoch: d.mls.epoch(d.q) });
-      }
-    });
-    // Awaited by the session; a rejection before that is not an unhandled one.
-    fresh.catch(() => undefined);
-    let abandoned = false;
-    return {
-      info,
-      fresh,
-      cleanupLater: () => later(),
-      abandon: async () => {
-        if (abandoned) return;
-        abandoned = true;
-        await d.media?.release();
-        if (!d.rejoin) await d.leave().catch(() => undefined);
-      },
-    };
+    const ensure = d.mls.ensureJoined(d.q, { canCreate: d.canCreate, priority: true });
+    d.hold?.(ensure);
+    joined = await ensure;
+  } catch (e) {
+    await d.media?.release();
+    await freeSeat();
+    throw e;
+  }
+  if (joined === "no_group") {
+    await d.media?.release();
+    await freeSeat();
+    throw new VoiceError("no_group");
+  }
+  mark("ensure_joined_done", { epoch: d.mls.epoch(d.q) });
+  let later: () => void = () => undefined;
+  // Ghost leaves go before the fresh voice key (ENCRYPTION.md §4.7), then the self update (§5a). Never rejects.
+  const update = pending
+    ? (async () => {
+        mark("cleanup_start");
+        later = await d.cleanup(pending).catch(() => () => undefined);
+        mark("cleanup_done");
+        await d.mls.selfUpdate(d.q, { priority: true }).catch(() => false);
+        mark("self_update_done", { epoch: d.mls.epoch(d.q) });
+      })()
+    : Promise.resolve();
+  d.hold?.(update);
+  let info: JoinInfo;
+  try {
+    info = await answer;
   } catch (e) {
     await d.media?.release();
     throw e;
   }
+  mark("voice_join_response", { epoch: info.epoch, participants: info.participants.length });
+  const fresh = update.then(async () => {
+    // Commits this device has not seen yet (the node's epoch is ahead): the frame key must be the group's current one.
+    if (info.epoch != null && (d.mls.epoch(d.q) ?? -1) < info.epoch) {
+      await d.mls.catchUp(d.q);
+      mark("catch_up_done", { epoch: d.mls.epoch(d.q) });
+    }
+  });
+  // Awaited by the session; a rejection before that is not an unhandled one.
+  fresh.catch(() => undefined);
+  let abandoned = false;
+  return {
+    info,
+    fresh,
+    cleanupLater: () => later(),
+    abandon: async () => {
+      if (abandoned) return;
+      abandoned = true;
+      await d.media?.release();
+      if (!d.rejoin) await d.leave().catch(() => undefined);
+    },
+  };
 }
 
 /** The microphone pipeline started at the click (`EarlyPipeline.take` hands it over, `release` gives it back). */

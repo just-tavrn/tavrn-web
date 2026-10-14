@@ -97,8 +97,8 @@ describe("the native engine's session", () => {
   it("joins the group, the node and the room with the current epoch's key", async () => {
     const f = fakeShell();
     await session.join(target, { canCreate: true });
-    expect(h.mls.ensureJoined).toHaveBeenCalledWith(q, { canCreate: true });
-    expect(h.mls.selfUpdate).toHaveBeenCalledWith(q);
+    expect(h.mls.ensureJoined).toHaveBeenCalledWith(q, { canCreate: true, priority: true });
+    expect(h.mls.selfUpdate).toHaveBeenCalledWith(q, { priority: true });
     expect(h.api.voice.join).toHaveBeenCalledWith("r1", "c1");
     expect(f.joins).toHaveLength(1);
     const { args, key } = f.joins[0]!;

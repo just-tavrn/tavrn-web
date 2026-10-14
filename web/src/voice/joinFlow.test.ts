@@ -53,15 +53,16 @@ function harness(opts: { rejoin?: boolean } = {}) {
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 describe("startJoin: the order of a voice join", () => {
-  it("requests the pending removals with the group join, sends voice/join while the cleanup and the self update run", async () => {
+  it("sends voice/join and requests the pending removals with the group join; the cleanup and the self update follow", async () => {
     const h = harness();
     const started = startJoin(h.deps);
     await tick();
-    // Both requests are out before the group join finished.
-    expect(h.log).toEqual(["pending", "ensureJoined"]);
+    // All three are out before the group join finished; the join's MLS work is in the priority lane.
+    expect(h.log).toEqual(["pending", "join", "ensureJoined"]);
+    expect(h.deps.mls.ensureJoined).toHaveBeenCalledWith(Q, { canCreate: true, priority: true });
     h.steps.ensure.resolve("joined");
     await tick();
-    expect(h.log).toEqual(["pending", "ensureJoined", "join", "cleanup"]);
+    expect(h.log).toEqual(["pending", "join", "ensureJoined", "cleanup"]);
     // The node answers before the cleanup and the self update are done: the flow resolves, `fresh` waits.
     h.steps.join.resolve(info(2));
     const flow = await started;
@@ -74,6 +75,7 @@ describe("startJoin: the order of a voice join", () => {
     expect(fresh).toBe(false);
     h.steps.update.resolve(true);
     await flow.fresh;
+    expect(h.deps.mls.selfUpdate).toHaveBeenCalledWith(Q, { priority: true });
     expect(h.deps.mls.catchUp).not.toHaveBeenCalled();
     // The postponed cleanup starts only when the session asks for it (once connected).
     expect(h.later).not.toHaveBeenCalled();
@@ -100,26 +102,49 @@ describe("startJoin: the order of a voice join", () => {
     h.steps.join.resolve(info(2));
     const flow = await startJoin(h.deps);
     await flow.fresh;
-    expect(h.log).toEqual(["ensureJoined", "join"]);
+    expect(h.log).toEqual(["join", "ensureJoined"]);
   });
 });
 
 describe("startJoin: failures", () => {
-  it("a group that cannot be joined: no voice/join, the media are released", async () => {
+  it("a group that cannot be joined: the media are released and the seat the node gave is freed", async () => {
     const h = harness();
     h.steps.ensure.resolve("no_group");
+    h.steps.join.resolve(info(null));
     await expect(startJoin(h.deps)).rejects.toMatchObject({ code: "no_group" });
-    expect(h.deps.join).not.toHaveBeenCalled();
+    expect(h.media.release).toHaveBeenCalledTimes(1);
+    expect(h.deps.leave).toHaveBeenCalledTimes(1);
+  });
+
+  it("the MLS failing while the join was refused too: the media are released, no leave", async () => {
+    const h = harness();
+    h.steps.ensure.reject(new Error("offline"));
+    h.steps.join.reject(new Error("full"));
+    await expect(startJoin(h.deps)).rejects.toThrow("offline");
     expect(h.media.release).toHaveBeenCalledTimes(1);
     expect(h.deps.leave).not.toHaveBeenCalled();
   });
 
-  it("the MLS failing before the answer: the media are released, no seat was taken", async () => {
-    const h = harness();
+  it("the MLS failing on a rejoin keeps the seat", async () => {
+    const h = harness({ rejoin: true });
     h.steps.ensure.reject(new Error("offline"));
+    h.steps.join.resolve(info(2));
     await expect(startJoin(h.deps)).rejects.toThrow("offline");
-    expect(h.media.release).toHaveBeenCalledTimes(1);
-    expect(h.deps.join).not.toHaveBeenCalled();
+    expect(h.deps.leave).not.toHaveBeenCalled();
+  });
+
+  it("holds the background group joins while the group join and the self update run", async () => {
+    const h = harness();
+    const held: Promise<unknown>[] = [];
+    h.deps.hold = (p) => void held.push(p);
+    h.steps.ensure.resolve("joined");
+    h.steps.pending.resolve([]);
+    h.steps.cleanup.resolve(() => undefined);
+    h.steps.update.resolve(true);
+    h.steps.join.resolve(info(2));
+    const flow = await startJoin(h.deps);
+    await flow.fresh;
+    expect(held).toHaveLength(2);
   });
 
   it("a refused join: the media are released, no leave", async () => {

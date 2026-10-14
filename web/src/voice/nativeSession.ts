@@ -14,6 +14,7 @@
  * cryptor of the own track is active (`e2ee_failed` otherwise) and has no unencrypted path.
  */
 import { cleanupBeforeVoice, loadPending } from "../lib/leafCleanup";
+import { holdGroupJoins } from "../crypto/groupJoins";
 import { BackgroundLeaves, startJoin } from "./joinFlow";
 import { apiFor } from "../stores/nodes";
 import { getMls, useMlsUi } from "../stores/mls";
@@ -316,6 +317,7 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
     leave: () => ep.leave(),
     pending: () => loadPending(q),
     cleanup: (pending) => cleanupBeforeVoice(q, { online, pending }),
+    hold: holdGroupJoins,
   });
   const { info } = flow;
   let joined = false;

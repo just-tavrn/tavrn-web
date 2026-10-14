@@ -23,6 +23,7 @@
 import { platform } from "../platform";
 import { displayMediaAudio, type ScreenAudio } from "./screenAudio";
 import { cleanupBeforeVoice, loadPending } from "../lib/leafCleanup";
+import { holdGroupJoins } from "../crypto/groupJoins";
 import { BackgroundLeaves, earlyPipeline, startJoin, type EarlyPipeline, type Releasable } from "./joinFlow";
 import { vjMark } from "./joinTimings";
 import {
@@ -767,6 +768,7 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
     leave: () => ep.leave(),
     pending: () => loadPending(q),
     cleanup: (pending) => cleanupBeforeVoice(q, { online, pending }),
+    hold: holdGroupJoins,
     media,
     mark: vjMark,
   });

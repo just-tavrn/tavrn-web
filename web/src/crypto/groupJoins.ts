@@ -5,7 +5,8 @@
  * Messages posted between the user's room join and the device's first leaf can only be read with keys other members
  * share; joining early keeps that gap small. One join at a time with a pause in between, so a room with many channels
  * does not storm the node; a group is never created here, and a channel whose join did not happen (no group yet, no
- * access) is asked again only after an interval.
+ * access) is asked again only after an interval. While a voice join's MLS work runs (`holdGroupJoins`) no probe starts:
+ * the join's own operations go first (they also run in the MLS manager's priority lane).
  */
 import { qualify, type MlsManager } from "@tavrn/e2ee";
 import type { Channel } from "@tavrn/sdk";
@@ -24,6 +25,8 @@ export interface GroupJoinerDeps {
   retryMs?: number;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
+  /** Resolves when no voice join holds the probes (`groupJoinsHeld`). */
+  held?: () => Promise<void>;
 }
 
 export interface GroupJoiner {
@@ -60,7 +63,9 @@ export function createGroupJoiner(deps: GroupJoinerDeps): GroupJoiner {
       }
       if (mls.hasGroup(q)) continue;
       if (joins++ > 0) await sleep(pause);
+      await deps.held?.();
       if (gen !== generation) return;
+      if (mls.hasGroup(q)) continue;
       try {
         if ((await mls.ensureJoined(q, { canCreate: false })) !== "joined") tried.set(q, now());
       } catch {
@@ -97,7 +102,25 @@ export function createGroupJoiner(deps: GroupJoinerDeps): GroupJoiner {
   };
 }
 
-const joiner = createGroupJoiner({ mls: () => getMls() });
+/** Voice joins whose MLS work is running (the probes wait for them). */
+const holds = new Set<Promise<void>>();
+
+/** A voice join's MLS work runs until `until` settles (either way): the probes wait meanwhile. */
+export function holdGroupJoins(until: Promise<unknown>): void {
+  const p: Promise<void> = until.then(
+    () => undefined,
+    () => undefined,
+  );
+  holds.add(p);
+  void p.then(() => holds.delete(p));
+}
+
+/** Resolves once no voice join holds the probes. */
+export async function groupJoinsHeld(): Promise<void> {
+  while (holds.size) await Promise.all(holds);
+}
+
+const joiner = createGroupJoiner({ mls: () => getMls(), held: groupJoinsHeld });
 
 /** A room was loaded: join the groups of its encrypted channels in the background (best effort). */
 export function joinRoomGroups(domain: string, channels: Pick<Channel, "id" | "kind" | "encrypted">[]): void {
