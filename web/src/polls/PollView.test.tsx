@@ -8,6 +8,7 @@ import { pollHash, pollVoteContent, type Decrypted, type Poll } from "@tavrn/e2e
 import { MessageList } from "../components/MessageList";
 import { PollContext, pollVotesKey, type PollVoteRecord } from "./context";
 import { useConversationPolls } from "./env";
+import { slotText } from "./format";
 import { pollHandlers } from "./votes";
 
 const ME = "me@t.local";
@@ -23,6 +24,10 @@ const datePoll = {
   results_visible: "always",
   votes_visible: "public",
 } as const;
+
+/** A slot as this device shows it (the test runs in the device's zone: CI in UTC, developers elsewhere). */
+const local = (slot: { id: string; start: string; end?: string; all_day?: boolean }) => slotText(slot, "de-DE");
+const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 function message(content: Record<string, unknown>, extra: Partial<Message> = {}): Message {
   return { id: "01POLL", conversation_id: "c1", author: "alice@t.local", author_id: "u2", device_id: null, encrypted: false, format: 1, epoch: null, content, reply_to_id: null, thread_id: null, mentions: [], mentions_everyone: false, created_at: new Date().toISOString(), edited_at: null, attachments: [], reactions: [], pinned: false, poll_closes_at: null, ...extra } as Message;
@@ -64,7 +69,7 @@ function show(messages: Message[], api: TavrnApi, opts: { canManage?: boolean; c
 afterEach(() => vi.restoreAllMocks());
 
 describe("PollView", () => {
-  it("shows a choice poll, votes with the poll's hash and changes and retracts the vote", async () => {
+  it("a choice poll: vote → results → change → form prefilled → keep or save → results; retract from the form", async () => {
     const user = userEvent.setup();
     const api = fakeApi([await record("bob@t.local", choicePoll, { choices: ["b"] })]);
     show([message(choicePoll)], api);
@@ -74,31 +79,68 @@ describe("PollView", () => {
     await waitFor(() => expect(within(poll).getByTestId("poll-voters")).toHaveTextContent("1 Stimme"));
     // Plaintext without a session manager: the vote counts, marked unverified.
     expect(within(poll).getByTestId("poll-unverified")).toHaveTextContent("1 nicht bestätigt");
-    const garden = within(poll).getAllByTestId("poll-option")[1]!;
-    expect(garden).toHaveTextContent("1 · 100 %");
-    expect(garden).toHaveTextContent("BOB");
+    // Not voted yet: the form, with the bars (results always visible) but without the voters' names.
+    expect(poll).toHaveAttribute("data-view", "form");
+    expect(within(poll).getAllByTestId("poll-option")[1]).toHaveTextContent("1 · 100 %");
+    expect(within(poll).queryByText("BOB")).toBeNull();
     expect(within(poll).getByRole("button", { name: "Abstimmen" })).toBeDisabled();
+    // A look at the results before voting, and back.
+    await user.click(within(poll).getByRole("button", { name: "Ergebnisse zeigen" }));
+    expect(poll).toHaveAttribute("data-view", "results");
+    expect(within(poll).getAllByTestId("poll-option")[1]).toHaveTextContent("BOB");
+    expect(within(poll).queryByRole("radio")).toBeNull();
+    await user.click(within(poll).getByRole("button", { name: "Abstimmen" }));
+    expect(poll).toHaveAttribute("data-view", "form");
+
     await user.click(within(poll).getByRole("radio", { name: /Küche/ }));
     await user.click(within(poll).getByRole("button", { name: "Abstimmen" }));
     expect(api.polls.vote).toHaveBeenCalledTimes(1);
     const [, messageId, req] = api.polls.vote.mock.calls[0]!;
     expect(messageId).toBe("01POLL");
     expect(req.content).toMatchObject({ type: "poll.vote", choices: ["a"], ctx: { poll: "01POLL", poll_hash: await pollHash(choicePoll) } });
-    await waitFor(() => expect(within(poll).getAllByTestId("poll-option")[0]).toHaveTextContent("Deine Stimme"));
+    // Voted: the results, the own vote marked.
+    await waitFor(() => expect(poll).toHaveAttribute("data-view", "results"));
+    const kitchen = within(poll).getAllByTestId("poll-option")[0]!;
+    expect(kitchen).toHaveAttribute("data-mine", "true");
+    expect(kitchen).toHaveTextContent("Deine Stimme");
+    expect(kitchen).toHaveTextContent("1 · 50 %");
     expect(within(poll).getByTestId("poll-voters")).toHaveTextContent("2 Stimmen");
-    expect(within(poll).getAllByTestId("poll-option")[0]).toHaveTextContent("1 · 50 %");
-    // Change the vote.
-    await user.click(within(poll).getByRole("radio", { name: /Garten/ }));
+    expect(within(poll).queryByRole("radio")).toBeNull();
+    expect(within(poll).queryByRole("button", { name: "Stimme zurückziehen" })).toBeNull();
+
+    // "Change vote": the form prefilled with the own vote; "Keep" returns without a request.
     await user.click(within(poll).getByRole("button", { name: "Stimme ändern" }));
+    expect(poll).toHaveAttribute("data-view", "form");
+    expect(within(poll).getByRole("radio", { name: /Küche/ })).toBeChecked();
+    expect(within(poll).getAllByTestId("poll-option")[0]).toHaveTextContent("Deine Stimme");
+    await user.click(within(poll).getByRole("radio", { name: /Garten/ }));
+    await user.click(within(poll).getByRole("button", { name: "Behalten" }));
+    expect(poll).toHaveAttribute("data-view", "results");
+    expect(api.polls.vote).toHaveBeenCalledTimes(1);
+    // Change and save: back to the results with the new vote.
+    await user.click(within(poll).getByRole("button", { name: "Stimme ändern" }));
+    expect(within(poll).getByRole("radio", { name: /Küche/ })).toBeChecked();
+    await user.click(within(poll).getByRole("radio", { name: /Garten/ }));
+    await user.click(within(poll).getByRole("button", { name: "Speichern" }));
     await waitFor(() => expect(within(poll).getAllByTestId("poll-option")[1]).toHaveTextContent("2 · 100 %"));
-    // Retract it.
+    expect(poll).toHaveAttribute("data-view", "results");
+    expect(within(poll).getAllByTestId("poll-option")[1]).toHaveAttribute("data-mine", "true");
+    // Saving an unchanged vote just returns.
+    await user.click(within(poll).getByRole("button", { name: "Stimme ändern" }));
+    await user.click(within(poll).getByRole("button", { name: "Speichern" }));
+    expect(poll).toHaveAttribute("data-view", "results");
+    expect(api.polls.vote).toHaveBeenCalledTimes(2);
+    // Retract from the form: the empty form again.
+    await user.click(within(poll).getByRole("button", { name: "Stimme ändern" }));
     await user.click(within(poll).getByRole("button", { name: "Stimme zurückziehen" }));
     expect(api.polls.retract).toHaveBeenCalledWith("c1", "01POLL");
     await waitFor(() => expect(within(poll).getByTestId("poll-voters")).toHaveTextContent("1 Stimme"));
+    expect(poll).toHaveAttribute("data-view", "form");
     expect(within(poll).queryByTestId("poll-mine")).toBeNull();
+    expect(within(poll).getByRole("radio", { name: /Garten/ })).not.toBeChecked();
   });
 
-  it("rolls the own vote back when the node refuses it", async () => {
+  it("rolls the own vote back when the node refuses it and keeps the form with the choice", async () => {
     const user = userEvent.setup();
     const api = fakeApi([]);
     api.polls.vote.mockRejectedValueOnce(new Error("Diese Umfrage ist beendet."));
@@ -109,6 +151,27 @@ describe("PollView", () => {
     await user.click(within(poll).getByRole("button", { name: "Abstimmen" }));
     await waitFor(() => expect(within(poll).getByTestId("poll-voters")).toHaveTextContent("0 Stimmen"));
     expect(within(poll).queryByTestId("poll-mine")).toBeNull();
+    expect(poll).toHaveAttribute("data-view", "form");
+    expect(within(poll).getByRole("radio", { name: /Küche/ })).toBeChecked();
+  });
+
+  it("a multiple-choice vote is changed in the form prefilled with every own option", async () => {
+    const user = userEvent.setup();
+    const multi = { ...choicePoll, options: [...choicePoll.options, { id: "c", label: "Keller" }], max_choices: 2 };
+    const api = fakeApi([await record(ME, multi, { choices: ["a", "c"] })]);
+    show([message(multi)], api);
+    const poll = await screen.findByTestId("poll");
+    await waitFor(() => expect(poll).toHaveAttribute("data-view", "results"));
+    expect(within(poll).getAllByTestId("poll-mine")).toHaveLength(2);
+    await user.click(within(poll).getByRole("button", { name: "Stimme ändern" }));
+    expect(within(poll).getByRole("checkbox", { name: /Küche/ })).toBeChecked();
+    expect(within(poll).getByRole("checkbox", { name: /Keller/ })).toBeChecked();
+    expect(within(poll).getByRole("checkbox", { name: /Garten/ })).toBeDisabled();
+    await user.click(within(poll).getByRole("checkbox", { name: /Keller/ }));
+    await user.click(within(poll).getByRole("checkbox", { name: /Garten/ }));
+    await user.click(within(poll).getByRole("button", { name: "Speichern" }));
+    expect(api.polls.vote.mock.calls[0]![2].content).toMatchObject({ choices: ["a", "b"] });
+    await waitFor(() => expect(poll).toHaveAttribute("data-view", "results"));
   });
 
   it("honours results after voting and votes hidden until the close", async () => {
@@ -122,19 +185,24 @@ describe("PollView", () => {
     await user.click(within(poll).getByRole("radio", { name: /Küche/ }));
     await user.click(within(poll).getByRole("button", { name: "Abstimmen" }));
     await waitFor(() => expect(within(poll).getAllByTestId("poll-count")).toHaveLength(2));
+    expect(poll).toHaveAttribute("data-view", "results");
     expect(within(poll).getByTestId("poll-votes-hidden")).toBeInTheDocument();
     expect(within(poll).queryByText("BOB")).toBeNull();
   });
 
   it("a closed poll takes no votes and shows every voter", async () => {
     const hidden = { ...choicePoll, votes_visible: "hidden_until_close" };
-    const api = fakeApi([await record("bob@t.local", hidden, { choices: ["b"] }, "2026-01-01T00:00:00Z")]);
+    const api = fakeApi([await record("bob@t.local", hidden, { choices: ["b"] }, "2026-01-01T00:00:00Z"), await record(ME, hidden, { choices: ["a"] }, "2026-01-01T00:00:00Z")]);
     show([message(hidden, { poll_closes_at: "2026-01-02T00:00:00Z" })], api);
     const poll = await screen.findByTestId("poll");
     expect(within(poll).getByTestId("poll-closed")).toHaveTextContent("Beendet");
     await waitFor(() => expect(within(poll).getByText("BOB")).toBeInTheDocument());
+    // The results only: no form, no "Change vote", nothing to close.
+    expect(poll).toHaveAttribute("data-view", "results");
     expect(within(poll).queryByRole("button", { name: "Abstimmen" })).toBeNull();
-    expect(within(poll).getAllByRole("radio")[0]).toBeDisabled();
+    expect(within(poll).queryByTestId("poll-change")).toBeNull();
+    expect(within(poll).queryByRole("radio")).toBeNull();
+    expect(within(poll).getAllByTestId("poll-option")[0]).toHaveAttribute("data-mine", "true");
     expect(within(poll).queryByTestId("poll-close-now")).toBeNull();
   });
 
@@ -226,26 +294,111 @@ describe("PollView", () => {
     expect(within(other!).queryByTestId("poll-count")).toBeNull();
   });
 
-  it("date polls: yes / maybe / no per slot with text and icon, the best slot and the grid of answers", async () => {
+  it("date polls: the form per day, then the results grid with the best slot, the answers of a slot and the members' table", async () => {
     const user = userEvent.setup();
     const api = fakeApi([await record("bob@t.local", datePoll, { answers: { s1: "yes", s2: "maybe" } }), await record("carol@t.local", datePoll, { answers: { s1: "maybe", s2: "no" } })]);
     show([message(datePoll)], api);
     const poll = await screen.findByTestId("poll");
     expect(within(poll).getByTestId("poll-kind")).toHaveTextContent("Terminumfrage");
-    await waitFor(() => expect(within(poll).getByTestId("poll-best")).toHaveTextContent(/Bester Termin: .*6\. Nov\./));
+    await waitFor(() => expect(within(poll).getByTestId("poll-voters")).toHaveTextContent("2 Stimmen"));
+    expect(poll).toHaveAttribute("data-view", "form");
+    // The form: one group per day, per slot yes / maybe / no with text and icon.
+    expect(within(poll).getByRole("group", { name: local(datePoll.slots[0]).date })).toBeInTheDocument();
     const [s1, s2] = within(poll).getAllByTestId("poll-slot");
-    expect(s1).toHaveAttribute("data-best", "true");
-    expect(s1).toHaveTextContent("✓ 1 · ? 1");
     expect(s2).toHaveTextContent("ganztägig");
+    expect(within(s1!).getByRole("radio", { name: /Ja/ })).not.toBeChecked();
     await user.click(within(s2!).getByRole("radio", { name: /Ja/ }));
     await user.click(within(s1!).getByRole("radio", { name: /Nein/ }));
     await user.click(within(poll).getByRole("button", { name: "Abstimmen" }));
     expect(api.polls.vote.mock.calls[0]![2].content).toMatchObject({ answers: { s1: "no", s2: "yes" } });
-    await user.click(within(poll).getByRole("button", { name: "Alle Antworten zeigen" }));
-    const grid = within(poll).getByRole("table", { name: "Antworten auf Teamessen?" });
-    const bob = within(grid).getByRole("rowheader", { name: "BOB" }).closest("tr")!;
-    expect(bob).toHaveTextContent(/Ja.*Vielleicht/);
+
+    // The results: the best slot on top, a cell per slot with counts, ★ and the own answer.
+    await waitFor(() => expect(poll).toHaveAttribute("data-view", "results"));
+    const s1Text = local(datePoll.slots[0]);
+    expect(within(poll).getByTestId("poll-best")).toHaveTextContent(new RegExp(`Beste Termine.*${escape(`${s1Text.date}, ${s1Text.time}`)}.*1 ja, 1 vielleicht, 1 nein`));
+    const grid = within(poll).getByRole("grid", { name: "Ergebnisse von Teamessen?" });
     expect(within(grid).getAllByRole("columnheader")).toHaveLength(3);
+    expect(within(grid).getAllByRole("rowheader").map((h) => h.textContent)).toEqual(["ganztägig", s1Text.time]);
+    const cell = (slot: string) => grid.querySelector<HTMLButtonElement>(`[data-testid="poll-cell"][data-slot="${slot}"]`)!;
+    expect(cell("s1")).toHaveAttribute("data-best", "true");
+    expect(cell("s1")).toHaveAttribute("data-mine", "no");
+    expect(cell("s1")).toHaveAccessibleName(new RegExp(`${escape(s1Text.time)}\\. 1 ja, 1 vielleicht, 1 nein\\. bester Termin\\. deine Antwort: Nein`));
+    expect(cell("s2")).toHaveAccessibleName(/ganztägig\. 1 ja, 1 vielleicht, 1 nein\. bester Termin\. deine Antwort: Ja/);
+    // Hover: the names in the title; click: the answers of the slot.
+    expect(cell("s1")).toHaveAttribute("title", "✓ BOB · ? CAROL · ✗ ME");
+    await user.click(cell("s1"));
+    expect(cell("s1")).toHaveAttribute("aria-expanded", "true");
+    const detail = within(poll).getByTestId("poll-slot-detail");
+    expect(within(detail).getByTestId("poll-detail-yes")).toHaveTextContent("Ja (1): BOB");
+    expect(within(detail).getByTestId("poll-detail-maybe")).toHaveTextContent("Vielleicht (1): CAROL");
+    expect(detail).toHaveTextContent("Deine Antwort: Nein");
+
+    // "Change vote": the form prefilled with the own answers; saved: the results again.
+    await user.click(within(poll).getByRole("button", { name: "Stimme ändern" }));
+    expect(poll).toHaveAttribute("data-view", "form");
+    const [f1, f2] = within(poll).getAllByTestId("poll-slot");
+    expect(within(f1!).getByRole("radio", { name: /Nein/ })).toBeChecked();
+    expect(within(f2!).getByRole("radio", { name: /Ja/ })).toBeChecked();
+    await user.click(within(f1!).getByRole("radio", { name: /Ja/ }));
+    await user.click(within(poll).getByRole("button", { name: "Speichern" }));
+    expect(api.polls.vote.mock.calls[1]![2].content).toMatchObject({ answers: { s1: "yes", s2: "yes" } });
+    await waitFor(() => expect(within(poll).getByTestId("poll-best")).toHaveTextContent(/Bester Termin/));
+    expect(poll).toHaveAttribute("data-view", "results");
+
+    // Every member's answers on demand.
+    await user.click(within(poll).getByRole("button", { name: "Alle Antworten zeigen" }));
+    const table = within(poll).getByRole("table", { name: "Antworten auf Teamessen?" });
+    const bob = within(table).getByRole("rowheader", { name: "BOB" }).closest("tr")!;
+    expect(bob).toHaveTextContent(/Ja.*Vielleicht/);
+    expect(within(table).getAllByRole("columnheader")).toHaveLength(3);
+  });
+
+  it("the date results grid: days in columns, times in rows, one tab stop with arrow keys", async () => {
+    const user = userEvent.setup();
+    const many = {
+      ...datePoll,
+      slots: [
+        { id: "s1", start: "2026-11-06T18:00:00+01:00" },
+        { id: "s2", start: "2026-11-06T20:00:00+01:00" },
+        { id: "s3", start: "2026-11-07T18:00:00+01:00" },
+        { id: "s4", start: "2026-11-08T20:00:00+01:00" },
+      ],
+    };
+    const api = fakeApi([await record(ME, many, { answers: { s1: "yes", s3: "maybe" } }), await record("bob@t.local", many, { answers: { s3: "yes", s4: "yes" } })]);
+    show([message(many)], api);
+    const poll = await screen.findByTestId("poll");
+    await waitFor(() => expect(poll).toHaveAttribute("data-view", "results"));
+    const grid = within(poll).getByRole("grid");
+    expect(within(grid).getAllByRole("rowheader").map((h) => h.textContent)).toEqual([local(many.slots[0]!).time, local(many.slots[1]!).time]);
+    expect(within(grid).getAllByTestId("poll-cell").map((c) => c.getAttribute("data-slot"))).toEqual(["s1", "s3", "s2", "s4"]);
+    // The best slot (bob yes + my maybe) is the tab stop.
+    const cells = within(grid).getAllByTestId("poll-cell");
+    expect(cells.filter((c) => c.tabIndex === 0).map((c) => c.getAttribute("data-slot"))).toEqual(["s3"]);
+    expect(within(poll).getByTestId("poll-best")).toHaveTextContent(local(many.slots[2]!).date);
+    cells[1]!.focus();
+    await user.keyboard("{ArrowLeft}");
+    expect(document.activeElement).toHaveAttribute("data-slot", "s1");
+    await user.keyboard("{ArrowDown}");
+    expect(document.activeElement).toHaveAttribute("data-slot", "s2");
+    await user.keyboard("{End}");
+    expect(document.activeElement).toHaveAttribute("data-slot", "s4");
+    await user.keyboard("{Enter}");
+    expect(within(poll).getByTestId("poll-slot-detail")).toHaveTextContent("Ja (1): BOB");
+  });
+
+  it("date results hidden until the close: the own answers only", async () => {
+    const hidden = { ...datePoll, results_visible: "after_close" };
+    const api = fakeApi([await record(ME, hidden, { answers: { s1: "maybe" } }), await record("bob@t.local", hidden, { answers: { s1: "yes" } })]);
+    show([message(hidden)], api);
+    const poll = await screen.findByTestId("poll");
+    await waitFor(() => expect(poll).toHaveAttribute("data-view", "results"));
+    expect(within(poll).getByTestId("poll-results-hidden")).toBeInTheDocument();
+    expect(within(poll).queryByTestId("poll-best")).toBeNull();
+    expect(within(poll).queryByTestId("poll-cell-bar")).toBeNull();
+    const cell = within(poll).getAllByTestId("poll-cell")[1]!;
+    expect(cell).toHaveAttribute("data-mine", "maybe");
+    expect(cell).toHaveAccessibleName(new RegExp(`${escape(local(hidden.slots[0]).time)}\\. deine Antwort: Vielleicht$`));
+    expect(within(poll).getByRole("button", { name: "Stimme ändern" })).toBeEnabled();
   });
 
   it("an encrypted poll from before the member joined shows the voter count only", async () => {

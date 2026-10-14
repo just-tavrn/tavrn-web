@@ -1,28 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
- * A poll in the message list (PROTOCOL.md §7g). Choice polls: the options as radio buttons or checkboxes, results
- * bars with counts, percentages and (public votes) the voters. Date polls: per slot the viewer's yes / maybe / no and
- * the counts, the best slots on top and the full grid of answers on demand. Results and voters follow the poll's
- * cooperative flags; closed polls take no votes; the author or a moderator can close a poll early.
+ * A poll in the message list (PROTOCOL.md §7g). Two views: the vote form and the results. Members see the form until
+ * they voted and the results afterwards, with "Change vote" back to the form (prefilled with the own vote; "Keep" or
+ * "Save" return to the results, "Retract vote" stays in the form); closed polls and members who cannot vote see the
+ * results only. Choice polls: options with bars, counts, shares and (public votes) the voters, the own vote marked.
+ * Date polls: the best slots on top and a compact grid of the slots (`DateResults.tsx`). Results and voters follow
+ * the poll's cooperative flags; the author or a moderator can close a poll early.
  */
 import { useEffect, useId, useMemo, useState } from "react";
 import type { Message } from "@tavrn/sdk";
 import { pollVisibility, tallyPoll, type ChoicePoll, type DatePoll, type Poll, type PollAnswer as Answer, type PollTally } from "@tavrn/e2ee";
 import { intlLocale, useLocale, useT } from "../i18n";
 import { toastError } from "../stores/toasts";
+import { ANSWER_CLASS, ANSWER_ICON, ANSWERS } from "./answers";
 import { usePollEnv } from "./context";
-import { closeText, relativeUntil, slotText } from "./format";
+import { DateResults } from "./DateResults";
+import { closeText, relativeUntil, slotText, type SlotText } from "./format";
+import { pollMode, type PollModeRequest } from "./grid";
 import { usePollActions, usePollVotes } from "./votes";
 
 /** Is the poll closed at `now`? */
 export const isClosed = (closesAt: string | null | undefined, now: number) => !!closesAt && Date.parse(closesAt) <= now;
-
-const ANSWER_ICON: Record<Answer, string> = { yes: "✓", maybe: "?", no: "✗" };
-const ANSWER_CLASS: Record<Answer, string> = {
-  yes: "border-ok bg-ok/15 text-fg-0",
-  maybe: "border-warn bg-warn/15 text-fg-0",
-  no: "border-danger bg-danger/10 text-fg-0",
-};
 
 /** Re-renders when a close time passes (once a minute while open). */
 function useNow(closesAt: string | null | undefined): number {
@@ -61,22 +59,27 @@ export function PollView({ poll, raw, m, own, canManage }: { poll: Poll; raw: Re
   const canVote = !!env?.canVote && !!env.me && !closed;
   // The author or a moderator closes an open poll (with or without a close time) at once (§7g).
   const mayClose = !!env && !closed && (own || canManage || env.canManage);
+  const [request, setRequest] = useState<PollModeRequest>("auto");
+  const mode = pollMode(request, { closed, canVote, voted: !!mine });
   const [busy, setBusy] = useState(false);
-  const run = async (fn: () => Promise<unknown>) => {
+  const run = async (fn: () => Promise<unknown>): Promise<boolean> => {
     setBusy(true);
     try {
       await fn();
+      return true;
     } catch (e) {
       toastError(e, t("polls.error.vote_failed"));
+      return false;
     } finally {
       setBusy(false);
     }
   };
   const locale = intlLocale();
   const headingId = useId();
+  const body: Omit<BodyProps<never, never>, "poll" | "mine" | "onVote"> = { tally, show, mode, setRequest, canVote, busy, onRetract: () => run(actions.retract) };
 
   return (
-    <section className="mt-1 max-w-xl rounded-lg border border-line bg-bg-1 p-3" aria-labelledby={headingId} data-testid="poll" data-kind={poll.kind} data-closed={closed || undefined}>
+    <section className="mt-1 max-w-xl rounded-lg border border-line bg-bg-1 p-3" aria-labelledby={headingId} data-testid="poll" data-kind={poll.kind} data-closed={closed || undefined} data-view={mode}>
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <span className="rounded bg-bg-3 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-fg-1" data-testid="poll-kind">
           <span aria-hidden="true">{poll.kind === "choice" ? "📊 " : "📅 "}</span>
@@ -98,9 +101,9 @@ export function PollView({ poll, raw, m, own, canManage }: { poll: Poll; raw: Re
         {poll.question}
       </h4>
       {poll.kind === "choice" ? (
-        <ChoiceBody poll={poll} tally={tally} mine={mine && "choices" in mine ? mine.choices : null} show={show} canVote={canVote} busy={busy} onVote={(choices) => run(() => actions.vote({ choices }))} onRetract={() => run(actions.retract)} />
+        <ChoiceBody {...body} poll={poll} mine={mine && "choices" in mine ? mine.choices : null} onVote={(choices) => run(() => actions.vote({ choices }))} />
       ) : (
-        <DateBody poll={poll} tally={tally} mine={mine && "answers" in mine ? mine.answers : null} show={show} canVote={canVote} busy={busy} onVote={(answers) => run(() => actions.vote({ answers }))} onRetract={() => run(actions.retract)} />
+        <DateBody {...body} poll={poll} mine={mine && "answers" in mine ? mine.answers : null} onVote={(answers) => run(() => actions.vote({ answers }))} />
       )}
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-2">
         <span data-testid="poll-voters">{tally ? t(tally.voters === 1 ? "polls.voters_one" : "polls.voters_many", { n: tally.voters }) : error ? t("polls.error.votes_unavailable") : t("polls.loading")}</span>
@@ -148,10 +151,88 @@ interface BodyProps<P, C> {
   /** The viewer's counted vote. */
   mine: C | null;
   show: { results: boolean; voters: boolean };
+  mode: "form" | "results";
+  setRequest: (r: PollModeRequest) => void;
   canVote: boolean;
   busy: boolean;
-  onVote: (choice: C) => void;
-  onRetract: () => void;
+  /** Resolves to whether the node took the vote (a refused vote is rolled back and toasted). */
+  onVote: (choice: C) => Promise<boolean>;
+  onRetract: () => Promise<boolean>;
+}
+
+/**
+ * The draft of the vote form and its transitions: "Change vote" opens the form prefilled with the own vote, "Keep"
+ * and an unchanged "Save" return to the results, a saved vote shows the results at once (the own vote is applied
+ * optimistically) and a refused one reopens the form with the draft kept.
+ */
+function useVoteForm<C>({ mine, setRequest, onVote, onRetract }: Pick<BodyProps<unknown, C>, "mine" | "setRequest" | "onVote" | "onRetract">, changed: (draft: C) => boolean) {
+  const [draft, setDraft] = useState<C | null>(null);
+  return {
+    draft,
+    setDraft,
+    edit: () => {
+      setDraft(null);
+      setRequest("form");
+    },
+    keep: () => {
+      setDraft(null);
+      setRequest("auto");
+    },
+    save: async (picked: C) => {
+      if (mine && !changed(picked)) {
+        setDraft(null);
+        setRequest("auto");
+        return;
+      }
+      setRequest("auto");
+      if (await onVote(picked)) setDraft(null);
+      else setRequest("form");
+    },
+    retract: () => {
+      setDraft(null);
+      setRequest("auto");
+      void onRetract();
+    },
+  };
+}
+
+/** The buttons under the form or the results. */
+function Actions({ mode, canVote, busy, voted, canSave, showResults, onEdit, onKeep, onRetract, onShowResults, children }: { mode: "form" | "results"; canVote: boolean; busy: boolean; voted: boolean; canSave: boolean; showResults: boolean; onEdit: () => void; onKeep: () => void; onRetract: () => void; onShowResults: () => void; children?: React.ReactNode }) {
+  const t = useT();
+  const primary = "min-h-11 rounded-md bg-accent px-3 text-sm font-medium text-accent-text hover:bg-accent-hover disabled:opacity-50";
+  const secondary = "min-h-11 rounded-md px-3 text-sm text-fg-1 hover:bg-bg-3 hover:text-fg-0";
+  return (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {canVote && mode === "form" && (
+        <>
+          <button type="submit" disabled={!canSave || busy} className={primary} data-testid="poll-vote">
+            {t(voted ? "polls.save" : "polls.vote")}
+          </button>
+          {voted && (
+            <button type="button" disabled={busy} onClick={onKeep} className={secondary} data-testid="poll-keep">
+              {t("polls.keep")}
+            </button>
+          )}
+          {voted && (
+            <button type="button" disabled={busy} onClick={onRetract} className={secondary} data-testid="poll-retract">
+              {t("polls.retract")}
+            </button>
+          )}
+          {!voted && showResults && (
+            <button type="button" onClick={onShowResults} className={secondary} data-testid="poll-show-results">
+              {t("polls.show_results")}
+            </button>
+          )}
+        </>
+      )}
+      {canVote && mode === "results" && (
+        <button type="button" disabled={busy} onClick={onEdit} className={voted ? "min-h-11 rounded-md border border-line-strong px-3 text-sm font-medium text-fg-0 hover:bg-bg-3" : primary} data-testid="poll-change">
+          {t(voted ? "polls.change_vote" : "polls.vote")}
+        </button>
+      )}
+      {children}
+    </div>
+  );
 }
 
 function VoterNames({ users }: { users: string[] }) {
@@ -173,55 +254,48 @@ function VoterNames({ users }: { users: string[] }) {
   );
 }
 
-function ChoiceBody({ poll, tally, mine: counted, show, canVote, busy, onVote, onRetract }: BodyProps<ChoicePoll, string[]>) {
+const sameChoices = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x));
+
+function ChoiceBody(props: BodyProps<ChoicePoll, string[]>) {
+  const { poll, tally, mine: counted, show, mode, canVote, busy } = props;
   const t = useT();
   const id = useId();
   const mine = useMemo(() => counted ?? [], [counted]);
-  const [draft, setDraft] = useState<string[] | null>(null);
-  const picked = draft ?? mine;
+  const form = useVoteForm(props, (picked) => !sameChoices(picked, mine));
+  const picked = form.draft ?? mine;
   const multiple = poll.max_choices > 1;
-  const changed = picked.length > 0 && (picked.length !== mine.length || picked.some((x) => !mine.includes(x)));
   const total = tally?.voters ?? 0;
   const toggle = (optionId: string) => {
-    if (!multiple) return setDraft([optionId]);
-    setDraft(picked.includes(optionId) ? picked.filter((x) => x !== optionId) : picked.length < poll.max_choices ? [...picked, optionId] : picked);
+    if (!multiple) return form.setDraft([optionId]);
+    form.setDraft(picked.includes(optionId) ? picked.filter((x) => x !== optionId) : picked.length < poll.max_choices ? [...picked, optionId] : picked);
   };
+  const results = mode === "results";
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        if (changed) {
-          onVote(picked);
-          setDraft(null);
-        }
+        if (picked.length) void form.save(picked);
       }}
     >
-      <fieldset disabled={!canVote || busy}>
-        <legend className="sr-only">{poll.question}</legend>
-        {multiple && <p className="mb-1 text-xs text-fg-2">{t("polls.choose_up_to", { n: poll.max_choices })}</p>}
-        <ul className="space-y-1.5" data-testid="poll-options">
+      {!results && multiple && <p className="mb-1 text-xs text-fg-2">{t("polls.choose_up_to", { n: poll.max_choices })}</p>}
+      {results ? (
+        <ul className="space-y-1.5" data-testid="poll-options" aria-label={poll.question}>
           {poll.options.map((o) => {
             const option = tally?.options.find((x) => x.id === o.id);
             const count = option?.count ?? 0;
             const pct = total ? Math.round((count / total) * 100) : 0;
             const isMine = mine.includes(o.id);
-            const checked = picked.includes(o.id);
             return (
               <li key={o.id} data-testid="poll-option" data-option={o.id} data-mine={isMine || undefined}>
-                <label className={`relative flex min-h-11 cursor-pointer items-center gap-2 overflow-hidden rounded-md border px-2 py-1.5 ${checked ? "border-accent" : "border-line"} ${canVote ? "hover:bg-bg-3" : "cursor-default"}`}>
+                <div className={`relative flex min-h-11 items-center gap-2 overflow-hidden rounded-md px-2 py-1.5 ${isMine ? "border-2 border-accent" : "border border-line"}`}>
                   {show.results && <span aria-hidden="true" className="absolute inset-y-0 left-0 bg-accent-soft transition-[width] motion-reduce:transition-none" style={{ width: `${pct}%` }} data-testid="poll-bar" />}
-                  <input
-                    type={multiple ? "checkbox" : "radio"}
-                    name={`${id}-choice`}
-                    checked={checked}
-                    onChange={() => toggle(o.id)}
-                    disabled={multiple && !checked && picked.length >= poll.max_choices}
-                    className="relative h-5 w-5 shrink-0 accent-accent"
-                  />
-                  <span className="relative min-w-0 flex-1 break-words text-sm text-fg-0">{o.label}</span>
+                  <span aria-hidden="true" className={`relative flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold ${isMine ? "bg-accent text-accent-text" : "border border-line-strong"}`}>
+                    {isMine ? "✓" : ""}
+                  </span>
+                  <span className={`relative min-w-0 flex-1 break-words text-sm text-fg-0 ${isMine ? "font-semibold" : ""}`}>{o.label}</span>
                   {isMine && (
-                    <span className="relative shrink-0 text-xs font-medium text-accent" data-testid="poll-mine">
-                      ✓ {t("polls.your_vote")}
+                    <span className="relative shrink-0 rounded bg-bg-1 px-1 text-xs font-semibold text-accent" data-testid="poll-mine">
+                      {t("polls.your_vote")}
                     </span>
                   )}
                   {show.results && (
@@ -229,177 +303,142 @@ function ChoiceBody({ poll, tally, mine: counted, show, canVote, busy, onVote, o
                       {t("polls.count", { n: count, pct })}
                     </span>
                   )}
-                </label>
+                </div>
                 {show.voters && <VoterNames users={option?.voters ?? []} />}
               </li>
             );
           })}
         </ul>
-      </fieldset>
-      {canVote && (
-        <div className="mt-2 flex flex-wrap gap-2">
-          <button type="submit" disabled={!changed || busy} className="min-h-11 rounded-md bg-accent px-3 text-sm font-medium text-accent-text hover:bg-accent-hover disabled:opacity-50" data-testid="poll-vote">
-            {mine.length ? t("polls.change_vote") : t("polls.vote")}
-          </button>
-          {mine.length > 0 && (
-            <button type="button" disabled={busy} onClick={() => { setDraft(null); onRetract(); }} className="min-h-11 rounded-md px-3 text-sm text-fg-1 hover:bg-bg-3" data-testid="poll-retract">
-              {t("polls.retract")}
-            </button>
-          )}
-        </div>
+      ) : (
+        <fieldset disabled={!canVote || busy}>
+          <legend className="sr-only">{poll.question}</legend>
+          <ul className="space-y-1.5" data-testid="poll-options">
+            {poll.options.map((o) => {
+              const option = tally?.options.find((x) => x.id === o.id);
+              const count = option?.count ?? 0;
+              const pct = total ? Math.round((count / total) * 100) : 0;
+              const isMine = mine.includes(o.id);
+              const checked = picked.includes(o.id);
+              return (
+                <li key={o.id} data-testid="poll-option" data-option={o.id} data-mine={isMine || undefined}>
+                  <label className={`relative flex min-h-11 cursor-pointer items-center gap-2 overflow-hidden rounded-md border px-2 py-1.5 hover:bg-bg-3 ${checked ? "border-accent" : "border-line"}`}>
+                    {show.results && <span aria-hidden="true" className="absolute inset-y-0 left-0 bg-accent-soft transition-[width] motion-reduce:transition-none" style={{ width: `${pct}%` }} data-testid="poll-bar" />}
+                    <input
+                      type={multiple ? "checkbox" : "radio"}
+                      name={`${id}-choice`}
+                      checked={checked}
+                      onChange={() => toggle(o.id)}
+                      disabled={multiple && !checked && picked.length >= poll.max_choices}
+                      className="relative h-5 w-5 shrink-0 accent-accent"
+                    />
+                    <span className="relative min-w-0 flex-1 break-words text-sm text-fg-0">{o.label}</span>
+                    {isMine && (
+                      <span className="relative shrink-0 text-xs font-medium text-accent" data-testid="poll-mine">
+                        ✓ {t("polls.your_vote")}
+                      </span>
+                    )}
+                    {show.results && (
+                      <span className="relative shrink-0 text-xs tabular-nums text-fg-1" data-testid="poll-count">
+                        {t("polls.count", { n: count, pct })}
+                      </span>
+                    )}
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+        </fieldset>
       )}
+      <Actions mode={mode} canVote={canVote} busy={busy} voted={mine.length > 0} canSave={picked.length > 0} showResults={show.voters && total > 0} onEdit={form.edit} onKeep={form.keep} onRetract={form.retract} onShowResults={() => props.setRequest("results")} />
     </form>
   );
 }
 
-function DateBody({ poll, tally, mine: counted, show, canVote, busy, onVote, onRetract }: BodyProps<DatePoll, Record<string, Answer>>) {
+const sameAnswers = (a: Record<string, Answer>, b: Record<string, Answer>) => Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([k, v]) => b[k] === v);
+
+/** The slots of a date poll grouped by the viewer's day (the order of the poll: by start). */
+function byDay(slots: DatePoll["slots"], texts: Record<string, SlotText>): { day: string; label: string; slots: DatePoll["slots"] }[] {
+  const out: { day: string; label: string; slots: DatePoll["slots"] }[] = [];
+  for (const s of [...slots].sort((a, b) => texts[a.id]!.day.localeCompare(texts[b.id]!.day) || texts[a.id]!.minutes - texts[b.id]!.minutes)) {
+    const x = texts[s.id]!;
+    const last = out.at(-1);
+    if (last?.day === x.day) last.slots.push(s);
+    else out.push({ day: x.day, label: x.date, slots: [s] });
+  }
+  return out;
+}
+
+function DateBody(props: BodyProps<DatePoll, Record<string, Answer>>) {
+  const { poll, tally, mine: counted, show, mode, canVote, busy } = props;
   const t = useT();
   const locale = intlLocale();
-  const env = usePollEnv();
   const id = useId();
   const mine = useMemo(() => counted ?? {}, [counted]);
-  const [draft, setDraft] = useState<Record<string, Answer> | null>(null);
-  const answers = draft ?? mine;
-  const [grid, setGrid] = useState(false);
+  const form = useVoteForm(props, (draft) => !sameAnswers(draft, mine));
+  const answers = form.draft ?? mine;
+  const voted = Object.keys(mine).length > 0;
   const texts = useMemo(() => Object.fromEntries(poll.slots.map((s) => [s.id, slotText(s, locale)])), [poll.slots, locale]);
-  const changed = Object.keys(answers).length > 0 && JSON.stringify(Object.entries(answers).sort()) !== JSON.stringify(Object.entries(mine).sort());
+  const days = useMemo(() => byDay(poll.slots, texts), [poll.slots, texts]);
   const label = (slotId: string) => {
     const x = texts[slotId]!;
     return x.allDay ? `${x.date}, ${t("polls.all_day")}` : `${x.date}, ${x.time}`;
-  };
-  const voters = useMemo(() => {
-    const set = new Set<string>();
-    for (const s of tally?.slots ?? []) for (const a of ["yes", "maybe", "no"] as const) for (const u of s.voters[a]) set.add(u);
-    return [...set];
-  }, [tally]);
-  const answerOf = (user: string, slotId: string): Answer | null => {
-    const v = tally?.slots.find((x) => x.id === slotId)?.voters;
-    return v?.yes.includes(user) ? "yes" : v?.maybe.includes(user) ? "maybe" : v?.no.includes(user) ? "no" : null;
   };
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        if (changed) {
-          onVote(answers);
-          setDraft(null);
-        }
+        if (Object.keys(answers).length) void form.save(answers);
       }}
     >
-      {show.results && tally && tally.best.length > 0 && (
-        <p className="mb-2 rounded-md bg-accent-soft px-2 py-1.5 text-sm text-fg-0" data-testid="poll-best">
-          <span aria-hidden="true">★ </span>
-          {t(tally.best.length === 1 ? "polls.best_one" : "polls.best_many", { slots: tally.best.map(label).join("; ") })}
-        </p>
-      )}
-      <ul className="space-y-1.5" data-testid="poll-slots">
-        {poll.slots.map((s) => {
-          const x = texts[s.id]!;
-          const a = tally?.slots.find((x) => x.id === s.id);
-          const best = show.results && !!tally?.best.includes(s.id);
-          return (
-            <li key={s.id} className={`rounded-md border px-2 py-1.5 ${best ? "border-accent" : "border-line"}`} data-testid="poll-slot" data-slot={s.id} data-best={best || undefined}>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="min-w-0 flex-1 text-sm text-fg-0">
-                  <span className="font-medium">{x.date}</span> <span className="text-fg-1">{x.allDay ? t("polls.all_day") : x.time}</span>
-                  {x.creator && (
-                    <span className="ml-1 text-xs text-fg-2" title={t("polls.creator_time_hint")} data-testid="poll-creator-time">
-                      ({t("polls.creator_time", { time: x.creator })})
-                    </span>
-                  )}
-                  {best && <span className="ml-1 text-xs font-semibold text-accent">★ {t("polls.best")}</span>}
-                </span>
-                {show.results && a && (
-                  <span className="text-xs tabular-nums text-fg-1" data-testid="poll-slot-count">
-                    {t("polls.slot_count", { yes: a.yes, maybe: a.maybe })}
-                  </span>
-                )}
+      {mode === "results" ? (
+        <DateResults poll={poll} tally={tally} mine={mine} show={show} texts={texts} label={label}>
+          {(grid) => <Actions mode={mode} canVote={canVote} busy={busy} voted={voted} canSave={false} showResults={false} onEdit={form.edit} onKeep={form.keep} onRetract={form.retract} onShowResults={() => {}}>{grid}</Actions>}
+        </DateResults>
+      ) : (
+        <>
+          <div className="space-y-2" data-testid="poll-slots">
+            {days.map((d) => (
+              <div key={d.day} role="group" aria-label={d.label} data-testid="poll-day-group">
+                <p aria-hidden="true" className="mb-1 text-xs font-semibold uppercase tracking-wide text-fg-1">
+                  {d.label}
+                </p>
+                <ul className="space-y-1">
+                  {d.slots.map((s) => {
+                    const x = texts[s.id]!;
+                    return (
+                      <li key={s.id} className="rounded-md border border-line px-2 py-1" data-testid="poll-slot" data-slot={s.id}>
+                        <fieldset disabled={!canVote || busy} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <legend className="sr-only">{t("polls.your_answer", { slot: label(s.id) })}</legend>
+                          <span className="min-w-[6.5rem] flex-1 text-sm text-fg-0">
+                            {x.allDay ? t("polls.all_day") : x.time}
+                            {x.creator && (
+                              <span className="ml-1 text-xs text-fg-2" title={t("polls.creator_time_hint")} data-testid="poll-creator-time">
+                                ({t("polls.creator_time", { time: x.creator })})
+                              </span>
+                            )}
+                          </span>
+                          <span className="flex w-full gap-1 sm:w-auto">
+                            {ANSWERS.map((ans) => {
+                              const on = answers[s.id] === ans;
+                              return (
+                                <label key={ans} className={`flex min-h-11 flex-1 cursor-pointer items-center justify-center gap-1 rounded-md border px-2 text-sm has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent sm:min-w-[5.5rem] sm:flex-none ${on ? ANSWER_CLASS[ans] + " font-semibold" : "border-line text-fg-1 hover:bg-bg-3"}`}>
+                                  <input type="radio" name={`${id}-${s.id}`} value={ans} checked={on} onChange={() => form.setDraft({ ...answers, [s.id]: ans })} className="sr-only" data-testid={`poll-answer-${ans}`} />
+                                  <span aria-hidden="true">{ANSWER_ICON[ans]}</span>
+                                  {t(`polls.answer.${ans}`)}
+                                </label>
+                              );
+                            })}
+                          </span>
+                        </fieldset>
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
-              <fieldset disabled={!canVote || busy} className="mt-1">
-                <legend className="sr-only">{t("polls.your_answer", { slot: label(s.id) })}</legend>
-                <div className="flex gap-1">
-                  {(["yes", "maybe", "no"] as const).map((ans) => {
-                    const on = answers[s.id] === ans;
-                    return (
-                      <label key={ans} className={`flex min-h-11 flex-1 cursor-pointer has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent items-center justify-center gap-1 rounded-md border text-sm ${on ? ANSWER_CLASS[ans] + " font-semibold" : "border-line text-fg-1 hover:bg-bg-3"} ${canVote ? "" : "cursor-default opacity-80"}`}>
-                        <input type="radio" name={`${id}-${s.id}`} value={ans} checked={on} onChange={() => setDraft({ ...answers, [s.id]: ans })} className="sr-only" data-testid={`poll-answer-${ans}`} />
-                        <span aria-hidden="true">{ANSWER_ICON[ans]}</span>
-                        {t(`polls.answer.${ans}`)}
-                      </label>
-                    );
-                  })}
-                </div>
-              </fieldset>
-            </li>
-          );
-        })}
-      </ul>
-      <div className="mt-2 flex flex-wrap gap-2">
-        {canVote && (
-          <>
-            <button type="submit" disabled={!changed || busy} className="min-h-11 rounded-md bg-accent px-3 text-sm font-medium text-accent-text hover:bg-accent-hover disabled:opacity-50" data-testid="poll-vote">
-              {Object.keys(mine).length ? t("polls.change_vote") : t("polls.vote")}
-            </button>
-            {Object.keys(mine).length > 0 && (
-              <button type="button" disabled={busy} onClick={() => { setDraft(null); onRetract(); }} className="min-h-11 rounded-md px-3 text-sm text-fg-1 hover:bg-bg-3" data-testid="poll-retract">
-                {t("polls.retract")}
-              </button>
-            )}
-          </>
-        )}
-        {show.voters && voters.length > 0 && (
-          <button type="button" aria-expanded={grid} onClick={() => setGrid((v) => !v)} className="min-h-11 rounded-md px-3 text-sm text-fg-1 hover:bg-bg-3" data-testid="poll-grid-toggle">
-            {t(grid ? "polls.grid_hide" : "polls.grid_show")}
-          </button>
-        )}
-      </div>
-      {grid && show.voters && (
-        <div className="mt-2 max-w-full overflow-x-auto" data-testid="poll-grid">
-          <table className="border-collapse text-xs">
-            <caption className="sr-only">{t("polls.grid_caption", { question: poll.question })}</caption>
-            <thead>
-              <tr>
-                <th scope="col" className="p-1 text-left font-medium text-fg-2">
-                  {t("polls.grid_member")}
-                </th>
-                {poll.slots.map((s) => (
-                  <th key={s.id} scope="col" className="min-w-16 p-1 text-center font-medium text-fg-1">
-                    {texts[s.id]!.date}
-                    <br />
-                    {texts[s.id]!.allDay ? t("polls.all_day") : texts[s.id]!.time}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {voters.map((u) => (
-                <tr key={u} className="border-t border-line">
-                  <th scope="row" className="whitespace-nowrap p-1 text-left font-medium text-fg-0">
-                    {env?.name(u) ?? u}
-                  </th>
-                  {poll.slots.map((s) => {
-                    const ans = answerOf(u, s.id);
-                    return (
-                      <td key={s.id} className="p-1 text-center">
-                        {ans ? (
-                          <span className={`inline-flex h-7 w-7 items-center justify-center rounded border ${ANSWER_CLASS[ans]}`}>
-                            <span aria-hidden="true">{ANSWER_ICON[ans]}</span>
-                            <span className="sr-only">{t(`polls.answer.${ans}`)}</span>
-                          </span>
-                        ) : (
-                          <span className="text-fg-2">
-                            <span aria-hidden="true">–</span>
-                            <span className="sr-only">{t("polls.answer.none")}</span>
-                          </span>
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </div>
+          <Actions mode={mode} canVote={canVote} busy={busy} voted={voted} canSave={Object.keys(answers).length > 0} showResults={show.results && (tally?.voters ?? 0) > 0} onEdit={form.edit} onKeep={form.keep} onRetract={form.retract} onShowResults={() => props.setRequest("results")} />
+        </>
       )}
     </form>
   );
