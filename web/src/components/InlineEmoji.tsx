@@ -40,7 +40,7 @@ export function InlineEmoji({ value, node, owner, size = 20, still = false }: { 
     );
   }
   return (
-    <span style={{ fontSize: size * 0.9 }} className="leading-none" data-testid="inline-emoji">
+    <span style={{ fontSize: size * 0.9 }} className="emoji-font leading-none" data-testid="inline-emoji">
       {value}
     </span>
   );

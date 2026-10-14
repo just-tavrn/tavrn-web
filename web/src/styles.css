@@ -112,10 +112,24 @@ body { @apply bg-bg-2 text-fg-0 font-sans antialiased; }
 .markdown .hljs-deletion { color: var(--color-danger); }
 .markdown .hljs-emphasis { font-style: italic; }
 .markdown .hljs-strong { font-weight: 600; }
-.mention[data-bot] { color: var(--color-accent); font-weight: 500; }
+/* Mentions (tavrn-web#122): pills. Users, bots and roles in the accent (accent-hover on accent-soft: >= 4.67:1 on
+   bg-0…bg-3); the reader's own name and @everyone/@here in the warning colour with a border (fg-0 on 22 % warn
+   >= 8.2:1, the warn border >= 3:1 against the pill and the row). A pill that wraps keeps its padding on every line. */
+.mention { padding: 0.05em 0.3em; border-radius: 0.3em; background: var(--color-accent-soft); color: var(--color-accent-hover); font-weight: 500; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.mention[data-mention="self"], .mention[data-mention="everyone"] { background: color-mix(in srgb, var(--color-warn) 22%, transparent); color: var(--color-fg-0); font-weight: 600; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-warn) 70%, transparent); }
 .bot-mention-badge { margin-left: 0.2em; padding: 0 0.25em; border-radius: 0.25rem; background: var(--color-accent-soft); color: var(--color-accent); font-size: 0.65em; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; vertical-align: middle; }
+/* Country flags (tavrn-web#118): where the platform's emoji font has no flag glyphs (lib/flagEmoji.ts marks the
+   document), the bundled Twemoji flag font comes first for emoji-bearing text (messages, reactions, the picker, status
+   lines, the composer). Its face covers the flag code points only, so every other emoji keeps the platform's font. */
+html[data-flag-font] :is(.markdown, .emoji-font) { font-family: "Twemoji Country Flags", var(--font-sans); }
 .emoji-missing { display: inline-block; padding: 0 0.3em; border-radius: 0.25rem; background: var(--color-bg-3); color: var(--color-fg-2); font-size: 0.85em; }
 .markdown img.emoji { display: inline-block; height: 1.375em; width: auto; max-width: 3em; vertical-align: -0.3em; object-fit: contain; }
+/* Unicode emojis (tavrn-web#117): 1.25× the text, line-height 1 so a line with an emoji keeps the text's line box
+   (the glyph's 1.25 em fit inside the 1.43 em line of the 14 px text); emoji-only messages (1–3 emojis, nothing else)
+   twice the text, custom emoji images alongside. */
+.markdown .emoji-text { font-size: 1.25em; line-height: 1; vertical-align: -0.1em; }
+.markdown .emoji-only .emoji-text { font-size: 2em; vertical-align: -0.15em; }
+.markdown .emoji-only img.emoji { height: 2em; max-width: 4em; vertical-align: -0.4em; }
 .markdown h1, .markdown h2, .markdown h3 { font-weight: 600; margin: 0.25rem 0; }
 /* Legal documents (design note 4.14): longer texts with headings, lists and tables. */
 .legal-doc h1 { font-size: 1.25rem; margin: 1rem 0 0.5rem; }

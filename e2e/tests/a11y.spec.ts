@@ -134,11 +134,17 @@ test.describe("Accessibility (axe, WCAG 2.2 AA)", () => {
     await postMessage(request, member.token, channel.id, "Danke!", { reply_to_id: first.id });
     await postMessage(request, owner.token, channel.id, "```rust\nfn main() { println!(\"hi\"); }\n```");
     await postAttachment(request, member.token, channel.id, { name: "pixel.png", mime: "image/png", buffer: PNG }, "Ein Bild");
+    // Mention pills (a mention of the reader, of another member and of everyone) and an emoji-only message (tavrn-web#122, #117).
+    await postMessage(request, member.token, channel.id, `@${owner.username} schaust du mal?`, { mentions: [`${owner.username}@localhost`] });
+    await postMessage(request, owner.token, channel.id, `@${member.username} und @everyone: gleich 🎉`, { mentions: [`${member.username}@localhost`], mentions_everyone: true });
+    await postMessage(request, member.token, channel.id, "🎉🎉");
 
     await loginAs(page, owner);
     await page.goto(`/rooms/${room.id}/channels/${channel.id}`);
     await expect(page.getByTestId("message").filter({ hasText: "Ein Bild" })).toBeVisible();
     await expect(page.getByTestId("message").filter({ hasText: "fn main" })).toBeVisible();
+    await expect(page.locator('[data-mention="self"]')).toBeVisible();
+    await expect(page.locator("p.emoji-only")).toBeVisible();
     await scan(page, "room: text channel with messages");
 
     if (phone(page)) {

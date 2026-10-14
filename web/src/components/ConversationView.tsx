@@ -266,6 +266,8 @@ export function ConversationView(p: ConversationViewProps) {
   const broken = useMemo(() => (p.members ?? []).filter((a) => a !== user?.address && verification[a] === "broken"), [p.members, user?.address, verification]);
   // Author names and role colours like the member list (design note 4.13 item 3): nickname, then display name.
   const roles = p.room?.roles;
+  // `@Role` in a message becomes a mention pill (tavrn-web#122); @everyone has its own kind.
+  const mentionRoles = useMemo(() => roles?.filter((r) => !r.is_everyone).map((r) => r.name), [roles]);
   // DMs and group DMs: the members' display names, the same source as the header and the member list.
   const authors = useMemo<Map<string, AuthorLook> | undefined>(() => authorLooks({ roomMembers: p.roomMembers, roles, people: p.people }), [p.roomMembers, roles, p.people]);
   const usersById = useMemo(() => (p.roomMembers ? new Map(p.roomMembers.map((m) => [m.user.id, m.user])) : undefined), [p.roomMembers]);
@@ -641,6 +643,7 @@ export function ConversationView(p: ConversationViewProps) {
         decrypted={decrypted}
         signatures={signatures}
         bots={p.bots}
+        mentionRoles={mentionRoles}
         authors={authors}
       />
       </AuthorProfiles>

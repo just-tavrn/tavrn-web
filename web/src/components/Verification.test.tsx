@@ -114,6 +114,30 @@ describe("VerifyButton", () => {
   });
 });
 
+describe("VerifiedBadge compact marker (tavrn-web#121)", () => {
+  it("is an icon with the accessible name and a tooltip, without the text chip", () => {
+    useMlsUi.setState({ verification: { "alice@t.local": "verified" } });
+    renderWithProviders(<VerifiedBadge address="alice@t.local" compact />);
+    const badge = screen.getByTestId("verified-badge");
+    expect(badge).toHaveAttribute("role", "img");
+    expect(badge).toHaveAccessibleName(/^verifiziert$/i);
+    expect(badge).toHaveAttribute("data-compact", "true");
+    expect(badge.getAttribute("title")).toContain("alice@t.local");
+    expect(badge.querySelector("svg")).not.toBeNull();
+    expect(badge.textContent).toBe("");
+  });
+
+  it("keeps the text chip by default and the warning text when the verification broke", () => {
+    useMlsUi.setState({ verification: { "alice@t.local": "verified" } });
+    const { unmount } = renderWithProviders(<VerifiedBadge address="alice@t.local" />);
+    expect(screen.getByTestId("verified-badge")).toHaveTextContent(/verifiziert/i);
+    unmount();
+    useMlsUi.setState({ verification: { "alice@t.local": "broken" } });
+    renderWithProviders(<VerifiedBadge address="alice@t.local" compact />);
+    expect(screen.getByTestId("verification-broken-badge")).toHaveTextContent(/Verifizierung/);
+  });
+});
+
 describe("VerifiedBadge after a rotation (ENCRYPTION.md §9a)", () => {
   it("asks softly for a fresh verification and can be dismissed", async () => {
     useMlsUi.setState({ verification: { "alice@t.local": "refresh" } });

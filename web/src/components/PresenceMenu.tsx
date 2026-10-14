@@ -105,7 +105,7 @@ export function PresenceMenu() {
   };
   const custom = activeCustom(mine?.custom_status);
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref}>
       <button ref={trigger} type="button" onClick={() => setOpen((o) => !o)} aria-haspopup="menu" aria-expanded={open} aria-label={t("presence.menu")} title={t("presence.menu")} className="flex min-h-10 min-w-10 items-center justify-center rounded-md hover:bg-bg-3" data-testid="presence-menu-button" data-status={effective}>
         <UserAvatar user={user} size={32} presence />
       </button>
@@ -113,7 +113,9 @@ export function PresenceMenu() {
         <div
           role="menu"
           aria-label={t("presence.menu")}
-          className="absolute bottom-full left-0 z-40 mb-2 w-64 rounded-lg border border-line bg-bg-1 p-1 shadow-xl"
+          // Spans the account bar (its containing block) instead of a fixed width: a wider menu overflowed the sidebar's
+          // scroll container and showed a horizontal scrollbar at the bottom of the app (tavrn-web#115).
+          className="absolute bottom-full left-1 right-1 z-40 mb-1 rounded-lg border border-line bg-bg-1 p-1 shadow-xl"
           data-testid="presence-menu"
           onKeyDown={(e) => {
             if (e.key === "Tab") setOpen(false);
@@ -129,7 +131,7 @@ export function PresenceMenu() {
           <div role="separator" className="my-1 h-px bg-line" />
           <button type="button" role="menuitem" tabIndex={-1} onClick={() => { setOpen(false); setDialog("custom"); }} className="flex min-h-10 w-full items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-bg-3" data-testid="presence-custom">
             <span aria-hidden="true">💬</span>
-            <span className="min-w-0 flex-1 truncate">{custom ? [custom.emoji, custom.text].filter(Boolean).join(" ") : t("presence.custom")}</span>
+            <span className="emoji-font min-w-0 flex-1 truncate">{custom ? [custom.emoji, custom.text].filter(Boolean).join(" ") : t("presence.custom")}</span>
           </button>
           <button type="button" role="menuitem" tabIndex={-1} onClick={() => { setOpen(false); setDialog("activity"); }} className="flex min-h-10 w-full items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-bg-3" data-testid="presence-activity">
             <span aria-hidden="true">🎮</span>

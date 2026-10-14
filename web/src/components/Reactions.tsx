@@ -22,7 +22,8 @@ function EmojiGlyph({ emoji, roomId, customEmojis }: { emoji: string; roomId?: s
   const token = parseEmojiToken(emoji);
   if (custom && url) return <img src={url} alt={emoji} className="inline-block h-5 w-5 object-contain" />;
   if (token) return <InlineEmoji value={emoji} node={ctx?.domain ?? domain} />;
-  return <span>{emoji}</span>;
+  // A larger glyph than the count (18 px, tavrn-web#117); the chip keeps its 28 px height.
+  return <span className="emoji-font text-lg leading-none">{emoji}</span>;
 }
 
 export function ReactionBar({ reactions, onToggle, canReact, roomId, customEmojis = [] }: { reactions: Reaction[]; onToggle: (emoji: string, active: boolean) => void; canReact: boolean; roomId?: string; customEmojis?: CustomEmoji[] }) {

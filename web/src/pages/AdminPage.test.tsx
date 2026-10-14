@@ -160,4 +160,19 @@ describe("AdminPage: reports about other nodes (FEDERATION.md §9.2)", () => {
     const deletes = calls.filter((c) => c.init.method === "DELETE").map((c) => c.url.replace(/^.*\/api\/v1/, ""));
     expect(deletes).toEqual(["/admin/directory/nodes/b.test", "/admin/directory/reports/b.test"]);
   });
+
+  it("the tab content is the scroll container and the containing block of its positioned descendants (tavrn-web#116)", async () => {
+    useAuth.setState({ token: "acc", user: admin });
+    mockFetch({ "/admin/users": { body: [admin] } });
+    renderWithProviders(
+      <Routes>
+        <Route path="/admin/:tab?" element={<AdminPage />} />
+      </Routes>,
+      { route: "/admin/users" },
+    );
+    await screen.findByText("root@t.local");
+    const content = screen.getByRole("navigation", { name: "Einstellungsbereiche" }).parentElement!.querySelector('[tabindex="0"]')!;
+    expect(content.className).toMatch(/\brelative\b/);
+    expect(content.className).toMatch(/\boverflow-y-auto\b/);
+  });
 });

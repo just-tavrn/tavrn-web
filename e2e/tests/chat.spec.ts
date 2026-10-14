@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test } from "@playwright/test";
-import { createRoomViaApi, loginAs, openNavIfMobile, registerViaApi, registerViaUi, uniqueName, logoutViaUi, openRoomInvite } from "./helpers";
+import { NODE, createRoomViaApi, loginAs, openNavIfMobile, registerViaApi, registerViaUi, uniqueName, logoutViaUi, openRoomInvite } from "./helpers";
+import { createRole, joinRoom, postMessage } from "./menu-helpers";
 
 test.describe("Text chat", () => {
   test("Register, create a room, create a channel, send, edit and delete a message (encrypted)", async ({ page }) => {
@@ -102,5 +103,36 @@ test.describe("Text chat", () => {
     await expect(page).toHaveURL(/\/login/);
     const resp = await request.post("/api/v1/auth/refresh", { data: { refresh_token: account.refresh } });
     expect(resp.status()).toBe(401);
+  });
+
+  test("mentions are pills: your own name and @everyone stand out, the row is marked (tavrn-web#122)", async ({ page, request }, info) => {
+    const owner = await registerViaApi(request, "own");
+    const bob = await registerViaApi(request, "bob");
+    const room = await createRoomViaApi(request, owner.token, "Mention-Raum");
+    await joinRoom(request, owner, room.id, bob);
+    await createRole(request, owner, room.id, { name: "Raid Leads", position: 1 });
+    const channel = room.channels.find((c: { kind: string }) => c.kind === "text");
+    await postMessage(request, owner.token, channel.id, `Hallo @${bob.username}, @Raid Leads und @everyone: Start um 20 Uhr`, { mentions: [`${bob.username}@localhost`], mentions_everyone: true });
+    await postMessage(request, owner.token, channel.id, `Nur @${owner.username} selbst`, { mentions: [`${owner.username}@localhost`] });
+    await loginAs(page, bob);
+    await page.goto(`/rooms/${room.id}`);
+    const row = page.getByTestId("message").filter({ hasText: "Start um 20 Uhr" });
+    await expect(row).toBeVisible();
+    await expect(row).toHaveAttribute("data-mentioned", "true");
+    await expect(row.locator('[data-mention="self"]')).toHaveText(`@${bob.username}`);
+    await expect(row.locator('[data-mention="everyone"]')).toHaveText("@everyone");
+    await expect(row.locator('[data-mention="role"]')).toHaveText("@Raid Leads");
+    const other = page.getByTestId("message").filter({ hasText: "selbst" });
+    await expect(other.locator('[data-mention="user"]')).toHaveText(`@${owner.username}`);
+    await expect(other).not.toHaveAttribute("data-mentioned", "true");
+    // The pills are visible as such: a background and a text colour that differ from the plain text around them.
+    const look = await row.locator('[data-mention="self"]').evaluate((el) => {
+      const s = getComputedStyle(el);
+      const p = getComputedStyle(el.parentElement!);
+      return { bg: s.backgroundColor, color: s.color, parentColor: p.color, parentBg: p.backgroundColor };
+    });
+    expect(look.bg).not.toBe("rgba(0, 0, 0, 0)");
+    expect(look.bg).not.toBe(look.parentBg);
+    if (info.project.name === "chromium") await page.screenshot({ path: "test-results/uipolish/mentions.png" });
   });
 });

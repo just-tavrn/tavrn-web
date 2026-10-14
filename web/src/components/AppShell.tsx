@@ -97,9 +97,11 @@ export function AppShell({ rail, sidebar, children, aside, headerExtra }: { rail
           {children}
         </main>
 
+        {/* The drawer is a little wider on tablets and phones in landscape (below the desktop grid), where the width is
+            free; portrait keeps 240 px (tavrn-web#121). */}
         <aside
           aria-label={t("shell.members")}
-          className={`fixed bottom-[var(--safe-bottom)] right-0 top-[var(--safe-top)] z-40 w-[240px] max-w-[85vw] transform overflow-y-auto border-l border-line bg-bg-1 p-3 transition-transform xl:static xl:z-auto xl:translate-x-0 ${membersOpen ? "translate-x-0" : "translate-x-full"} ${hasAside ? "" : "hidden"}`}
+          className={`fixed bottom-[var(--safe-bottom)] right-0 top-[var(--safe-top)] z-40 w-[240px] max-w-[85vw] md:max-xl:landscape:w-[280px] transform overflow-y-auto border-l border-line bg-bg-1 p-3 transition-transform xl:static xl:z-auto xl:translate-x-0 ${membersOpen ? "translate-x-0" : "translate-x-full"} ${hasAside ? "" : "hidden"}`}
           data-testid="members-drawer"
           data-open={hasAside && membersOpen}
         >

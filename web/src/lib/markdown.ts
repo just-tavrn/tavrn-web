@@ -15,6 +15,9 @@ import { editHtml, replaceInText } from "./domText";
  * - **Custom emoji tokens** `<:name:ID>` / `<:name:ID@host>` (PROTOCOL.md §7b): replaced by images through the
  *   caller's resolver; the room's `:name:` emojis as before.
  *
+ * - **Unicode emojis** are wrapped in `span.emoji-text` (a little larger than the text); a paragraph of 1 … 3 emojis
+ *   and nothing else is marked `emoji-only` and shown larger still (tavrn-web#117).
+ *
  * The rendering of a text is cached (least recently used entries go first); emoji substitution happens after
  * the cache. Nothing edits the HTML string after sanitising: link attributes are set in a DOMPurify hook, emoji
  * tokens, room emojis and mentions are applied to DOM text nodes ({@link editHtml}), so message text can never
@@ -275,6 +278,48 @@ function emojiImage(doc: Document, url: string, name: string): HTMLImageElement 
   return img;
 }
 
+/**
+ * A Unicode emoji with emoji presentation (tavrn-web#117): a flag (two regional indicators), a keycap, or a pictograph
+ * shown as emoji (`Emoji_Presentation`, or any pictograph with the FE0F selector) with its modifiers, selectors and
+ * tag characters, joined by ZWJ into a sequence. Symbols that render as text by default (©, ↔, ♥ without FE0F) and
+ * digits stay text.
+ */
+const EMOJI_UNIT = "(?:\\p{RI}\\p{RI}|[0-9#*]\\uFE0F?\\u20E3|(?:\\p{Emoji_Presentation}|\\p{Extended_Pictographic}\\uFE0F)(?:\\p{Emoji_Modifier}|\\uFE0F|[\\u{E0020}-\\u{E007F}])*)";
+const EMOJI = new RegExp(`${EMOJI_UNIT}(?:\\u200D${EMOJI_UNIT})*`, "gu");
+/** Quick test whether `html` can contain an emoji at all (anything above the Latin blocks). */
+const MAY_HAVE_EMOJI = /[\u2000-\u3300\u{1F000}-\u{1FAFF}]/u;
+/** At most this many emojis (and nothing else) make an emoji-only message, shown larger. */
+export const EMOJI_ONLY_MAX = 3;
+
+function emojiSpan(doc: Document, text: string): HTMLSpanElement {
+  const span = doc.createElement("span");
+  span.className = "emoji-text";
+  span.textContent = text;
+  return span;
+}
+
+/**
+ * Marks a paragraph that consists of nothing but 1 … {@link EMOJI_ONLY_MAX} emojis (Unicode spans or custom emoji
+ * images) and white space with `emoji-only`; the stylesheet shows them larger.
+ */
+function markEmojiOnly(root: ParentNode): void {
+  const blocks = Array.from(root.childNodes).filter((n) => n.nodeType !== 3 || (n.textContent ?? "").trim() !== "");
+  if (blocks.length !== 1 || blocks[0]!.nodeType !== 1 || (blocks[0] as Element).localName !== "p") return;
+  const p = blocks[0] as HTMLElement;
+  let count = 0;
+  for (const n of Array.from(p.childNodes)) {
+    if (n.nodeType === 3) {
+      if ((n.textContent ?? "").trim() !== "") return;
+      continue;
+    }
+    if (n.nodeType !== 1) return;
+    const el = n as Element;
+    if (!((el.localName === "span" && el.classList.contains("emoji-text")) || (el.localName === "img" && el.classList.contains("emoji")))) return;
+    count++;
+  }
+  if (count >= 1 && count <= EMOJI_ONLY_MAX) p.classList.add("emoji-only");
+}
+
 function hasRoomEmoji(html: string, emojiUrls: Record<string, string>): boolean {
   for (const m of html.matchAll(ROOM_EMOJI)) if (Object.hasOwn(emojiUrls, m[1]!)) return true;
   return false;
@@ -288,7 +333,8 @@ export function renderMarkdown(src: string, emojiUrls: Record<string, string> = 
   const html = sanitized(src);
   const tokens = !!resolve && html.includes('class="emoji-token"');
   const room = hasRoomEmoji(html, emojiUrls);
-  if (!tokens && !room) return html;
+  const unicode = MAY_HAVE_EMOJI.test(html);
+  if (!tokens && !room && !unicode) return html;
   return editHtml(html, (root) => {
     if (tokens) {
       for (const span of root.querySelectorAll<HTMLElement>("span.emoji-token")) {
@@ -303,6 +349,9 @@ export function renderMarkdown(src: string, emojiUrls: Record<string, string> = 
     if (room) {
       replaceInText(root, ROOM_EMOJI, (m, doc) => (Object.hasOwn(emojiUrls, m[1]!) ? emojiImage(doc, emojiUrls[m[1]!]!, m[1]!) : null), skipCodeAndTokens);
     }
+    // Unicode emojis get a span (shown a little larger than the text, tavrn-web#117); then emoji-only paragraphs.
+    if (unicode) replaceInText(root, EMOJI, (m, doc) => emojiSpan(doc, m[0]), skipCodeAndTokens);
+    markEmojiOnly(root);
   });
 }
 

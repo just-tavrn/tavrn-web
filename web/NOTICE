@@ -6,3 +6,9 @@ contributors and licensed under the Apache License, Version 2.0 (see LICENSE).
 
 The tavrn logo and icon images in public/ are not licensed under the Apache License; see TRADEMARK.md
 in the root of this repository.
+
+The country flag emoji font (web/node_modules/country-flag-emoji-polyfill/dist/TwemojiCountryFlags.woff2, bundled
+into the web client for platforms whose emoji font has no flag glyphs) comes from country-flag-emoji-polyfill
+(https://github.com/talkjs/country-flag-emoji-polyfill, MIT, Copyright (c) 2022 TalkJS). Its flag artwork is from
+Twemoji (https://github.com/twitter/twemoji), Copyright 2020 Twitter, Inc and other contributors, licensed under
+the Creative Commons Attribution 4.0 International License (CC-BY-4.0, https://creativecommons.org/licenses/by/4.0/).

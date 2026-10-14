@@ -87,7 +87,9 @@ export function RoomSettingsPage() {
             </NavLink>
           ))}
         </nav>
-        <div className="min-h-0 flex-1 overflow-y-auto p-4" tabIndex={0}>
+        {/* `relative`: the scroll container is the containing block of positioned helpers inside a tab (`sr-only`
+            legends); otherwise they are placed against the app shell, which grows and scrolls (tavrn-web#116). */}
+        <div className="relative min-h-0 flex-1 overflow-y-auto p-4" tabIndex={0}>
           {tab === "overview" && <OverviewTab key={room.data.id} room={room.data} />}
           {tab === "profile" && <RoomProfileTab room={room.data} />}
           {tab === "roles" && <RolesTab room={room.data} />}

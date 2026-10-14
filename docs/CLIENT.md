@@ -21,7 +21,7 @@ The screen has four parts: the **room rail** on the far left (Home, your rooms, 
 the **sidebar** with the room header, the channel list, the voice bar and the account bar, the **conversation** in the
 middle and the **member list** on the right. Tablets keep the rail and the sidebar in one navigation column on the
 left and open the member list as a drawer; phones show one column with the navigation and the member list as drawers
-and the bell in the top bar. The Home view holds direct messages, friends,
+and the bell in the top bar (the member drawer is 240 px wide, 280 px on phones and tablets in landscape). The Home view holds direct messages, friends,
 message requests and the invite list. User settings, room settings and the node administration are pages of their own
 ("Settings" below).
 
@@ -307,6 +307,15 @@ language, are highlighted and have "Copy code" and "Wrap long lines" buttons. Cu
 stay hidden until clicked or activated with Enter or Space; the composer's spoiler button and Ctrl+Shift+S wrap the
 selection, and every attachment can be marked as a spoiler, which covers images and videos until "Spoiler, click to
 reveal".
+**Emoji sizes**: Unicode emojis in message text are rendered at 1.25× the text size, aligned to the baseline without
+changing the line height; a message that consists of one to three emojis (Unicode or custom, nothing else) shows them
+at twice the text size; reaction chips show an 18 px glyph next to the count at the chip's usual height. Symbols that
+render as text by default (©, ↔) stay text. **Country flags** on platforms whose emoji font has no flag glyphs
+(Windows shows "DE" for 🇩🇪): at start the client draws a smiley and a flag on a canvas; when the smiley renders as a
+colour glyph but the flag does not, it registers a bundled flag-only font (`lib/flagEmoji.ts`, the Twemoji country
+flags of `country-flag-emoji-polyfill`, limited to the regional indicators and tag characters) and marks the document
+(`<html data-flag-font>`), which puts that font first for messages, reactions, the emoji picker, status lines and the
+composer; every other emoji keeps the platform's font. The font is served with the client, never from a CDN.
 
 **The composer** has the emoji picker, a GIF picker on nodes with a GIF provider (in encrypted messages the client
 itself accepts only the providers' media hosts), uploads by button, drag and drop or paste ("Uploads and downloads"),
@@ -404,7 +413,9 @@ Welcome. Message content and attachments are encrypted and signed in the browser
 Every device the client meets is checked against the user's identity key (pinned on first use); a changed key shows
 "Security key changed", and a device in a conversation that is not a member or not confirmed by its user's key shows a
 warning and blocks sending until acknowledged. Content keys are backed up encrypted on the home node so that a new
-device unlocked with the recovery key reads the history. The pinned keys, the verified contacts and the account's own
+device unlocked with the recovery key reads the history. Verified contacts carry a "verified" chip next to the author
+of a message and in conversation headers, and a small shield icon (named "verified", with a tooltip) in member lists,
+where names keep the width. The pinned keys, the verified contacts and the account's own
 devices travel with them as an encrypted trust record (ENCRYPTION.md §7): after signing out and in again (a new
 device) a contact whose key changed meanwhile still shows "Security key changed", and verifications stay.
 

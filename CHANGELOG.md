@@ -61,6 +61,12 @@ First public release of the web client and the desktop apps.
 
 ### Changed
 
+- **Emojis are a little larger**: emojis in message text are shown at 1.25× the text size (baseline aligned, the
+  line height does not change), a message of one to three emojis and nothing else at twice the text size (custom
+  emojis alike), and reaction chips show an 18 px glyph next to the count at the same chip height (#117).
+- **Mentions stand out**: `@name`, `@name@domain`, `@Role` and `@everyone`/`@here` in messages are pills; mentions
+  of yourself and @everyone/@here use the warning colour with a border, and a message that mentions you keeps its
+  left border with a stronger tint (#122).
 - **A limit per external store** (protocol FILES.md §5): the storage settings of a files channel on WebDAV or S3 get
   "Limit on the store (GB)" (empty = no limit), which the channel's meter shows; the node's own quota no longer
   applies to external stores.
@@ -119,6 +125,18 @@ First public release of the web client and the desktop apps.
   on Windows 11 24H2/25H2 with the February 2026 update or newer). Before, the badge followed the node's flag alone
   and a missing entry could not be added afterwards.
 
+- Country flag emojis render as flags on Windows, where the system's emoji font shows regional-indicator pairs as
+  letters ("DE"): the client detects the missing glyphs and registers a bundled flag-only font (Twemoji flags,
+  CC-BY-4.0, see NOTICE) for messages, reactions, the emoji picker, status lines and the composer; every other
+  emoji keeps the platform's font (#118).
+- Member lists mark verified contacts with a small shield icon (named "verified", with the tooltip) instead of the
+  text chip that cut names off; long names still truncate with an ellipsis. The member drawer is 280 px wide on
+  phones and tablets in landscape (portrait keeps 240 px) (#121).
+- The account menu (status, custom status, activity, sign out) no longer adds a horizontal scrollbar at the bottom of
+  the sidebar: it spans the account bar instead of a fixed width wider than the sidebar (#115).
+- Settings pages no longer scroll the whole app: the content of a tab (user settings, room settings, node
+  administration) is the containing block of its positioned helpers, so a long Roles tab scrolls inside its own
+  container and the app shell keeps its height (#116).
 - An image pasted from the clipboard no longer keeps the name the system made up (`image.png`, `{GUID}.png` on
   Windows): it is named "Image <date> <time>.<ext>" (de: "Bild …"); a file copied from a file manager keeps its
   real name, nobody is asked (#95).

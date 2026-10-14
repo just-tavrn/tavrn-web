@@ -301,7 +301,7 @@ export function UserLine({ user }: { user: User }) {
       </span>
       {isBotKind(user.kind) && <BotBadge />}
       <KeyChangedBadge address={user.address} />
-      <VerifiedBadge address={user.address} />
+      <VerifiedBadge address={user.address} compact />
       <VerifyButton address={user.address} name={user.display_name} />
     </span>
   );

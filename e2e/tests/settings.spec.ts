@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test, type Page } from "@playwright/test";
-import { NODE, createRoomViaApi, loginAs, openNavIfMobile, registerViaApi, type Account } from "./helpers";
+import { NODE, adminAccount, createRoomViaApi, loginAs, openNavIfMobile, registerViaApi, type Account } from "./helpers";
+import { createRole } from "./menu-helpers";
+import { scaled } from "./timeouts";
 
 async function inviteAndJoin(request: Parameters<typeof registerViaApi>[0], owner: Account, roomId: string, member: Account) {
   const inv = await request.post(`${NODE}/api/v1/rooms/${roomId}/invites`, { headers: { Authorization: `Bearer ${owner.token}` }, data: {} });
@@ -135,5 +137,36 @@ test.describe("Room settings", () => {
     await expect(nav).not.toContainText("Moderation");
     await expect(bobPage.getByLabel("Name", { exact: true })).toBeDisabled();
     await bobPage.context().close();
+  });
+
+  test("no settings page or tab scrolls the app shell, only its own content (tavrn-web#116)", async ({ page, request }) => {
+    test.setTimeout(scaled(120_000));
+    const admin = await adminAccount(request);
+    const room = await createRoomViaApi(request, admin.token, "Scroll-Raum");
+    // A long role list made the Roles tab taller than the viewport; the sr-only legend of its permission editor then
+    // escaped the static scroll container and the whole shell scrolled.
+    for (let i = 0; i < 30; i++) await createRole(request, admin, room.id, { name: `Rolle ${i}`, position: i + 1 });
+    await loginAs(page, admin);
+    const userTabs = ["profile", "privacy", "security", "voice", "notifications", "emojis", "sounds", "applications", "language", "devices", "legal"];
+    const roomTabs = ["overview", "profile", "roles", "channels", "members", "bans", "invites", "webhooks", "applications", "emojis", "soundboard", "moderation", "audit"];
+    const adminTabs = ["overview", "users", "invites", "bans", "entitlements", "tokens", "applications", "federation", "legal", "notices", "audit"];
+    const pages = [...userTabs.map((t) => `/settings/${t}`), ...roomTabs.map((t) => `/rooms/${room.id}/settings/${t}`), ...adminTabs.map((t) => `/admin/${t}`)];
+    for (const path of pages) {
+      await page.goto(path);
+      const content = page.locator('main [tabindex="0"].overflow-y-auto');
+      await expect(content, path).toBeVisible();
+      // Scroll the tab's own container and the window to the very bottom: only the container may move.
+      const result = await content.evaluate((el) => {
+        el.scrollTop = el.scrollHeight;
+        window.scrollTo(0, 1e6);
+        const d = document.documentElement;
+        return { docScrollTop: d.scrollTop, bodyScrollTop: document.body.scrollTop, docOverflow: d.scrollHeight - d.clientHeight, contentTop: el.scrollTop, contentOverflow: el.scrollHeight - el.clientHeight };
+      });
+      expect(result.docScrollTop, path).toBe(0);
+      expect(result.bodyScrollTop, path).toBe(0);
+      expect(result.docOverflow, path).toBeLessThanOrEqual(0);
+      // The roles tab is the one known to be long: its own container scrolled.
+      if (path.endsWith("/settings/roles")) expect(result.contentTop, path).toBeGreaterThan(0);
+    }
   });
 });

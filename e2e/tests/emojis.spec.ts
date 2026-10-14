@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { NODE, createRoomViaApi, inviteCode, loginAs, registerViaApi, type Account } from "./helpers";
-import { expectInsideViewport, isTouch } from "./menu-helpers";
+import { expectInsideViewport, isTouch, postMessage } from "./menu-helpers";
 
 /**
  * Feature round 3 (design note 4.13 items 4 and 5): the emoji picker, personal emojis and sounds with the external
@@ -288,5 +288,48 @@ test.describe("Emojis, sounds and formatting (design note 4.13)", () => {
     await request.delete(`${base}/${original.id}`, { headers: auth(owner) });
     await page.reload();
     await expect(page.getByTestId("message").filter({ hasText: "Antwort" }).getByTestId("reply-deleted")).toHaveText("Nachricht gelöscht");
+  });
+
+  test("emojis are larger than the text, emoji-only messages larger still, reaction chips keep their height (tavrn-web#117)", async ({ page, request }, info) => {
+    const owner = await registerViaApi(request, "own");
+    const room = await createRoomViaApi(request, owner.token, "Emoji-Raum");
+    const channel = room.channels.find((c: { kind: string }) => c.kind === "text");
+    await postMessage(request, owner.token, channel.id, "Nur Text");
+    await postMessage(request, owner.token, channel.id, "Mit 😀 und 🇩🇪");
+    const party = await postMessage(request, owner.token, channel.id, "🎉🎉");
+    await loginAs(page, owner);
+    await page.goto(`/rooms/${room.id}`);
+    const plain = page.getByTestId("message").filter({ hasText: "Nur Text" });
+    const mixed = page.getByTestId("message").filter({ hasText: "Mit 😀" });
+    const only = page.locator(`[data-message-id="${party.id}"]`);
+    await expect(only.locator("p.emoji-only")).toBeVisible();
+    const sizes = await mixed.evaluate((row, plainRow) => {
+      const text = row.querySelector(".markdown")!;
+      const emoji = row.querySelector(".emoji-text")!;
+      return { text: parseFloat(getComputedStyle(text).fontSize), emoji: parseFloat(getComputedStyle(emoji).fontSize), line: text.getBoundingClientRect().height, plainLine: plainRow!.querySelector(".markdown")!.getBoundingClientRect().height };
+    }, await plain.elementHandle());
+    expect(sizes.emoji).toBeCloseTo(sizes.text * 1.25, 1);
+    // No line-height jump: the (one-line) text with emojis is as tall as the one-line plain text.
+    expect(sizes.line).toBe(sizes.plainLine);
+    const jumbo = await only.locator(".emoji-text").first().evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+    expect(jumbo).toBeCloseTo(sizes.text * 2, 1);
+
+    // A reaction: the glyph is larger than the count, the chip stays 28 px high (a 24 px target at least).
+    await mixed.hover();
+    await mixed.getByRole("button", { name: "Reagieren" }).click();
+    const picker = page.getByTestId("emoji-picker");
+    await picker.getByLabel("Emojis suchen").fill("daumen hoch");
+    await picker.getByRole("group", { name: "Suchergebnisse" }).getByRole("menuitem").first().click();
+    const chip = mixed.getByTestId("reactions").getByRole("button").first();
+    await expect(chip).toHaveAttribute("aria-pressed", "true");
+    const chipBox = await chip.evaluate((el) => {
+      const glyph = el.firstElementChild as HTMLElement;
+      const count = el.lastElementChild as HTMLElement;
+      return { height: el.getBoundingClientRect().height, glyph: parseFloat(getComputedStyle(glyph).fontSize), count: parseFloat(getComputedStyle(count).fontSize) };
+    });
+    expect(chipBox.height).toBeGreaterThanOrEqual(28);
+    expect(chipBox.height).toBeLessThanOrEqual(32);
+    expect(chipBox.glyph).toBeGreaterThan(chipBox.count);
+    if (info.project.name === "chromium") await page.screenshot({ path: "test-results/uipolish/emojis.png" });
   });
 });

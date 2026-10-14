@@ -36,4 +36,14 @@ describe("settings navigation", () => {
     useAuth.setState({ user: user(true), home: { domain: "other.example", base: "https://other.example", ws: "wss://other.example/ws" } });
     expect(screen.queryByRole("link", { name: /Knotenverwaltung/ })).toBeNull();
   });
+
+  it("the tab content is the scroll container and the containing block of its positioned descendants (tavrn-web#116)", () => {
+    // `sr-only` legends and other absolutely positioned helpers inside a tab are placed relative to the nearest
+    // positioned ancestor; a static scroll container let them escape to the app shell, which then grew and scrolled.
+    renderSettings();
+    const content = screen.getByRole("navigation", { name: "Einstellungsbereiche" }).parentElement!.querySelector('[tabindex="0"]')!;
+    expect(content.className).toMatch(/\brelative\b/);
+    expect(content.className).toMatch(/\boverflow-y-auto\b/);
+    expect(content.className).toMatch(/\bmin-h-0\b/);
+  });
 });

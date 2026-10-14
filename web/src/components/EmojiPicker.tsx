@@ -155,7 +155,7 @@ function PickerPanel({ onPick, customEmojis }: { onPick: (emoji: string) => void
   const personalItems = useCustomItems(others.personal, tokenFor, !external, deniedTitle);
   const otherItems = useCustomItems(others.other, tokenFor, !external, deniedTitle);
 
-  const unicodeItem = (u: string, label: string, key: string): Item => ({ key, value: u, label, glyph: () => <span aria-hidden="true">{u}</span>, remember: true });
+  const unicodeItem = (u: string, label: string, key: string): Item => ({ key, value: u, label, glyph: () => <span aria-hidden="true" className="emoji-font">{u}</span>, remember: true });
 
   const sections: Section[] = useMemo(() => {
     const out: Section[] = [];
