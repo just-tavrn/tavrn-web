@@ -6,8 +6,7 @@
  */
 import { createContext, useContext } from "react";
 import type { Message } from "@tavrn/sdk";
-import type { PollContent } from "./model";
-import type { OpenedVote } from "./tally";
+import type { CheckedVote, Poll, PollSelection } from "@tavrn/e2ee";
 
 /** A vote record as the node lists it (`GET …/poll/votes`) or sends it (`poll.vote`). */
 export interface PollVoteRecord {
@@ -19,11 +18,10 @@ export interface PollVoteRecord {
   updated_at: string;
   message_id?: string;
   conversation_id?: string;
+  signature?: string | null;
   /** Local only: this device's vote until the node confirmed it. */
-  pending?: VoteChoice;
+  pending?: PollSelection;
 }
-
-export type VoteChoice = { choices: string[] } | { answers: Record<string, "yes" | "maybe" | "no"> };
 
 export interface PollEnv {
   conversationId: string;
@@ -36,9 +34,12 @@ export interface PollEnv {
   /** Display name of a member. */
   name: (address: string) => string;
   list: (messageId: string) => Promise<PollVoteRecord[]>;
-  /** Verifies and reads the records against the poll as shown (signature, `ctx.poll`, `poll_hash`). */
-  open: (m: Message, poll: PollContent, records: PollVoteRecord[]) => Promise<OpenedVote[]>;
-  vote: (m: Message, poll: PollContent, choice: VoteChoice) => Promise<PollVoteRecord>;
+  /**
+   * Verifies and reads the records against the poll as shown (signature, `ctx.poll`, `poll_hash`); `raw` is the poll's
+   * content object as this client holds it (the hash covers it).
+   */
+  open: (m: Message, raw: Record<string, unknown>, poll: Poll, records: PollVoteRecord[]) => Promise<CheckedVote[]>;
+  vote: (m: Message, raw: Record<string, unknown>, poll: Poll, choice: PollSelection) => Promise<PollVoteRecord>;
   retract: (m: Message) => Promise<void>;
   /** Closes the poll now (the edit route with `poll_closes_at`). */
   close: (m: Message) => Promise<void>;

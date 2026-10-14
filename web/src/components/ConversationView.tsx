@@ -22,7 +22,7 @@ import { archiveMessages, pageWithArchive } from "../history/local";
 import { rememberRoom } from "../search/sync";
 import { SearchButton } from "../search/SearchPanel";
 import { useDecrypted, useE2eeConversation, usePlainSignatures } from "../hooks/useE2eeConversation";
-import { encryptAttachment, encryptCommandArgs, qualify, signedAttachments, type ContentAttachment, type MessageContext } from "@tavrn/e2ee";
+import { encryptAttachment, encryptCommandArgs, qualify, signedAttachments, type ContentAttachment, type MessageContext, type PollVoteContent } from "@tavrn/e2ee";
 import { withFreshEpoch } from "../lib/epochRetry";
 import { withDepartedLeavesGone } from "../lib/leafCleanup";
 import { historyReceive } from "../crypto/history";
@@ -60,6 +60,10 @@ import { sendsTyping, usePresence } from "../stores/presence";
 import { useRoomPreview } from "../stores/rolePreview";
 import { cutHistory, previewHistoryStart } from "../lib/previewRoom";
 import { assertNotPreviewing } from "../lib/previewGuard";
+import { PollComposer } from "../polls/PollComposer";
+import { PollContext } from "../polls/context";
+import { useConversationPolls } from "../polls/env";
+import type { PollContent, PollKind } from "../polls/model";
 
 /** An error that was already shown to the user. */
 class AlreadyReported extends Error {}
@@ -400,7 +404,7 @@ export function ConversationView(p: ConversationViewProps) {
     await deliver(content, attachmentIds, spoilerIds);
   };
   /** Seals, signs and sends a content object (text, `/me` actions) with the given uploads (some as spoilers). */
-  const deliver = async (content: Record<string, unknown>, attachmentIds: string[] = [], spoilerIds: string[] = []) => {
+  const deliver = async (content: Record<string, unknown>, attachmentIds: string[] = [], spoilerIds: string[] = [], extra: { poll_closes_at?: string } = {}) => {
     try {
       // Before anything is encrypted: the role preview sends nothing.
       assertNotPreviewing();
@@ -430,7 +434,7 @@ export function ConversationView(p: ConversationViewProps) {
       const spoilers = !p.encrypted && spoilerIds.length ? { spoilers: spoilerIds.filter((id) => attachmentIds.includes(id)) } : {};
       const created = await withFreshEpoch(p.encrypted ? e2ee.mls : null, q, async () => {
         const sealed = await seal(content, { thread_id: threadId ?? null, reply_to: reply });
-        return api.conversations.send(conversationId, { ...sealed, attachments: attachmentIds, mentions, mentions_everyone, reply_to_id: reply, ...spoilers, ...(signature ? { signature } : {}), ...(threadId ? { thread_id: threadId } : {}) });
+        return api.conversations.send(conversationId, { ...sealed, attachments: attachmentIds, mentions, mentions_everyone, reply_to_id: reply, ...spoilers, ...extra, ...(signature ? { signature } : {}), ...(threadId ? { thread_id: threadId } : {}) });
       });
       setReplyTo(null);
       for (const id of attachmentIds) {
@@ -478,6 +482,39 @@ export function ConversationView(p: ConversationViewProps) {
       toastError(e);
     }
   };
+  // Polls (PROTOCOL.md §7g): created where the node offers them, with `create_polls` (DMs grant it to every member).
+  const pollsOffered = !!nodeInfo.data?.capabilities?.includes("polls.v1");
+  const canPoll = pollsOffered && p.canSend && !p.readOnlyNote && !p.composerNote && hasPermission(p.permissions ?? 0n, Permission.CREATE_POLLS);
+  const [pollComposer, setPollComposer] = useState<{ kind: PollKind; question: string } | null>(null);
+  const createPoll = async (content: PollContent & { type: "poll" }, closesAt: string | null) => {
+    try {
+      await deliver({ ...content }, [], [], closesAt ? { poll_closes_at: closesAt } : {});
+    } catch (e) {
+      throw new AlreadyReported(describeError(e));
+    }
+  };
+  /** Votes are sealed like messages: the ghost gate and the departed-leaf cleanup apply (§4.6, issue #86). */
+  const encryptVote = async (vote: PollVoteContent) => {
+    const mls = e2ee.mls;
+    if (!mls) throw new Error(t("e2ee.composer_locked"));
+    if (gate.blocked) throw new Error(t("e2ee.composer_ghost"));
+    return withDepartedLeavesGone(q, { members: p.members, mayManage: p.mayManage, noBots }, () => mls.encrypt(q, vote as unknown as Record<string, unknown>, p.members ? { members: p.members, noBots } : {}));
+  };
+  const pollName = (address: string) => authors?.get(address)?.name ?? address.split("@")[0] ?? address;
+  const pollEnv = useConversationPolls({
+    api,
+    conversationId,
+    q,
+    encrypted: p.encrypted,
+    mls: e2ee.mls,
+    me: user?.address,
+    // Everybody who may read the conversation may vote (§7g); locked encryption cannot seal a vote.
+    canVote: pollsOffered && !p.readOnlyNote && (!p.encrypted || (e2ee.phase === "ready" && !gate.blocked)),
+    canManage: p.canManage,
+    name: pollName,
+    encryptVote,
+    onClosed: updateMessage,
+  });
   // Application commands of this conversation (APPLICATIONS.md §5.4), when the node offers them.
   const commandsOffered = !!nodeInfo.data?.capabilities?.includes("commands.v1");
   const palette = useQuery({
@@ -520,7 +557,9 @@ export function ConversationView(p: ConversationViewProps) {
   const hasVoice = !!p.room?.channels.some((c) => c.kind === "voice");
   const commands = useMemo<ComposerCommands>(() => {
     const scope = { permissions: p.permissions ?? 0n, direct: !p.roomId, hasVoice };
-    const available = mergePalette(availableCommands(registry, scope), appCommands, scope);
+    // `/poll` only where the node offers polls (PROTOCOL.md §7g).
+    const builtins = availableCommands(registry, scope).filter((d) => d.name !== "poll" || pollsOffered);
+    const available = mergePalette(builtins, appCommands, scope);
     return {
       available,
       suggest: (arg, partial) => {
@@ -555,6 +594,7 @@ export function ConversationView(p: ConversationViewProps) {
               }
             },
             openWhiteboard: () => navigate(`${location.pathname.replace(/\/+$/, "")}/whiteboard`),
+            openPoll: (question) => setPollComposer({ kind: "choice", question }),
             confirm: (text) => window.confirm(text),
             info: (title) => useToasts.getState().push({ kind: "info", title }),
             showHelp: () => undefined,
@@ -570,7 +610,7 @@ export function ConversationView(p: ConversationViewProps) {
       },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [registry, appCommands, p.permissions, p.roomId, p.room, p.roomMembers, hasVoice, conversationId, domain, user?.domain, location.pathname]);
+  }, [registry, appCommands, p.permissions, p.roomId, p.room, p.roomMembers, hasVoice, conversationId, domain, user?.domain, location.pathname, pollsOffered]);
 
   const emojiContext = useMemo<EmojiContextValue>(() => ({ domain, roomId: p.roomId, externalAllowed, roomEmojis: emojiList }), [domain, p.roomId, externalAllowed, emojiList]);
 
@@ -634,6 +674,7 @@ export function ConversationView(p: ConversationViewProps) {
       <VerificationNotice addresses={broken} blocking={verificationBlock} />
       {messages.isError && <p className="p-4 text-sm text-danger">{describeError(messages.error)}</p>}
       <AuthorProfiles messages={loaded}>
+      <PollContext.Provider value={pollEnv}>
       <MessageList
         encrypted={p.encrypted}
         messages={loaded}
@@ -665,7 +706,9 @@ export function ConversationView(p: ConversationViewProps) {
         mentionRoles={mentionRoles}
         authors={authors}
       />
+      </PollContext.Provider>
       </AuthorProfiles>
+      <PollComposer open={!!pollComposer} kind={pollComposer?.kind} question={pollComposer?.question} onClose={() => setPollComposer(null)} onCreate={createPoll} />
       {reporting && (
         <ReportDialog
           subject={{ kind: "message", message: reporting, encrypted: reporting.encrypted, candidates: reporting.encrypted ? evidenceCandidates(loaded, decrypted, reporting.id) : [], remoteNode: remoteDirect ? domain : null, roomName: p.room?.name ?? null }}
@@ -705,6 +748,7 @@ export function ConversationView(p: ConversationViewProps) {
         commands={commands}
         uploadPolicy={uploadPolicy.data ? toComposerPolicy(uploadPolicy.data) : undefined}
         resolveUploadPolicy={p.canAttach ? resolveUploadPolicy : undefined}
+        onPoll={canPoll ? (kind) => setPollComposer({ kind, question: "" }) : undefined}
         above={
           replyTo && (
             <div className="mx-4 flex items-center gap-2 rounded-t-md border border-b-0 border-line bg-bg-1 px-3 py-1 text-xs text-fg-1" data-testid="reply-bar">

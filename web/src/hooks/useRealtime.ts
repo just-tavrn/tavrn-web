@@ -38,6 +38,7 @@ import { parseHistoryPolicy } from "@tavrn/e2ee";
 import { alertText, reportCreated, type ModerationAlert, type ReportCreated } from "../moderation/realtime";
 import { rememberDeleted } from "../moderation/deletedIds";
 import { viaOf } from "../components/ViaNode";
+import { pollHandlers } from "../polls/votes";
 
 /**
  * May this user commit removals of departed members in a conversation (`mls.remove_needed`)? DMs and group DMs:
@@ -281,6 +282,8 @@ export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: 
       }
     }),
     ...threadHandlers(socket, queryClient, me),
+    // Poll votes (PROTOCOL.md §7g): the shown polls' vote records follow; votes never count as unread or notify.
+    ...pollHandlers(socket, queryClient),
     socket.on<{ conversation_id: string; last_read_message_id: string }>("read.update", (d) => useUnread.getState().read(d.conversation_id, d.last_read_message_id)),
     // Room channels carry `channel_id`, DMs and group DMs `conversation_id`.
     socket.on<{ channel_id?: string; conversation_id?: string; user_id: string }>("typing", (d) => {

@@ -3785,5 +3785,7 @@
   "errors.message.poll_forbidden": "Du kannst hier keine Umfragen erstellen.",
   "errors.message.poll_closes_invalid": "Das Ende der Umfrage ist ungültig (zwischen einer Minute und einem Jahr ab jetzt).",
   "errors.message.poll_invalid": "Die Umfrage ist ungültig.",
-  "errors.message.poll_immutable": "Umfragen können nicht bearbeitet werden."
+  "errors.message.poll_immutable": "Umfragen können nicht bearbeitet werden.",
+  "polls.unverified": "{n} nicht bestätigt",
+  "polls.unverified_hint": "Diese Stimmen tragen keine Signatur, die dieses Gerät prüfen konnte; sie werden gezählt."
 }

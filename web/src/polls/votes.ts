@@ -7,9 +7,8 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { Message, TavrnSocket } from "@tavrn/sdk";
-import { pollVotesKey, usePollEnv, type PollEnv, type PollVoteRecord, type VoteChoice } from "./context";
-import type { PollContent } from "./model";
-import type { OpenedVote } from "./tally";
+import type { CheckedVote, Poll, PollSelection } from "@tavrn/e2ee";
+import { pollVotesKey, usePollEnv, type PollEnv, type PollVoteRecord } from "./context";
 
 /** Replaces the record of `user` (one per member and poll) or adds it. */
 export function upsertVote(list: PollVoteRecord[] | undefined, record: PollVoteRecord): PollVoteRecord[] | undefined {
@@ -22,7 +21,7 @@ export function removeVote(list: PollVoteRecord[] | undefined, user: string): Po
 }
 
 /** The records of a poll and what they say, verified (null while loading). */
-export function usePollVotes(m: Message, poll: PollContent | null, enabled = true): { records: PollVoteRecord[] | undefined; opened: OpenedVote[] | null; error: unknown } {
+export function usePollVotes(m: Message, raw: Record<string, unknown> | null, poll: Poll | null, enabled = true): { records: PollVoteRecord[] | undefined; checked: CheckedVote[] | null; error: unknown } {
   const env = usePollEnv();
   const query = useQuery({
     queryKey: pollVotesKey(m.conversation_id, m.id),
@@ -31,14 +30,14 @@ export function usePollVotes(m: Message, poll: PollContent | null, enabled = tru
     staleTime: 60_000,
     refetchOnWindowFocus: false,
   });
-  const [opened, setOpened] = useState<OpenedVote[] | null>(null);
+  const [checked, setChecked] = useState<CheckedVote[] | null>(null);
   const records = query.data;
   useEffect(() => {
-    if (!env || !records || !poll) return;
+    if (!env || !records || !poll || !raw) return;
     let cancelled = false;
-    void env.open(m, poll, records).then(
-      (v) => !cancelled && setOpened(v),
-      () => !cancelled && setOpened([]),
+    void env.open(m, raw, poll, records).then(
+      (v) => !cancelled && setChecked(v),
+      () => !cancelled && setChecked([]),
     );
     return () => {
       cancelled = true;
@@ -46,21 +45,21 @@ export function usePollVotes(m: Message, poll: PollContent | null, enabled = tru
     // `poll` is derived from the message's content: the message identity stands for it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [env, records, m]);
-  return { records, opened, error: query.error };
+  return { records, checked, error: query.error };
 }
 
 /** Vote, retract and close with the optimistic update of the own record. */
-export function usePollActions(m: Message, poll: PollContent | null) {
+export function usePollActions(m: Message, raw: Record<string, unknown> | null, poll: Poll | null) {
   const env = usePollEnv();
   const queryClient = useQueryClient();
   const key = pollVotesKey(m.conversation_id, m.id);
-  const vote = async (choice: VoteChoice) => {
-    if (!env?.me || !poll) return;
+  const vote = async (choice: PollSelection) => {
+    if (!env?.me || !poll || !raw) return;
     const before = queryClient.getQueryData<PollVoteRecord[]>(key);
     const now = new Date().toISOString();
     queryClient.setQueryData<PollVoteRecord[]>(key, (list) => upsertVote(list ?? [], { user: env.me!, content: null, created_at: now, updated_at: now, pending: choice }));
     try {
-      const record = await env.vote(m, poll, choice);
+      const record = await env.vote(m, raw, poll, choice);
       queryClient.setQueryData<PollVoteRecord[]>(key, (list) => upsertVote(list ?? [], { ...record, user: record.user || env.me! }));
     } catch (e) {
       queryClient.setQueryData(key, before);

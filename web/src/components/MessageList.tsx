@@ -24,13 +24,14 @@ import { useUnread } from "../stores/unread";
 import { EmojiPicker, ReactionBar, type CustomEmoji } from "./Reactions";
 import { BotBadge, KeyChangedBadge, SealedMark } from "./Badges";
 import { recheckKey } from "../stores/mls";
-import { contentAttachments, plainMarker, type ContentAttachment, type Decrypted, type DecryptFailure, type PlainStatus } from "@tavrn/e2ee";
+import { contentAttachments, parsePoll, plainMarker, type ContentAttachment, type Decrypted, type DecryptFailure, type PlainStatus, type Poll } from "@tavrn/e2ee";
 import { UnverifiedMarker, VerifiedBadge } from "./Verification";
 import { plainInEncrypted, unverifiedStatus } from "../lib/unverified";
 import { MediaAvatar } from "./Avatar";
 import { useAuthorAvatar } from "./AuthorProfiles";
 import { LinkPreviews } from "./LinkPreviews";
 import { webOrigin } from "../platform";
+import { PollView, UnreadablePoll } from "../polls/PollView";
 
 /** How an author is shown: nickname or display name, role colour. */
 export interface AuthorLook {
@@ -464,6 +465,10 @@ type Shown =
   | { kind: "bot_event"; added: boolean; bot: string; name: string; channel: string; by: string | null; reason: string }
   | { kind: "call_event"; outcome: "missed" | "ended"; by: string; name: string; duration: number }
   | { kind: "cipher" }
+  /** A poll (PROTOCOL.md §7g) that passed the shape check. */
+  | { kind: "poll"; poll: Poll; raw: Record<string, unknown>; retired?: boolean }
+  /** An encrypted poll this member has no key for (from before they joined): only the voter count is shown. */
+  | { kind: "poll_unreadable" }
   | { kind: "undecryptable"; reason: DecryptFailure }
   | { kind: "forged" }
   /** Plaintext in an end-to-end encrypted conversation: only the node can have put it there. */
@@ -477,7 +482,8 @@ function contentOf(m: Message, d: Decrypted | undefined, signature: PlainStatus 
   let raw: Record<string, unknown> | undefined;
   if (m.encrypted) {
     if (!d) return { kind: "cipher" };
-    if (!d.ok) return { kind: "undecryptable", reason: d.reason };
+    // Only polls carry a close time: an unreadable message with one is a poll from before the member joined (§7g).
+    if (!d.ok) return d.reason === "missing_key" && m.poll_closes_at ? { kind: "poll_unreadable" } : { kind: "undecryptable", reason: d.reason };
     raw = d.content;
     c = d.content as AnyContent;
     files = contentAttachments(d.content, m.attachments);
@@ -492,6 +498,11 @@ function contentOf(m: Message, d: Decrypted | undefined, signature: PlainStatus 
   if (c?.type === "text" && typeof c.body === "string") return { kind: "text", body: c.body, gif: isGifUrl(c.gif?.url) ? c.gif : undefined, files, raw, retired };
   // `/me` (PROTOCOL.md §7): like text, shown in italics.
   if (c?.type === "action" && typeof c.body === "string") return { kind: "text", body: c.body, files, raw, action: true, retired };
+  // Polls (PROTOCOL.md §7g): one that breaks the shape rules is shown like an unknown type.
+  if (c?.type === "poll") {
+    const poll = parsePoll(c);
+    return poll ? { kind: "poll", poll, raw: raw ?? (c as Record<string, unknown>), retired } : { kind: "unknown", type: "poll" };
+  }
   // Welcome channel (design note 4.11): join/leave entries, rendered in the viewer's language.
   if (c?.type === "system.join" || c?.type === "system.leave") {
     const raw = c as AnyContent & { user?: unknown; display_name?: unknown };
@@ -609,6 +620,7 @@ interface RowProps {
 /** The first line of a message for reply previews. */
 function snippet(m: Message, d: Decrypted | undefined): string | null {
   const c = (m.encrypted ? (d?.ok ? d.content : null) : m.content) as AnyContent | null;
+  if (c?.type === "poll" && typeof (c as { question?: unknown }).question === "string") return `📊 ${String((c as { question: string }).question).slice(0, 99)}`;
   if (!c || typeof c.body !== "string") return null;
   const line = c.body.split("\n")[0]!.trim();
   return line.length > 100 ? `${line.slice(0, 99)}…` : line;
@@ -674,7 +686,7 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
   };
   const menuEntries = menu.open
     ? messageMenu(
-        { own, text: c.kind === "text" ? c.body : null, pinned: !!m.pinned, canPin: canPin && !!onPin, canReact: canReact && !!onReact, canManage, canReply: !!onReply && (c.kind === "text" || c.kind === "cipher"), canEdit: !!onEdit, canDelete: !!onDelete && !welcomeEntry, canReport: !!onReport && !systemLine && !m.author_deleted, canThread: !!onThread && !!canStartThreads && !m.thread_id && (c.kind === "text" || c.kind === "cipher"), hasThread: !!onThread && !!m.thread },
+        { own, text: c.kind === "text" ? c.body : null, pinned: !!m.pinned, canPin: canPin && !!onPin, canReact: canReact && !!onReact, canManage, canReply: !!onReply && (c.kind === "text" || c.kind === "cipher" || c.kind === "poll"), canEdit: !!onEdit, canDelete: !!onDelete && !welcomeEntry, canReport: !!onReport && !systemLine && !m.author_deleted, canThread: !!onThread && !!canStartThreads && !m.thread_id && (c.kind === "text" || c.kind === "cipher" || c.kind === "poll"), hasThread: !!onThread && !!m.thread },
         {
           reply: () => onReply?.(m),
           createThread: () => onThread?.(m, "create", body),
@@ -923,6 +935,8 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
           {c.kind === "text" && c.gif?.url && <GifView gif={{ url: c.gif.url, width: c.gif.width, height: c.gif.height }} author={m.author} own={own} inRoom={!!roomId} />}
           {c.kind === "text" && !editing && <LinkPreviews body={c.body} content={c.raw ?? m.content} />}
           {c.kind === "cipher" && <p className="text-sm italic text-fg-2">{t("messages.encrypted")}</p>}
+          {c.kind === "poll" && <PollView poll={c.poll} raw={c.raw} m={m} own={own} canManage={canManage} />}
+          {c.kind === "poll_unreadable" && <UnreadablePoll m={m} />}
           {c.kind === "undecryptable" && (
             <p className="text-sm italic text-fg-2" title={t(`messages.undecryptable.${c.reason}`)} data-testid="undecryptable" data-reason={c.reason}>
               ⚠ {t(`messages.undecryptable_short.${c.reason}`)} <span className="sr-only">({t(`messages.undecryptable.${c.reason}`)})</span>
@@ -940,13 +954,13 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
           )}
           {c.kind === "unknown" && <p className="text-sm italic text-fg-2">{t("messages.unknown_type", { type: c.type })}</p>}
           {m.edited_at && c.kind === "text" && <span className="text-xs text-fg-2">{t("messages.edited")}</span>}
-          {c.kind === "text" && c.retired && (
+          {(c.kind === "text" || c.kind === "poll") && c.retired && (
             <span className={`text-xs text-fg-2 ${m.edited_at ? "ml-1" : ""}`} title={t("messages.retired_device_hint")} data-testid="retired-device">
               ⓘ {t("messages.retired_device")}
             </span>
           )}
           {/* Webhook and unsigned bot messages are authenticated by the node (badges), never marked "unverified". */}
-          {c.kind === "text" && unverifiedStatus(m, signature, bot) && (
+          {(c.kind === "text" || c.kind === "poll") && unverifiedStatus(m, signature, bot) && (
             <span className={m.edited_at ? "ml-1" : ""}>
               <UnverifiedMarker status={unverifiedStatus(m, signature, bot)!} />
             </span>

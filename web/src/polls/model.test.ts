@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from "vitest";
-import { buildPoll, emptyDraft, hasErrors, parsePoll, slotCount, validateDraft, type PollDraft } from "./model";
+import { parsePoll } from "@tavrn/e2ee";
+import { buildPoll, emptyDraft, hasErrors, slotCount, validateDraft, type PollDraft } from "./model";
 import { offsetMinutes, parseRfc3339, toRfc3339, zonedInstant } from "./time";
 import { slotText } from "./format";
 
@@ -18,7 +19,8 @@ describe("poll drafts", () => {
     const { content, closesAt } = buildPoll(d, NOW);
     expect(content).toEqual({ type: "poll", kind: "choice", question: "Wohin?", options: [{ id: "o1", label: "Küche" }, { id: "o2", label: "Garten" }], max_choices: 1, results_visible: "always", votes_visible: "public" });
     expect(closesAt).toBeNull();
-    expect(parsePoll(content)).toEqual(content);
+    const { type: _type, ...poll } = content;
+    expect(parsePoll(content)).toEqual(poll);
   });
 
   it("names every problem of a choice poll", () => {
@@ -67,7 +69,8 @@ describe("poll drafts", () => {
         { id: "s3", start: "2026-11-07T00:00:00+01:00", all_day: true },
       ],
     });
-    expect(parsePoll(content)).toEqual(content);
+    const { type: _type, ...poll } = content;
+    expect(parsePoll(content)).toEqual(poll);
   });
 
   it("names every problem of a date poll", () => {
@@ -88,24 +91,6 @@ describe("poll drafts", () => {
     expect(bad.time).toEqual({ t1: "polls.error.time_end_before", t2: "polls.error.time_invalid", t4: "polls.error.time_duplicate", t5: "polls.error.time_past" });
     const many = Object.fromEntries(Array.from({ length: 61 }, (_, i) => [`2026-12-${String((i % 28) + 1).padStart(2, "0")}-${i}`, { allDay: true, times: [] }]));
     expect(validateDraft({ ...base, days: many }, NOW).slots).toBe("polls.error.slots_many");
-  });
-
-  it("rejects malformed polls (shown like an unknown type)", () => {
-    const ok = { type: "poll", kind: "choice", question: "Q", options: [{ id: "a", label: "A" }, { id: "b", label: "B" }], max_choices: 1, results_visible: "always", votes_visible: "public" };
-    expect(parsePoll(ok)).not.toBeNull();
-    expect(parsePoll({ ...ok, options: [{ id: "a", label: "A" }] })).toBeNull();
-    expect(parsePoll({ ...ok, options: [{ id: "a", label: "A" }, { id: "a", label: "B" }] })).toBeNull();
-    expect(parsePoll({ ...ok, options: [{ id: "a b", label: "A" }, { id: "b", label: "B" }] })).toBeNull();
-    expect(parsePoll({ ...ok, max_choices: 3 })).toBeNull();
-    expect(parsePoll({ ...ok, results_visible: "never" })).toBeNull();
-    expect(parsePoll({ ...ok, question: "" })).toBeNull();
-    const date = { type: "poll", kind: "date", question: "Q", slots: [{ id: "s1", start: "2026-11-06T19:00:00+01:00" }], results_visible: "after_vote", votes_visible: "hidden_until_close" };
-    expect(parsePoll(date)).not.toBeNull();
-    expect(parsePoll({ ...date, slots: [{ id: "s1", start: "2026-11-06T19:00:00" }] })).toBeNull();
-    expect(parsePoll({ ...date, slots: [{ id: "s1", start: "2026-11-06T19:00:00Z", end: "2026-11-06T18:00:00Z" }] })).toBeNull();
-    expect(parsePoll({ ...date, slots: [] })).toBeNull();
-    // Unknown fields are ignored; only the known ones are kept.
-    expect(parsePoll({ ...date, extra: "<b>x</b>" })).not.toHaveProperty("extra");
   });
 });
 

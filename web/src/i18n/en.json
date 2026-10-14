@@ -3785,5 +3785,7 @@
   "errors.message.poll_forbidden": "You cannot create polls here.",
   "errors.message.poll_closes_invalid": "The end of the poll is not valid (between a minute and a year from now).",
   "errors.message.poll_invalid": "The poll is not valid.",
-  "errors.message.poll_immutable": "Polls cannot be edited."
+  "errors.message.poll_immutable": "Polls cannot be edited.",
+  "polls.unverified": "{n} unverified",
+  "polls.unverified_hint": "These votes carry no signature that this device could check; they are counted."
 }

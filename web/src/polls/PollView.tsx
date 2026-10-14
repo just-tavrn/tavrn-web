@@ -7,13 +7,15 @@
  */
 import { useEffect, useId, useMemo, useState } from "react";
 import type { Message } from "@tavrn/sdk";
+import { pollVisibility, tallyPoll, type ChoicePoll, type DatePoll, type Poll, type PollAnswer as Answer, type PollTally } from "@tavrn/e2ee";
 import { intlLocale, useLocale, useT } from "../i18n";
 import { toastError } from "../stores/toasts";
 import { usePollEnv } from "./context";
 import { closeText, relativeUntil, slotText } from "./format";
-import type { Answer, ChoicePoll, DatePoll, PollContent } from "./model";
-import { isClosed, tallyVotes, visibility, type PollTally } from "./tally";
 import { usePollActions, usePollVotes } from "./votes";
+
+/** Is the poll closed at `now`? */
+export const isClosed = (closesAt: string | null | undefined, now: number) => !!closesAt && Date.parse(closesAt) <= now;
 
 const ANSWER_ICON: Record<Answer, string> = { yes: "✓", maybe: "?", no: "✗" };
 const ANSWER_CLASS: Record<Answer, string> = {
@@ -35,18 +37,21 @@ function useNow(closesAt: string | null | undefined): number {
   return now;
 }
 
-export function PollView({ poll, m, own, canManage }: { poll: PollContent; m: Message; own: boolean; canManage: boolean }) {
+export function PollView({ poll, raw, m, own, canManage }: { poll: Poll; raw: Record<string, unknown>; m: Message; own: boolean; canManage: boolean }) {
   const t = useT();
   useLocale((s) => s.locale);
   const env = usePollEnv();
-  const closesAt = (m as Message & { poll_closes_at?: string | null }).poll_closes_at ?? null;
+  const closesAt = m.poll_closes_at ?? null;
   const now = useNow(closesAt);
   const closed = isClosed(closesAt, now);
-  const { opened, error } = usePollVotes(m, poll);
-  const actions = usePollActions(m, poll);
-  const tally = useMemo(() => (opened ? tallyVotes(poll, opened, { me: env?.me, closesAt }) : null), [opened, poll, env?.me, closesAt]);
-  const voted = !!tally?.mine;
-  const show = visibility(poll, { closed, voted });
+  const { checked, error } = usePollVotes(m, raw, poll);
+  const actions = usePollActions(m, raw, poll);
+  const tally = useMemo(() => (checked ? tallyPoll(poll, checked, { closesAt, now: new Date(now) }) : null), [checked, poll, closesAt, now]);
+  const me = env?.me;
+  const mine = me ? (tally?.byUser.get(me) ?? null) : null;
+  // The viewer's newest record was cast on another version of the poll (an edited poll).
+  const mineStale = !mine && !!me && !!checked?.some((c) => c.user === me && !c.check.ok && c.check.reason === "stale");
+  const show = pollVisibility(poll, { closed }, !!mine);
   const canVote = !!env?.canVote && !!env.me && !closed;
   const mayClose = !!env && !closed && (own || canManage || env.canManage);
   const [busy, setBusy] = useState(false);
@@ -86,9 +91,9 @@ export function PollView({ poll, m, own, canManage }: { poll: PollContent; m: Me
         {poll.question}
       </h4>
       {poll.kind === "choice" ? (
-        <ChoiceBody poll={poll} tally={tally} show={show} canVote={canVote} busy={busy} onVote={(choices) => run(() => actions.vote({ choices }))} onRetract={() => run(actions.retract)} />
+        <ChoiceBody poll={poll} tally={tally} mine={mine && "choices" in mine ? mine.choices : null} show={show} canVote={canVote} busy={busy} onVote={(choices) => run(() => actions.vote({ choices }))} onRetract={() => run(actions.retract)} />
       ) : (
-        <DateBody poll={poll} tally={tally} show={show} canVote={canVote} busy={busy} onVote={(answers) => run(() => actions.vote({ answers }))} onRetract={() => run(actions.retract)} />
+        <DateBody poll={poll} tally={tally} mine={mine && "answers" in mine ? mine.answers : null} show={show} canVote={canVote} busy={busy} onVote={(answers) => run(() => actions.vote({ answers }))} onRetract={() => run(actions.retract)} />
       )}
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-2">
         <span data-testid="poll-voters">{tally ? t(tally.voters === 1 ? "polls.voters_one" : "polls.voters_many", { n: tally.voters }) : error ? t("polls.error.votes_unavailable") : t("polls.loading")}</span>
@@ -99,7 +104,12 @@ export function PollView({ poll, m, own, canManage }: { poll: PollContent; m: Me
             {t("polls.stale", { n: tally.stale })}
           </span>
         )}
-        {!!tally?.invalid && <span data-testid="poll-invalid">{t("polls.invalid", { n: tally.invalid })}</span>}
+        {!!tally?.rejected && <span data-testid="poll-invalid">{t("polls.invalid", { n: tally.rejected })}</span>}
+        {!!tally?.unverified && (
+          <span title={t("polls.unverified_hint")} data-testid="poll-unverified">
+            {t("polls.unverified", { n: tally.unverified })}
+          </span>
+        )}
         {!env && <span>{t("polls.read_only")}</span>}
         {mayClose && (
           <button
@@ -116,7 +126,7 @@ export function PollView({ poll, m, own, canManage }: { poll: PollContent; m: Me
           </button>
         )}
       </div>
-      {tally?.mineStale && !tally.mine && (
+      {mineStale && (
         <p className="mt-1 text-xs text-warn" data-testid="poll-mine-stale">
           ⚠ {t("polls.mine_stale")}
         </p>
@@ -128,6 +138,8 @@ export function PollView({ poll, m, own, canManage }: { poll: PollContent; m: Me
 interface BodyProps<P, C> {
   poll: P;
   tally: PollTally | null;
+  /** The viewer's counted vote. */
+  mine: C | null;
   show: { results: boolean; voters: boolean };
   canVote: boolean;
   busy: boolean;
@@ -154,10 +166,10 @@ function VoterNames({ users }: { users: string[] }) {
   );
 }
 
-function ChoiceBody({ poll, tally, show, canVote, busy, onVote, onRetract }: BodyProps<ChoicePoll, string[]>) {
+function ChoiceBody({ poll, tally, mine: counted, show, canVote, busy, onVote, onRetract }: BodyProps<ChoicePoll, string[]>) {
   const t = useT();
   const id = useId();
-  const mine = useMemo(() => tally?.mine?.choices ?? [], [tally?.mine]);
+  const mine = useMemo(() => counted ?? [], [counted]);
   const [draft, setDraft] = useState<string[] | null>(null);
   const picked = draft ?? mine;
   const multiple = poll.max_choices > 1;
@@ -182,7 +194,8 @@ function ChoiceBody({ poll, tally, show, canVote, busy, onVote, onRetract }: Bod
         {multiple && <p className="mb-1 text-xs text-fg-2">{t("polls.choose_up_to", { n: poll.max_choices })}</p>}
         <ul className="space-y-1.5" data-testid="poll-options">
           {poll.options.map((o) => {
-            const count = tally?.options[o.id]?.count ?? 0;
+            const option = tally?.options.find((x) => x.id === o.id);
+            const count = option?.count ?? 0;
             const pct = total ? Math.round((count / total) * 100) : 0;
             const isMine = mine.includes(o.id);
             const checked = picked.includes(o.id);
@@ -210,7 +223,7 @@ function ChoiceBody({ poll, tally, show, canVote, busy, onVote, onRetract }: Bod
                     </span>
                   )}
                 </label>
-                {show.voters && <VoterNames users={tally?.options[o.id]?.voters ?? []} />}
+                {show.voters && <VoterNames users={option?.voters ?? []} />}
               </li>
             );
           })}
@@ -232,12 +245,12 @@ function ChoiceBody({ poll, tally, show, canVote, busy, onVote, onRetract }: Bod
   );
 }
 
-function DateBody({ poll, tally, show, canVote, busy, onVote, onRetract }: BodyProps<DatePoll, Record<string, Answer>>) {
+function DateBody({ poll, tally, mine: counted, show, canVote, busy, onVote, onRetract }: BodyProps<DatePoll, Record<string, Answer>>) {
   const t = useT();
   const locale = intlLocale();
   const env = usePollEnv();
   const id = useId();
-  const mine = useMemo(() => tally?.mine?.answers ?? {}, [tally?.mine]);
+  const mine = useMemo(() => counted ?? {}, [counted]);
   const [draft, setDraft] = useState<Record<string, Answer> | null>(null);
   const answers = draft ?? mine;
   const [grid, setGrid] = useState(false);
@@ -249,12 +262,12 @@ function DateBody({ poll, tally, show, canVote, busy, onVote, onRetract }: BodyP
   };
   const voters = useMemo(() => {
     const set = new Set<string>();
-    for (const s of poll.slots) for (const a of ["yes", "maybe", "no"] as const) for (const u of tally?.slots[s.id]?.[a] ?? []) set.add(u);
+    for (const s of tally?.slots ?? []) for (const a of ["yes", "maybe", "no"] as const) for (const u of s.voters[a]) set.add(u);
     return [...set];
-  }, [tally, poll.slots]);
+  }, [tally]);
   const answerOf = (user: string, slotId: string): Answer | null => {
-    const a = tally?.slots[slotId];
-    return a?.yes.includes(user) ? "yes" : a?.maybe.includes(user) ? "maybe" : a?.no.includes(user) ? "no" : null;
+    const v = tally?.slots.find((x) => x.id === slotId)?.voters;
+    return v?.yes.includes(user) ? "yes" : v?.maybe.includes(user) ? "maybe" : v?.no.includes(user) ? "no" : null;
   };
   return (
     <form
@@ -275,7 +288,7 @@ function DateBody({ poll, tally, show, canVote, busy, onVote, onRetract }: BodyP
       <ul className="space-y-1.5" data-testid="poll-slots">
         {poll.slots.map((s) => {
           const x = texts[s.id]!;
-          const a = tally?.slots[s.id];
+          const a = tally?.slots.find((x) => x.id === s.id);
           const best = show.results && !!tally?.best.includes(s.id);
           return (
             <li key={s.id} className={`rounded-md border px-2 py-1.5 ${best ? "border-accent" : "border-line"}`} data-testid="poll-slot" data-slot={s.id} data-best={best || undefined}>
@@ -291,7 +304,7 @@ function DateBody({ poll, tally, show, canVote, busy, onVote, onRetract }: BodyP
                 </span>
                 {show.results && a && (
                   <span className="text-xs tabular-nums text-fg-1" data-testid="poll-slot-count">
-                    {t("polls.slot_count", { yes: a.yes.length, maybe: a.maybe.length })}
+                    {t("polls.slot_count", { yes: a.yes, maybe: a.maybe })}
                   </span>
                 )}
               </div>
@@ -388,7 +401,7 @@ function DateBody({ poll, tally, show, canVote, busy, onVote, onRetract }: BodyP
 /** An encrypted poll this member cannot read (from before they joined): the voter count only. */
 export function UnreadablePoll({ m }: { m: Message }) {
   const t = useT();
-  const { records } = usePollVotes(m, null);
+  const { records } = usePollVotes(m, null, null);
   return (
     <p className="mt-1 rounded-md border border-line bg-bg-1 px-3 py-2 text-sm italic text-fg-2" data-testid="poll-before-join">
       <span aria-hidden="true">📊 </span>

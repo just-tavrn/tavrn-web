@@ -4,91 +4,14 @@
  * becomes. The poll travels as message content (encrypted like any content in E2EE conversations); the close time is
  * the message's plaintext `poll_closes_at`.
  */
-import { dayOf, isRfc3339, parseRfc3339, toRfc3339, zonedInstant } from "./time";
+import { POLL_LIMITS, type Poll as PollContent, type PollKind, type PollResultsVisible as ResultsVisible, type PollSlot, type PollVotesVisible as VotesVisible } from "@tavrn/e2ee";
+import { dayOf, parseRfc3339, toRfc3339, zonedInstant } from "./time";
 
-export const POLL_LIMITS = { question: 300, label: 100, minOptions: 2, maxOptions: 20, minSlots: 1, maxSlots: 60, id: 32 } as const;
+export { POLL_LIMITS };
+export type { ChoicePoll, DatePoll, Poll as PollContent, PollAnswer as Answer, PollKind, PollOption, PollResultsVisible as ResultsVisible, PollSlot, PollVotesVisible as VotesVisible } from "@tavrn/e2ee";
 /** The node accepts close times from a minute to a year ahead. */
 export const CLOSE_MIN_MS = 60_000;
 export const CLOSE_MAX_MS = 365 * 86_400_000;
-
-export type PollKind = "choice" | "date";
-export type ResultsVisible = "always" | "after_vote" | "after_close";
-export type VotesVisible = "public" | "hidden_until_close";
-export type Answer = "yes" | "maybe" | "no";
-export const ANSWERS: readonly Answer[] = ["yes", "maybe", "no"];
-
-export interface PollOption {
-  id: string;
-  label: string;
-}
-export interface PollSlot {
-  id: string;
-  start: string;
-  end?: string;
-  all_day?: boolean;
-}
-interface PollCommon {
-  type: "poll";
-  question: string;
-  results_visible: ResultsVisible;
-  votes_visible: VotesVisible;
-}
-export interface ChoicePoll extends PollCommon {
-  kind: "choice";
-  options: PollOption[];
-  max_choices: number;
-}
-export interface DatePoll extends PollCommon {
-  kind: "date";
-  slots: PollSlot[];
-}
-export type PollContent = ChoicePoll | DatePoll;
-
-const RESULTS: readonly ResultsVisible[] = ["always", "after_vote", "after_close"];
-const VOTES: readonly VotesVisible[] = ["public", "hidden_until_close"];
-const chars = (s: string) => Array.from(s).length;
-const isId = (v: unknown): v is string => typeof v === "string" && /^[A-Za-z0-9_-]{1,32}$/.test(v);
-
-/**
- * The poll in a (decrypted or plaintext) content object, or null when it is not a well-formed poll. Only the known
- * fields are kept (a renderer never shows anything else of it).
- */
-export function parsePoll(c: unknown): PollContent | null {
-  if (!c || typeof c !== "object" || Array.isArray(c)) return null;
-  const o = c as Record<string, unknown>;
-  if (o.type !== "poll" || typeof o.question !== "string") return null;
-  const question = o.question.trim();
-  if (!question || chars(question) > POLL_LIMITS.question) return null;
-  if (!RESULTS.includes(o.results_visible as ResultsVisible) || !VOTES.includes(o.votes_visible as VotesVisible)) return null;
-  const common = { type: "poll" as const, question, results_visible: o.results_visible as ResultsVisible, votes_visible: o.votes_visible as VotesVisible };
-  if (o.kind === "choice") {
-    if (!Array.isArray(o.options) || o.options.length < POLL_LIMITS.minOptions || o.options.length > POLL_LIMITS.maxOptions) return null;
-    const options: PollOption[] = [];
-    for (const x of o.options as unknown[]) {
-      const opt = x as Record<string, unknown> | null;
-      if (!opt || !isId(opt.id) || typeof opt.label !== "string" || !opt.label.trim() || chars(opt.label) > POLL_LIMITS.label) return null;
-      options.push({ id: opt.id, label: opt.label });
-    }
-    if (new Set(options.map((x) => x.id)).size !== options.length) return null;
-    const max = o.max_choices;
-    if (typeof max !== "number" || !Number.isInteger(max) || max < 1 || max > options.length) return null;
-    return { ...common, kind: "choice", options, max_choices: max };
-  }
-  if (o.kind === "date") {
-    if (!Array.isArray(o.slots) || o.slots.length < POLL_LIMITS.minSlots || o.slots.length > POLL_LIMITS.maxSlots) return null;
-    const slots: PollSlot[] = [];
-    for (const x of o.slots as unknown[]) {
-      const s = x as Record<string, unknown> | null;
-      if (!s || !isId(s.id) || !isRfc3339(s.start)) return null;
-      if (s.end !== undefined && (!isRfc3339(s.end) || Date.parse(s.end) <= Date.parse(s.start))) return null;
-      if (s.all_day !== undefined && typeof s.all_day !== "boolean") return null;
-      slots.push({ id: s.id, start: s.start, ...(s.end !== undefined ? { end: s.end as string } : {}), ...(s.all_day ? { all_day: true } : {}) });
-    }
-    if (new Set(slots.map((x) => x.id)).size !== slots.length) return null;
-    return { ...common, kind: "date", slots };
-  }
-  return null;
-}
 
 // ---- the composer's draft
 
@@ -196,6 +119,8 @@ export function closeTime(d: Pick<PollDraft, "closes" | "closesCustom">, now: nu
   }
 }
 
+const chars = (s: string) => Array.from(s).length;
+
 export function validateDraft(d: PollDraft, now: number, timeZone?: string): DraftErrors {
   const e: DraftErrors = {};
   const q = d.question.trim();
@@ -249,7 +174,7 @@ export function validateDraft(d: PollDraft, now: number, timeZone?: string): Dra
  * The poll content and close time of a valid draft. Slots carry the creator's offset (RFC 3339), all-day slots start
  * at the creator's midnight and are sorted by start. `timeZone`: the creator's zone (tests; default the device's).
  */
-export function buildPoll(d: PollDraft, now: number, timeZone?: string): { content: PollContent; closesAt: string | null } {
+export function buildPoll(d: PollDraft, now: number, timeZone?: string): { content: PollContent & { type: "poll" }; closesAt: string | null } {
   const common = { type: "poll" as const, question: d.question.trim(), results_visible: d.resultsVisible, votes_visible: d.votesVisible };
   const closesAt = closeTime(d, now) ?? null;
   if (d.kind === "choice") {

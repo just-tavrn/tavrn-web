@@ -4,7 +4,7 @@
  * a calendar, each all day or with time slots in the creator's zone), the visibility of results and votes and an
  * optional close time. Opened by `/poll` and the composer's ＋ menu.
  */
-import { useId, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 import { intlLocale, useLocale, useT } from "../i18n";
 import { Dialog, ErrorText } from "../components/ui";
 import { Calendar, todayLocal } from "./Calendar";
@@ -22,7 +22,7 @@ export interface PollComposerProps {
   question?: string;
   onClose: () => void;
   /** Sends the poll; rejects with an error that was shown already (the dialog stays open). */
-  onCreate: (content: PollContent, closesAt: string | null) => Promise<void>;
+  onCreate: (content: PollContent & { type: "poll" }, closesAt: string | null) => Promise<void>;
   /** Tests: a fixed clock. */
   now?: () => number;
 }
@@ -39,7 +39,8 @@ export function PollComposer({ open, kind = "choice", question = "", onClose, on
 
 function ComposerForm({ initialKind, question, onClose, onCreate, now }: { initialKind: PollKind; question: string; onClose: () => void; onCreate: PollComposerProps["onCreate"]; now: () => number }) {
   const t = useT();
-  const locale = useLocale((s) => s.locale);
+  // Re-render on a language change (dates and labels).
+  useLocale((s) => s.locale);
   const intl = intlLocale();
   const id = useId();
   const [draft, setDraft] = useState<PollDraft>(() => ({ ...emptyDraft(initialKind), question }));
@@ -194,6 +195,13 @@ function ChoiceOptions({ draft, set, errors, errorText }: { draft: PollDraft; se
   const t = useT();
   const id = useId();
   const { options } = draft;
+  /** The option to focus after the list changed (added, moved, removed). */
+  const [focusKey, setFocusKey] = useState<string | null>(null);
+  useEffect(() => {
+    if (!focusKey) return;
+    document.getElementById(`${id}-${focusKey}`)?.focus();
+    setFocusKey(null);
+  }, [focusKey, id]);
   const move = (i: number, by: number) => {
     const j = i + by;
     if (j < 0 || j >= options.length) return;
@@ -201,20 +209,20 @@ function ChoiceOptions({ draft, set, errors, errorText }: { draft: PollDraft; se
     [next[i], next[j]] = [next[j]!, next[i]!];
     set({ options: next });
     // The moved option keeps the focus (keyboard reordering).
-    requestAnimationFrame(() => document.getElementById(`${id}-${next[j]!.key}`)?.focus());
+    setFocusKey(next[j]!.key);
   };
   const add = (after = options.length - 1) => {
     if (options.length >= POLL_LIMITS.maxOptions) return;
     const o = { key: draftKey("o"), label: "" };
     const next = [...options.slice(0, after + 1), o, ...options.slice(after + 1)];
     set({ options: next, maxChoices: Math.min(Math.max(draft.maxChoices, 2), next.length) });
-    requestAnimationFrame(() => document.getElementById(`${id}-${o.key}`)?.focus());
+    setFocusKey(o.key);
   };
   const remove = (i: number) => {
     if (options.length <= POLL_LIMITS.minOptions) return;
     const next = options.filter((_, k) => k !== i);
     set({ options: next, maxChoices: Math.min(draft.maxChoices, next.length) });
-    requestAnimationFrame(() => document.getElementById(`${id}-${next[Math.min(i, next.length - 1)]!.key}`)?.focus());
+    setFocusKey(next[Math.min(i, next.length - 1)]!.key);
   };
   const onKey = (e: KeyboardEvent<HTMLInputElement>, i: number) => {
     if (e.altKey && e.key === "ArrowUp") {
