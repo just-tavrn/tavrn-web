@@ -76,6 +76,8 @@ export async function startJoin(d: JoinFlowDeps): Promise<JoinFlow> {
   const pending = d.rejoin ? null : d.pending().catch(() => []);
   mark("voice_join_sent");
   const answer = d.join();
+  // Awaited below; a refusal while the group join still runs is not an unhandled rejection meanwhile.
+  answer.catch(() => undefined);
   // A seat the node gave is freed when the join fails before the session takes over (not on a rejoin).
   const freeSeat = () => (d.rejoin ? Promise.resolve() : answer.then(() => d.leave()).then(() => undefined, () => undefined));
   let joined: "joined" | "no_group";

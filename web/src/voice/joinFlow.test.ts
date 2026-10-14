@@ -125,6 +125,18 @@ describe("startJoin: failures", () => {
     expect(h.deps.leave).not.toHaveBeenCalled();
   });
 
+  it("a join refused while the group join still runs: no unhandled rejection, the refusal is reported", async () => {
+    const h = harness();
+    const started = startJoin(h.deps);
+    h.steps.join.reject(new Error("Failed to fetch"));
+    await tick();
+    await tick();
+    h.steps.ensure.resolve("joined");
+    await expect(started).rejects.toThrow("Failed to fetch");
+    expect(h.deps.leave).not.toHaveBeenCalled();
+    expect(h.media.release).toHaveBeenCalledTimes(1);
+  });
+
   it("the MLS failing on a rejoin keeps the seat", async () => {
     const h = harness({ rejoin: true });
     h.steps.ensure.reject(new Error("offline"));
