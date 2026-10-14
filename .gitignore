@@ -42,6 +42,7 @@ playwright-report/
 blob-report/
 coverage/
 perf/results/
+e2e/perf/results/
 
 # Private pattern list of the pre-publication check
 .publish-check.private

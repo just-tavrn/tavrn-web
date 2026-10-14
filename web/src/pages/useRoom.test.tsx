@@ -83,4 +83,45 @@ describe("useRoom", () => {
     act(() => useRolePreview.getState().exit());
     await waitFor(() => expect(result.current.data).toBe(detail));
   });
+  it("renders as often per room update after a role preview as before it (the preview does not widen the tracked fields)", async () => {
+    let version = 0;
+    const everyone = { id: "e", is_everyone: true, permissions: "1", position: 0, name: "@everyone" };
+    const detail = () => ({ id: "r1", name: `v${version}`, is_owner: true, my_roles: [], my_permissions: "-1", categories: [], roles: [everyone], read_states: [], overrides: [], channels: [{ id: "c1", kind: "text", encrypted: false }] });
+    // A real round trip: the fetching state and the answer arrive in separate tasks.
+    globalThis.fetch = vi.fn(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+      return new Response(JSON.stringify(detail()), { status: 200, headers: { "Content-Type": "application/json" } });
+    }) as unknown as typeof fetch;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(["room", "r1"], detail());
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>
+        <MemoryRouter>{children}</MemoryRouter>
+      </QueryClientProvider>
+    );
+    let renders = 0;
+    const { result } = renderHook(
+      () => {
+        renders++;
+        // What the room views read: the state fields and the data.
+        const room = useRoom("r1");
+        return room.isPending ? "pending" : room.isError ? "error" : room.data.name;
+      },
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current).toBe("v0"));
+    await act(() => client.invalidateQueries({ queryKey: ["room", "r1"] }));
+    const update = async () => {
+      version++;
+      const from = renders;
+      await act(() => client.invalidateQueries({ queryKey: ["room", "r1"] }));
+      await waitFor(() => expect(result.current).toBe(`v${version}`));
+      return renders - from;
+    };
+    const before = await update();
+    act(() => useRolePreview.getState().start({ roomId: "r1", roleIds: [], joinedAt: Date.now(), label: "@everyone" }));
+    act(() => useRolePreview.getState().exit());
+    const after = await update();
+    expect({ before, after }).toEqual({ before: 1, after: 1 });
+  });
 });

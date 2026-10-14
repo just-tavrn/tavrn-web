@@ -278,6 +278,13 @@ to: a member who gains a channel gets `channel.create`, one who loses it `channe
 **You no longer have access to this channel** instead of "Channel not found", and the channel's local search entries
 stay (`web/src/lib/hiddenChannels.ts`).
 
+Room changes reach the list without reloading the room: the answers of the settings' saves and the payloads of
+`channel.*`, `category.*`, `role.*`, `override.update` and `room.update` are written into the cached room
+(`web/src/lib/roomCache.ts`, `web/src/hooks/roomEvents.ts`). Only changes of a role the viewer holds (or `@everyone`),
+the viewer's own membership and a new owner fetch the room again (the node computes the viewer's room permissions),
+once per burst of events. The list
+evaluates the layered permissions once per room version: one map of permissions and access marks per channel.
+
 ### Channel list marks
 
 Besides the encryption lock (which never means anything else), two SVG marks after the channel name tell who may use a

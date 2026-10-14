@@ -107,3 +107,22 @@ export function channelAccessMarks(room: Pick<RoomDetail, "channels" | "roles" |
   const restriction = viewerRestriction(kind, perms);
   return [...(privacy ? [privacy] : []), ...(restriction ? [restriction === "join" ? ("restricted_join" as const) : ("restricted_read" as const)] : [])];
 }
+
+/** A channel's permissions for the viewer and its access marks (what each row of the channel list shows). */
+export interface ChannelAccess {
+  permissions: bigint;
+  marks: AccessMarkKind[];
+}
+
+/**
+ * Permissions and access marks of every channel of the room for the viewer, in one pass: the channel list computes
+ * this once per room version (one `useMemo` per room object) instead of evaluating the overrides per row and render.
+ */
+export function roomChannelAccess(room: RoomDetail, userId: string, voiceChannelId?: string | null): Map<string, ChannelAccess> {
+  const access = new Map<string, ChannelAccess>();
+  for (const channel of room.channels) {
+    const permissions = channelPermissions(room, channel.id, userId, voiceChannelId);
+    access.set(channel.id, { permissions, marks: channelAccessMarks(room, channel.id, permissions) });
+  }
+  return access;
+}

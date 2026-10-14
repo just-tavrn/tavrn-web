@@ -25,6 +25,7 @@ import { ConfirmAction, copyWithToast } from "./common";
 import { useNotifyMenu } from "./useNotifyMenu";
 import { useFullHistory } from "../../search/useFullHistory";
 import { webOrigin } from "../../platform";
+import { patchRoom, withChannel, withoutChannel } from "../../lib/roomCache";
 
 export function useChannelMenu(room: RoomDetail, channel: Channel): { menu: ContextMenuTrigger; overlay: ReactNode } {
   const t = useT();
@@ -44,7 +45,8 @@ export function useChannelMenu(room: RoomDetail, channel: Channel): { menu: Cont
   const voice = channel.kind === "voice";
   const voiceChannels = voice ? room.channels.filter((c) => c.kind === "voice") : [];
   const counts = useVoicePresence(useShallow((s) => Object.fromEntries(voiceChannels.map((c) => [c.id, participantsOf(s, domain, c.id).length]))));
-  const canMove = voice && hasPermission(channelPermissions(room, channel.id, me?.id ?? ""), Permission.MOVE_MEMBERS);
+  // Evaluated only for the open menu: every voice row of the channel list holds this hook (tavrn-web#155).
+  const canMove = voice && menu.open && hasPermission(channelPermissions(room, channel.id, me?.id ?? ""), Permission.MOVE_MEMBERS);
   const others = voiceChannels.filter((c) => c.id !== channel.id);
   const here = counts[channel.id] ?? 0;
   const elsewhere = others.reduce((n, c) => n + (counts[c.id] ?? 0), 0);
@@ -74,7 +76,7 @@ export function useChannelMenu(room: RoomDetail, channel: Channel): { menu: Cont
           duplicate: () =>
             void api.channels
               .create(room.id, { kind: channel.kind, name: `${channel.name}-2`, category_id: channel.category_id ?? null, topic: channel.topic || null, encrypted: channel.kind === "voice" ? null : channel.encrypted, user_limit: channel.user_limit || null, bitrate_kbps: channel.bitrate_kbps || null })
-              .then(() => queryClient.invalidateQueries({ queryKey: ["room", room.id] }))
+              .then((created) => patchRoom(queryClient, room.id, withChannel(created)))
               .then(() => useToasts.getState().push({ kind: "info", title: t("menu.channel.duplicated", { name }) }))
               .catch(toastError),
           remove: () => setConfirmDelete(true),
@@ -102,7 +104,7 @@ export function useChannelMenu(room: RoomDetail, channel: Channel): { menu: Cont
           onClose={() => setConfirmDelete(false)}
           onConfirm={async () => {
             await api.channels.delete(room.id, channel.id);
-            await queryClient.invalidateQueries({ queryKey: ["room", room.id] });
+            patchRoom(queryClient, room.id, withoutChannel(channel.id));
             if (location.pathname.includes(channel.id)) navigate(roomPath(room.id));
           }}
           testId="channel-delete-dialog"

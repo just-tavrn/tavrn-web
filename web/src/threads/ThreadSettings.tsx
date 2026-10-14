@@ -6,6 +6,7 @@ import { useNode } from "../components/NodeScope";
 import { Button, Input } from "../components/ui";
 import { Section, Select } from "../pages/settings/common";
 import { toastError, useToasts } from "../stores/toasts";
+import { withChannel, type RoomPatch } from "../lib/roomCache";
 
 /** Auto-archive choices in minutes (the node takes 60 … 43200). */
 export const AUTO_ARCHIVE_CHOICES = [60, 1440, 4320, 10080, 43200] as const;
@@ -15,7 +16,7 @@ export const MAX_TAGS = 20;
  * Thread settings of a text, announcement or forum channel (PROTOCOL.md §7e, `manage_channels`): when idle threads
  * are archived, and the tags of a forum.
  */
-export function ThreadSettingsSection({ channel, room, canManage, onChanged }: { channel: Channel; room: RoomDetail; canManage: boolean; onChanged: () => Promise<void> }) {
+export function ThreadSettingsSection({ channel, room, canManage, onChanged }: { channel: Channel; room: RoomDetail; canManage: boolean; onChanged: (patch?: RoomPatch) => Promise<void> }) {
   const t = useT();
   const { api } = useNode();
   const [minutes, setMinutes] = useState(channel.auto_archive_minutes ?? 10080);
@@ -26,8 +27,7 @@ export function ThreadSettingsSection({ channel, room, canManage, onChanged }: {
   const save = async () => {
     setBusy(true);
     try {
-      await api.channels.update(room.id, channel.id, { auto_archive_minutes: minutes, ...(forum ? { tags: tags.map((tg) => ({ ...tg, name: tg.name.trim(), emoji: tg.emoji?.trim() || null })) } : {}) });
-      await onChanged();
+      await onChanged(withChannel(await api.channels.update(room.id, channel.id, { auto_archive_minutes: minutes, ...(forum ? { tags: tags.map((tg) => ({ ...tg, name: tg.name.trim(), emoji: tg.emoji?.trim() || null })) } : {}) })));
       useToasts.getState().push({ kind: "info", title: t("channels.saved") });
     } catch (e) {
       toastError(e);
