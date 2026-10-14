@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, useNavigate } from "react-router";
 import { Permission, hasPermission, type Channel, type RoomDetail, type VoiceParticipant } from "@tavrn/sdk";
 import { useLocale, useT } from "../../i18n";
@@ -83,12 +83,19 @@ export function VoiceChannelRow({ room, channel, onNavigate }: { room: RoomDetai
   const marks = channelAccessMarks(room, channel.id, perms);
   const canConnect = hasPermission(perms, Permission.CONNECT);
   const [drop, setDrop] = useState<DropState>(null);
+  // Entering a child fires dragleave on this element (and dragenter on the child, both bubbling here): the indicator
+  // clears only when the drag left the whole channel, so it does not flicker over the name, the count or the rows.
+  const depth = useRef(0);
+  const leaveAll = () => {
+    depth.current = 0;
+    setDrop(null);
+  };
   // A drag that ends over this channel without a drop (refused, Escape) does not always send a dragleave.
   useEffect(() => {
     if (!drop) return;
-    const clear = () => setDrop(null);
-    window.addEventListener("dragend", clear, true);
-    return () => window.removeEventListener("dragend", clear, true);
+    window.addEventListener("dragend", leaveAll, true);
+    return () => window.removeEventListener("dragend", leaveAll, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drop]);
   const { menu, overlay } = useChannelMenu(room, channel);
   const canCreate = hasPermission(perms, Permission.SEND_MESSAGES);
@@ -102,7 +109,7 @@ export function VoiceChannelRow({ room, channel, onNavigate }: { room: RoomDetai
     return (dragging.self ? canConnect : canMove) ? "accept" : "refuse";
   };
   const onDrop = async (e: React.DragEvent) => {
-    setDrop(null);
+    leaveAll();
     const d = dragging;
     if (!d || dropState(e) !== "accept") return;
     e.preventDefault();
@@ -131,6 +138,9 @@ export function VoiceChannelRow({ room, channel, onNavigate }: { room: RoomDetai
       data-channel={channel.id}
       data-drop={drop ?? undefined}
       className={`rounded-md ${drop === "accept" ? "bg-accent-soft ring-2 ring-accent" : drop === "refuse" ? "bg-danger/10 ring-2 ring-danger" : ""}`}
+      onDragEnter={() => {
+        depth.current += 1;
+      }}
       onDragOver={(e) => {
         const state = dropState(e);
         setDrop(state);
@@ -142,7 +152,10 @@ export function VoiceChannelRow({ room, channel, onNavigate }: { room: RoomDetai
         e.preventDefault();
         e.dataTransfer.dropEffect = "move";
       }}
-      onDragLeave={() => setDrop(null)}
+      onDragLeave={() => {
+        depth.current = Math.max(0, depth.current - 1);
+        if (depth.current === 0) setDrop(null);
+      }}
       onDrop={(e) => void onDrop(e)}
     >
       <div className="group/vc relative" data-testid="voice-channel-header">

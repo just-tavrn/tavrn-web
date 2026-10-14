@@ -251,6 +251,35 @@ describe("moving by drag and drop (issue #119)", () => {
     expect(channelBox("D")).not.toHaveAttribute("data-drop");
   });
 
+  it("the indicator stays while the drag moves over the channel's children and clears when it leaves", () => {
+    inChannel("bob@n.test/DB");
+    renderTwo();
+    const dt = dataTransfer();
+    fireEvent.dragStart(row("bob@n.test"), { dataTransfer: dt });
+    const during = { ...dt, types: dt.filled };
+    const target = channelBox("D");
+    const link = within(target).getByRole("link");
+    fireEvent.dragEnter(target, { dataTransfer: during });
+    fireEvent.dragOver(target, { dataTransfer: during });
+    expect(target).toHaveAttribute("data-drop", "accept");
+    // Into the link: dragenter on the child, dragleave on the channel (both bubble): still accepted.
+    fireEvent.dragEnter(link, { dataTransfer: during });
+    fireEvent.dragLeave(target, { dataTransfer: during });
+    expect(target).toHaveAttribute("data-drop", "accept");
+    // Out of the link and out of the channel: cleared.
+    fireEvent.dragLeave(link, { dataTransfer: during });
+    expect(target).toHaveAttribute("data-drop", "accept");
+    fireEvent.dragLeave(target, { dataTransfer: during });
+    expect(target).not.toHaveAttribute("data-drop");
+    // A drag that ends elsewhere clears a lingering indicator.
+    fireEvent.dragEnter(target, { dataTransfer: during });
+    fireEvent.dragOver(target, { dataTransfer: during });
+    expect(target).toHaveAttribute("data-drop", "accept");
+    fireEvent.dragEnd(row("bob@n.test"), { dataTransfer: dt });
+    expect(target).not.toHaveAttribute("data-drop");
+    expect(joinVoice).not.toHaveBeenCalled();
+  });
+
   it("a channel you may not join refuses the drop visibly; the own channel is no target", () => {
     perms.byChannel.D = perms.all & ~Permission.CONNECT;
     inChannel("bob@n.test/DB");
