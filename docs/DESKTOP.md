@@ -363,10 +363,17 @@ browser does on Windows (`src-tauri/src/passkey.rs`, the commands `passkey_creat
 - **PRF (the key store unlock).** The shell asks for the PRF where the system offers it: at registration
   `bEnablePrf` (webauthn.h API version 6) or the hmac-secret extension (before), at an assertion the PRF input as
   `pHmacSecretSaltValues` (API version 4 and newer), which Windows turns into the hmac-secret salt exactly as WebAuthn's
-  PRF extension does, so the output equals a browser's for the same passkey. Security keys with hmac-secret support
-  it; whether Windows Hello and phones (hybrid) return a PRF output depends on the Windows build and the
-  authenticator. Without a PRF output the passkey still signs in, and the app unlocks its key store from the OS
-  keychain as before (or with the recovery key on a new device).
+  PRF extension does, so the output equals a browser's for the same passkey. At registration Windows reports only
+  whether the authenticator enabled the PRF (`bPrfEnabled`; the PRF output at creation needs API version 8 and
+  attestation version 7, which the `windows` crate this build uses does not have): the client therefore runs one
+  more assertion right after the registration to store the passkey's secret storage entry, or offers **Enable message
+  unlock** in Settings → Security later (CLIENT.md "Accounts and sign-in"). Security keys with hmac-secret enable
+  it. **Windows Hello** (the platform authenticator) reports the PRF only on Windows 11 24H2 (build 26100.7840) and
+  25H2 (26200.7840) with the February 2026 cumulative update (KB5077181) or newer; Windows 10 and earlier Windows 11
+  builds never: such a passkey signs in, the settings say "cannot unlock messages" with that reason, and the node
+  (`prf_supported` of the credential) refuses an entry for it, so after the update the passkey is removed and added
+  again. Phones (hybrid) depend on the phone's authenticator. Without a PRF output the passkey still signs in, and
+  the app unlocks its key store from the OS keychain as before (or with the recovery key on a new device).
 - Errors become the browser's: cancelled, timed out or no matching passkey → "The passkey prompt was cancelled";
   an excluded authenticator → "already holds a passkey".
 

@@ -100,7 +100,11 @@ origin `android:apk-key-hash:<base64url of the SHA-256 of the signing certificat
 (PROTOCOL.md §5a.4). The shell reads that origin from the installed APK's signer at runtime (`AppOrigin.kt`, checked
 again in Rust) and reports it with `android_info`; it passes on only a relying party id that the connected node's
 web origin is equal to or a subdomain of. The PRF output (the key store unlock) comes back apart from the credential
-and never reaches the node.
+and never reaches the node; `clientExtensionResults.prf.enabled` of a registration stays in it, so the node's
+`prf_supported` says whether the credential provider (Google Password Manager, or another passkey provider) enabled the
+PRF, and `prf.results` of a registration (providers that evaluate it at creation) stores the passkey's secret
+storage entry without a second prompt. A provider without the PRF: the passkey signs in, Settings → Security says
+"cannot unlock messages" (CLIENT.md "Accounts and sign-in").
 
 The webview's own WebAuthn (`WEB_AUTHENTICATION_SUPPORT_FOR_APP`, which the shell still turns on) cannot be used for
 this: measured on Android 16 with WebView 133, it checks the relying party id against the page's origin

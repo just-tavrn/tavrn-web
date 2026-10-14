@@ -417,17 +417,28 @@ export async function tokenOf(page: Page): Promise<string> {
 
 /**
  * Chromium virtual authenticator (CDP) with resident keys and user verification. PRF support of the
- * virtual authenticator depends on the Chromium version: `prf` tells whether `hasPrf` was accepted.
+ * virtual authenticator depends on the Chromium version: `prf` tells whether `hasPrf` was accepted. `remove` unplugs
+ * it (its passkeys with it), so a second one can register another passkey for the same account (the registration
+ * excludes the account's passkeys, and an authenticator that holds one refuses).
  */
-export async function addVirtualAuthenticator(page: Page): Promise<{ prf: boolean }> {
+export async function addVirtualAuthenticator(page: Page): Promise<{ prf: boolean; remove: () => Promise<void> }> {
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("WebAuthn.enable");
   const options = { protocol: "ctap2", ctap2Version: "ctap2_1", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true };
+  const add = async (opts: object) => {
+    const { authenticatorId } = (await cdp.send("WebAuthn.addVirtualAuthenticator", { options: opts } as never)) as unknown as { authenticatorId: string };
+    return { remove: async () => void (await cdp.send("WebAuthn.removeVirtualAuthenticator", { authenticatorId } as never)) };
+  };
   try {
-    await cdp.send("WebAuthn.addVirtualAuthenticator", { options: { ...options, hasPrf: true } } as never);
-    return { prf: true };
+    return { prf: true, ...(await add({ ...options, hasPrf: true })) };
   } catch {
-    await cdp.send("WebAuthn.addVirtualAuthenticator", { options } as never);
-    return { prf: false };
+    return { prf: false, ...(await add(options)) };
   }
+}
+
+/** The re-authentication dialog, if the last confirmation expired (PROTOCOL.md §5c, five minutes): confirms with the password. */
+export async function confirmWithPasswordIfAsked(page: Page, password: string) {
+  const reauth = page.getByTestId("reauth-dialog");
+  const asked = await reauth.waitFor({ state: "visible", timeout: 2_000 }).then(() => true, () => false);
+  if (asked) await confirmWithPassword(page, password);
 }
