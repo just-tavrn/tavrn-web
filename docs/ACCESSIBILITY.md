@@ -36,6 +36,7 @@ on the desktop and the phone project unless noted:
 | `social-voice.spec.ts` | the room card on the rail (desktop), the room's long-press menu with the card head (phone), the friends list with a friend in voice |
 | `friend-invite.spec.ts` | the friend menu with the open "Invite to room" submenu |
 | `channel-access-marks.spec.ts` | the channel list with the private and restricted marks, the channel editor |
+| `view-as-role.spec.ts` | the role preview's banner, a previewed read-only channel page (the disabled composer with its reason) |
 | `permissions-layered.spec.ts` | the channel and category permission editors |
 | `upload-policy.spec.ts` | the role's file types, the channel and category editors with their file type blocks, the download warning dialog |
 | `files-e2ee.spec.ts` | an end-to-end encrypted files channel with entries and its breadcrumbs, "Your files" of a locked device, the deletion dialog |
@@ -191,6 +192,13 @@ Before: 3 critical + 325 serious + 241 moderate + 25 minor nodes. After: 0 criti
   and returns to `fg-0` as the open channel; the lock stays the encryption mark only. The channel editor's line uses a
   decorative glyph next to the text. `e2e/tests/channel-access-marks.spec.ts` scans the channel list and the channel
   editor with axe on the desktop and the phone project.
+- **Role preview** ("View the room as a role", `components/RolePreviewBanner.tsx`): the banner is a labelled region
+  whose text ("Viewing as <role> · joined <date>") is a polite live status, so starting the preview is announced; "What
+  is simulated" is a disclosure button (`aria-expanded`, `aria-controls`) for the approximations (no hover-only
+  tooltip), "Exit preview" a plain button, both at least 32 px high. The rights lists of voice and files channels say
+  "allowed" / "not allowed" in words next to the decorative ✓/✗; the refused write is a status toast with a title and
+  a reason. `e2e/tests/view-as-role.spec.ts` scans the banner and a previewed channel page with axe on the desktop and
+  the phone project.
 - **Spoilers** (`lib/markdown.ts`): a hidden `||spoiler||` is a `role="button"` with a tab stop and the name
   "Spoiler, press to reveal"; Enter, Space or a click reveals it, after which role, tab stop and name are removed and
   the text reads as normal text. It has the focus ring, and the colour change is not animated under reduced motion.

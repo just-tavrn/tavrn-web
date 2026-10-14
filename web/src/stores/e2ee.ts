@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 /** Encryption status of this device for the signed-in account (drives the unlock screen and banner). */
+import { useRolePreview } from "./rolePreview";
 import { create } from "zustand";
 import { api, quietApi } from "../lib/api";
 import { beginSignOut, useAuth } from "./auth";
@@ -103,6 +104,8 @@ export async function e2eeContext(): Promise<E2eeContext> {
  */
 export async function signOut(): Promise<void> {
   const user = useAuth.getState().user;
+  // A role preview ends first: its write guard would refuse the sign-out's own requests (push, devices).
+  useRolePreview.getState().exit();
   // The logout revokes the session at once: the socket and requests in flight see that before the logout's answer
   // arrives. The account stays signed in here until the provider's logout URL is kept and the local keys are gone.
   const endSignOut = beginSignOut();

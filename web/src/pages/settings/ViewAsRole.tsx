@@ -47,9 +47,10 @@ export function ViewAsRole({ room, role }: { room: RoomDetail; role: Role }) {
     const at = Date.parse(joined);
     const roleIds = roles.filter((r) => chosen.includes(r.id)).map((r) => r.id);
     const names = roles.filter((r) => roleIds.includes(r.id)).map((r) => r.name);
-    start({ roomId: room.id, roleIds, joinedAt: Number.isFinite(at) ? at : Date.now(), label: names.length ? names.join(", ") : (everyone?.name ?? "@everyone") });
     setOpen(false);
+    // To the room first: the settings page would otherwise redirect from the Roles tab the roles may not see.
     navigate(roomPath(room.id));
+    start({ roomId: room.id, roleIds, joinedAt: Number.isFinite(at) ? at : Date.now(), label: names.length ? names.join(", ") : (everyone?.name ?? "@everyone") });
   };
   return (
     <>

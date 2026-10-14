@@ -61,7 +61,8 @@ export function RoomSettingsPage() {
   const visible = TABS.filter((x) => (x.needs === 0n || hasPermission(perms, x.needs)) && (!x.anyOf || x.anyOf.some((b) => hasPermission(perms, b))) && (!x.cap || !!caps?.includes(x.cap)));
   // Tabs behind a capability wait for the node's answer instead of redirecting.
   if (!caps && TABS.some((x) => x.id === tab && x.cap)) return <p className="p-4 text-sm text-fg-2">{t("room.loading")}</p>;
-  if (!visible.some((x) => x.id === tab)) return <Navigate to={roomPath(roomId, undefined, "settings/overview")} replace />;
+  // A tab the previewed roles may not see (the preview was just started from the Roles tab): back to the room.
+  if (!visible.some((x) => x.id === tab)) return <Navigate to={previewing ? roomPath(roomId) : roomPath(roomId, undefined, "settings/overview")} replace />;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">

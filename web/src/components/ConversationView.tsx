@@ -637,7 +637,8 @@ export function ConversationView(p: ConversationViewProps) {
       <MessageList
         encrypted={p.encrypted}
         messages={loaded}
-        currentUserId={user?.id}
+        // The simulated member wrote none of these: the viewer's own messages get the menu of anyone else's.
+        currentUserId={preview ? undefined : user?.id}
         canManage={p.canManage}
         canReact={p.canReact}
         canPin={p.canPin}

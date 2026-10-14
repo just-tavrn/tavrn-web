@@ -3,8 +3,9 @@
  * The read-only guarantee of the role preview (docs/CLIENT.md "View the room as a role"): while a preview is active,
  * every request that would change something on a node is refused on this device before it leaves, with one
  * explanatory toast, so no action runs with the viewer's real permissions by accident. Exempt is only the device's own
- * background upkeep that is no action in the room (session refresh, MLS and key upkeep, history keys for others, the
- * account's conversation index and backups); read markers are refused silently (the viewer reads nothing as the role).
+ * background upkeep that is no action in the room (session refresh and federated sessions, presence, MLS and key
+ * upkeep, history keys for others, the account's conversation index and backups); read markers are refused silently
+ * (the viewer reads nothing as the role).
  */
 import { TavrnApiError } from "@tavrn/sdk";
 import { t } from "../i18n";
@@ -18,13 +19,15 @@ const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 /** Paths (below `/api/v1`) of the device's background upkeep: never actions in the previewed room. */
 const EXEMPT: readonly RegExp[] = [
-  /^\/auth\/(refresh|logout)$/,
+  /^\/auth\/(refresh|logout|federated)$/,
+  /^\/federation\/token$/,
+  // The account's presence (idle detection, game activity): no action in the room.
+  /^\/users\/me\/(presence|activity)$/,
   /^\/users\/me\/devices\/[^/]+\/(key|share-key|key-packages)$/,
   /^\/users\/[^/]+\/key-packages\/claim$/,
   /^\/conversations\/[^/]+\/mls\//,
   /^\/mls\//,
   /^\/conversations\/[^/]+\/(inbox-key|history-keys)(\/|$)/,
-  /^\/history-keys\//,
   /^\/users\/me\/conversations-index$/,
   /^\/users\/me\/backups\//,
 ];

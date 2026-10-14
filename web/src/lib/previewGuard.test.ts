@@ -44,9 +44,13 @@ describe("previewDecision", () => {
     expect(previewDecision("PUT", "/api/v1/conversations/c1/read")).toBe("silent");
     expect(previewDecision("PUT", "/api/v1/threads/t1/read")).toBe("silent");
   });
-  it("keeps the device's own upkeep: session refresh, MLS, keys, history keys, index and backups", () => {
+  it("keeps the device's own upkeep: sessions, presence, MLS, keys, history keys, index and backups", () => {
     for (const [m, path] of [
       ["POST", "/auth/refresh"],
+      ["POST", "/auth/federated"],
+      ["POST", "/federation/token"],
+      ["PUT", "/users/me/presence"],
+      ["PUT", "/users/me/activity"],
       ["POST", "/conversations/c1/mls/commits"],
       ["DELETE", "/mls/welcomes/w1"],
       ["POST", "/users/me/devices/d1/key-packages"],
