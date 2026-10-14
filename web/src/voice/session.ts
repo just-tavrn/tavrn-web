@@ -66,6 +66,7 @@ import { setIcePolicy } from "./ice";
 import { hotkeyHeld } from "./hotkeys";
 import { PttCues } from "./pttCues";
 import { CaptureRelease } from "./capture";
+import { MutedTalkDetector } from "./mutedTalk";
 import type { BackgroundHandle } from "./background";
 import { endpoints, followOthers as followOthersOf, type Endpoints, type JoinInfo } from "./sessionShared";
 import { StreamSubscriptions, streamIdentity } from "./streams";
@@ -87,6 +88,10 @@ interface Session {
   pipeline: MicPipeline;
   /** Releases the microphone capture while muted (`capture.ts`). */
   capture: CaptureRelease;
+  /** Talking while muted (`mutedTalk.ts`, issue #125): the detector, the pulse timer and whether the toast was shown this mute. */
+  mutedTalk: MutedTalkDetector;
+  mutedTalkPulse: ReturnType<typeof setTimeout> | null;
+  mutedTalkSaid: boolean;
   keyProvider: TavrnKeyProvider;
   info: JoinInfo;
   offs: Array<() => void>;
@@ -295,11 +300,41 @@ function startSpeakingLoop(s: Session) {
 function onLevel(r: LevelReport) {
   lastReport = r;
   const state = useVoice.getState();
-  if (state.transmitting !== r.open) set({ transmitting: r.open });
+  const open = r.open && !state.muted;
+  if (state.transmitting !== open) set({ transmitting: open });
   const s = current;
   if (!s) return;
-  if (r.open && !state.muted && state.canSpeak) talking();
+  if (open && state.canSpeak) talking();
+  if (mutedTalkListens(state)) {
+    if (s.mutedTalk.push(r.level, performance.now())) mutedTalkHint(s);
+  } else {
+    s.mutedTalk.reset();
+    s.mutedTalkSaid = false;
+  }
   emitSpeakers(s);
+}
+
+/**
+ * The talking-while-muted hint (issue #125) listens while the user muted the microphone (the toggle; a released
+ * push-to-talk key is not a mute) with the setting on, not while deafened (the user stepped away) or server-muted
+ * (they could not unmute anyway).
+ */
+function mutedTalkListens(state = useVoice.getState()): boolean {
+  return state.muted && !state.deafened && !state.serverMuted && state.canSpeak && settings().mutedTalkHint;
+}
+
+/** The hint: the soft cue, the microphone button pulses for a moment, and once per mute a short notice (announced). */
+function mutedTalkHint(s: Session) {
+  cue("muted_talk", true);
+  set({ mutedTalk: true });
+  if (s.mutedTalkPulse) clearTimeout(s.mutedTalkPulse);
+  s.mutedTalkPulse = setTimeout(() => {
+    s.mutedTalkPulse = null;
+    if (current === s) set({ mutedTalk: false });
+  }, 2_500);
+  if (s.mutedTalkSaid) return;
+  s.mutedTalkSaid = true;
+  useToasts.getState().push({ kind: "info", title: t("voice.muted_talk.toast"), testId: "muted-talk-hint" });
 }
 
 // ---------------------------------------------------------------- priority speaker (design note 4.13 item 3)
@@ -420,8 +455,8 @@ async function publishMic(s: Session) {
   });
   if (useVoice.getState().muted) {
     await pub.mute();
-    await s.pipeline.setPaused(true);
-    await s.capture.setMuted(true);
+    s.pipeline.setMuted(true);
+    await applyMutedCapture(s, true);
   }
 }
 
@@ -564,6 +599,8 @@ async function applySettings(s: Session, next: VoiceSettings, prev: VoiceSetting
       await s.pipeline.setOutputDevice(next.outputDeviceId);
     }
     if (next.outputVolume !== prev.outputVolume || next.userVolumes !== prev.userVolumes || next.streamVolumes !== prev.streamVolumes || next.streamWhileDeafened !== prev.streamWhileDeafened) applyVolumes(s);
+    // The talking-while-muted hint switched while muted: start or stop listening (the capture and the graph).
+    if (next.mutedTalkHint !== prev.mutedTalkHint && useVoice.getState().muted) await applyMutedCapture(s, true);
     if (useVoice.getState().camera) {
       if (next.cameraDeviceId !== prev.cameraDeviceId || next.cameraFacing !== prev.cameraFacing) await switchCamera(s, next);
       if (next.background !== prev.background || next.backgroundImage !== prev.backgroundImage || next.backgroundQuality !== prev.backgroundQuality) await startBackground(s);
@@ -596,6 +633,7 @@ async function switchCamera(s: Session, next: VoiceSettings) {
 }
 
 async function cleanup(s: Session) {
+  if (s.mutedTalkPulse) clearTimeout(s.mutedTalkPulse);
   s.leaving = true;
   // The screen publisher ends with the voice session (the node also removes it with this device).
   void s.nativeScreen?.dispose();
@@ -742,6 +780,9 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
       pipeline,
       // The Android app keeps the capture while muted: its notification unmutes in the background (capture.ts).
       capture: new CaptureRelease(pipeline, undefined, !!platform().android),
+      mutedTalk: new MutedTalkDetector(() => settings().vadThreshold),
+      mutedTalkPulse: null,
+      mutedTalkSaid: false,
       keyProvider,
       info,
       offs: [],
@@ -901,7 +942,7 @@ export async function setMuted(muted: boolean): Promise<void> {
   }
   // Unmuting while deafened also undeafens (as everywhere else).
   const deafened = !muted && state.deafened ? false : state.deafened;
-  set(muted ? { muted, deafened, transmitting: false } : { muted, deafened });
+  set(muted ? { muted, deafened, transmitting: false } : { muted, deafened, mutedTalk: false });
   if (s) cue(muted ? "mute" : "unmute", true);
   if (!s) return;
   // The own ring goes dark at once (the paused gate reports nothing any more).
@@ -930,9 +971,22 @@ async function applyMute(s: Session, muted: boolean): Promise<boolean> {
   }
   const pub = s.room.localParticipant.getTrackPublication(Track.Source.Microphone);
   if (pub) await (muted ? pub.mute() : pub.unmute());
-  await s.pipeline.setPaused(muted);
-  if (muted) await s.capture.setMuted(true);
+  s.pipeline.setMuted(muted);
+  await applyMutedCapture(s, muted);
   return true;
+}
+
+/**
+ * The capture and the graph while muted: asleep and released (`capture.ts`), unless the talking-while-muted hint
+ * listens (`mutedTalkListens`): then both keep running on the closed gate, so the level reports go on. Unmuted:
+ * running (the capture was re-acquired by the caller).
+ */
+async function applyMutedCapture(s: Session, muted: boolean): Promise<void> {
+  const listen = muted && mutedTalkListens();
+  await s.pipeline.setPaused(muted && !listen);
+  if (muted && !listen) await s.capture.setMuted(true);
+  // Listening again (the setting turned on, undeafened while muted): the capture may have been released meanwhile.
+  else if (listen) await s.capture.setMuted(false).catch(() => undefined);
 }
 
 export async function setDeafened(deafened: boolean): Promise<void> {
@@ -1285,8 +1339,9 @@ function exposeForTests(s: Session) {
       epoch: s.mls.epoch(s.q),
       local: { identity: s.room.localParticipant.identity, isSpeaking: s.room.localParticipant.isSpeaking, tracks: [...s.room.localParticipant.trackPublications.values()].map((p) => ({ source: p.source, encrypted: p.isEncrypted })) },
       speaking: analysing(s) ? "analyser" : "livekit",
-      // The microphone capture is open (released while muted, `capture.ts`).
+      // The microphone capture is open (released while muted, `capture.ts`; kept while the muted-talk hint listens).
       capturing: s.pipeline.capturing,
+      mutedTalkListening: mutedTalkListens(),
       priority: [...s.priority.active],
       ducking: Object.fromEntries([...s.taps.values()].map((t) => [t.identity, t.duck.gain.value])),
       // Volumes as applied (`volume.ts`) and the gains LiveKit's Web Audio mix plays them with.

@@ -101,6 +101,8 @@ export function ParticipantTile({ roomId, tile, menu }: { roomId?: string; tile:
   const backCamera = useVoiceSettings((s) => s.settings.cameraFacing === "environment" && !s.settings.cameraDeviceId) && phoneCameras();
   const mirror = mirrorSetting && !backCamera;
   const priority = usePriority(tile.identity);
+  // The own tile's microphone flag pulses while the user talks muted (issue #125).
+  const mutedTalk = useVoice((s) => tile.self && s.mutedTalk);
   const { status, level, localMuted } = useParticipantStatus({ identity: tile.identity, user: tile.self ? undefined : tile.address, connection: tile.connection, muted: tile.flags.muted, server_muted: tile.flags.server_muted });
   const speaking = status === "speaking";
   const reconnecting = status === "reconnecting";
@@ -117,6 +119,7 @@ export function ParticipantTile({ roomId, tile, menu }: { roomId?: string; tile:
       data-speaking={speaking || undefined}
       data-priority={priority || undefined}
       data-local-muted={localMuted || undefined}
+      data-muted-talk={mutedTalk || undefined}
       data-connection={reconnecting ? "reconnecting" : undefined}
       {...menu?.triggerProps}
       style={levelStyle(level)}

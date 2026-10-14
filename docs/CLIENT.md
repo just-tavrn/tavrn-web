@@ -744,6 +744,19 @@ closes only the gate between key presses, never the capture: a new `getUserMedia
 milliseconds and cut off the first syllable. While unmuted (voice activation or push-to-talk) with echo cancellation
 on, Android stays in the call audio mode: the volume keys set the call volume during a call.
 
+**Talking while muted** (`web/src/voice/mutedTalk.ts`): with "Remind me when I talk while muted" (Settings → Voice &
+video → Input mode, on by default) the capture and the microphone graph keep running while you are muted, so the
+client can tell that your voice is being picked up; the gate is held closed and the published track is muted, so
+nothing is sent (the other side decodes silence). Once the input stays above the voice activation threshold for
+about 0.7 seconds (short dips between words do not count), a soft double tap plays (the cue "Talking while muted",
+with its own switch and preview like every cue), the microphone button in the controls and in the voice bar and the
+microphone flag on your own tile pulse for a moment (a static amber ring with reduced motion), and once per mute a
+short notice says "You are talking, but your microphone is muted." (announced politely). The cue repeats at most
+every ten seconds while the talking goes on. The hint applies to the mute toggle only: a released push-to-talk key is
+not a mute; it does not listen while deafened (you stepped away) or server-muted (you could not unmute). With the
+setting off the mute releases the capture as described above; on Android in the browser this also means the phone
+stays in its call audio mode while muted as long as the hint is on.
+
 ### Voice and stream audio
 
 A participant's voice (microphone) and their screen share's audio each have their own volume (0–200 %, kept per
@@ -816,7 +829,8 @@ The voice settings are kept per device and applied live:
 - a test tone, input and output volume, automatic gain, echo cancellation, noise suppression (off, the browser's, or
   RNNoise running locally as a WASM audio worklet), a noise gate with its threshold;
 - voice activation with a live "transmitting" light, or push-to-talk (key, default `Backquote`, and a release delay,
-  default 250 ms; on touch screens a "Hold to talk" button in the call controls);
+  default 250 ms; on touch screens a "Hold to talk" button in the call controls), and "Remind me when I talk while
+  muted" ("Mute and the microphone capture" above);
 - camera with preview, resolution and frame rate within the node's limits, mirroring and background blur (strength
   slider, quality fast/balanced/high with mask smoothing) or an image (MediaPipe served by the node, turned off
   automatically on machines that cannot keep up, with the measured numbers);

@@ -42,7 +42,9 @@ async function dmBetween(alice: VoiceUser, bob: VoiceUser): Promise<string> {
 test.describe("Calls in direct messages", () => {
   test("Call: ringing with a ringtone, answering, encrypted audio, hanging up ends it for both", async ({ browser }) => {
     test.setTimeout(scaled(240_000));
-    const alice = await voiceUser(browser, "calla", consoleLines);
+    // Alice without the talking-while-muted hint (issue #125), which would keep her capture open while muted: this test
+    // checks the release of the capture on a mute.
+    const alice = await voiceUser(browser, "calla", consoleLines, { mutedTalkHint: false });
     const bob = await voiceUser(browser, "callb", consoleLines);
     const id = await dmBetween(alice, bob);
 

@@ -139,8 +139,9 @@ function onEvent(s: Session, e: NativeVoiceEvent) {
     case "level": {
       s.level = { level: e.level ?? Number.NEGATIVE_INFINITY, open: e.open };
       const state = useVoice.getState();
-      if (state.transmitting !== e.open) set({ transmitting: e.open });
-      if (e.open && !state.muted && state.canSpeak) talking();
+      const open = e.open && !state.muted;
+      if (state.transmitting !== open) set({ transmitting: open });
+      if (open && state.canSpeak) talking();
       emitSpeakers(s);
       return;
     }

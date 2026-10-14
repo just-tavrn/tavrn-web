@@ -28,6 +28,12 @@ First public release of the web client and the desktop apps.
 
 ### Added
 
+- **A hint when you talk while muted** (#125): with "Remind me when I talk while muted" (Settings → Voice & video →
+  Input mode, on by default) the client keeps listening to your microphone locally while it is muted (nothing is sent:
+  the gate is closed and the track muted) and, once your voice is picked up for about 0.7 seconds, plays a soft double
+  tap (the new cue "Talking while muted"), pulses the microphone button and your tile's microphone flag, and says
+  "You are talking, but your microphone is muted." once per mute; the sound repeats at most every ten seconds. Not
+  while deafened or server-muted, and a released push-to-talk key is not a mute.
 - **Mute for you** (#124): a participant's menu (the row in the channel list, the stage tile) offers "Mute for you",
   which silences their voice and their stream's audio on this device only, remembered until the page is reloaded;
   nobody else is told. A muted person carries a crossed speaker on their tile and in the member list (the marker is

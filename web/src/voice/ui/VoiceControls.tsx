@@ -160,6 +160,7 @@ export function VoiceControls({ room, channel, perms }: { room: RoomDetail; chan
   const t = useT();
   const navigate = useNavigate();
   const muted = useVoice((s) => s.muted);
+  const mutedTalk = useVoice((s) => s.mutedTalk);
   const deafened = useVoice((s) => s.deafened);
   const camera = useVoice((s) => s.camera);
   // The webview's own share, or the Android app's through the shell (starting counts: a second tap stops it).
@@ -178,7 +179,7 @@ export function VoiceControls({ room, channel, perms }: { room: RoomDetail; chan
   const nativeOnly = useVoiceEngine((s) => s.kind === "native") ? t("voice.native.unavailable") : undefined;
   return (
     <div className="flex shrink-0 flex-wrap items-center justify-center gap-1 border-t border-line bg-bg-1 px-2 py-2 pb-[max(0.5rem,var(--safe-bottom))] md:gap-2" data-testid="voice-controls">
-      <ControlButton label={muted ? t("voice.unmute") : t("voice.mute")} active={muted} onClick={() => void toggleMute()} testid="voice-mute" className="min-h-11 min-w-11" menu={micMenu.triggerProps}>
+      <ControlButton label={muted ? t("voice.unmute") : t("voice.mute")} active={muted} pulse={mutedTalk} onClick={() => void toggleMute()} testid="voice-mute" className="min-h-11 min-w-11" menu={micMenu.triggerProps}>
         {muted ? <MicOffIcon size={20} /> : <MicIcon size={20} />}
       </ControlButton>
       <ControlButton label={deafened ? t("voice.undeafen") : t("voice.deafen")} active={deafened} onClick={() => void toggleDeafen()} testid="voice-deafen" className="min-h-11 min-w-11" menu={outputMenu.triggerProps}>
