@@ -30,6 +30,7 @@ import { DEFAULT_EXPIRY_HOURS, expiryChoices } from "../lib/inviteExpiry";
 import { useRoomMenu } from "../components/menus/RoomMenu";
 import { ChevronDownIcon } from "../components/icons";
 import { badgeText, useCapabilities, useOpenRoomReports } from "../moderation/hooks";
+import { patchRoom, withChannel } from "../lib/roomCache";
 
 /**
  * Room detail; its `read_states` seed the unread counts of the channels (design note 4.4). While a role preview of
@@ -284,8 +285,9 @@ function CreateChannelDialog({ roomId, open, onClose, categories }: { roomId: st
           e.preventDefault();
           setError(null);
           try {
-            await api.channels.create(roomId, { kind, name, category_id: categoryId || null, ...(kind === "files" ? { encrypted: filesEncrypted } : {}) });
-            await queryClient.invalidateQueries({ queryKey: ["room", roomId] });
+            const channel = await api.channels.create(roomId, { kind, name, category_id: categoryId || null, ...(kind === "files" ? { encrypted: filesEncrypted } : {}) });
+            // The answer goes into the cached room; `channel.create` confirms it (no refetch, lib/roomCache.ts).
+            patchRoom(queryClient, roomId, withChannel(channel));
             setName("");
             onClose();
           } catch (err) {

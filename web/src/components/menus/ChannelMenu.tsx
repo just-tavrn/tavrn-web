@@ -25,6 +25,7 @@ import { ConfirmAction, copyWithToast } from "./common";
 import { useNotifyMenu } from "./useNotifyMenu";
 import { useFullHistory } from "../../search/useFullHistory";
 import { webOrigin } from "../../platform";
+import { patchRoom, withChannel, withoutChannel } from "../../lib/roomCache";
 
 export function useChannelMenu(room: RoomDetail, channel: Channel): { menu: ContextMenuTrigger; overlay: ReactNode } {
   const t = useT();
@@ -74,7 +75,7 @@ export function useChannelMenu(room: RoomDetail, channel: Channel): { menu: Cont
           duplicate: () =>
             void api.channels
               .create(room.id, { kind: channel.kind, name: `${channel.name}-2`, category_id: channel.category_id ?? null, topic: channel.topic || null, encrypted: channel.kind === "voice" ? null : channel.encrypted, user_limit: channel.user_limit || null, bitrate_kbps: channel.bitrate_kbps || null })
-              .then(() => queryClient.invalidateQueries({ queryKey: ["room", room.id] }))
+              .then((created) => patchRoom(queryClient, room.id, withChannel(created)))
               .then(() => useToasts.getState().push({ kind: "info", title: t("menu.channel.duplicated", { name }) }))
               .catch(toastError),
           remove: () => setConfirmDelete(true),
@@ -102,7 +103,7 @@ export function useChannelMenu(room: RoomDetail, channel: Channel): { menu: Cont
           onClose={() => setConfirmDelete(false)}
           onConfirm={async () => {
             await api.channels.delete(room.id, channel.id);
-            await queryClient.invalidateQueries({ queryKey: ["room", room.id] });
+            patchRoom(queryClient, room.id, withoutChannel(channel.id));
             if (location.pathname.includes(channel.id)) navigate(roomPath(room.id));
           }}
           testId="channel-delete-dialog"

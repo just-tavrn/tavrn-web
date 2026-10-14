@@ -7,6 +7,7 @@ import { useT } from "../../i18n";
 import { toastError, useToasts } from "../../stores/toasts";
 import { Button, Field, Input } from "../../components/ui";
 import { Section, Select } from "./common";
+import { withChannel, type RoomPatch } from "../../lib/roomCache";
 
 type Kind = "since_join" | "days" | "all";
 
@@ -22,7 +23,7 @@ export function historyPolicyValue(kind: Kind, days: number): string {
  * join later can read; other members' devices share the keys with them automatically. Needs
  * `manage_channels`; the change is audit-logged. Narrowing it does not take back keys already shared.
  */
-export function HistoryPolicySection({ channel, room, canManage, onChanged }: { channel: Channel; room: RoomDetail; canManage: boolean; onChanged: () => Promise<void> }) {
+export function HistoryPolicySection({ channel, room, canManage, onChanged }: { channel: Channel; room: RoomDetail; canManage: boolean; onChanged: (patch?: RoomPatch) => Promise<void> }) {
   const { api } = useNode();
   const t = useT();
   // Files channels share everything or nothing from before a join (FILES.md §8.7); their default is `all`.
@@ -37,8 +38,7 @@ export function HistoryPolicySection({ channel, room, canManage, onChanged }: { 
   const save = async () => {
     setBusy(true);
     try {
-      await api.channels.update(room.id, channel.id, { history_for_new_members: value });
-      await onChanged();
+      await onChanged(withChannel(await api.channels.update(room.id, channel.id, { history_for_new_members: value })));
       useToasts.getState().push({ kind: "info", title: t("channels.saved") });
     } catch (e) {
       toastError(e);

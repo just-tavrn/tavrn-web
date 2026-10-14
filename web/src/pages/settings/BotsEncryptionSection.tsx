@@ -12,6 +12,7 @@ import { useT } from "../../i18n";
 import { toastError } from "../../stores/toasts";
 import { Section } from "./common";
 import { explicitNoBots } from "../../lib/botAccess";
+import { withChannel, type RoomPatch } from "../../lib/roomCache";
 
 /** The room switch: "keep bots out of encrypted channels unless a channel allows them" (`per_channel`). */
 export function BotsInEncryptedSection({ room, canManage }: { room: RoomDetail; canManage: boolean }) {
@@ -45,7 +46,7 @@ export function BotsInEncryptedSection({ room, canManage }: { room: RoomDetail; 
 }
 
 /** "Bots allowed" for an encrypted channel of a `per_channel` room; hidden everywhere else. */
-export function ChannelBotsAllowed({ channel, room, onChanged }: { channel: Channel; room: RoomDetail; onChanged: () => Promise<void> }) {
+export function ChannelBotsAllowed({ channel, room, onChanged }: { channel: Channel; room: RoomDetail; onChanged: (patch?: RoomPatch) => Promise<void> }) {
   const { api } = useNode();
   const t = useT();
   const [busy, setBusy] = useState(false);
@@ -56,8 +57,7 @@ export function ChannelBotsAllowed({ channel, room, onChanged }: { channel: Chan
   const toggle = async (next: boolean) => {
     setBusy(true);
     try {
-      await api.channels.update(room.id, channel.id, { bots_allowed: next });
-      await onChanged();
+      await onChanged(withChannel(await api.channels.update(room.id, channel.id, { bots_allowed: next })));
     } catch (err) {
       toastError(err);
     } finally {

@@ -22,6 +22,7 @@ import { ThreadSettingsSection } from "../../threads/ThreadSettings";
 import { StorageSection } from "../../files/StorageSection";
 import { FilesDeletionFacts, deletionCase } from "../../files/DeleteChannel";
 import { VoiceQualitySection } from "./VoiceQualitySection";
+import { patchRoom, withCategory, withChannel, withOverrides, withoutCategory, withoutChannel, withoutOverrides, type RoomPatch } from "../../lib/roomCache";
 
 export function ChannelsTab({ room }: { room: RoomDetail }) {
   const { api } = useNode();
@@ -43,7 +44,9 @@ export function ChannelsTab({ room }: { room: RoomDetail }) {
   const perms = parsePermissions(room.my_permissions);
   const canManage = hasPermission(perms, Permission.MANAGE_CHANNELS);
   const canManageRoles = hasPermission(perms, Permission.MANAGE_ROLES);
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["room", room.id] });
+  // Mutation answers go straight into the cached room (lib/roomCache.ts); the realtime events confirm them. Without
+  // an answer to write the room is refetched.
+  const apply = async (patch?: RoomPatch) => (patch ? patchRoom(queryClient, room.id, patch) : queryClient.invalidateQueries({ queryKey: ["room", room.id] }));
 
   return (
     <div className="grid gap-4 md:grid-cols-[220px_1fr]">
@@ -68,7 +71,7 @@ export function ChannelsTab({ room }: { room: RoomDetail }) {
                 <span>{categoryName(cat)}</span>
               )}
               {canManage && (
-                <button type="button" aria-label={t("channels.delete_category", { name: categoryName(cat) })} className="min-h-6 min-w-6 text-fg-2 hover:text-danger" onClick={async () => { try { await api.channels.deleteCategory(room.id, cat.id); await refresh(); } catch (e) { toastError(e); } }}>
+                <button type="button" aria-label={t("channels.delete_category", { name: categoryName(cat) })} className="min-h-6 min-w-6 text-fg-2 hover:text-danger" onClick={async () => { try { await api.channels.deleteCategory(room.id, cat.id); await apply(withoutCategory(cat.id)); } catch (e) { toastError(e); } }}>
                   ×
                 </button>
               )}
@@ -88,9 +91,8 @@ export function ChannelsTab({ room }: { room: RoomDetail }) {
             onSubmit={async (e) => {
               e.preventDefault();
               try {
-                await api.channels.createCategory(room.id, { name: newCategory });
+                await apply(withCategory(await api.channels.createCategory(room.id, { name: newCategory })));
                 setNewCategory("");
-                await refresh();
               } catch (err) {
                 toastError(err);
               }
@@ -105,10 +107,10 @@ export function ChannelsTab({ room }: { room: RoomDetail }) {
       </Section>
       {selectedCategory ? (
         <div className="space-y-4" data-testid="category-editor">
-          <OverridesEditor key={`category:${selectedCategory.id}`} target={{ type: "category", category: selectedCategory }} room={room} onChanged={refresh} />
+          <OverridesEditor key={`category:${selectedCategory.id}`} target={{ type: "category", category: selectedCategory }} room={room} onChanged={apply} />
         </div>
       ) : (
-        selected && <ChannelEditor key={selected.id} channel={selected} room={room} canManage={canManage} onChanged={refresh} />
+        selected && <ChannelEditor key={selected.id} channel={selected} room={room} canManage={canManage} onChanged={apply} />
       )}
     </div>
   );
@@ -136,7 +138,7 @@ function ChannelButtons({ room, channels, selectedId, onSelect }: { room: RoomDe
   );
 }
 
-function ChannelEditor({ channel, room, canManage, onChanged }: { channel: Channel; room: RoomDetail; canManage: boolean; onChanged: () => Promise<void> }) {
+function ChannelEditor({ channel, room, canManage, onChanged }: { channel: Channel; room: RoomDetail; canManage: boolean; onChanged: (patch?: RoomPatch) => Promise<void> }) {
   const { api, domain } = useNode();
   const t = useT();
   const [name, setName] = useState(channel.name);
@@ -157,8 +159,7 @@ function ChannelEditor({ channel, room, canManage, onChanged }: { channel: Chann
 
   const save = async () => {
     try {
-      await api.channels.update(room.id, channel.id, { name, topic, category_id: categoryId || null, slowmode_secs: slowmode, encrypted: isVoice || isFiles ? null : encrypted });
-      await onChanged();
+      await onChanged(withChannel(await api.channels.update(room.id, channel.id, { name, topic, category_id: categoryId || null, slowmode_secs: slowmode, encrypted: isVoice || isFiles ? null : encrypted })));
       useToasts.getState().push({ kind: "info", title: t("channels.saved") });
     } catch (err) {
       toastError(err);
@@ -242,8 +243,7 @@ function ChannelEditor({ channel, room, canManage, onChanged }: { channel: Chann
         inherited={room.age_gate === "adults_only"}
         canManage={canManage}
         onSave={async (gate) => {
-          await api.channels.update(room.id, channel.id, { age_gate: gate });
-          await onChanged();
+          await onChanged(withChannel(await api.channels.update(room.id, channel.id, { age_gate: gate })));
         }}
       />
       {isVoice && <VoiceQualitySection channel={channel} room={room} canManage={canManage} onChanged={onChanged} />}
@@ -270,7 +270,7 @@ function ChannelEditor({ channel, room, canManage, onChanged }: { channel: Chann
           const keep = isFiles && keepExternal && !!filesUsage.data && deletionCase(filesUsage.data) === "external_plain";
           await api.channels.delete(room.id, channel.id, { keepExternal: keep });
           setConfirmDelete(false);
-          await onChanged();
+          await onChanged(withoutChannel(channel.id));
         }}
       />
       <ConfirmDialog open={confirmEncryption} title={t("channels.encryption_off_title")} text={t("channels.encryption_off_text")} actionLabel={t("channels.encryption_off_action")} onClose={() => setConfirmEncryption(false)} onConfirm={async () => { setConfirmEncryption(false); await save(); }} />
@@ -282,18 +282,17 @@ function ChannelEditor({ channel, room, canManage, onChanged }: { channel: Chann
  * "No bots" for this channel and its category (APPLICATIONS.md §3.5): needs `manage_room` and
  * `manage_channels`. Applied at once; bots lose the channel and their encryption leaves are removed.
  */
-function NoBotsToggles({ channel, room, onChanged }: { channel: Channel; room: RoomDetail; onChanged: () => Promise<void> }) {
+function NoBotsToggles({ channel, room, onChanged }: { channel: Channel; room: RoomDetail; onChanged: (patch?: RoomPatch) => Promise<void> }) {
   const { api } = useNode();
   const t = useT();
   const [busy, setBusy] = useState(false);
   const perms = parsePermissions(room.my_permissions);
   const allowed = hasPermission(perms, Permission.MANAGE_ROOM) && hasPermission(perms, Permission.MANAGE_CHANNELS);
   const category = room.categories.find((c) => c.id === channel.category_id);
-  const run = async (action: () => Promise<unknown>) => {
+  const run = async (action: () => Promise<RoomPatch>) => {
     setBusy(true);
     try {
-      await action();
-      await onChanged();
+      await onChanged(await action());
     } catch (err) {
       toastError(err);
     } finally {
@@ -303,12 +302,12 @@ function NoBotsToggles({ channel, room, onChanged }: { channel: Channel; room: R
   return (
     <Section title={t("apps.no_bots.channel_title")} description={room.no_bots ? t("apps.no_bots.room_wide") : t("apps.no_bots.channel_hint")}>
       <label className="flex min-h-10 items-center gap-2 text-sm text-fg-1">
-        <input type="checkbox" className="h-4 w-4 accent-accent" checked={channel.no_bots} disabled={!allowed || busy} onChange={(e) => void run(() => api.channels.update(room.id, channel.id, { no_bots: e.target.checked }))} data-testid="channel-no-bots" />
+        <input type="checkbox" className="h-4 w-4 accent-accent" checked={channel.no_bots} disabled={!allowed || busy} onChange={(e) => void run(async () => withChannel(await api.channels.update(room.id, channel.id, { no_bots: e.target.checked })))} data-testid="channel-no-bots" />
         {t("apps.no_bots.channel_toggle")}
       </label>
       {category && (
         <label className="flex min-h-10 items-center gap-2 text-sm text-fg-1">
-          <input type="checkbox" className="h-4 w-4 accent-accent" checked={category.no_bots} disabled={!allowed || busy} onChange={(e) => void run(() => api.channels.updateCategory(room.id, category.id, { no_bots: e.target.checked }))} data-testid="category-no-bots" />
+          <input type="checkbox" className="h-4 w-4 accent-accent" checked={category.no_bots} disabled={!allowed || busy} onChange={(e) => void run(async () => withCategory(await api.channels.updateCategory(room.id, category.id, { no_bots: e.target.checked })))} data-testid="category-no-bots" />
           {t("apps.no_bots.category_toggle", { name: categoryName(category) })}
         </label>
       )}
@@ -323,7 +322,7 @@ type OverrideTarget = { type: "channel"; channel: Channel } | { type: "category"
  * every channel in it, a channel's own win over the category's. Only channel-scoped bits are offered; each shows the
  * value it inherits when left neutral. Channels with own overrides can be reset to their category.
  */
-function OverridesEditor({ target, room, onChanged }: { target: OverrideTarget; room: RoomDetail; onChanged: () => Promise<void> }) {
+function OverridesEditor({ target, room, onChanged }: { target: OverrideTarget; room: RoomDetail; onChanged: (patch?: RoomPatch) => Promise<void> }) {
   const { api } = useNode();
   const t = useT();
   const targetId = target.type === "channel" ? target.channel.id : target.category.id;
@@ -362,8 +361,8 @@ function OverridesEditor({ target, room, onChanged }: { target: OverrideTarget; 
   };
   const save = async () => {
     try {
-      await api.channels.setOverride(room.id, { target_type: target.type, target_id: targetId, subject_type: subjectType, subject_id: subjectId, allow: allow.toString(), deny: deny.toString(), ...uploads });
-      await onChanged();
+      const saved = await api.channels.setOverride(room.id, { target_type: target.type, target_id: targetId, subject_type: subjectType, subject_id: subjectId, allow: allow.toString(), deny: deny.toString(), ...uploads });
+      await onChanged(withOverrides(target.type, targetId, saved));
       useToasts.getState().push({ kind: "info", title: t("channels.overrides_saved") });
     } catch (e) {
       toastError(e);
@@ -413,7 +412,7 @@ function OverridesEditor({ target, room, onChanged }: { target: OverrideTarget; 
           setAllow(0n);
           setDeny(0n);
           setUploads({ upload_allow: [], upload_deny: [] });
-          await onChanged();
+          await onChanged(withoutOverrides(overrides));
           useToasts.getState().push({ kind: "info", title: t("channels.reset_done") });
         }}
       />

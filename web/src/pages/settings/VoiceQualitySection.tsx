@@ -8,6 +8,7 @@ import { toastError, useToasts } from "../../stores/toasts";
 import { Button, Input } from "../../components/ui";
 import { Section } from "./common";
 import { DEFAULT_KBPS, MAX_KBPS, MIN_KBPS, clampCustom, isMusic, presetChoices, presetOf, trafficMbPerHour, type PresetId } from "../../voice/quality";
+import { withChannel, type RoomPatch } from "../../lib/roomCache";
 
 type Choice = PresetId | "custom";
 
@@ -16,7 +17,7 @@ type Choice = PresetId | "custom";
  * Presets above the node's cap (`node.voice.max_bitrate_kbps`) are shown as limited and cannot be chosen; the
  * node refuses them anyway. Needs `manage_channels`.
  */
-export function VoiceQualitySection({ channel, room, canManage, onChanged }: { channel: Channel; room: RoomDetail; canManage: boolean; onChanged: () => Promise<void> }) {
+export function VoiceQualitySection({ channel, room, canManage, onChanged }: { channel: Channel; room: RoomDetail; canManage: boolean; onChanged: (patch?: RoomPatch) => Promise<void> }) {
   const { api, home, domain } = useNode();
   const t = useT();
   const nodeInfo = useQuery({ queryKey: home ? ["node"] : ["node", domain], queryFn: () => api.node.info(), staleTime: 10 * 60_000 });
@@ -32,8 +33,7 @@ export function VoiceQualitySection({ channel, room, canManage, onChanged }: { c
   const save = async () => {
     setBusy(true);
     try {
-      await api.channels.update(room.id, channel.id, { bitrate_kbps: kbps });
-      await onChanged();
+      await onChanged(withChannel(await api.channels.update(room.id, channel.id, { bitrate_kbps: kbps })));
       useToasts.getState().push({ kind: "info", title: t("channels.saved") });
     } catch (e) {
       toastError(e);

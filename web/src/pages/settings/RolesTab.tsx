@@ -13,6 +13,7 @@ import { ConfirmDialog, PermissionCheckboxes, Section } from "./common";
 import { UPLOAD_CATEGORIES } from "../../lib/uploads";
 import { useRoomPreview } from "../../stores/rolePreview";
 import { ViewAsRole } from "./ViewAsRole";
+import { patchRoom, withRole, withoutRole, type RoomPatch } from "../../lib/roomCache";
 
 /**
  * "Managed by <application>" (APPLICATIONS.md §4.2): the name of the application whose installation created the
@@ -44,7 +45,8 @@ export function RolesTab({ room }: { room: RoomDetail }) {
   const myPerms = parsePermissions(room.my_permissions);
   const canManage = hasPermission(myPerms, Permission.MANAGE_ROLES);
   const myTop = topPosition(room.roles, room.my_roles, room.is_owner);
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["room", room.id] });
+  // Mutation answers go straight into the cached room (lib/roomCache.ts); the realtime events confirm them.
+  const apply = (patch: RoomPatch) => patchRoom(queryClient, room.id, patch);
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -53,7 +55,7 @@ export function RolesTab({ room }: { room: RoomDetail }) {
   const createRole = async () => {
     try {
       const role = await api.roles.create(room.id, { name: t("roles.new_name"), position: 1, permissions: "0" });
-      await refresh();
+      apply(withRole(role));
       setSelectedId(role.id);
     } catch (e) {
       toastError(e);
@@ -71,13 +73,14 @@ export function RolesTab({ room }: { room: RoomDetail }) {
     setBusy(true);
     try {
       // Top-down: a role never passes one that has not been moved yet in a way the node would refuse.
-      for (const u of plan.updates) await api.roles.update(room.id, u.id, { position: u.position });
+      for (const u of plan.updates) apply(withRole(await api.roles.update(room.id, u.id, { position: u.position })));
       useToasts.getState().push({ kind: "info", title: t("members.reorder_saved") });
     } catch (e) {
       toastError(e);
+      // A partly saved order: the node's state decides.
+      await queryClient.invalidateQueries({ queryKey: ["room", room.id] });
     } finally {
       setBusy(false);
-      await refresh();
     }
   };
 
@@ -164,14 +167,14 @@ export function RolesTab({ room }: { room: RoomDetail }) {
         <div className="min-w-0 space-y-4">
           {/* The role preview starts from here (not inside one: there the tab is read-only). */}
           {canManage && !previewing && <ViewAsRole key={`view-${selected.id}`} room={room} role={selected} />}
-          <RoleEditor key={selected.id} role={selected} room={room} canManage={canManage && (selected.is_everyone || selected.position < myTop)} myPerms={myPerms} onChanged={refresh} managedBy={managedBy(selected)} />
+          <RoleEditor key={selected.id} role={selected} room={room} canManage={canManage && (selected.is_everyone || selected.position < myTop)} myPerms={myPerms} onChanged={apply} managedBy={managedBy(selected)} />
         </div>
       )}
     </div>
   );
 }
 
-function RoleEditor({ role, room, canManage, myPerms, onChanged, managedBy }: { role: Role; room: RoomDetail; canManage: boolean; myPerms: bigint; onChanged: () => Promise<void>; managedBy: string | null }) {
+function RoleEditor({ role, room, canManage, myPerms, onChanged, managedBy }: { role: Role; room: RoomDetail; canManage: boolean; myPerms: bigint; onChanged: (patch: RoomPatch) => void; managedBy: string | null }) {
   const { api } = useNode();
   const t = useT();
   const [name, setName] = useState(role.name);
@@ -193,8 +196,7 @@ function RoleEditor({ role, room, canManage, myPerms, onChanged, managedBy }: { 
     const uploadsChanged = JSON.stringify(uploads) !== JSON.stringify(savedUploads);
     const extra = uploadsChanged ? { allowed_upload_categories: uploads } : {};
     try {
-      await api.roles.update(room.id, role.id, role.is_everyone ? { permissions: perms.toString(), ...extra } : { name, color: useColor ? color : null, position, hoist, mentionable, permissions: perms.toString(), ...extra });
-      await onChanged();
+      onChanged(withRole(await api.roles.update(room.id, role.id, role.is_everyone ? { permissions: perms.toString(), ...extra } : { name, color: useColor ? color : null, position, hoist, mentionable, permissions: perms.toString(), ...extra })));
       useToasts.getState().push({ kind: "info", title: t("roles.saved") });
     } catch (err) {
       toastError(err);
@@ -266,7 +268,7 @@ function RoleEditor({ role, room, canManage, myPerms, onChanged, managedBy }: { 
         onConfirm={async () => {
           await api.roles.delete(room.id, role.id);
           setConfirmDelete(false);
-          await onChanged();
+          onChanged(withoutRole(role.id));
         }}
       />
     </form>

@@ -39,6 +39,7 @@ import { alertText, reportCreated, type ModerationAlert, type ReportCreated } fr
 import { rememberDeleted } from "../moderation/deletedIds";
 import { viaOf } from "../components/ViaNode";
 import { pollHandlers } from "../polls/votes";
+import { roomEventHandlers } from "./roomEvents";
 
 /**
  * May this user commit removals of departed members in a conversation (`mls.remove_needed`)? DMs and group DMs:
@@ -226,11 +227,6 @@ export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: 
   };
   /** Qualified id of a conversation of this node (the local search index names conversations so). */
   const qualified = (conversationId: string) => qualify(node ?? homeDomain() ?? "", conversationId);
-  const invalidateRoom = (data: { room_id?: string }) => {
-    if (data.room_id) void queryClient.invalidateQueries({ queryKey: ["room", data.room_id] });
-    // Prefix match: the home list ["rooms"] and the lists of other nodes ["rooms", domain].
-    void queryClient.invalidateQueries({ queryKey: ["rooms"] });
-  };
   return [
     socket.on<Message>("message.create", (m) => {
       const self = me();
@@ -308,28 +304,22 @@ export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: 
     // History restore after a key reset (ENCRYPTION.md §7b): approvers are notified, the requester learns the decision.
     socket.on<Parameters<typeof historyRequestEvent>[0]>("history.request", (d) => historyRequestEvent(d, node, queryClient)),
     socket.on<Parameters<typeof historyDecidedEvent>[0]>("history.request_decided", (d) => historyDecidedEvent(d, node, queryClient, me()?.address)),
+    // The room detail and the room list follow the room's metadata events (patched from their payloads, roomEvents.ts).
+    ...roomEventHandlers(socket, queryClient, me),
     socket.on<{ room_id: string; user_id: string; kicked?: boolean; banned?: boolean }>("member.leave", (d) => {
-      invalidateRoom(d);
       void queryClient.invalidateQueries({ queryKey: ["members", d.room_id] });
       if (d.user_id === me()?.id && (d.kicked || d.banned)) {
         useToasts.getState().push({ kind: "warning", title: t(d.banned ? "notice.banned" : "notice.kicked") });
       }
     }),
-    ...["member.join", "member.update"].map((type) => socket.on<{ room_id: string }>(type, (d) => { invalidateRoom(d); void queryClient.invalidateQueries({ queryKey: ["members", d.room_id] }); })),
+    ...["member.join", "member.update"].map((type) => socket.on<{ room_id: string }>(type, (d) => void queryClient.invalidateQueries({ queryKey: ["members", d.room_id] }))),
     // `hidden: true`: the user lost access (PROTOCOL.md §6), the channel itself still exists.
     socket.on<{ id?: string; hidden?: boolean }>("channel.delete", (d) => {
       useHiddenChannels.getState().deleted(d);
       if (d.id && isRealDeletion(d)) void unindexConversation(qualified(d.id));
     }),
     socket.on<{ id?: string }>("channel.create", (d) => useHiddenChannels.getState().created(d.id)),
-    ...["channel.create", "channel.update", "channel.delete", "category.create", "category.update", "category.delete", "role.create", "role.update", "role.delete", "override.update", "room.update"].map((type) =>
-      socket.on<{ room_id?: string; id?: string }>(type, (d) => invalidateRoom({ room_id: d.room_id ?? d.id })),
-    ),
     socket.on<{ room_id: string }>("emoji.update", (d) => void queryClient.invalidateQueries({ queryKey: ["emojis", d.room_id] })),
-    // Application commands (APPLICATIONS.md §5.4): the palettes follow definitions, settings, roles and overrides.
-    ...["commands.update", "role.create", "role.update", "role.delete", "override.update", "member.update"].map((type) =>
-      socket.on(type, () => void queryClient.invalidateQueries({ queryKey: ["commands"] })),
-    ),
     // An ephemeral reply for this user, from another of its connections' commands or a follow-up (§5.7).
     socket.on<EphemeralReply>("interaction.reply", (r) =>
       useInteractions.getState().add({ interactionId: r.interaction_id, conversationId: r.conversation_id, kind: "ephemeral", application: r.application, content: r.content, epoch: r.epoch, deviceId: r.device_id }),
@@ -347,7 +337,6 @@ export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: 
       void queryClient.invalidateQueries({ queryKey: ["requests"] });
       useToasts.getState().push({ kind: "info", title: t("requests.toast") });
     }),
-    socket.on<{ id: string }>("room.delete", () => void queryClient.invalidateQueries({ queryKey: ["rooms"] })),
     // An app token of one of my applications expires soon (APPLICATIONS.md §2.2).
     socket.on<{ application_id: string; token_id: string; expires_at: string; days: number }>("application.token_expiring", (d) => {
       void queryClient.invalidateQueries({ queryKey: ["applications"] });
