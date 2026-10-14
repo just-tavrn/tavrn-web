@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { RoomIcon } from "../components/Avatar";
 import { NavLink } from "react-router";
@@ -19,7 +19,7 @@ import { usePreviewedRoom } from "../stores/rolePreview";
 import { joinRoomGroups } from "../crypto/groupJoins";
 import { AccessMark, BotsAllowedIcon, LockMark, NoBotsIcon, UnreadBadges, useHasUnread } from "../components/Badges";
 import { botMarker } from "../lib/botAccess";
-import { channelAccessMarks, channelPermissions } from "../lib/channelPermissions";
+import { roomChannelAccess, type AccessMarkKind, type ChannelAccess } from "../lib/channelPermissions";
 import { VoiceChannelRow } from "../voice/ui/VoiceChannelRow";
 import { ownVoiceChannel, useVoice } from "../voice/store";
 import { MenuButton } from "../components/ContextMenu";
@@ -89,16 +89,16 @@ function useSystemNew(channelId: string): boolean {
   });
 }
 
-function ChannelLink({ room, channel, onClick }: { room: RoomDetail; channel: Channel; onClick: () => void }) {
+/** A text, announcement, forum, files or welcome channel of the list; `marks` come from the list's access map. */
+const ChannelLink = memo(function ChannelLink({ room, channel, marks, onClick }: { room: RoomDetail; channel: Channel; marks: AccessMarkKind[]; onClick: () => void }) {
   const t = useT();
   const system = channel.kind === "system";
   const unreadCount = useHasUnread(channel.id);
   const systemNew = useSystemNew(channel.id);
   const unread = system ? systemNew : unreadCount;
-  const { roomPath, me } = useNode();
+  const { roomPath } = useNode();
   // Access marks: private (structural) first, then restricted for this viewer, whose name is dimmed (fg-2: 4.5:1 and
   // more on bg-1 and its hover; the open channel keeps fg-0, fg-2 would reach only 4.46:1 on the selection tint).
-  const marks = channelAccessMarks(room, channel.id, channelPermissions(room, channel.id, me?.id ?? ""));
   const restricted = marks.some((m) => m.startsWith("restricted"));
   // Context menu (design note 4.11): right-click, long press, keyboard or the ⋯ button.
   const { menu, overlay } = useChannelMenu(room, channel);
@@ -126,7 +126,7 @@ function ChannelLink({ room, channel, onClick }: { room: RoomDetail; channel: Ch
       {overlay}
     </div>
   );
-}
+});
 
 /** A small bell-off glyph on muted channels (design note 4.11). */
 function MutedMark({ conversationId, roomId }: { conversationId: string; roomId: string }) {
@@ -141,7 +141,53 @@ function MutedMark({ conversationId, roomId }: { conversationId: string; roomId:
 }
 
 /** Voice rows bring the channel menu themselves (right-click, long press, ⋯); participant rows keep their own. */
-const VoiceRowWithMenu = VoiceChannelRow;
+const VoiceRowWithMenu = memo(VoiceChannelRow);
+
+const NO_MARKS: AccessMarkKind[] = [];
+
+/** What the channel list shows of a room version: every channel's access, the visible channels in their groups. */
+interface SidebarView {
+  access: Map<string, ChannelAccess>;
+  pinned: Channel[];
+  groups: { id: string | null; name: string | null; channels: Channel[] }[];
+}
+
+function sidebarView(r: RoomDetail, userId: string, voiceChannelId: string | null, canManageChannels: boolean): SidebarView {
+  const access = roomChannelAccess(r, userId, voiceChannelId);
+  // Only channels the user may view (layered overrides; nodes list only those, older ones listed all), and the voice
+  // channel the user is in (moved there by a moderator without view_channel, VOICE.md §7).
+  const channels = r.channels.filter((c) => hasPermission(access.get(c.id)?.permissions ?? 0n, Permission.VIEW_CHANNEL));
+  // The welcome channel (kind `system`, design note 4.11) is pinned at the very top, outside the categories.
+  const pinned = channels.filter((c) => c.kind === "system");
+  const byCategory = new Map<string | null, Channel[]>();
+  for (const c of channels) {
+    if (c.kind === "system") continue;
+    const key = c.category_id ?? null;
+    byCategory.set(key, [...(byCategory.get(key) ?? []), c]);
+  }
+  const groups = [
+    ...(byCategory.get(null)?.length ? [{ id: null, name: null, channels: byCategory.get(null)! }] : []),
+    // A category is a container: shown when one of its channels is visible (empty ones only to channel managers).
+    ...r.categories.filter((cat) => canManageChannels || byCategory.get(cat.id)?.length).map((cat) => ({ id: cat.id, name: categoryName(cat), channels: byCategory.get(cat.id) ?? [] })),
+  ];
+  return { access, pinned, groups };
+}
+
+/** A category (or the channels without one) with its rows; renders only when its room version or channels change. */
+const ChannelGroup = memo(function ChannelGroup({ room, name, channels, access, onNavigate }: { room: RoomDetail; name: string | null; channels: Channel[]; access: Map<string, ChannelAccess>; onNavigate: () => void }) {
+  return (
+    <div className="mb-2">
+      {name && <div className="px-2 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-fg-2">{name}</div>}
+      <ul>
+        {channels.map((c) => (
+          <li key={c.id}>
+            {c.kind === "voice" ? <VoiceRowWithMenu room={room} channel={c} onNavigate={onNavigate} access={access.get(c.id)} /> : <ChannelLink room={room} channel={c} marks={access.get(c.id)?.marks ?? NO_MARKS} onClick={onNavigate} />}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+});
 
 function ChannelIcon({ kind, encrypted }: { kind: string; encrypted: boolean }) {
   const t = useT();
@@ -168,28 +214,14 @@ export function ChannelSidebar({ roomId }: { roomId: string }) {
   const openReports = badgeText(useOpenRoomReports(node.api, nodeKey, roomId, moderates && reportsOffered));
   const headerMenu = useRoomMenu({ id: roomId, name: room.data?.name ?? "" }, nodeKey, { openReports });
   const voiceChannelId = useVoice((s) => ownVoiceChannel(s, node.domain, roomId));
+  const meId = node.me?.id ?? "";
+  const canManageChannels = hasPermission(parsePermissions(room.data?.my_permissions), Permission.MANAGE_CHANNELS);
+  // One evaluation of the layered permissions per room version, not per row and render (tavrn-web#155).
+  const view = useMemo(() => (room.data ? sidebarView(room.data, meId, voiceChannelId ?? null, canManageChannels) : null), [room.data, meId, voiceChannelId, canManageChannels]);
   if (room.isPending) return <p className="p-3 text-sm text-fg-2">{t("room.loading")}</p>;
   if (room.isError) return <p className="p-3 text-sm text-danger">{describeError(room.error)}</p>;
   const r = room.data;
-  const perms = parsePermissions(r.my_permissions);
-  const canManageChannels = hasPermission(perms, Permission.MANAGE_CHANNELS);
-
-  // Only channels the user may view (layered overrides; nodes list only those, older ones listed all), and the voice
-  // channel the user is in (moved there by a moderator without view_channel, VOICE.md §7).
-  const channels = r.channels.filter((c) => hasPermission(channelPermissions(r, c.id, node.me?.id ?? "", voiceChannelId), Permission.VIEW_CHANNEL));
-  // The welcome channel (kind `system`, design note 4.11) is pinned at the very top, outside the categories.
-  const pinned = channels.filter((c) => c.kind === "system");
-  const byCategory = new Map<string | null, Channel[]>();
-  for (const c of channels) {
-    if (c.kind === "system") continue;
-    const key = c.category_id ?? null;
-    byCategory.set(key, [...(byCategory.get(key) ?? []), c]);
-  }
-  const groups: { id: string | null; name: string | null; channels: Channel[] }[] = [
-    ...(byCategory.get(null)?.length ? [{ id: null, name: null, channels: byCategory.get(null)! }] : []),
-    // A category is a container: shown when one of its channels is visible (empty ones only to channel managers).
-    ...r.categories.filter((cat) => canManageChannels || byCategory.get(cat.id)?.length).map((cat) => ({ id: cat.id, name: categoryName(cat), channels: byCategory.get(cat.id) ?? [] })),
-  ];
+  const { access, pinned, groups } = view!;
 
   return (
     <div className="flex flex-col">
@@ -239,22 +271,13 @@ export function ChannelSidebar({ roomId }: { roomId: string }) {
           <ul className="mb-2" data-testid="pinned-channels">
             {pinned.map((c) => (
               <li key={c.id}>
-                <ChannelLink room={r} channel={c} onClick={closeNav} />
+                <ChannelLink room={r} channel={c} marks={access.get(c.id)?.marks ?? NO_MARKS} onClick={closeNav} />
               </li>
             ))}
           </ul>
         )}
         {groups.map((g) => (
-          <div key={g.id ?? "none"} className="mb-2">
-            {g.name && <div className="px-2 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-fg-2">{g.name}</div>}
-            <ul>
-              {g.channels.map((c) => (
-                <li key={c.id}>
-                  {c.kind === "voice" ? <VoiceRowWithMenu room={r} channel={c} onNavigate={closeNav} /> : <ChannelLink room={r} channel={c} onClick={closeNav} />}
-                </li>
-              ))}
-            </ul>
-          </div>
+          <ChannelGroup key={g.id ?? "none"} room={r} name={g.name} channels={g.channels} access={access} onNavigate={closeNav} />
         ))}
         {canManageChannels && (
           <button type="button" onClick={() => setCreateOpen(true)} className="mt-1 flex min-h-10 w-full items-center gap-2 rounded-md px-2 text-sm text-fg-2 hover:bg-bg-3/60 hover:text-fg-0">

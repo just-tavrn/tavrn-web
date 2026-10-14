@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useT } from "../i18n";
 
 interface ShellControls {
@@ -37,12 +37,16 @@ export function AppShell({ rail, sidebar, children, aside, headerExtra }: { rail
     return () => mq.removeEventListener("change", onChange);
   }, []);
 
-  const controls: ShellControls = {
-    openNav: () => setNavOpen(true),
-    closeNav: () => setNavOpen(false),
-    toggleMembers: () => setMembersOpen((v) => !v),
-    closeMembers: () => setMembersOpen(false),
-  };
+  // Stable functions: the channel list's memoized rows take `closeNav` as a prop.
+  const controls = useMemo<ShellControls>(
+    () => ({
+      openNav: () => setNavOpen(true),
+      closeNav: () => setNavOpen(false),
+      toggleMembers: () => setMembersOpen((v) => !v),
+      closeMembers: () => setMembersOpen(false),
+    }),
+    [],
+  );
   // Pages without a member list (friends, discover, settings): no member column, no toggle (design note 3.2).
   const hasAside = aside !== null && aside !== undefined && aside !== false;
   const drawerOpen = navOpen || (hasAside && membersOpen);

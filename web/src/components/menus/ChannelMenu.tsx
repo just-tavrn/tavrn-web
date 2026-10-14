@@ -45,7 +45,8 @@ export function useChannelMenu(room: RoomDetail, channel: Channel): { menu: Cont
   const voice = channel.kind === "voice";
   const voiceChannels = voice ? room.channels.filter((c) => c.kind === "voice") : [];
   const counts = useVoicePresence(useShallow((s) => Object.fromEntries(voiceChannels.map((c) => [c.id, participantsOf(s, domain, c.id).length]))));
-  const canMove = voice && hasPermission(channelPermissions(room, channel.id, me?.id ?? ""), Permission.MOVE_MEMBERS);
+  // Evaluated only for the open menu: every voice row of the channel list holds this hook (tavrn-web#155).
+  const canMove = voice && menu.open && hasPermission(channelPermissions(room, channel.id, me?.id ?? ""), Permission.MOVE_MEMBERS);
   const others = voiceChannels.filter((c) => c.id !== channel.id);
   const here = counts[channel.id] ?? 0;
   const elsewhere = others.reduce((n, c) => n + (counts[c.id] ?? 0), 0);

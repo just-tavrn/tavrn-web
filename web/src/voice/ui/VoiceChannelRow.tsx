@@ -18,7 +18,7 @@ import { useParticipantMenu } from "./useParticipantMenu";
 import { MegaphoneIcon, SpeakerIcon } from "./icons";
 import { elapsedSince, formatElapsed, useNow } from "./VoiceHeaderMeta";
 import { AccessMark, LockMark, accessMarkKey } from "../../components/Badges";
-import { channelAccessMarks } from "../../lib/channelPermissions";
+import { channelAccessMarks, type ChannelAccess } from "../../lib/channelPermissions";
 import { sortByRank, type ParticipantLook } from "../order";
 import { WhiteboardRowBadge } from "../../whiteboard/WhiteboardStage";
 import { useWhiteboardSession } from "../../whiteboard/store";
@@ -55,7 +55,7 @@ type DropState = "accept" | "refuse" | null;
  * their stream and opens the stage, while this device is in the same voice channel (otherwise a hint); the same on
  * the member who presents the channel's whiteboard (the small board badge next to LIVE) joins the whiteboard.
  */
-export function VoiceChannelRow({ room, channel, onNavigate }: { room: RoomDetail; channel: Channel; onNavigate: () => void }) {
+export function VoiceChannelRow({ room, channel, onNavigate, access }: { room: RoomDetail; channel: Channel; onNavigate: () => void; access?: ChannelAccess }) {
   const t = useT();
   const { api, domain, me, roomPath } = useNode();
   const navigate = useNavigate();
@@ -77,12 +77,13 @@ export function VoiceChannelRow({ room, channel, onNavigate }: { room: RoomDetai
   );
   const connected = useVoice((s) => s.status !== "idle" && s.target?.domain === domain && s.target.channelId === channel.id);
   const voiceChannelId = useVoice((s) => ownVoiceChannel(s, domain, room.id));
-  const perms = channelPermissions(room, channel.id, me?.id ?? "", voiceChannelId);
+  // The channel list hands over what it computed for every channel once per room version (lib/channelPermissions.ts).
+  const perms = access?.permissions ?? channelPermissions(room, channel.id, me?.id ?? "", voiceChannelId);
   const limit = channel.user_limit ?? 0;
   const count = limit > 0 ? `${participants.length}/${limit}` : participants.length > 0 ? String(participants.length) : "";
   const canMove = hasPermission(perms, Permission.MOVE_MEMBERS);
   // Access marks (private first, then restricted for this viewer); the link's own name repeats them.
-  const marks = channelAccessMarks(room, channel.id, perms);
+  const marks = access?.marks ?? channelAccessMarks(room, channel.id, perms);
   const canConnect = hasPermission(perms, Permission.CONNECT);
   // Role preview: no joins, no moves (no drag and drop, the stage shows what the role may do instead).
   const preview = useRoomPreview(room.id);
