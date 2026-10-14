@@ -319,6 +319,11 @@ colour glyph but the flag does not, it registers a bundled flag-only font (`lib/
 flags of `country-flag-emoji-polyfill`, limited to the regional indicators and tag characters) and marks the document
 (`<html data-flag-font>`), which puts that font first for messages, reactions, the emoji picker, status lines and the
 composer; every other emoji keeps the platform's font. The font is served with the client, never from a CDN.
+**Mentions** in rendered messages are pills (`.mention` with `data-mention` = self, user, bot, everyone or role):
+`@name` and `@name@domain` of the message's mentions list, `@everyone`/`@here` when the message mentions everyone, and
+the room's role names, only in text outside code. Mentions of yourself and `@everyone`/`@here` use the warning colour
+with a border, other mentions the accent colour; a message that mentions you keeps its left border with a stronger
+tint.
 
 **The composer** has the emoji picker, a GIF picker on nodes with a GIF provider (in encrypted messages the client
 itself accepts only the providers' media hosts), uploads by button, drag and drop or paste ("Uploads and downloads"),

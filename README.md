@@ -2,7 +2,7 @@
 
 The web client of [tavrn](https://github.com/just-tavrn/tavrn), a federated, self-hostable community chat with
 end-to-end encrypted conversations: rooms with text, voice, announcement, files and forum channels, roles and
-permissions, direct messages and friends across nodes, voice, video, screen sharing and a whiteboard. It is a React
+permissions, direct messages and friends across nodes, voice, video, screen sharing, polls and a whiteboard. It is a React
 single-page app that works on phones, tablets and desktops, in English and German (more languages welcome).
 
 > **Status: in private review.** The repositories go public after the review; until then the `@tavrn` packages are
