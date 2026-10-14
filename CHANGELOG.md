@@ -94,6 +94,10 @@ First public release of the web client and the desktop apps.
 
 ### Changed
 
+- **The talking-while-muted hint is off by default on Android** (#147): it keeps the microphone capture open while
+  muted, which holds an Android device in its call audio mode, so in the browser on Android and in the Android app
+  it now starts off; Settings → Voice & video turns it on. Elsewhere it stays on by default, and a choice made in
+  the settings is kept.
 - **Emojis are a little larger**: emojis in message text are shown at 1.25× the text size (baseline aligned, the
   line height does not change), a message of one to three emojis and nothing else at twice the text size (custom
   emojis alike), and reaction chips show an 18 px glyph next to the count at the same chip height (#117).
