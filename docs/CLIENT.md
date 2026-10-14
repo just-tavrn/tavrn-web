@@ -654,7 +654,11 @@ the other voice channels to this one; with a confirmation; the target's user lim
 every voice channel the moderator may move into, also channels the member may neither view nor join (VOICE.md §7
 "Moved participations"). A member moved into such a channel follows the move as usual: the channel shows up in their
 channel list while they are in it (with the stage and the whiteboard), and disappears again when they leave; they
-cannot rejoin by themselves. Everybody can set a per-person volume there. A dropped connection rejoins by itself
+cannot rejoin by themselves. Everybody can drag their own row onto another voice channel they may join, which
+switches to it (the same as clicking the channel; `connect` there decides, the node has the last word); while a
+drag is over a channel it is highlighted, a channel that cannot take the drop (no `connect` for yourself, no
+`move_members` for a moderator's drag) shows a red outline and refuses it, and the source channel is no target.
+Everybody can set a per-person volume there. A dropped connection rejoins by itself
 (after 0.5, 1, 2, 4 and then every 8 seconds, as long as the node's grace period keeps the seat, 45 seconds by
 default); others see an amber plug on your avatar meanwhile
 instead of you vanishing.

@@ -306,6 +306,7 @@
   "voice.mod.move_to": "Move to",
   "voice.mod.nothing": "No actions available.",
   "voice.mod.drag_hint": "Drag onto another voice channel to move",
+  "voice.mod.drag_self_hint": "Drag onto another voice channel to switch to it",
   "voice.screen.title": "Share your screen",
   "voice.screen.hint": "Your browser asks next which screen, window or tab to share.",
   "voice.screen.resolution": "Resolution",

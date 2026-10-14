@@ -2,7 +2,7 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { VoiceParticipant } from "@tavrn/sdk";
+import { Permission, type VoiceParticipant } from "@tavrn/sdk";
 
 // The voice channel's member list in the sidebar: the whiteboard badge next to LIVE, and joining the board with a
 // double-click or Enter on its owner (docs/CLIENT.md "Streams are joined", the whiteboard follows that model).
@@ -14,8 +14,11 @@ const board = vi.hoisted(() => ({
   join: vi.fn(),
 }));
 vi.mock("../../whiteboard/store", () => ({ useWhiteboardSession: () => ({ ...board, leave: vi.fn(), thumbnailUrl: null, controller: { participants: new Map() } }) }));
-vi.mock("../../components/NodeScope", () => ({ useNode: () => ({ api: {}, domain: "n.test", me: { id: "u-bob" }, roomPath: (r: string, c?: string) => `/rooms/${r}/channels/${c}` }) }));
-vi.mock("../../pages/ChannelPage", () => ({ channelPermissions: () => (1n << 63n) - 1n, useRoomMembers: () => ({ data: [] }) }));
+const api = vi.hoisted(() => ({ voice: { move: vi.fn(async () => undefined) } }));
+/** Permissions per channel id (everything unless a test narrows a channel). */
+const perms = vi.hoisted(() => ({ byChannel: {} as Record<string, bigint>, all: (1n << 63n) - 1n }));
+vi.mock("../../components/NodeScope", () => ({ useNode: () => ({ api, domain: "n.test", me: { id: "u-bob" }, roomPath: (r: string, c?: string) => `/rooms/${r}/channels/${c}` }) }));
+vi.mock("../../pages/ChannelPage", () => ({ channelPermissions: (_room: unknown, channelId: string) => perms.byChannel[channelId] ?? perms.all, useRoomMembers: () => ({ data: [] }) }));
 vi.mock("../useVoiceRealtime", () => ({ useRoomVoiceStates: () => undefined }));
 vi.mock("../index", () => ({ joinStream: vi.fn(), joinVoice: vi.fn(async () => undefined) }));
 vi.mock("../../components/menus/ChannelMenu", () => ({ useChannelMenu: () => ({ menu: { triggerProps: {} }, overlay: null }) }));
@@ -25,7 +28,7 @@ vi.mock("./AvatarTile", () => ({ AvatarTile: () => null }));
 vi.mock("../../lib/channelPermissions", () => ({ channelAccessMarks: () => [] }));
 
 const { VoiceChannelRow } = await import("./VoiceChannelRow");
-const { joinStream } = await import("../index");
+const { joinStream, joinVoice } = await import("../index");
 const { useVoicePresence } = await import("../presence");
 const { useVoice, IDLE } = await import("../store");
 const { useToasts } = await import("../../stores/toasts");
@@ -38,6 +41,7 @@ const participant = (user: string, device: string, extra: Partial<VoiceParticipa
 
 const room = { id: "R", roles: [], channels: [] } as never;
 const channel = { id: "C", kind: "voice", name: "Sprache" } as never;
+const raid = { id: "D", kind: "voice", name: "Raid" } as never;
 
 function Where() {
   return <p data-testid="path">{useLocation().pathname}</p>;
@@ -65,6 +69,9 @@ const row = (address: string) => screen.getAllByTestId("voice-participant").find
 const inChannel = (identity: string, channelId = "C") => useVoice.setState({ ...IDLE, status: "connected", identity, target: { domain: "n.test", roomId: "R", channelId } });
 
 beforeEach(() => {
+  perms.byChannel = {};
+  api.voice.move.mockClear();
+  vi.mocked(joinVoice).mockClear();
   board.session = { owner: "alice@n.test", device_id: "DA" };
   board.isOwner = false;
   board.joined = false;
@@ -162,5 +169,109 @@ describe("the voice member list and the whiteboard", () => {
     expect(useBoardPreview.getState().shown).toBe(true);
     expect(board.join).not.toHaveBeenCalled();
     expect(screen.getByTestId("path")).toHaveTextContent("/rooms/R/channels/C");
+  });
+});
+
+/** A stand-in for the browser's DataTransfer (jsdom has none). */
+function dataTransfer() {
+  const data: Record<string, string> = {};
+  return {
+    types: [] as string[],
+    effectAllowed: "",
+    dropEffect: "",
+    setData: (type: string, value: string) => {
+      data[type] = value;
+    },
+    getData: (type: string) => data[type] ?? "",
+    // `types` as the browser fills it on setData.
+    get filled() {
+      return Object.keys(data);
+    },
+  };
+}
+
+function renderTwo() {
+  return render(
+    <MemoryRouter initialEntries={["/rooms/R/channels/T"]}>
+      <Routes>
+        <Route
+          path="*"
+          element={
+            <>
+              <VoiceChannelRow room={room} channel={channel} onNavigate={() => undefined} />
+              <VoiceChannelRow room={room} channel={raid} onNavigate={() => undefined} />
+            </>
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+const channelBox = (id: string) => screen.getAllByTestId("voice-channel").find((el) => el.getAttribute("data-channel") === id)!;
+
+/** Drags `source` over `target` and returns the drop indicator; `drop` finishes with a drop. */
+function dragOver(source: HTMLElement, target: HTMLElement, drop = false) {
+  const dt = dataTransfer();
+  fireEvent.dragStart(source, { dataTransfer: dt });
+  const during = { ...dt, types: dt.filled };
+  fireEvent.dragOver(target, { dataTransfer: during });
+  const state = target.getAttribute("data-drop");
+  if (drop) fireEvent.drop(target, { dataTransfer: during });
+  fireEvent.dragEnd(source, { dataTransfer: dt });
+  return state;
+}
+
+describe("moving by drag and drop (issue #119)", () => {
+  it("the own row is draggable while connected in this channel; others' rows need move_members", () => {
+    inChannel("bob@n.test/DB");
+    renderRow();
+    expect(row("bob@n.test")).toHaveAttribute("draggable", "true");
+    expect(row("bob@n.test").getAttribute("title")).toContain("Auf einen anderen Sprachkanal ziehen, um dorthin zu wechseln");
+    expect(row("alice@n.test")).toHaveAttribute("draggable", "true");
+    // Without move_members only the own row stays draggable.
+    perms.byChannel.C = perms.all & ~Permission.MOVE_MEMBERS;
+    act(() => inChannel("bob@n.test/DB", "OTHER"));
+    act(() => inChannel("bob@n.test/DB"));
+    expect(row("bob@n.test")).toHaveAttribute("draggable", "true");
+    expect(row("alice@n.test")).not.toHaveAttribute("draggable");
+    // Not connected here (another channel of the room, or idle): the own row is a plain row.
+    act(() => inChannel("bob@n.test/DB", "OTHER"));
+    expect(row("bob@n.test")).not.toHaveAttribute("draggable");
+    act(() => useVoice.setState(IDLE));
+    expect(row("bob@n.test")).not.toHaveAttribute("draggable");
+  });
+
+  it("dragging yourself onto a channel you may join highlights it and joins it on drop", () => {
+    inChannel("bob@n.test/DB");
+    renderTwo();
+    expect(dragOver(row("bob@n.test"), channelBox("D"), true)).toBe("accept");
+    expect(joinVoice).toHaveBeenCalledWith({ domain: "n.test", roomId: "R", channelId: "D" }, { canCreate: true });
+    expect(api.voice.move).not.toHaveBeenCalled();
+    expect(channelBox("D")).not.toHaveAttribute("data-drop");
+  });
+
+  it("a channel you may not join refuses the drop visibly; the own channel is no target", () => {
+    perms.byChannel.D = perms.all & ~Permission.CONNECT;
+    inChannel("bob@n.test/DB");
+    renderTwo();
+    expect(dragOver(row("bob@n.test"), channelBox("D"), true)).toBe("refuse");
+    expect(joinVoice).not.toHaveBeenCalled();
+    expect(dragOver(row("bob@n.test"), channelBox("C"), true)).toBeNull();
+    expect(joinVoice).not.toHaveBeenCalled();
+  });
+
+  it("a moderator drags another participant: the node moves them; without move_members in the target it is refused", async () => {
+    inChannel("bob@n.test/DB");
+    renderTwo();
+    expect(dragOver(row("alice@n.test"), channelBox("D"), true)).toBe("accept");
+    await act(() => Promise.resolve());
+    expect(api.voice.move).toHaveBeenCalledWith("R", "C", "alice@n.test", "D");
+    expect(joinVoice).not.toHaveBeenCalled();
+    perms.byChannel.D = perms.all & ~Permission.MOVE_MEMBERS;
+    act(() => inChannel("bob@n.test/DB", "OTHER"));
+    act(() => inChannel("bob@n.test/DB"));
+    expect(dragOver(row("alice@n.test"), channelBox("D"), true)).toBe("refuse");
+    expect(api.voice.move).toHaveBeenCalledTimes(1);
   });
 });

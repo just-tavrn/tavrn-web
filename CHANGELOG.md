@@ -153,6 +153,10 @@ First public release of the web client and the desktop apps.
 - Settings pages no longer scroll the whole app: the content of a tab (user settings, room settings, node
   administration) is the containing block of its positioned helpers, so a long Roles tab scrolls inside its own
   container and the app shell keeps its height (#116).
+- Voice: your own row in the channel list can be dragged onto another voice channel to switch to it (#119); it used
+  to be the only row that could not be dragged. A drag over a voice channel highlights it, a channel that cannot take
+  the drop (you may not join it, or a moderator's drag without `move_members` there) shows a red outline and refuses
+  it. Clicking the channel and the participant menu remain the non-drag ways.
 - An image pasted from the clipboard no longer keeps the name the system made up (`image.png`, `{GUID}.png` on
   Windows): it is named "Image <date> <time>.<ext>" (de: "Bild …"); a file copied from a file manager keeps its
   real name, nobody is asked (#95).

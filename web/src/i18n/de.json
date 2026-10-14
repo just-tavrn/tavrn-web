@@ -306,6 +306,7 @@
   "voice.mod.move_to": "Verschieben nach",
   "voice.mod.nothing": "Keine Aktionen verfügbar.",
   "voice.mod.drag_hint": "Zum Verschieben auf einen anderen Sprachkanal ziehen",
+  "voice.mod.drag_self_hint": "Auf einen anderen Sprachkanal ziehen, um dorthin zu wechseln",
   "voice.screen.title": "Bildschirm teilen",
   "voice.screen.hint": "Dein Browser fragt gleich, welcher Bildschirm, welches Fenster oder welcher Tab geteilt wird.",
   "voice.screen.resolution": "Auflösung",

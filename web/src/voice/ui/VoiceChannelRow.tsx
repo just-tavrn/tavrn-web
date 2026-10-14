@@ -29,11 +29,24 @@ import { MenuButton } from "../../components/ContextMenu";
 /** Drag-and-drop payload of a voice participant (moving between channels). */
 const DRAG_TYPE = "application/x-tavrn-voice-member";
 
+/** Who can be dragged: the own participation (joins the target), somebody else (a moderator's move), or nobody. */
+type Drag = "self" | "move" | null;
+
+/**
+ * The participant being dragged, from `dragstart` to `dragend`: browsers hide `dataTransfer` data during `dragover`
+ * (only the types are readable), and the target has to know whose drag it is to say whether it accepts it.
+ */
+let dragging: { roomId: string; channelId: string; address: string; self: boolean } | null = null;
+
+type DropState = "accept" | "refuse" | null;
+
 /**
  * A voice channel in the sidebar (VOICE.md §9, design note 4.5 item 6): its participants for everybody who
  * can see the channel (also outside the call) with mute/deafen/stream/camera flags, the user limit as
  * `3/5`, and joining by clicking. Speakers of the own call get a glow ring around the 24 px avatar. With
- * `move_members` participants can be dragged onto another voice channel. The channel's context menu
+ * `move_members` participants can be dragged onto another voice channel; the own row can be dragged onto any channel
+ * one may join (issue #119; the non-drag equivalent is clicking the channel, for others the participant menu). A
+ * channel highlights while an accepted drag is over it and refuses visibly otherwise. The channel's context menu
  * (right-click, long press or ⋯) is the one of text channels plus the mass moves (design note 4.11).
  * Participants are sorted by their highest role, then name, and shown in their role colour; each has the
  * member list's context menu (design note 4.13 item 3). A double-click (or Enter) on a streaming member (LIVE) joins
@@ -69,24 +82,30 @@ export function VoiceChannelRow({ room, channel, onNavigate }: { room: RoomDetai
   // Access marks (private first, then restricted for this viewer); the link's own name repeats them.
   const marks = channelAccessMarks(room, channel.id, perms);
   const canConnect = hasPermission(perms, Permission.CONNECT);
-  const [dropping, setDropping] = useState(false);
+  const [drop, setDrop] = useState<DropState>(null);
   const { menu, overlay } = useChannelMenu(room, channel);
+  const canCreate = hasPermission(perms, Permission.SEND_MESSAGES);
 
-  // Drag a participant of another channel onto this one (`move_members`, design note 4.11).
-  const accepts = (e: React.DragEvent) => canMove && e.dataTransfer.types.includes(DRAG_TYPE);
+  // A participant of another channel of this room dragged over this one (design note 4.11, issue #119): a moderator's
+  // move needs `move_members` here, the own participation `connect` (the node decides either way); the source channel
+  // is no target. `refuse` shows, `accept` also allows the drop.
+  const dropState = (e: React.DragEvent): DropState => {
+    if (!dragging || !e.dataTransfer.types.includes(DRAG_TYPE)) return null;
+    if (dragging.roomId !== room.id || dragging.channelId === channel.id) return null;
+    return (dragging.self ? canConnect : canMove) ? "accept" : "refuse";
+  };
   const onDrop = async (e: React.DragEvent) => {
-    setDropping(false);
-    if (!accepts(e)) return;
+    setDrop(null);
+    const d = dragging;
+    if (!d || dropState(e) !== "accept") return;
     e.preventDefault();
-    let data: { roomId: string; channelId: string; address: string };
-    try {
-      data = JSON.parse(e.dataTransfer.getData(DRAG_TYPE));
-    } catch {
+    dragging = null;
+    if (d.self) {
+      void joinVoice({ domain, roomId: room.id, channelId: channel.id }, { canCreate });
       return;
     }
-    if (data.roomId !== room.id || data.channelId === channel.id) return;
     try {
-      await api.voice.move(room.id, data.channelId, data.address, channel.id);
+      await api.voice.move(room.id, d.channelId, d.address, channel.id);
     } catch (err) {
       useToasts.getState().push({ kind: "warning", title: voiceErrorMessage(err) });
     }
@@ -96,22 +115,27 @@ export function VoiceChannelRow({ room, channel, onNavigate }: { room: RoomDetai
     onNavigate();
     navigate(roomPath(room.id, channel.id));
     // Without connect the stage explains it ("You may not join this voice channel."); no join attempt to refuse.
-    if (!connected && canConnect) void joinVoice({ domain, roomId: room.id, channelId: channel.id }, { canCreate: hasPermission(perms, Permission.SEND_MESSAGES) });
+    if (!connected && canConnect) void joinVoice({ domain, roomId: room.id, channelId: channel.id }, { canCreate });
   };
 
   return (
     <div
       data-testid="voice-channel"
       data-channel={channel.id}
-      data-drop={dropping || undefined}
-      className={`rounded-md ${dropping ? "bg-accent-soft ring-1 ring-accent" : ""}`}
+      data-drop={drop ?? undefined}
+      className={`rounded-md ${drop === "accept" ? "bg-accent-soft ring-2 ring-accent" : drop === "refuse" ? "bg-danger/10 ring-2 ring-danger" : ""}`}
       onDragOver={(e) => {
-        if (!accepts(e)) return;
+        const state = dropState(e);
+        setDrop(state);
+        if (state !== "accept") {
+          // No preventDefault: the browser shows "not allowed" and fires no drop here.
+          if (state === "refuse") e.dataTransfer.dropEffect = "none";
+          return;
+        }
         e.preventDefault();
         e.dataTransfer.dropEffect = "move";
-        setDropping(true);
       }}
-      onDragLeave={() => setDropping(false)}
+      onDragLeave={() => setDrop(null)}
       onDrop={(e) => void onDrop(e)}
     >
       <div className="group/vc relative" data-testid="voice-channel-header">
@@ -156,7 +180,8 @@ export function VoiceChannelRow({ room, channel, onNavigate }: { room: RoomDetai
           channelId={channel.id}
           participants={participants}
           look={look}
-          draggable={(p) => canMove && p.user_id !== me?.id}
+          // The own participation (this device's) can always be dragged to where one may join; others with `move_members`.
+          drag={(p) => (p.user_id === me?.id ? (voiceChannelId === channel.id ? "self" : null) : canMove ? "move" : null)}
           onStage={() => {
             onNavigate();
             navigate(roomPath(room.id, channel.id));
@@ -168,20 +193,20 @@ export function VoiceChannelRow({ room, channel, onNavigate }: { room: RoomDetai
 }
 
 /** The participants of a voice channel; the one presenting the channel's whiteboard gets its badge. */
-function ParticipantList({ room, channelId, participants, look, draggable, onStage }: { room: RoomDetail; channelId: string; participants: VoiceParticipant[]; look: (address: string) => ParticipantLook; draggable: (p: VoiceParticipant) => boolean; onStage: () => void }) {
+function ParticipantList({ room, channelId, participants, look, drag, onStage }: { room: RoomDetail; channelId: string; participants: VoiceParticipant[]; look: (address: string) => ParticipantLook; drag: (p: VoiceParticipant) => Drag; onStage: () => void }) {
   // Only channels with participants watch their board (the session and the thumbnail; nothing else is decrypted).
   const { session, join } = useWhiteboardSession(channelId);
   const presenter = presenterIdentity(session, participants.map((p) => p.identity));
   return (
     <ul className="mb-1 ml-7 space-y-0.5" data-testid="voice-participants">
       {participants.map((p) => (
-        <ParticipantRow key={p.identity} room={room} channelId={channelId} p={p} look={look(p.user)} draggable={draggable(p)} board={p.identity === presenter} joinBoard={join} onStage={onStage} />
+        <ParticipantRow key={p.identity} room={room} channelId={channelId} p={p} look={look(p.user)} drag={drag(p)} board={p.identity === presenter} joinBoard={join} onStage={onStage} />
       ))}
     </ul>
   );
 }
 
-function ParticipantRow({ room, channelId, p, look, draggable, board, joinBoard, onStage }: { room: RoomDetail; channelId: string; p: VoiceParticipant; look: ParticipantLook; draggable: boolean; board: boolean; joinBoard: () => void; onStage: () => void }) {
+function ParticipantRow({ room, channelId, p, look, drag, board, joinBoard, onStage }: { room: RoomDetail; channelId: string; p: VoiceParticipant; look: ParticipantLook; drag: Drag; board: boolean; joinBoard: () => void; onStage: () => void }) {
   const t = useT();
   const { domain } = useNode();
   const { status, level, localMuted } = useParticipantStatus(p);
@@ -211,7 +236,7 @@ function ParticipantRow({ room, channelId, p, look, draggable, board, joinBoard,
     else setBoardPreview(true);
     onStage();
   };
-  const hint = draggable ? `${p.user} – ${t("voice.mod.drag_hint")}` : p.user;
+  const hint = drag ? `${p.user} – ${t(drag === "self" ? "voice.mod.drag_self_hint" : "voice.mod.drag_hint")}` : p.user;
   const rowHint = streaming ? t("voice.stream.row_hint") : board ? t("whiteboard.row_hint") : null;
   return (
     <li
@@ -222,11 +247,16 @@ function ParticipantRow({ room, channelId, p, look, draggable, board, joinBoard,
       data-priority={priority || undefined}
       data-local-muted={localMuted || undefined}
       data-connection={status === "reconnecting" ? "reconnecting" : undefined}
-      draggable={draggable || undefined}
+      draggable={!!drag || undefined}
       onDragStart={(e) => {
-        if (!draggable) return;
-        e.dataTransfer.setData(DRAG_TYPE, JSON.stringify({ roomId: room.id, channelId, address: p.user }));
+        if (!drag) return;
+        dragging = { roomId: room.id, channelId, address: p.user, self: drag === "self" };
+        // The payload names the type (the targets look for it); Firefox starts no drag without data.
+        e.dataTransfer.setData(DRAG_TYPE, JSON.stringify(dragging));
         e.dataTransfer.effectAllowed = "move";
+      }}
+      onDragEnd={() => {
+        dragging = null;
       }}
       {...menu.triggerProps}
       title={rowHint ? `${hint} – ${rowHint}` : hint}
