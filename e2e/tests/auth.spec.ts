@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-import { expect, test, type Page } from "@playwright/test";
-import { ADULT_DOB, NODE, addVirtualAuthenticator, confirmRecoveryCodes, confirmRecoveryKey, confirmWithPassword, confirmWithPasswordIfAsked, loginViaUi, nextTotpCode, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, uniqueName, logoutViaUi } from "./helpers";
+import AxeBuilder from "@axe-core/playwright";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { ADULT_DOB, NODE, addVirtualAuthenticator, confirmRecoveryCodes, confirmRecoveryKey, confirmWithPassword, confirmWithPasswordIfAsked, hidePrfAtRegistration, loginViaUi, nextTotpCode, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, uniqueName, logoutViaUi } from "./helpers";
 import { scaled } from "./timeouts";
 
 test.describe("Sign-in with a second factor", () => {
@@ -327,5 +328,63 @@ test.describe("Passkeys (Chromium, virtual authenticator)", () => {
     await expect(page.getByTestId("encryption-title")).toHaveText("Verschlüsselte Nachrichten entsperren");
     await page.getByRole("button", { name: "Mit Passkey entsperren" }).click();
     await expect(page.getByTestId("e2ee-status")).toHaveText(/Entsperrt/);
+  });
+  /** The passkey entries in the secret storage and the factors, as the node has them. */
+  async function nodeState(page: Page, request: APIRequestContext) {
+    const headers = { Authorization: `Bearer ${await tokenOf(page)}` };
+    const storage = await (await request.get(`${NODE}/api/v1/users/me/secret-storage`, { headers })).json();
+    const factors = await (await request.get(`${NODE}/api/v1/auth/factors`, { headers })).json();
+    return { entries: (storage.items as Array<{ method: string }>).map((i) => i.method).filter((m) => m.startsWith("passkey:")), passkeys: factors.webauthn as Array<{ id: string; name: string; prf_supported: boolean }> };
+  }
+
+  test("A passkey without the PRF extension: the try shows the reason, stores nothing and keeps the button", async ({ page, request, browserName }) => {
+    test.skip(browserName !== "chromium", "CDP virtual authenticator is Chromium only");
+    test.setTimeout(scaled(90_000));
+    await addVirtualAuthenticator(page, { prf: false });
+    const account = await registerViaUi(page);
+    await page.goto("/settings/security");
+    await expect(page.getByTestId("e2ee-status")).toHaveText(/Entsperrt/);
+    const item = await addPasskeyInSettings(page, "Ohne PRF", account.password);
+    // The registration announced no PRF: offered as a try, not refused.
+    await expect(item).toContainText("Nachrichten-Entsperrung unbestätigt");
+    const enable = item.getByRole("button", { name: "Nachrichten-Entsperrung aktivieren: Ohne PRF" });
+    await expect(enable).toBeEnabled();
+    expect((await nodeState(page, request)).passkeys.map((p) => p.prf_supported)).toEqual([false]);
+    await enable.click();
+    await expect(page.getByRole("alert").filter({ hasText: "Ohne PRF hat hier keine PRF-Ausgabe geliefert" })).toBeVisible();
+    await expect(item).toContainText("kann Nachrichten hier nicht entsperren");
+    await expect(item).toContainText("Dieser Authenticator hat hier keine PRF-Ausgabe geliefert");
+    await expect(enable).toBeEnabled();
+    const after = await nodeState(page, request);
+    expect(after.entries).toEqual([]);
+    expect(after.passkeys.map((p) => p.prf_supported)).toEqual([false]);
+    // Axe on the list with the reason shown (WCAG A/AA, serious and critical fail).
+    const result = await new AxeBuilder({ page }).include('[data-testid="passkey-list"]').withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22a", "wcag22aa"]).analyze();
+    expect(result.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => v.id)).toEqual([]);
+  });
+
+  test("A passkey registered without the PRF result is enabled for the message unlock after one assertion", async ({ page, request, browserName }) => {
+    test.skip(browserName !== "chromium", "CDP virtual authenticator is Chromium only");
+    test.setTimeout(scaled(90_000));
+    const authenticator = await addVirtualAuthenticator(page);
+    test.skip(!authenticator.prf, "this Chromium's virtual authenticator has no PRF: nothing to enable");
+    const account = await registerViaUi(page);
+    await page.goto("/settings/security");
+    await expect(page.getByTestId("e2ee-status")).toHaveText(/Entsperrt/);
+    // The authenticator evaluates the PRF, but the registration does not report it (as Windows Hello on some builds).
+    await hidePrfAtRegistration(page);
+    const item = await addPasskeyInSettings(page, "Spät gemeldet", account.password);
+    await expect(item).toContainText("Nachrichten-Entsperrung unbestätigt");
+    const before = await nodeState(page, request);
+    expect(before.passkeys.map((p) => p.prf_supported)).toEqual([false]);
+    expect(before.entries).toEqual([]);
+    await item.getByRole("button", { name: "Nachrichten-Entsperrung aktivieren: Spät gemeldet" }).click();
+    await confirmWithPasswordIfAsked(page, account.password);
+    await expect(item).toContainText("entsperrt Nachrichten");
+    await expect(item.getByRole("button", { name: /aktivieren/ })).toHaveCount(0);
+    // The node stored the entry and marked the credential with it.
+    const after = await nodeState(page, request);
+    expect(after.passkeys.map((p) => p.prf_supported)).toEqual([true]);
+    expect(after.entries).toEqual([`passkey:${after.passkeys[0]!.id}`]);
   });
 });

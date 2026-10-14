@@ -148,6 +148,13 @@ First public release of the web client and the desktop apps.
   reason: the authenticator did not enable the PRF extension when the passkey was created (Windows Hello does so only
   on Windows 11 24H2/25H2 with the February 2026 update or newer). Before, the badge followed the node's flag alone
   and a missing entry could not be added afterwards.
+- **"Enable message unlock" for passkeys whose registration announced no PRF** (#140): some authenticators report
+  the extension only when used or gain it with a system update (Windows Hello), and the node now accepts the entry
+  for any passkey and marks the credential with it (tavrn-node#69). Such a passkey says *message unlock not
+  confirmed* and offers the button too: one PRF assertion with exactly that passkey; with a PRF output the entry is
+  stored and the passkey unlocks the messages, without one the settings show *cannot unlock messages here* with the
+  reason (and the Windows versions on Windows) and keep the button for another try. Removing and adding the passkey
+  again is no longer needed.
 
 - Country flag emojis render as flags on Windows, where the system's emoji font shows regional-indicator pairs as
   letters ("DE"): the client detects the missing glyphs and registers a bundled flag-only font (Twemoji flags,

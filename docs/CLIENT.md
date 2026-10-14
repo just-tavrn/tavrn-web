@@ -39,10 +39,13 @@ that passkey, at registration when the device is unlocked, else later. Settings 
 **unlocks messages** (its entry exists), **can unlock messages: not enabled yet** with **Enable message unlock** (the
 authenticator enabled the PRF when the passkey was created, but the entry is missing: the device was locked at
 registration, or the assertion was cancelled; the button needs an unlocked device and runs one assertion), or
-**cannot unlock messages** with the reason (the authenticator did not enable the PRF extension at creation: the node
-accepts no entry for it; Windows Hello reports the extension only on Windows 11 24H2/25H2 with the February 2026 update
-or newer, so such a passkey is removed and added again after the update). Removing a passkey removes its entry
-(the node deletes it with the credential). Local keys live
+**message unlock not confirmed** with **Enable message unlock** as well (the registration announced no PRF: some
+authenticators report the extension only when used or gain it with a system update, so one assertion with exactly
+that passkey tells; with a PRF output the entry is stored and the node marks the credential as PRF-capable with it).
+When an assertion gives no PRF output, the passkey says **cannot unlock messages here** with the reason (it signs in,
+but this authenticator gave no PRF output; on Windows also that Windows Hello reports the extension only on Windows 11
+24H2/25H2 with the February 2026 update or newer) and keeps the button for another try, for example after a system
+update; nothing is stored. Removing a passkey removes its entry (the node deletes it with the credential). Local keys live
 in IndexedDB, encrypted under a device key derived from the master secret; the security settings manage factors,
 recovery codes, the recovery key and the optional lock **Require the recovery key or a passkey every time**. Without
 the recovery key the client offers a degraded mode (plaintext channels only, encrypted conversations stay locked) or
