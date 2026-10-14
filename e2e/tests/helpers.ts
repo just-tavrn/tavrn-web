@@ -419,9 +419,10 @@ export async function tokenOf(page: Page): Promise<string> {
  * Chromium virtual authenticator (CDP) with resident keys and user verification. PRF support of the
  * virtual authenticator depends on the Chromium version: `prf` tells whether `hasPrf` was accepted. `remove` unplugs
  * it (its passkeys with it), so a second one can register another passkey for the same account (the registration
- * excludes the account's passkeys, and an authenticator that holds one refuses).
+ * excludes the account's passkeys, and an authenticator that holds one refuses). `{ prf: false }` adds one without
+ * the extension (hmac-secret) at all.
  */
-export async function addVirtualAuthenticator(page: Page): Promise<{ prf: boolean; remove: () => Promise<void> }> {
+export async function addVirtualAuthenticator(page: Page, want: { prf?: boolean } = {}): Promise<{ prf: boolean; remove: () => Promise<void> }> {
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("WebAuthn.enable");
   const options = { protocol: "ctap2", ctap2Version: "ctap2_1", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true };
@@ -429,11 +430,33 @@ export async function addVirtualAuthenticator(page: Page): Promise<{ prf: boolea
     const { authenticatorId } = (await cdp.send("WebAuthn.addVirtualAuthenticator", { options: opts } as never)) as unknown as { authenticatorId: string };
     return { remove: async () => void (await cdp.send("WebAuthn.removeVirtualAuthenticator", { authenticatorId } as never)) };
   };
+  if (want.prf === false) return { prf: false, ...(await add(options)) };
   try {
     return { prf: true, ...(await add({ ...options, hasPrf: true })) };
   } catch {
     return { prf: false, ...(await add(options)) };
   }
+}
+
+/**
+ * Makes the next registrations of the current page announce no PRF: the client extension results of
+ * `navigator.credentials.create` lose `prf`, as on an authenticator that reports the extension only when used (Windows
+ * Hello after an update). The authenticator itself still evaluates it at assertion time. Lasts until a navigation.
+ */
+export async function hidePrfAtRegistration(page: Page) {
+  await page.evaluate(() => {
+    const container = navigator.credentials;
+    const create = container.create.bind(container);
+    container.create = async (options?: CredentialCreationOptions) => {
+      const cred = (await create(options)) as PublicKeyCredential | null;
+      if (cred) {
+        const ext = { ...cred.getClientExtensionResults() } as Record<string, unknown>;
+        delete ext.prf;
+        Object.defineProperty(cred, "getClientExtensionResults", { value: () => ({ ...ext }) });
+      }
+      return cred;
+    };
+  });
 }
 
 /** The re-authentication dialog, if the last confirmation expired (PROTOCOL.md §5c, five minutes): confirms with the password. */

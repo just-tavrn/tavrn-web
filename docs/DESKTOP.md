@@ -370,9 +370,10 @@ browser does on Windows (`src-tauri/src/passkey.rs`, the commands `passkey_creat
   unlock** in Settings → Security later (CLIENT.md "Accounts and sign-in"). Security keys with hmac-secret enable
   it. **Windows Hello** (the platform authenticator) reports the PRF only on Windows 11 24H2 (build 26100.7840) and
   25H2 (26200.7840) with the February 2026 cumulative update (KB5077181) or newer; Windows 10 and earlier Windows 11
-  builds never: such a passkey signs in, the settings say "cannot unlock messages" with that reason, and the node
-  (`prf_supported` of the credential) refuses an entry for it, so after the update the passkey is removed and added
-  again. Phones (hybrid) depend on the phone's authenticator. Without a PRF output the passkey still signs in, and
+  builds never: such a passkey signs in, and the settings offer **Enable message unlock** for it as for any passkey
+  without an entry: one assertion with that passkey stores the entry when it gives a PRF output (the node accepts it
+  for any credential and marks the credential as PRF-capable), else the settings say "cannot unlock messages here"
+  with that reason and keep the button, so after the update the same passkey is enabled without removing it. Phones (hybrid) depend on the phone's authenticator. Without a PRF output the passkey still signs in, and
   the app unlocks its key store from the OS keychain as before (or with the recovery key on a new device).
 - Errors become the browser's: cancelled, timed out or no matching passkey → "The passkey prompt was cancelled";
   an excluded authenticator → "already holds a passkey".

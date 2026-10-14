@@ -69,12 +69,13 @@ describe("Security settings", () => {
     await waitFor(() => expect(yubi).toHaveTextContent("entsperrt Nachrichten"));
     expect(yubi).toHaveTextContent("noch nie verwendet");
     expect(yubi).not.toHaveTextContent("kann Nachrichten");
-    // No PRF at creation: the reason, no button.
+    // No PRF announced at creation: worth one try (some authenticators report it only when used), once unlocked.
     const laptop = within(list).getByText("Laptop").closest("li")!;
     expect(laptop).toHaveTextContent("zuletzt verwendet");
-    expect(laptop).toHaveTextContent("kann Nachrichten nicht entsperren");
-    expect(laptop).toHaveTextContent("PRF-Erweiterung beim Erstellen des Passkeys nicht aktiviert");
-    expect(within(laptop).queryByRole("button", { name: /aktivieren/ })).toBeNull();
+    expect(laptop).toHaveTextContent("Nachrichten-Entsperrung unbestätigt");
+    expect(laptop).not.toHaveTextContent("kann Nachrichten hier nicht entsperren");
+    expect(laptop).toHaveTextContent("Entsperre zuerst die verschlüsselten Nachrichten");
+    expect(within(laptop).getByRole("button", { name: "Nachrichten-Entsperrung aktivieren: Laptop" })).toBeDisabled();
     // PRF enabled, no entry yet (registered on a locked device, or the assertion was cancelled): enable, once unlocked.
     const handy = within(list).getByText("Handy").closest("li")!;
     expect(handy).toHaveTextContent("noch nicht aktiviert");
@@ -186,7 +187,75 @@ describe("Security settings", () => {
     await u.click(button);
     expect(await screen.findByRole("alert")).toHaveTextContent("Handy hat hier keine PRF-Ausgabe geliefert");
     expect(calls.some((c) => c.init.method === "PUT")).toBe(false);
-    expect(handy).toHaveTextContent("noch nicht aktiviert");
+    // The reason now (the authenticator here gave none), and the button for another try.
+    await waitFor(() => expect(handy).toHaveTextContent("kann Nachrichten hier nicht entsperren"));
+    expect(within(handy).getByRole("button", { name: "Nachrichten-Entsperrung aktivieren: Handy" })).toBeInTheDocument();
+  });
+});
+
+describe("Security settings: a passkey whose registration announced no PRF (prf_supported = false)", () => {
+  const windowsUa = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/146.0 Safari/537.36";
+  const realUa = navigator.userAgent;
+  afterEach(() => Object.defineProperty(navigator, "userAgent", { value: realUa, configurable: true }));
+
+  async function laptopButton() {
+    const list = await screen.findByTestId("passkey-list");
+    const laptop = await waitFor(() => within(list).getByText("Laptop").closest("li")!);
+    const button = await within(laptop).findByRole("button", { name: "Nachrichten-Entsperrung aktivieren: Laptop" });
+    await waitFor(() => expect(button).toBeEnabled());
+    return { laptop, button };
+  }
+
+  it("offers the try on an unlocked device: an assertion with a PRF output stores the entry and it unlocks", async () => {
+    await cryptoStore.saveMaster(user.address, DEV, new Uint8Array(32).fill(3));
+    const get = vi.fn(async () => prfAssertion("Y3JlZC0y"));
+    Object.defineProperty(navigator, "credentials", { value: { get }, configurable: true });
+    const calls = mockFetch({ "/auth/factors": { body: factors }, "/users/me/secret-storage": secretStorage() });
+    renderSecurity();
+    const { laptop, button } = await laptopButton();
+    expect(laptop).toHaveTextContent("probiert es einmal mit diesem Passkey");
+    await userEvent.setup().click(button);
+    await waitFor(() => expect(laptop).toHaveTextContent("entsperrt Nachrichten"));
+    expect(within(laptop).queryByRole("button", { name: /aktivieren/ })).toBeNull();
+    const options = (get.mock.calls[0] as unknown as [CredentialRequestOptions])[0].publicKey!;
+    expect(options.allowCredentials?.map((c) => b64urlEncode(new Uint8Array(c.id as ArrayBuffer)))).toEqual(["Y3JlZC0y"]);
+    const put = calls.find((c) => c.init.method === "PUT" && c.url.includes("/secret-storage/passkey/"))!;
+    expect(put.url).toMatch(/\/secret-storage\/passkey\/Y3JlZC0y$/);
+    // The node marks the credential with the entry: the factors list is fetched again.
+    expect(calls.filter((c) => c.url.endsWith("/auth/factors")).length).toBeGreaterThan(1);
+  });
+
+  it("without a PRF output: the reason with the Windows versions, nothing stored, and the button stays for another try", async () => {
+    Object.defineProperty(navigator, "userAgent", { value: windowsUa, configurable: true });
+    await cryptoStore.saveMaster(user.address, DEV, new Uint8Array(32).fill(3));
+    const plain = { ...prfAssertion("Y3JlZC0y"), getClientExtensionResults: () => ({}) };
+    const get = vi.fn(async () => plain);
+    Object.defineProperty(navigator, "credentials", { value: { get }, configurable: true });
+    const calls = mockFetch({ "/auth/factors": { body: factors }, "/users/me/secret-storage": secretStorage() });
+    renderSecurity();
+    const { laptop, button } = await laptopButton();
+    // The Windows versions note is there before the try as well.
+    expect(laptop).toHaveTextContent("Windows 11 24H2");
+    const u = userEvent.setup();
+    await u.click(button);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Laptop hat hier keine PRF-Ausgabe geliefert");
+    await waitFor(() => expect(laptop).toHaveTextContent("kann Nachrichten hier nicht entsperren"));
+    expect(laptop).toHaveTextContent("hat hier keine PRF-Ausgabe geliefert: Der Passkey meldet dich an");
+    expect(laptop).toHaveTextContent("Windows 11 24H2");
+    expect(calls.some((c) => c.init.method === "PUT")).toBe(false);
+    const again = within(laptop).getByRole("button", { name: "Nachrichten-Entsperrung aktivieren: Laptop" });
+    await waitFor(() => expect(again).toBeEnabled());
+    await u.click(again);
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+  });
+
+  it("the Windows versions note is only for Windows", async () => {
+    Object.defineProperty(navigator, "userAgent", { value: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/146.0", configurable: true });
+    await cryptoStore.saveMaster(user.address, DEV, new Uint8Array(32).fill(3));
+    mockFetch({ "/auth/factors": { body: factors }, "/users/me/secret-storage": secretStorage() });
+    renderSecurity();
+    const { laptop } = await laptopButton();
+    expect(laptop).not.toHaveTextContent("Windows");
   });
 });
 
