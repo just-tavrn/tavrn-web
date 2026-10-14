@@ -266,9 +266,11 @@ describe("moving by drag and drop (issue #119)", () => {
     fireEvent.dragEnter(link, { dataTransfer: during });
     fireEvent.dragLeave(target, { dataTransfer: during });
     expect(target).toHaveAttribute("data-drop", "accept");
-    // Out of the link and out of the channel: cleared.
+    // Back out of the link onto the channel (dragenter on the channel, dragleave on the link): still accepted.
+    fireEvent.dragEnter(target, { dataTransfer: during });
     fireEvent.dragLeave(link, { dataTransfer: during });
     expect(target).toHaveAttribute("data-drop", "accept");
+    // Out of the channel altogether: cleared.
     fireEvent.dragLeave(target, { dataTransfer: during });
     expect(target).not.toHaveAttribute("data-drop");
     // A drag that ends elsewhere clears a lingering indicator.
