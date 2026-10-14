@@ -59,7 +59,22 @@ export function useRoom(roomId: string) {
     if (channels && e2eeStatus === "unlocked") joinRoomGroups(domain, channels);
   }, [domain, channels, e2eeStatus]);
   const previewed = usePreviewedRoom(query.data);
-  return useMemo(() => (previewed === query.data ? query : ({ ...query, data: previewed } as typeof query)), [query, previewed]);
+  // Built from explicit fields, never by spreading the query: reading every field of TanStack's tracked result would
+  // subscribe this observer to all of them (fetch status included) for the rest of its life.
+  const { isPending, isError, error } = query;
+  return useMemo(() => roomResult(previewed, isPending, isError, error), [previewed, isPending, isError, error]);
+}
+
+/** What the room views read of the room query: the (possibly previewed) data and its state. */
+export type RoomResult =
+  | { isPending: true; isError: false; error: null; data: undefined }
+  | { isPending: false; isError: true; error: Error; data: RoomDetail | undefined }
+  | { isPending: false; isError: false; error: null; data: RoomDetail };
+
+function roomResult(data: RoomDetail | undefined, isPending: boolean, isError: boolean, error: Error | null): RoomResult {
+  if (isError) return { isPending: false, isError: true, error: error!, data };
+  if (isPending || !data) return { isPending: true, isError: false, error: null, data: undefined };
+  return { isPending: false, isError: false, error: null, data };
 }
 
 /**
