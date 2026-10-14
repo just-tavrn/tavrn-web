@@ -74,7 +74,7 @@ the app says so and offers "Sign in again" (a new device, unlocked with the reco
 | Battery optimisation exemption | only from Settings → Notifications, with an explanation, through the system's dialog | Android may pause the app in the background sooner |
 | Biometric prompt (`USE_BIOMETRIC`) | granted at install; the prompt shows when the user turns the unlock with fingerprint, face or PIN on and at each unlock | the recovery key or a passkey |
 | Screen capture (MediaProjection) | Android's consent dialog at every screen share (no permission to keep); the foreground service type `mediaProjection` (`FOREGROUND_SERVICE_MEDIA_PROJECTION`) is granted at install | no screen sharing |
-| The sound of other apps (`AudioPlaybackCapture`, Android 10+) | the microphone permission covers it; only when "Share the sound of other apps too" is on | the share has no sound |
+| The sound of other apps (`AudioPlaybackCapture`, Android 10+) | the microphone permission covers it; only with "The sound of other apps" chosen in the share dialog | the share has no sound |
 
 The client asks through the shell (`android_permission`), which answers `granted`, `denied` or `blocked` (Android no
 longer shows its dialog); for `blocked` the client says where to allow it (Settings → Apps → tavrn → Permissions) or
@@ -229,8 +229,8 @@ the same device, `<user>/<device>#screen`, that publishes the screen share (and 
 through the **LiveKit Android SDK** (`io.livekit:livekit-android`), next to the webview's own connection that carries
 the voice.
 
-1. The screen share button opens the client's dialog (resolution and frame rate within the node's limits, "Share the
-   sound of other apps too", off by default and only on Android 10+). The client asks the node for the screen
+1. The screen share button opens the client's dialog (resolution and frame rate within the node's limits, the sound:
+   "No sound" or "The sound of other apps", the latter only on Android 10+). The client asks the node for the screen
    publisher's token (`voice/join` or `call/join` with `{ "role": "screen" }`: publish-only, screen share sources
    only, no seat of its own) and hands it to the shell with the device's frame key of the current epoch
    (`android_screen_share_start`, checked in `src/mobile.rs`: a `wss` URL, or `ws` only for a development node on the
@@ -259,7 +259,9 @@ the voice.
 
 The sound of other apps: Android's `AudioPlaybackCapture` (only apps that allow capture; Android 10+) through the SDK's
 `ScreenAudioCapturer`, published as the share's audio track. The SDK mixes it into a recorded buffer, so the app clears
-the microphone's samples first: the microphone never goes out through the share.
+the microphone's samples first: the microphone never goes out through the share. The call itself is never part of it
+either: Android's playback capture takes the media, game and unknown usages only, and the webview plays the call as
+voice communication ([CLIENT.md](CLIENT.md) "Screen share audio").
 
 ## Fullscreen
 

@@ -52,8 +52,8 @@ describe("the voice entry point picks the engine", () => {
     expect(browser.setMuted).toHaveBeenCalledWith(true);
     await voice.toggleDeafen();
     expect(browser.setDeafened).toHaveBeenCalledWith(true);
-    await voice.startScreenShare({ audio: true, resolution: "1080p", fps: 30 });
-    expect(browser.setScreenShare).toHaveBeenCalledWith(true, { audio: true, resolution: "1080p", fps: 30 });
+    await voice.startScreenShare({ audio: "system", resolution: "1080p", fps: 30 });
+    expect(browser.setScreenShare).toHaveBeenCalledWith(true, { audio: "system", resolution: "1080p", fps: 30 });
     voice.pushToTalk(true);
     expect(browser.pushToTalk).toHaveBeenCalledWith(true);
     voice.followMove("home.example", { room_id: "r1", from_channel_id: "c1", channel_id: "c2" });

@@ -21,6 +21,7 @@
  * are subscribed as they are published, a screen share's video and audio only once this viewer joined it.
  */
 import { platform } from "../platform";
+import { displayMediaAudio, type ScreenAudio } from "./screenAudio";
 import { cleanupConversation } from "../lib/leafCleanup";
 import {
   ConnectionQuality,
@@ -1044,7 +1045,8 @@ export async function setCamera(on: boolean): Promise<void> {
 }
 
 export interface ScreenShareOptions {
-  audio: boolean;
+  /** The sound: none, the shared window's or the whole system's (`screenAudio.ts`). */
+  audio: ScreenAudio;
   /** `720p` … `4k`, lowered to the node's maximum. */
   resolution: string;
   fps: number;
@@ -1086,7 +1088,7 @@ function nativeScreenFor(s: Session): NativeScreenShare | null {
 async function setNativeScreenShare(s: Session, native: NativeScreenShare, on: boolean, opts: ScreenShareOptions): Promise<void> {
   if (!on) return native.stop();
   try {
-    await native.start(opts, s.info.limits.screenshare);
+    await native.start({ ...opts, audio: opts.audio === "system" }, s.info.limits.screenshare);
   } catch (e) {
     // The user declined Android's dialog: nothing to report.
     if (e === "screen.cancelled") return;
@@ -1103,7 +1105,7 @@ export function leaveStream(identity: string): void {
   refreshMedia(s);
 }
 
-export async function setScreenShare(on: boolean, opts: ScreenShareOptions = { audio: true, resolution: "1080p", fps: 30 }): Promise<void> {
+export async function setScreenShare(on: boolean, opts: ScreenShareOptions = { audio: "none", resolution: "1080p", fps: 30 }): Promise<void> {
   const s = current;
   if (!s) return;
   const limit = s.info.limits.screenshare;
@@ -1118,7 +1120,9 @@ export async function setScreenShare(on: boolean, opts: ScreenShareOptions = { a
       const fps = Math.max(1, Math.min(opts.fps, limit.max_fps));
       await s.room.localParticipant.setScreenShareEnabled(
         true,
-        { audio: opts.audio, resolution: { ...size, frameRate: fps }, contentHint: fps > 15 ? "motion" : "detail", selfBrowserSurface: "exclude", systemAudio: "include" },
+        // The sound choice as getDisplayMedia constraints (`screenAudio.ts`): with the whole system's sound the
+        // call's own playback is left out (`restrictOwnAudio`, where the browser knows it).
+        { ...displayMediaAudio(opts.audio), resolution: { ...size, frameRate: fps }, contentHint: fps > 15 ? "motion" : "detail", selfBrowserSurface: "exclude" },
         { videoCodec: "vp8", screenShareEncoding: { maxBitrate: bitrate(size.width, size.height, fps, 0.05), maxFramerate: fps } },
       );
     } else {

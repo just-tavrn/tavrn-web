@@ -799,12 +799,37 @@ tab's connection open; the service worker shows them only while no page of the c
 
 ### Screen sharing, the priority speaker and the soundboard
 
-Before the browser's picker, sharing the screen asks for resolution, frame rate and "Share audio too (if the browser
-allows it)". Members with the priority speaker permission hold the priority key (or the megaphone toggle in the call
+Before the browser's picker, sharing the screen asks for resolution, frame rate and the sound ("Screen share audio"
+below). Members with the priority speaker permission hold the priority key (or the megaphone toggle in the call
 controls on phones and tablets) to lower everybody else to 25 % for all listeners. Room owners upload soundboard clips
 under Room settings → Soundboard (at most 5 seconds, 1 MB and 50 clips per room); members with `use_soundboard` play
 them from the call controls into their own (encrypted) microphone track, which also needs `speak`. Personal clips
 (Settings → Sounds) and other rooms' clips need `use_external_sounds` and are greyed out without it.
+
+### Screen share audio
+
+The share dialog has one choice for the sound: **No sound**, **Whole system** (everything the computer plays) and,
+on a platform that can capture it, **This window only**; a line under the choice says what it means where the client
+runs (`web/src/voice/screenAudio.ts` decides from the platform, `ui/VoiceControls.tsx` shows it). Only the choices the
+platform supports are shown, and "Whole system" starts selected only where the call's own playback is left out of it
+(nobody hears themselves); elsewhere it is off by default and the note warns. What each platform does (October 2026):
+
+| Where | Whole system | Own playback left out | This window |
+|---|---|---|---|
+| Chrome, Edge and other Chromium browsers on Windows (and ChromeOS) | yes, with a shared screen (the browser's "share system audio" box; a shared window carries the system's sound as well) | since Chrome 141 (`restrictOwnAudio`, read from the browser's supported constraints); older browsers include the call, and the note says so | no: no Chromium captures one window's sound (`windowAudio` knows "system" and "exclude" only) |
+| Chromium browsers on macOS | since Chrome 141 | since Chrome 141 | no |
+| Chromium browsers on Linux | a browser tab's sound only; a shared screen or window is silent | the tab's sound never carries the call | no |
+| Firefox, Safari | no sound with a screen | — | no |
+| The Windows app (Tauri, WebView2) | as Chromium on Windows: Edge's picker with the system audio box | with a WebView2 runtime of Edge 141 or newer | no |
+| The Linux app (Electron) | no: Electron captures system audio on Windows only, and neither X11 nor the PipeWire portal gives it any | — | no |
+| The Windows fallback (Electron) | yes (Electron's loopback capture) | **no**: Electron cannot leave a process out; use headphones or share without sound | no |
+| The macOS app (Tauri, WebKit) | no sound with a screen | — | no |
+| The Android app | the sound of other apps (Android 10 or newer, apps that allow capture) | yes: Android's playback capture takes media, game and unknown usages only, the call plays as voice communication | no |
+
+"Whole system" asks the browser for audio with `restrictOwnAudio: true` and `systemAudio: "include"`; "No sound" asks
+for none and keeps the system's sound out of the browser's picker. A viewer receives the sound only after joining the
+stream ("Streams are joined" above) and has a stream volume of its own. The Android app's sound is the device's screen
+publisher's audio track (docs/ANDROID.md "Screen sharing").
 
 ### The whiteboard
 
@@ -1062,7 +1087,8 @@ Downloads", with **Show in folder**); DESKTOP.md "Downloads".
 
 **Voice and video:** the Linux app (Electron) runs voice, video, screen sharing, the soundboard and the background
 effects in Chromium exactly as the browser does; sharing a screen opens the app's own picker of screens and windows (on
-Wayland the desktop's portal dialog), without system audio (DESKTOP.md "Voice, video and screen sharing (Electron)").
+Wayland the desktop's portal dialog), without sound ("Screen share audio": Electron captures system audio on Windows
+only; DESKTOP.md "Voice, video and screen sharing (Electron)").
 
 **Native voice engine (Tauri app):** the Tauri app can send and play voice through its own native engine (LiveKit's
 Rust SDK in the shell), always in its Linux bundles, whose web view has no WebRTC, and on Windows with the setting

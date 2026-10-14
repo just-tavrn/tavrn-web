@@ -165,6 +165,15 @@ First public release of the web client and the desktop apps.
   to be the only row that could not be dragged. A drag over a voice channel highlights it, a channel that cannot take
   the drop (you may not join it, or a moderator's drag without `move_members` there) shows a red outline and refuses
   it. Clicking the channel and the participant menu remain the non-drag ways.
+- **Screen share sound** (tavrn-web#128): the share dialog has one choice, **No sound** or **Whole system** (and
+  **This window only** where a platform can capture it, which no browser or app does today), instead of a box that
+  depended on what the browser's own picker offered; a line under the choice says what it means where the client
+  runs. With the whole system's sound the call's own playback is left out (`restrictOwnAudio`, Chrome and Edge 141 or
+  newer on Windows and macOS, the Windows app's WebView2 included), so nobody hears themselves; where it cannot be
+  left out (the Windows fallback with Electron, older browsers) the dialog starts without sound and warns. The Linux
+  app, the macOS app, Firefox and Safari share no sound and say so; the Android app offers the sound of other apps
+  as before ([docs/CLIENT.md](docs/CLIENT.md) "Screen share audio").
+
 - An image pasted from the clipboard no longer keeps the name the system made up (`image.png`, `{GUID}.png` on
   Windows): it is named "Image <date> <time>.<ext>" (de: "Bild …"); a file copied from a file manager keeps its
   real name, nobody is asked (#95).

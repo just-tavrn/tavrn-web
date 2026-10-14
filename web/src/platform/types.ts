@@ -14,8 +14,19 @@ import type { SaveFile } from "./files";
 
 export type PlatformKind = "browser" | "desktop" | "android";
 
+/** The operating system under a shell, as the shell reports it (`other` for anything the client has no rule for). */
+export type ShellOs = "windows" | "macos" | "linux" | "android" | "other";
+
+/** The shell around the client in the apps (absent in a browser): which one and on which system. */
+export interface ShellInfo {
+  readonly kind: "tauri" | "electron";
+  readonly os: ShellOs;
+}
+
 export interface Platform {
   readonly kind: PlatformKind;
+  /** The apps: the shell and its operating system (what the webview can do differs by both, `voice/screenAudio.ts`). */
+  readonly shell?: ShellInfo;
   /**
    * One of the apps (desktop or Android): the client is bundled, its node is the one the user picked, the node's own
    * pages (passkeys, single sign-on, the captcha) open in a window or the browser. Code that is about the screen

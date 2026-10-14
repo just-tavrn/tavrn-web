@@ -245,10 +245,19 @@ test.describe("Screen shares are joined", () => {
     await joinVoice(bob, roomId, voiceId);
     await joinVoice(alice, roomId, voiceId);
 
-    // The app's dialog: the whole screen after Android's consent, the sound of other apps off by default.
+    // The app's dialog: the whole screen after Android's consent; the sound of other apps is offered from Android 10
+    // (the fake shell reports API 36) and is on by default there (never the call: Android captures media only),
+    // "No sound" is the other choice; a run without sound keeps the share's audio flag off.
     await alice.page.getByTestId("voice-screen").click();
     await expect(alice.page.getByTestId("screen-share-dialog")).toHaveAttribute("data-native", "android");
-    await expect(alice.page.getByTestId("screen-share-audio")).not.toBeChecked();
+    const sound = alice.page.getByTestId("screen-share-audio");
+    await expect(sound.getByRole("radio")).toHaveCount(2);
+    await expect(alice.page.getByTestId("screen-share-audio-system")).toBeChecked();
+    await expect(alice.page.getByTestId("screen-share-sound-note")).toHaveAttribute("data-note", "other_apps");
+    const dialogAxe = await new AxeBuilder({ page: alice.page }).include('[data-testid="screen-share-dialog"]').withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();
+    expect(dialogAxe.violations).toEqual([]);
+    await alice.page.getByTestId("screen-share-audio-none").check();
+    await expect(sound).toHaveAttribute("data-choice", "none");
     await alice.page.getByTestId("screen-share-start").click();
     const indicator = alice.page.getByTestId("streaming-indicator");
     await expect(indicator).toHaveAttribute("data-native", "true", { timeout: 30_000 });

@@ -718,7 +718,7 @@ What the browser gets from "the client is served by the node" and what the app d
 | Captcha on login or registration | on the node's page in the sign-in window | same | the widget is a third-party script (CSP `script-src 'self'`) bound to the node's host name; the node's page loads it. Without `connect.app`: a notice, use the browser for that step. |
 | Web push | not offered | same | there is no service worker in the app (its pages are not served by the node). The app shows native notifications instead while it runs (also from the tray); nothing reaches a device where the app is not running. |
 | Desktop notifications of the browser | replaced | same | native notifications ("Notifications" above). |
-| Voice and video | Windows (WebView2, Chromium): voice and video as in Chromium (to be confirmed by hand), or audio only with the native engine setting | voice, video, screen sharing (the shell's picker, or the desktop portal on Wayland), the soundboard and the background effects as in Chromium; no system audio with a shared screen | the Tauri shell on Linux runs voice in the native engine, audio only, because the WebKitGTK of Ubuntu 24.04 and 26.04 has no WebRTC ("Voice"), which is why Linux ships the Electron shell; Electron captures system audio on Windows only. |
+| Voice and video | Windows (WebView2, Chromium): voice and video as in Chromium (to be confirmed by hand), or audio only with the native engine setting; a screen share with the system's sound, the call left out (Edge 141 or newer, [CLIENT.md](CLIENT.md) "Screen share audio") | voice, video, screen sharing (the shell's picker, or the desktop portal on Wayland), the soundboard and the background effects as in Chromium; no sound with a shared screen | the Tauri shell on Linux runs voice in the native engine, audio only, because the WebKitGTK of Ubuntu 24.04 and 26.04 has no WebRTC ("Voice"), which is why Linux ships the Electron shell; Electron captures system audio on Windows only, with the app's own playback in it. |
 | Popping out the whiteboard, "open original" in the media viewer | not offered | same | the app opens no window for content (only the sign-in window); maximize and the download icon cover it. |
 | The terms and other pages that open in a new tab | open on the node's web client in the system browser | same | the app opens no window for content. |
 | Updates while the repository is private | do not download | the check fails quietly | the updaters fetch their feeds (`latest.json`, `latest-linux.yml` and its `.minisig`) through the website's redirect and the installers from the public release URLs. |
@@ -947,8 +947,12 @@ light and dark theme; axe finds no WCAG 2.2 AA violation). The chosen source goe
 as `AbortError` (Electron's answer, which the client takes as a closed picker), and with nothing to share the picker says
 so. On X11 the sources come from the X server (its screen capturer can fail on its first use right after the start; the
 shell asks once more). On Wayland Chromium asks the desktop portal (PipeWire): the portal's own dialog picks
-the screen or window, and the shell takes that one source without a second picker. System audio is not offered: Electron
-captures it (`loopback`) on Windows only.
+the screen or window, and the shell takes that one source without a second picker. The sound follows the client's
+choice in its share dialog ([CLIENT.md](CLIENT.md) "Screen share audio"): on Windows (the fallback build) "Whole
+system" becomes Electron's loopback capture (`captureAudio` in `picker.ts`), which carries the app's own playback as
+well (Electron has no way to leave a process out, and its `loopbackWithMute` would silence the call for the sharer),
+so the dialog starts with "No sound" and says so; on Linux no sound is offered at all: Electron's loopback exists on
+Windows only, and neither X11 nor the PipeWire portal gives Electron any audio.
 
 ### Updates (Electron)
 
