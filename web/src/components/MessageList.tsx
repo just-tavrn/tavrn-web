@@ -16,7 +16,7 @@ import { MessageAttachments, fromEncrypted, fromPlain } from "./AttachmentView";
 import { ContextMenu, MenuButton, useContextMenu } from "./ContextMenu";
 import { messageMenu } from "../lib/menus";
 import { mentionsMe } from "../lib/mentions";
-import { botMentionTokens, markBotMentions } from "../lib/mentionBadges";
+import { markMentions, mentionTokens, parseMentionTokens, serializeMentionTokens } from "../lib/mentionBadges";
 import { copyText } from "./ContextMenu";
 import { useToasts } from "../stores/toasts";
 import { useAccessibility } from "../stores/accessibility";
@@ -94,6 +94,7 @@ export function MessageList({
   decrypted = NO_DECRYPTED,
   signatures = NO_SIGNATURES,
   bots,
+  mentionRoles,
   currentAddress,
   authors,
   focus,
@@ -127,6 +128,8 @@ export function MessageList({
   signatures?: Record<string, PlainStatus>;
   /** Addresses of bot accounts (BOT badge). */
   bots?: ReadonlySet<string>;
+  /** Names of the room's roles (without @everyone): `@Role` in a message is shown as a mention pill. */
+  mentionRoles?: readonly string[];
   /** The user's address on the conversation's node: messages mentioning it are highlighted. */
   currentAddress?: string;
   /**
@@ -398,7 +401,7 @@ export function MessageList({
                   replyDecrypted={m.reply_to_id ? decrypted[m.reply_to_id] : undefined}
                   conversationEncrypted={encrypted}
                   mentioned={mentionsMe(m, currentAddress) && m.author_id !== currentUserId}
-                  botMentions={botMentionTokens(m.mentions, bots, currentAddress ? currentAddress.slice(currentAddress.lastIndexOf("@") + 1) : null).join(" ")}
+                  mentions={serializeMentionTokens(mentionTokens(m, { bots, self: currentAddress, nodeDomain: currentAddress ? currentAddress.slice(currentAddress.lastIndexOf("@") + 1) : null, roles: mentionRoles }))}
                 />
               </article>
             );
@@ -585,8 +588,8 @@ interface RowProps {
   replyDecrypted?: Decrypted;
   /** Mentions the user (highlighted). */
   mentioned?: boolean;
-  /** Mentioned bots (`botMentionTokens`, space-separated so the memoized row compares a string). */
-  botMentions?: string;
+  /** The message's mentions with their kinds (`serializeMentionTokens`: a string, so the memoized row compares it). */
+  mentions?: string;
 }
 
 /** The first line of a message for reply previews. */
@@ -601,7 +604,7 @@ function snippet(m: Message, d: Decrypted | undefined): string | null {
  * One message. Memoized: with stable props from the list, a new message (20/s under load) renders only
  * its own row instead of every loaded one (design note 9e).
  */
-const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, grouped, own, bot, author, replyAuthor, decrypted, signature, editing, setEditingId, canManage, canReact, canPin, roomId, customEmojis, emojiUrls, onReact, onPin, onEdit, onDelete, onReply, onReport, onThread, usersById, canStartThreads, onMarkUnread, replyTo, replyDecrypted, mentioned, botMentions }: RowProps) {
+const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, grouped, own, bot, author, replyAuthor, decrypted, signature, editing, setEditingId, canManage, canReact, canPin, roomId, customEmojis, emojiUrls, onReact, onPin, onEdit, onDelete, onReply, onReport, onThread, usersById, canStartThreads, onMarkUnread, replyTo, replyDecrypted, mentioned, mentions }: RowProps) {
   const t = useT();
   const locale = useLocale((s) => s.locale);
   const [draft, setDraft] = useState("");
@@ -613,9 +616,9 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
   const mdVersion = useSyncExternalStore(subscribeMarkdown, markdownVersion);
   const botLabel = t("badge.bot");
   const html = useMemo(
-    () => (body ? markBotMentions(renderMarkdown(body, emojiUrls, resolve), botMentions ? botMentions.split(" ") : [], botLabel) : ""),
+    () => (body ? markMentions(renderMarkdown(body, emojiUrls, resolve), parseMentionTokens(mentions ?? ""), botLabel) : ""),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [body, emojiUrls, resolve, mdVersion, botMentions, botLabel],
+    [body, emojiUrls, resolve, mdVersion, mentions, botLabel],
   );
   // Custom emojis whose bytes are gone everywhere become a muted `:name:` chip (design note 4.13).
   const markdownRef = useRef<HTMLDivElement>(null);
@@ -789,7 +792,7 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
     );
   }
   return (
-    <div className={`group relative rounded-md px-2 hover:bg-bg-3/60 ${grouped ? "py-0.5" : "py-1"} ${m.pinned ? "border-l-2 border-accent" : mentioned ? "border-l-2 border-warn bg-warn/5" : ""}`} data-testid="message" data-message-id={m.id} data-mentioned={mentioned || undefined} {...menu.triggerProps}>
+    <div className={`group relative rounded-md px-2 hover:bg-bg-3/60 ${grouped ? "py-0.5" : "py-1"} ${m.pinned ? "border-l-2 border-accent" : mentioned ? "border-l-2 border-warn bg-warn/10" : ""}`} data-testid="message" data-message-id={m.id} data-mentioned={mentioned || undefined} {...menu.triggerProps}>
       {replyTo !== undefined && (
         <div className="mb-0.5 ml-12 flex min-w-0 items-center gap-1 text-xs text-fg-2" data-testid="reply-reference">
           <span aria-hidden="true">↱</span>

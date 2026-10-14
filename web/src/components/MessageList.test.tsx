@@ -11,6 +11,29 @@ import { mockFetch, renderWithProviders } from "../test/render";
 const base: Message = { id: "m1", conversation_id: "c1", author: "alice@t.local", author_id: "u1", device_id: "d1", encrypted: false, format: 1, epoch: null, content: { type: "text", body: "Hallo\nWelt" }, reply_to_id: null, thread_id: null, mentions: [], mentions_everyone: false, created_at: new Date().toISOString(), edited_at: null, attachments: [], reactions: [], pinned: false };
 
 describe("MessageList", () => {
+  it("shows mentions as pills with their kind and marks the row when the reader is mentioned (tavrn-web#122)", () => {
+    useAuth.setState({ user: { id: "u2", username: "bob", domain: "t.local", address: "bob@t.local", display_name: "Bob", kind: "user", is_node_admin: false, avatar_blob_id: null, created_at: "", email: null, email_verified: false, has_identity_key: false } });
+    const messages: Message[] = [
+      { ...base, id: "m2", content: { type: "text", body: "@bob @alice @Raid Leads @everyone und `@bob` im Code" }, mentions: ["bob@t.local", "alice@t.local"], mentions_everyone: true },
+      { ...base, id: "m1", content: { type: "text", body: "nur @alice" }, mentions: ["alice@t.local"] },
+    ];
+    render(<MessageList messages={messages} currentUserId="u2" currentAddress="bob@t.local" mentionRoles={["Raid Leads"]} canManage={false} hasMore={false} />);
+    // The list takes the newest message first and shows the oldest at the top.
+    const [second, first] = screen.getAllByTestId("message");
+    expect(first).toHaveAttribute("data-mentioned", "true");
+    expect(first!.className).toContain("border-warn");
+    const kinds = Array.from(first!.querySelectorAll(".mention")).map((el) => [el.getAttribute("data-mention"), el.textContent]);
+    expect(kinds).toEqual([
+      ["self", "@bob"],
+      ["user", "@alice"],
+      ["role", "@Raid Leads"],
+      ["everyone", "@everyone"],
+    ]);
+    expect(first!.querySelector("code")?.textContent).toBe("@bob");
+    expect(second).not.toHaveAttribute("data-mentioned");
+    expect(second!.querySelector(".mention")).toHaveAttribute("data-mention", "user");
+  });
+
   it("shows text, system messages, ciphertext and unknown types appropriately", () => {
     const messages: Message[] = [
       { ...base, id: "m4", content: { type: "poll", question: "?" } },

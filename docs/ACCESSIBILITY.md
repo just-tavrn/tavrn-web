@@ -222,6 +222,8 @@ theme to measure.
 | `line` `#2f3542` (dividers, decorative) | `bg-1` | 1.43 | ok (not needed to identify anything) |
 | **`line-strong`** `#737b8c` (borders of text fields, selects, text areas, the composer) | `bg-0`…`bg-3` | 4.45 … 3.34 | added (WCAG 1.4.11) |
 | initials on `hsl(hue 45% 40%)` | | 3.2 … 7.6 → ≥ 4.5 | bright hues darker |
+| mention pill: `accent-hover` `#40b9b1` on `accent-soft` over `bg-0`…`bg-3` | | 6.39 … 4.67 | ok (tavrn-web#122) |
+| own / @everyone mention pill: `fg-0` on 22 % `warn` over `bg-0`…`bg-3`; its `warn` border against the pill and the row | | 11.2 … 8.2; ≥ 3.7 | ok (tavrn-web#122) |
 
 ## Manual screen reader walkthrough
 

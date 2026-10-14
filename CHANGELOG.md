@@ -61,6 +61,9 @@ First public release of the web client and the desktop apps.
 
 ### Changed
 
+- **Mentions stand out**: `@name`, `@name@domain`, `@Role` and `@everyone`/`@here` in messages are pills; mentions
+  of yourself and @everyone/@here use the warning colour with a border, and a message that mentions you keeps its
+  left border with a stronger tint (#122).
 - **A limit per external store** (protocol FILES.md §5): the storage settings of a files channel on WebDAV or S3 get
   "Limit on the store (GB)" (empty = no limit), which the channel's meter shows; the node's own quota no longer
   applies to external stores.
