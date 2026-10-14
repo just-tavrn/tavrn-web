@@ -14,6 +14,7 @@ import { toastError, useToasts } from "../stores/toasts";
 import type { PlainStatus } from "@tavrn/e2ee";
 import { QrCode } from "./auth/QrCode";
 import { Button, Dialog } from "./ui";
+import { ShieldCheckIcon } from "./icons";
 
 /** 60 digits as 12 groups of 5 (3 lines of 4 groups on screen). */
 export function safetyNumberGroups(number: string): string[] {
@@ -22,9 +23,11 @@ export function safetyNumberGroups(number: string): string[] {
 
 /**
  * "verified" (✓), "verification broken" or "verification needs a refresh" (key rotated with continuity) next to a
- * user, from the verified contacts of this device.
+ * user, from the verified contacts of this device. `compact`: the verified state as a small shield icon with the
+ * accessible name and a tooltip, for member lists where the text chip truncated names (tavrn-web#121); the two
+ * warning states keep their text everywhere.
  */
-export function VerifiedBadge({ address }: { address: string }) {
+export function VerifiedBadge({ address, compact = false }: { address: string; compact?: boolean }) {
   const t = useT();
   const state = useMlsUi((s) => s.verification[address]);
   if (!state) return null;
@@ -51,6 +54,13 @@ export function VerifiedBadge({ address }: { address: string }) {
       >
         ↻ {t("badge.verification_refresh")} <span aria-hidden="true">×</span>
       </button>
+    );
+  }
+  if (compact) {
+    return (
+      <span role="img" aria-label={t("badge.verified")} title={t("badge.verified_hint", { address })} className="inline-flex shrink-0 text-accent" data-testid="verified-badge" data-compact="true">
+        <ShieldCheckIcon size={14} />
+      </span>
     );
   }
   return (

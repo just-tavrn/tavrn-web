@@ -67,7 +67,7 @@ const MemberRow = memo(function MemberRow({ roomId, room, member: m, offline }: 
       <SpeakerGlyph roomId={roomId} userId={m.user.id} address={m.user.address} />
       {isBotKind(m.user.kind) && <BotBadge />}
       <KeyChangedBadge address={m.user.address} />
-      <VerifiedBadge address={m.user.address} />
+      <VerifiedBadge address={m.user.address} compact />
       {m.timeout_until && Date.parse(m.timeout_until) > Date.now() && (
         <span role="img" title={t("member.timeout")} aria-label={t("member.timeout")} className="text-xs">
           ⏳

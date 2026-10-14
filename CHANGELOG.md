@@ -119,6 +119,9 @@ First public release of the web client and the desktop apps.
   on Windows 11 24H2/25H2 with the February 2026 update or newer). Before, the badge followed the node's flag alone
   and a missing entry could not be added afterwards.
 
+- Member lists mark verified contacts with a small shield icon (named "verified", with the tooltip) instead of the
+  text chip that cut names off; long names still truncate with an ellipsis. The member drawer is 280 px wide on
+  phones and tablets in landscape (portrait keeps 240 px) (#121).
 - The account menu (status, custom status, activity, sign out) no longer adds a horizontal scrollbar at the bottom of
   the sidebar: it spans the account bar instead of a fixed width wider than the sidebar (#115).
 - Settings pages no longer scroll the whole app: the content of a tab (user settings, room settings, node

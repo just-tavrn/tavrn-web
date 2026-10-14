@@ -51,6 +51,14 @@ export const LockIcon = (p: IconProps) => (
   </Svg>
 );
 
+/** A verified contact (FEDERATION.md §10): a shield with a check mark, the compact marker of member lists. */
+export const ShieldCheckIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6z" />
+    <path d="M9 12l2 2 4-4" />
+  </Svg>
+);
+
 /** Not end-to-end encrypted (the shackle open). */
 export const UnlockIcon = (p: IconProps) => (
   <Svg {...p}>
