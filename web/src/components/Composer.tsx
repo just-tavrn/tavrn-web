@@ -21,6 +21,8 @@ import { renameClipboardFiles } from "../lib/clipboardName";
 import { composerGrowth, type Growth } from "../lib/composerGrowth";
 import { blockedText, isAutomodBlock } from "../moderation/blocked";
 import { EyeOffIcon } from "./icons";
+import { ContextMenu, menuItem, useContextMenu, type MenuItem } from "./ContextMenu";
+import type { PollKind } from "../polls/model";
 
 export interface PendingUpload {
   key: string;
@@ -94,6 +96,7 @@ export function Composer({
   resolveUploadPolicy,
   above,
   encrypted = false,
+  onPoll,
 }: {
   placeholder: string;
   disabled?: boolean;
@@ -113,6 +116,8 @@ export function Composer({
   above?: ReactNode;
   /** End-to-end encrypted conversation: link previews while typing follow their own setting. */
   encrypted?: boolean;
+  /** Polls may be created here (PROTOCOL.md §7g): the ＋ button becomes a menu with "Poll" and "Date poll". */
+  onPoll?: (kind: PollKind) => void;
 }) {
   const t = useT();
   const paletteId = useId();
@@ -146,6 +151,7 @@ export function Composer({
   const [, viewportChanged] = useReducer((x: number) => x + 1, 0);
   const blurTimer = useRef<number | undefined>(undefined);
   const uploadPrivacy = useUploadPrivacy();
+  const plusMenu = useContextMenu();
   const composePreview = useComposePreview(value, !disabled && !value.startsWith("/"), encrypted);
   const uploading = uploads.some((u) => !u.attachment && !u.error);
   const ready = uploads.filter((u) => u.attachment).map((u) => u.attachment!.id);
@@ -452,31 +458,53 @@ export function Composer({
         </ul>
       )}
       <div ref={inputRow} className="flex items-end gap-1 rounded-lg border border-line-strong bg-bg-0 px-2 py-2 focus-within:border-accent">
-        {canAttach && (
+        {(canAttach || onPoll) && (
           <>
-            <input
-              ref={fileInput}
-              type="file"
-              multiple
-              className="hidden"
-              accept={accept || undefined}
-              aria-label={t("composer.pick_file")}
-              data-testid="file-input"
-              onChange={(e) => {
-                if (e.target.files) void addFiles(e.target.files);
-                e.target.value = "";
-              }}
-            />
+            {canAttach && (
+              <input
+                ref={fileInput}
+                type="file"
+                multiple
+                className="hidden"
+                accept={accept || undefined}
+                aria-label={t("composer.pick_file")}
+                data-testid="file-input"
+                onChange={(e) => {
+                  if (e.target.files) void addFiles(e.target.files);
+                  e.target.value = "";
+                }}
+              />
+            )}
             <button
               type="button"
-              aria-label={t("composer.attach")}
-              title={restricted ? t("upload.allowed", { categories: allowedText }) : undefined}
+              aria-label={onPoll ? t("composer.plus") : t("composer.attach")}
+              aria-haspopup={onPoll ? "menu" : undefined}
+              aria-expanded={onPoll ? plusMenu.open : undefined}
+              title={restricted && !onPoll ? t("upload.allowed", { categories: allowedText }) : undefined}
               disabled={disabled}
-              onClick={() => fileInput.current?.click()}
+              onClick={(e) => {
+                if (!onPoll) return fileInput.current?.click();
+                if (plusMenu.open) plusMenu.close();
+                else plusMenu.openAt(e.currentTarget);
+              }}
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-fg-2 hover:bg-bg-3 hover:text-fg-0 disabled:opacity-40"
+              data-testid="composer-plus"
             >
               ＋
             </button>
+            {onPoll && plusMenu.open && plusMenu.anchor && (
+              <ContextMenu
+                entries={[
+                  canAttach && menuItem("file", t("composer.attach"), () => fileInput.current?.click(), { icon: "📎", hint: restricted ? allowedText : undefined, testId: "plus-file" }),
+                  menuItem("poll", t("polls.menu.poll"), () => onPoll("choice"), { icon: "📊", testId: "plus-poll" }),
+                  menuItem("date", t("polls.menu.date"), () => onPoll("date"), { icon: "📅", testId: "plus-date-poll" }),
+                ].filter((x): x is MenuItem => !!x)}
+                anchor={plusMenu.anchor}
+                onClose={plusMenu.close}
+                label={t("composer.plus")}
+                testId="composer-plus-menu"
+              />
+            )}
           </>
         )}
         <textarea

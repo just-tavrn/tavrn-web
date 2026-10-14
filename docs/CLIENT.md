@@ -323,7 +323,7 @@ composer; every other emoji keeps the platform's font. The font is served with t
 **The composer** has the emoji picker, a GIF picker on nodes with a GIF provider (in encrypted messages the client
 itself accepts only the providers' media hosts), uploads by button, drag and drop or paste ("Uploads and downloads"),
 mentions (`@name`, `@name@domain`, `@Role` of mentionable roles, `@everyone`) and slash commands with a palette
-(argument hints, arrow keys, Tab or Enter): `/help`, `/me`, `/shrug`, `/whiteboard`, `/nick`, `/topic`, `/slowmode`,
+(argument hints, arrow keys, Tab or Enter): `/help`, `/me`, `/shrug`, `/poll`, `/whiteboard`, `/nick`, `/topic`, `/slowmode`,
 `/kick`, `/ban`, `/timeout`, `/mute`, `/unmute`, `/move` and `/purge` (each only where the member may use it), plus
 the commands of installed applications. The emoji picker (composer, message reactions, sound emojis) has a fixed size
 (bounded by the viewport) and opens below its button or above it when there is no room; the grid scrolls inside, and
@@ -359,6 +359,59 @@ sender, so a plaintext message there (except the node's own system entries) can 
 shown as content: the row reads "This message was not end-to-end encrypted and may not come from the sender", its
 attachments are hidden, and reply references, screen reader announcements, notifications and push notifications say
 "Message not end-to-end encrypted" instead of its text. A plaintext edit of an encrypted message is treated the same.
+
+### Polls
+
+Polls and date polls ([PROTOCOL.md §7g](https://github.com/just-tavrn/tavrn-protocol/blob/main/PROTOCOL.md)) work in
+text, announcement and forum channels, threads, DMs and group DMs on nodes that announce `polls.v1`. The composer's
+**＋** button opens a menu with **Attach file**, **Poll** and **Date poll**, and `/poll [question]` opens the poll
+composer with the question filled in; both appear only for members with *Create polls* (`create_polls`, granted to
+`@everyone` in new rooms; DMs and group DMs always). In encrypted channels the node cannot see that a message is a
+poll, so this client enforces the bit there (the node enforces it for plaintext polls and every poll with a close
+time).
+
+**The poll composer** (`polls/PollComposer.tsx`) asks for the question (up to 300 characters) and the kind:
+
+- **Poll**: 2 to 20 options (up to 100 characters each; Enter adds an option below, Alt+↑/↓ or the arrow buttons move
+  one, × removes one), single choice or "Allow several answers" with "At most n".
+- **Date poll**: a month calendar (a date grid: one tab stop, arrow keys between days, Home/End, Page Up/Down by
+  month, Enter or Space selects; several days; past days cannot be picked). Every selected day is **All day** or has
+  one or more times (start, optional end); up to 60 slots. Times are entered and stored in the creator's time zone
+  (RFC 3339 with its offset, the zone is named under the calendar).
+- **Show results**: always, after voting or after the poll closes. **Votes**: public (who voted for what) or hidden
+  until the poll closes. Both are kept by every member's app but are not anonymity: the composer says so.
+- **Closes**: no end (default), 1 hour, 1 day, 1 week or a picked date and time (a minute to a year ahead). The close
+  time is plaintext on the message (`poll_closes_at`), so the node refuses late votes.
+
+Validation names every problem at its field (empty question or option, duplicate options, too many options or slots,
+a day without a time, an end before its start, a time that has passed, a close time out of range) and the dialog
+stays open with the node's message when sending fails.
+
+**The poll in the message list** (`polls/PollView.tsx`) shows the question, the kind ("Poll", "Multiple choice", "Date
+poll"), "Closes in …" (the exact time on hover) or **Closed**, and the number of votes. Choice polls list the options
+as radio buttons or check boxes (44 px rows) with **Vote**, then **Change vote** and **Retract vote**; with the results
+visible every option shows a bar, the count and the share, the own vote is marked "✓ Your vote", and with public votes
+the voters' names follow ("and n more" expands them). Date polls show every slot in the viewer's time zone (with the
+creator's time when the offsets differ; all-day slots keep the creator's date) with Yes / Maybe / No (text and icon,
+never colour alone) and "✓ n · ? n"; the best slots (most yes, then most maybe) are summarised on top and marked
+★, and **Show all answers** opens the grid of members × slots. Hidden results read "Results are shown after you vote"
+or "… when the poll closes", hidden voters "Who voted for what is hidden until the poll closes". A closed poll takes no
+votes. The author, or a member with *Manage messages*, can **Close poll now** (after a confirmation), also a poll without a
+close time; a close time only ever moves earlier. The author always sees the results of their own poll, also with
+"after voting" before they voted. Polls cannot be edited.
+
+**Votes** are records next to the message, one per member and poll (`polls/votes.ts`): loaded when a poll is shown
+(`GET …/poll/votes`), kept current by `poll.vote` and `poll.vote.delete`, never counted as unread and never notifying.
+In encrypted conversations a vote is encrypted and signed by this device under the current epoch like a message
+(the ghost check applies; a stale epoch is caught up once and sent again); in plaintext ones it carries this device's
+plaintext signature. The own vote shows at once and is rolled back when the node refuses it; another device's later
+vote replaces it (the last device wins). Every record is checked with `@tavrn/e2ee` (`checkPollVote`, `tallyPoll`):
+signature against the voter's device, bound to this poll (`ctx.poll`) and to exactly this version of it
+(`ctx.poll_hash`, SHA-256 of its JCS form). Votes of an earlier version are not counted and shown as "n on an
+earlier version (not counted)" (and "You voted on an earlier version" for the own one), unverifiable ones as "n could
+not be verified", votes after the close time not at all; plaintext votes without a signature this device can check
+count and are listed as "n unverified". A member who cannot decrypt an encrypted poll with a close time (it is older
+than their history) sees "Poll from before you joined" with the number of votes.
 
 ### Media and image previews
 

@@ -24,6 +24,10 @@ describe("plainPreview", () => {
     expect(plainPreview(message({ encrypted: true, content: "abc" }))).toBeNull();
     expect(plainPreview(message({ content: { type: "text", body: "x".repeat(300) } }))!.length).toBe(140);
   });
+
+  it("a plaintext poll reads as its question", () => {
+    expect(plainPreview(message({ content: { type: "poll", kind: "choice", question: "Wohin\ngehen wir?" } }))).toBe("📊 Wohin gehen wir?");
+  });
 });
 
 describe("notifyMessage", () => {

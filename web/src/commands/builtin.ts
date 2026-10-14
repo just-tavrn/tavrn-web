@@ -30,6 +30,16 @@ export const BUILTIN_COMMANDS: CommandDefinition[] = [
     dm_allowed: true,
     source: "builtin",
   },
+  {
+    id: "",
+    name: "poll",
+    description: "Create a poll or a date poll",
+    args: [{ name: "question", description: "Question", type: "string", required: false, rest: true, max_length: 300 }],
+    // `create_polls` with `send_messages` (PROTOCOL.md §7g); DMs and group DMs grant both to every member.
+    permission: p(Permission.SEND_MESSAGES | Permission.CREATE_POLLS),
+    dm_allowed: true,
+    source: "builtin",
+  },
   { id: "", name: "whiteboard", description: "Open the whiteboard of this conversation", args: [], permission: p(Permission.USE_WHITEBOARD), dm_allowed: true, source: "builtin" },
   {
     id: "",

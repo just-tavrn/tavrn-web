@@ -16,6 +16,8 @@ export interface CommandContext {
   /** Sends a content object (`text` or `action`) to the conversation, encrypted where needed. */
   sendContent: (content: { type: "text" | "action"; body: string }) => Promise<void>;
   openWhiteboard: () => void;
+  /** Opens the poll composer (PROTOCOL.md §7g), with the question when one was typed after `/poll`. */
+  openPoll: (question: string) => void;
   confirm: (text: string) => boolean | Promise<boolean>;
   /** A short local notice (toast). */
   info: (text: string) => void;
@@ -109,6 +111,9 @@ export async function executeBuiltin(def: CommandDefinition, values: Record<stri
       return;
     case "shrug":
       await ctx.sendContent({ type: "text", body: str("message") ? `${str("message")} ${SHRUG}` : SHRUG });
+      return;
+    case "poll":
+      ctx.openPoll(str("question"));
       return;
     case "whiteboard":
       ctx.openWhiteboard();

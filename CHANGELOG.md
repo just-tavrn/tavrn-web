@@ -37,6 +37,13 @@ First public release of the web client and the desktop apps.
   every request that would change something is refused before it leaves the device, typing, voice joins, moves,
   uploads and pasted files are off, and nothing of the hidden channels shows up (notifications, counts, search hits,
   deep links). Encrypted history from before the window is cut behind "History for this role starts here".
+- **Polls and date polls** (protocol PROTOCOL.md §7g, `polls.v1`, #134): the composer's ＋ menu (**Poll**, **Date
+  poll**) and `/poll [question]` open the poll composer: 2 to 20 options with single or multiple choice, or days of a
+  calendar with all-day slots or times in the creator's time zone (up to 60); results always, after voting or after
+  the close; votes public or hidden until the close; an optional close time. Polls render with vote buttons, results
+  bars, voters, the best date slots and a grid of answers, in the viewer's time zone. Votes are one encrypted (or
+  signed plaintext) record per member, checked against the poll's exact version, changed or retracted until the close;
+  the author or a moderator closes a poll early. The role editors list the new *Create polls* permission.
 - **A hint when you talk while muted** (#125): with "Remind me when I talk while muted" (Settings → Voice & video →
   Input mode, on by default) the client keeps listening to your microphone locally while it is muted (nothing is sent:
   the gate is closed and the track muted) and, once your voice is picked up for about 0.7 seconds, plays a soft double
