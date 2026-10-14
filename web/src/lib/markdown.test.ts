@@ -214,6 +214,40 @@ describe("custom emoji tokens (design note 4.13)", () => {
   });
 });
 
+describe("Unicode emojis (tavrn-web#117)", () => {
+  const spans = (html: string) => Array.from(dom(html).querySelectorAll("span.emoji-text")).map((s) => s.textContent);
+
+  it("wraps emojis with emoji presentation, sequences as one, never text symbols or digits", () => {
+    expect(spans(renderMarkdown("hi 😀 and 👍🏽 and 👩‍👩‍👧‍👦 and 🇩🇪 and 2️⃣ and ❤️ and 🏳️‍🌈"))).toEqual(["😀", "👍🏽", "👩‍👩‍👧‍👦", "🇩🇪", "2️⃣", "❤️", "🏳️‍🌈"]);
+    expect(spans(renderMarkdown("© 2026 ↔ ♥ 3 # * →"))).toEqual([]);
+    expect(renderMarkdown("© 2026 ↔ ♥ 3 # * →")).not.toContain("emoji-text");
+    expect(renderMarkdown("nur Text").trim()).toBe("<p>nur Text</p>");
+  });
+
+  it("leaves code, links and custom emoji tokens alone and keeps the text around", () => {
+    const html = renderMarkdown("`😀` [😀](https://example.org) 😀\n\n```\n🎉\n```");
+    expect(dom(html).querySelector("code")?.textContent).toBe("😀");
+    expect(dom(html).querySelector("a span.emoji-text")?.textContent).toBe("😀");
+    expect(spans(html)).toHaveLength(2);
+    expect(dom(html).querySelector("pre")?.textContent).toContain("🎉");
+    expect(dom(html).querySelector("pre span.emoji-text")).toBeNull();
+    const withToken = renderMarkdown(`😀 <:wave:${ID}>`, {}, () => "https://img.example/e.png");
+    expect(spans(withToken)).toEqual(["😀"]);
+    expect(dom(withToken).querySelector("img.emoji")?.getAttribute("alt")).toBe(":wave:");
+  });
+
+  it("marks a paragraph of one to three emojis (text or custom) and nothing else as emoji-only", () => {
+    expect(dom(renderMarkdown("🎉")).querySelector("p.emoji-only")).not.toBeNull();
+    expect(dom(renderMarkdown(" 🎉 🎉  🎉 ")).querySelector("p.emoji-only")).not.toBeNull();
+    expect(dom(renderMarkdown("🎉🎉🎉🎉")).querySelector("p.emoji-only")).toBeNull();
+    expect(dom(renderMarkdown("🎉 ja")).querySelector("p.emoji-only")).toBeNull();
+    expect(dom(renderMarkdown("🎉\n\n🎉")).querySelector("p.emoji-only")).toBeNull();
+    expect(dom(renderMarkdown("**🎉**")).querySelector("p.emoji-only")).toBeNull();
+    expect(dom(renderMarkdown(`🎉 <:wave:${ID}>`, {}, () => "https://img.example/e.png")).querySelector("p.emoji-only")).not.toBeNull();
+    expect(dom(renderMarkdown(":wave:", { wave: "https://img.example/w.png" })).querySelector("p.emoji-only")).not.toBeNull();
+  });
+});
+
 describe("renderDocument (legal pages)", () => {
   it("keeps headings, lists and tables and drops markup, images and unsafe links", async () => {
     const { renderDocument } = await import("./markdown");

@@ -61,6 +61,9 @@ First public release of the web client and the desktop apps.
 
 ### Changed
 
+- **Emojis are a little larger**: emojis in message text are shown at 1.25× the text size (baseline aligned, the
+  line height does not change), a message of one to three emojis and nothing else at twice the text size (custom
+  emojis alike), and reaction chips show an 18 px glyph next to the count at the same chip height (#117).
 - **Mentions stand out**: `@name`, `@name@domain`, `@Role` and `@everyone`/`@here` in messages are pills; mentions
   of yourself and @everyone/@here use the warning colour with a border, and a message that mentions you keeps its
   left border with a stronger tint (#122).

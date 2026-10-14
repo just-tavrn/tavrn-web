@@ -120,6 +120,12 @@ body { @apply bg-bg-2 text-fg-0 font-sans antialiased; }
 .bot-mention-badge { margin-left: 0.2em; padding: 0 0.25em; border-radius: 0.25rem; background: var(--color-accent-soft); color: var(--color-accent); font-size: 0.65em; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; vertical-align: middle; }
 .emoji-missing { display: inline-block; padding: 0 0.3em; border-radius: 0.25rem; background: var(--color-bg-3); color: var(--color-fg-2); font-size: 0.85em; }
 .markdown img.emoji { display: inline-block; height: 1.375em; width: auto; max-width: 3em; vertical-align: -0.3em; object-fit: contain; }
+/* Unicode emojis (tavrn-web#117): 1.25× the text, line-height 1 so a line with an emoji keeps the text's line box
+   (the glyph's 1.25 em fit inside the 1.43 em line of the 14 px text); emoji-only messages (1–3 emojis, nothing else)
+   twice the text, custom emoji images alongside. */
+.markdown .emoji-text { font-size: 1.25em; line-height: 1; vertical-align: -0.1em; }
+.markdown .emoji-only .emoji-text { font-size: 2em; vertical-align: -0.15em; }
+.markdown .emoji-only img.emoji { height: 2em; max-width: 4em; vertical-align: -0.4em; }
 .markdown h1, .markdown h2, .markdown h3 { font-weight: 600; margin: 0.25rem 0; }
 /* Legal documents (design note 4.14): longer texts with headings, lists and tables. */
 .legal-doc h1 { font-size: 1.25rem; margin: 1rem 0 0.5rem; }

@@ -307,6 +307,10 @@ language, are highlighted and have "Copy code" and "Wrap long lines" buttons. Cu
 stay hidden until clicked or activated with Enter or Space; the composer's spoiler button and Ctrl+Shift+S wrap the
 selection, and every attachment can be marked as a spoiler, which covers images and videos until "Spoiler, click to
 reveal".
+**Emoji sizes**: Unicode emojis in message text are rendered at 1.25× the text size, aligned to the baseline without
+changing the line height; a message that consists of one to three emojis (Unicode or custom, nothing else) shows them
+at twice the text size; reaction chips show an 18 px glyph next to the count at the chip's usual height. Symbols that
+render as text by default (©, ↔) stay text.
 
 **The composer** has the emoji picker, a GIF picker on nodes with a GIF provider (in encrypted messages the client
 itself accepts only the providers' media hosts), uploads by button, drag and drop or paste ("Uploads and downloads"),
