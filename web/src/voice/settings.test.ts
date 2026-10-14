@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-import { beforeEach, describe, expect, it } from "vitest";
-import { DEFAULT_SETTINGS, SETTINGS_KEY, captureConstraints, cameraOptions, gateThreshold, limitResolution, normalizeSettings, resolutionSize, useVoiceSettings } from "./settings";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_SETTINGS, SETTINGS_KEY, captureConstraints, cameraOptions, defaultSettings, gateThreshold, limitResolution, mutedTalkHintDefault, normalizeSettings, resolutionSize, useVoiceSettings } from "./settings";
+import { resetPlatform, setPlatform } from "../platform";
+import { androidPlatform, fakeAndroid } from "../platform/androidTestPlatform";
 
 describe("voice & video settings (design note 4.9)", () => {
   beforeEach(() => {
@@ -149,7 +151,7 @@ describe("voice & video settings (design note 4.9)", () => {
 
 describe("keep the screen on during voice calls", () => {
   it("is on by default; stored values are kept, invalid ones fall back to on", () => {
-    // The talking-while-muted hint (issue #125) is on by default.
+    // The talking-while-muted hint (issue #125) is on by default outside Android (issue #147, below).
     expect(DEFAULT_SETTINGS.mutedTalkHint).toBe(true);
     expect(normalizeSettings({}).mutedTalkHint).toBe(true);
     expect(normalizeSettings({ mutedTalkHint: false }).mutedTalkHint).toBe(false);
@@ -158,5 +160,73 @@ describe("keep the screen on during voice calls", () => {
     expect(normalizeSettings({}).keepScreenOn).toBe(true);
     expect(normalizeSettings({ keepScreenOn: false }).keepScreenOn).toBe(false);
     expect(normalizeSettings({ keepScreenOn: "no" }).keepScreenOn).toBe(true);
+  });
+});
+
+describe("talking-while-muted hint: off by default on Android (issue #147)", () => {
+  const ANDROID_UA = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36";
+  const DESKTOP_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36";
+  const asUserAgent = (ua: string) => vi.spyOn(navigator, "userAgent", "get").mockReturnValue(ua);
+  const stored = () => JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}") as Record<string, unknown>;
+
+  beforeEach(() => localStorage.clear());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    resetPlatform();
+    useVoiceSettings.getState().reload();
+  });
+
+  it("is on by default in a desktop browser and off in a browser on Android", () => {
+    asUserAgent(DESKTOP_UA);
+    expect(mutedTalkHintDefault()).toBe(true);
+    expect(normalizeSettings({}).mutedTalkHint).toBe(true);
+    expect(defaultSettings()).toEqual(DEFAULT_SETTINGS);
+    asUserAgent(ANDROID_UA);
+    expect(mutedTalkHintDefault()).toBe(false);
+    expect(normalizeSettings({}).mutedTalkHint).toBe(false);
+    expect(normalizeSettings(null)).toEqual({ ...DEFAULT_SETTINGS, mutedTalkHint: false });
+    expect(defaultSettings().mutedTalkHint).toBe(false);
+    // Invalid stored values fall back to the platform's default.
+    expect(normalizeSettings({ mutedTalkHint: "yes" }).mutedTalkHint).toBe(false);
+  });
+
+  it("is off by default in the Android app, whatever its user agent says", () => {
+    asUserAgent(DESKTOP_UA);
+    setPlatform(androidPlatform(fakeAndroid()));
+    expect(mutedTalkHintDefault()).toBe(false);
+    expect(normalizeSettings({}).mutedTalkHint).toBe(false);
+  });
+
+  it("keeps a stored explicit choice on Android and elsewhere", () => {
+    asUserAgent(ANDROID_UA);
+    expect(normalizeSettings({ mutedTalkHint: true }).mutedTalkHint).toBe(true);
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ mutedTalkHint: true }));
+    useVoiceSettings.getState().reload();
+    expect(useVoiceSettings.getState().settings.mutedTalkHint).toBe(true);
+    asUserAgent(DESKTOP_UA);
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ mutedTalkHint: false }));
+    useVoiceSettings.getState().reload();
+    expect(useVoiceSettings.getState().settings.mutedTalkHint).toBe(false);
+  });
+
+  it("stores the hint only when it differs from the platform's default, so the default follows the platform", () => {
+    asUserAgent(ANDROID_UA);
+    useVoiceSettings.getState().reload();
+    expect(useVoiceSettings.getState().settings.mutedTalkHint).toBe(false);
+    // Another setting changes: the hint stays the platform's default, nothing about it is written.
+    useVoiceSettings.getState().update({ inputVolume: 80 });
+    expect(stored().inputVolume).toBe(80);
+    expect("mutedTalkHint" in stored()).toBe(false);
+    // The user turns it on: the choice is stored and survives a reload.
+    useVoiceSettings.getState().update({ mutedTalkHint: true });
+    expect(stored().mutedTalkHint).toBe(true);
+    useVoiceSettings.getState().reload();
+    expect(useVoiceSettings.getState().settings.mutedTalkHint).toBe(true);
+    // Elsewhere: turned off, stored; back on (the default), not stored any more.
+    asUserAgent(DESKTOP_UA);
+    useVoiceSettings.getState().update({ mutedTalkHint: false });
+    expect(stored().mutedTalkHint).toBe(false);
+    useVoiceSettings.getState().update({ mutedTalkHint: true });
+    expect("mutedTalkHint" in stored()).toBe(false);
   });
 });

@@ -816,7 +816,7 @@ milliseconds and cut off the first syllable. While unmuted (voice activation or 
 on, Android stays in the call audio mode: the volume keys set the call volume during a call.
 
 **Talking while muted** (`web/src/voice/mutedTalk.ts`): with "Remind me when I talk while muted" (Settings → Voice &
-video → Input mode, on by default) the capture and the microphone graph keep running while you are muted, so the
+video → Input mode, on by default except on Android) the capture and the microphone graph keep running while you are muted, so the
 client can tell that your voice is being picked up; the gate is held closed and the published track is muted, so
 nothing is sent (the other side decodes silence). Once the input stays above the voice activation threshold for
 about 0.7 seconds (short dips between words do not count), a soft double tap plays (the cue "Talking while muted",
@@ -826,7 +826,9 @@ short notice says "You are talking, but your microphone is muted." (announced po
 every ten seconds while the talking goes on. The hint applies to the mute toggle only: a released push-to-talk key is
 not a mute; it does not listen while deafened (you stepped away) or server-muted (you could not unmute). With the
 setting off the mute releases the capture as described above; on Android in the browser this also means the phone
-stays in its call audio mode while muted as long as the hint is on.
+stays in its call audio mode while muted as long as the hint is on, which is why the hint starts off in the browser on
+Android and in the Android app (`mutedTalkHintDefault` in `web/src/voice/settings.ts`; only a choice that differs from
+the platform's default is stored, so turning it on there is kept).
 
 ### Voice and stream audio
 
