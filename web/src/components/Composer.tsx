@@ -460,19 +460,21 @@ export function Composer({
       <div ref={inputRow} className="flex items-end gap-1 rounded-lg border border-line-strong bg-bg-0 px-2 py-2 focus-within:border-accent">
         {(canAttach || onPoll) && (
           <>
-            {canAttach && <input
-              ref={fileInput}
-              type="file"
-              multiple
-              className="hidden"
-              accept={accept || undefined}
-              aria-label={t("composer.pick_file")}
-              data-testid="file-input"
-              onChange={(e) => {
-                if (e.target.files) void addFiles(e.target.files);
-                e.target.value = "";
-              }}
-            />}
+            {canAttach && (
+              <input
+                ref={fileInput}
+                type="file"
+                multiple
+                className="hidden"
+                accept={accept || undefined}
+                aria-label={t("composer.pick_file")}
+                data-testid="file-input"
+                onChange={(e) => {
+                  if (e.target.files) void addFiles(e.target.files);
+                  e.target.value = "";
+                }}
+              />
+            )}
             <button
               type="button"
               aria-label={onPoll ? t("composer.plus") : t("composer.attach")}

@@ -6,6 +6,31 @@ import { Composer } from "./Composer";
 import { BUILTIN_COMMANDS } from "../commands/builtin";
 
 describe("Composer", () => {
+  it("the ＋ button is a menu with the file picker, Poll and Date poll where polls may be created", async () => {
+    const onPoll = vi.fn();
+    const u = userEvent.setup();
+    const { rerender } = render(<Composer placeholder="Nachricht" onSend={vi.fn()} canAttach onPoll={onPoll} />);
+    const plus = screen.getByRole("button", { name: "Datei oder Umfrage hinzufügen" });
+    expect(plus).toHaveAttribute("aria-haspopup", "menu");
+    expect(plus).toHaveAttribute("aria-expanded", "false");
+    await u.click(plus);
+    expect(plus).toHaveAttribute("aria-expanded", "true");
+    const menu = screen.getByRole("menu");
+    expect(screen.getAllByRole("menuitem").map((x) => x.textContent)).toEqual([expect.stringContaining("Datei anhängen"), expect.stringContaining("Umfrage"), expect.stringContaining("Terminumfrage")]);
+    await u.click(screen.getByTestId("plus-date-poll"));
+    expect(onPoll).toHaveBeenCalledWith("date");
+    expect(menu).not.toBeInTheDocument();
+    // Without uploads only the polls; without polls the button picks a file directly.
+    rerender(<Composer placeholder="Nachricht" onSend={vi.fn()} onPoll={onPoll} />);
+    await u.click(screen.getByRole("button", { name: "Datei oder Umfrage hinzufügen" }));
+    expect(screen.getAllByRole("menuitem")).toHaveLength(2);
+    await u.keyboard("{Escape}");
+    rerender(<Composer placeholder="Nachricht" onSend={vi.fn()} canAttach />);
+    expect(screen.getByRole("button", { name: "Datei anhängen" })).not.toHaveAttribute("aria-haspopup");
+    rerender(<Composer placeholder="Nachricht" onSend={vi.fn()} />);
+    expect(screen.queryByTestId("composer-plus")).toBeNull();
+  });
+
   it("sends with Enter, not with Shift+Enter, and clears afterwards", async () => {
     const onSend = vi.fn(async () => {});
     const onTyping = vi.fn();
