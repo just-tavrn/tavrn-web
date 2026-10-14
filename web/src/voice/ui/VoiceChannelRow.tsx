@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { NavLink, useNavigate } from "react-router";
 import { Permission, hasPermission, type Channel, type RoomDetail, type VoiceParticipant } from "@tavrn/sdk";
 import { useLocale, useT } from "../../i18n";
@@ -83,6 +83,13 @@ export function VoiceChannelRow({ room, channel, onNavigate }: { room: RoomDetai
   const marks = channelAccessMarks(room, channel.id, perms);
   const canConnect = hasPermission(perms, Permission.CONNECT);
   const [drop, setDrop] = useState<DropState>(null);
+  // A drag that ends over this channel without a drop (refused, Escape) does not always send a dragleave.
+  useEffect(() => {
+    if (!drop) return;
+    const clear = () => setDrop(null);
+    window.addEventListener("dragend", clear, true);
+    return () => window.removeEventListener("dragend", clear, true);
+  }, [drop]);
   const { menu, overlay } = useChannelMenu(room, channel);
   const canCreate = hasPermission(perms, Permission.SEND_MESSAGES);
 
