@@ -11,6 +11,8 @@ import { toastError, useToasts } from "../../stores/toasts";
 import { Button, Field, Input } from "../../components/ui";
 import { ConfirmDialog, PermissionCheckboxes, Section } from "./common";
 import { UPLOAD_CATEGORIES } from "../../lib/uploads";
+import { useRoomPreview } from "../../stores/rolePreview";
+import { ViewAsRole } from "./ViewAsRole";
 
 /**
  * "Managed by <application>" (APPLICATIONS.md §4.2): the name of the application whose installation created the
@@ -46,6 +48,7 @@ export function RolesTab({ room }: { room: RoomDetail }) {
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  const previewing = !!useRoomPreview(room.id);
 
   const createRole = async () => {
     try {
@@ -157,7 +160,13 @@ export function RolesTab({ room }: { room: RoomDetail }) {
           </Button>
         )}
       </Section>
-      {selected && <RoleEditor key={selected.id} role={selected} room={room} canManage={canManage && (selected.is_everyone || selected.position < myTop)} myPerms={myPerms} onChanged={refresh} managedBy={managedBy(selected)} />}
+      {selected && (
+        <div className="min-w-0 space-y-4">
+          {/* The role preview starts from here (not inside one: there the tab is read-only). */}
+          {canManage && !previewing && <ViewAsRole key={`view-${selected.id}`} room={room} role={selected} />}
+          <RoleEditor key={selected.id} role={selected} room={room} canManage={canManage && (selected.is_everyone || selected.position < myTop)} myPerms={myPerms} onChanged={refresh} managedBy={managedBy(selected)} />
+        </div>
+      )}
     </div>
   );
 }

@@ -6,6 +6,8 @@
  * native one while its window is not focused). Previews only show plaintext; the content of encrypted messages
  * is never put into a system notification.
  */
+import { previewOf } from "../stores/rolePreview";
+import { previewHides } from "./previewRoom";
 import { plainInEncrypted } from "./unverified";
 import type { QueryClient } from "@tanstack/react-query";
 import type { Conversation, Message, RoomDetail } from "@tavrn/sdk";
@@ -76,6 +78,9 @@ export async function notifyMessage(m: Message, ctx: NotifyContext): Promise<voi
   }
   // Neither a known room channel nor a known DM: nothing sensible to show.
   if (!where.room && !where.conversation) return;
+  // A role preview shows nothing of the channels the roles may not view (lib/previewRoom.ts).
+  const preview = previewOf(where.room?.id);
+  if (where.room && preview && previewHides(where.room, preview.roleIds, m.conversation_id)) return;
   const channel = where.room?.channels.find((c) => c.id === m.conversation_id);
   // A thread message is being read only when its thread is open (PROTOCOL.md §7e).
   const active = (m.thread_id ? useThreads.getState().open === m.thread_id : useMlsUi.getState().open === m.conversation_id) && isAttentive();

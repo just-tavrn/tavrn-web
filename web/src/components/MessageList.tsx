@@ -105,9 +105,15 @@ export function MessageList({
   usersById,
   canStartThreads = false,
   encrypted = false,
+  historyCut,
 }: {
   /** Newest first, as delivered by the API. */
   messages: Message[];
+  /**
+   * Role preview (lib/previewRoom.ts): the encrypted history a new member with the role gets starts here; the text
+   * replaces "load older" at the top (nothing older is loaded).
+   */
+  historyCut?: string;
   currentUserId: string | undefined;
   canManage: boolean;
   canReact?: boolean;
@@ -340,7 +346,15 @@ export function MessageList({
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div ref={listRef} onScroll={onScroll} id="messages" tabIndex={-1} className="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-3" data-testid="message-list" data-loaded={messages.length}>
         {/* Always the same height while there are messages, so its change never shifts the rows. */}
-        {(hasMore || ordered.length > 0) && (
+        {historyCut ? (
+          <div className="mb-3 flex min-h-10 shrink-0 items-center gap-3" data-testid="preview-history-start">
+            <span aria-hidden="true" className="h-px flex-1 bg-line-strong" />
+            <span className="text-xs font-medium text-fg-1">
+              {historyCut}
+            </span>
+            <span aria-hidden="true" className="h-px flex-1 bg-line-strong" />
+          </div>
+        ) : (hasMore || ordered.length > 0) && (
           <div className="mb-3 flex min-h-10 shrink-0 items-center justify-center">
             {hasMore ? (
               <button type="button" onClick={loadOlder} disabled={loadingOlder} className="min-h-10 rounded-md px-3 text-sm text-fg-2 hover:bg-bg-3 hover:text-fg-0 disabled:opacity-60">

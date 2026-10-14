@@ -152,4 +152,18 @@ describe("accessibility of shared widgets", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("x@t.local/01J9ZK3G5M8Q2W4E6R8T0Y2VD1");
     expect(screen.getByRole("button", { name: "Ich verstehe" })).toBeInTheDocument();
   });
+
+  it("the role preview: the history cut is text in the list, the rights are said in words", async () => {
+    render(<MessageList encrypted messages={[base]} currentUserId="u1" canManage={false} hasMore historyCut="Hier beginnt der Verlauf für diese Rolle" />);
+    expect(screen.getByTestId("preview-history-start")).toHaveTextContent("Hier beginnt der Verlauf für diese Rolle");
+    // Nothing older is offered.
+    expect(screen.queryByRole("button", { name: /Ältere/ })).toBeNull();
+    const { PreviewRights } = await import("./PreviewRights");
+    const { Permission } = await import("@tavrn/sdk");
+    render(<PreviewRights perms={Permission.CONNECT} testId="rights" rights={[{ label: "Beitreten", bit: Permission.CONNECT }, { label: "Kamera", bit: Permission.USE_CAMERA }]} />);
+    const items = screen.getByTestId("rights").querySelectorAll("li");
+    expect(items[0]).toHaveTextContent("Beitreten");
+    expect(items[0]).toHaveTextContent("erlaubt");
+    expect(items[1]).toHaveTextContent("nicht erlaubt");
+  });
 });

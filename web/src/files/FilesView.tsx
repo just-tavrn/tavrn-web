@@ -16,7 +16,12 @@ import { useGhostGate } from "../components/GhostGate";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router";
-import type { Channel, FileEntry, FilesInfo, RoomDetail } from "@tavrn/sdk";
+import { Permission, type Channel, type FileEntry, type FilesInfo, type RoomDetail } from "@tavrn/sdk";
+import { previewing, useRoomPreview } from "../stores/rolePreview";
+import { toastPreviewRefused } from "../lib/previewGuard";
+import { cutHistory, previewHistoryStart } from "../lib/previewRoom";
+import { channelPermissions } from "../lib/channelPermissions";
+import { PreviewRights } from "../components/PreviewRights";
 import { decryptFileRecord, parseHistoryPolicy, qualify, type FileRecord, type FileRecordResult } from "@tavrn/e2ee";
 import { historyPending, historyReceive } from "../crypto/history";
 import { useE2eeConversation } from "../hooks/useE2eeConversation";
@@ -215,7 +220,17 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
   // `t` is a new function on every render: the labels change with the language only.
   const locale = useLocale((s) => s.locale);
   const lockedLabels = useMemo(() => ({ file: t("files.locked_file"), folder: t("files.locked_folder") }), [locale]); // eslint-disable-line react-hooks/exhaustive-deps
-  const shownRaw = useMemo(() => (encrypted ? displayEntries(raw, records, lockedLabels) : raw), [encrypted, raw, records, lockedLabels]);
+  // Role preview: encrypted entries from before the window a new member with the roles would get are cut.
+  const preview = useRoomPreview(room.id);
+  const historyStart = preview ? previewHistoryStart(channel, channelPermissions(room, channel.id, ""), preview.joinedAt) : null;
+  // An entry's record is what a new member must decrypt: its time counts (a renamed file has a newer record).
+  const windowed = useMemo(() => {
+    if (historyStart === null) return { items: raw, cut: false };
+    const kept = new Set(cutHistory(raw.map((e) => ({ id: e.id, created_at: e.record_at ?? e.created_at })), historyStart).items.map((e) => e.id));
+    return { items: raw.filter((e) => kept.has(e.id)), cut: kept.size !== raw.length };
+  }, [raw, historyStart]);
+  const visibleRaw = windowed.items;
+  const shownRaw = useMemo(() => (encrypted ? displayEntries(visibleRaw, records, lockedLabels) : visibleRaw), [encrypted, visibleRaw, records, lockedLabels]);
   const entries = useMemo(() => {
     const needle = encrypted ? search.toLowerCase() : "";
     return sortEntries(needle ? shownRaw.filter((e) => e.name.toLowerCase().includes(needle)) : shownRaw, sort);
@@ -288,8 +303,9 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
   }, [folder, search]);
 
   const i: FilesInfo | undefined = info.data;
-  const rights = { can_manage: !!i?.can_manage, can_attach: !!i?.can_upload };
-  const canUpload = !!i?.can_upload;
+  // Role preview (docs/CLIENT.md): nothing is uploaded, moved or changed; the rights of the roles are listed instead.
+  const rights = preview ? { can_manage: false, can_attach: false } : { can_manage: !!i?.can_manage, can_attach: !!i?.can_upload };
+  const canUpload = !preview && !!i?.can_upload;
   const selected = entries.filter((e) => selection.ids.has(e.id));
   const modifiable = (list: FileEntry[]) => list.length > 0 && list.every((e) => canModify(e, me?.id, rights));
 
@@ -350,6 +366,8 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
 
   const uploadFiles = async (files: File[], target: string | null = search ? null : folder) => {
     if (!i) return;
+    // Uploads go by XMLHttpRequest (progress), past the fetch guard: refused here while previewing.
+    if (previewing()) return toastPreviewRefused();
     if (encrypted && gate.blocked) return toastError(new Error(t("e2ee.composer_ghost")));
     const enc = encrypted ? ctx() : null;
     if (encrypted && !enc) return toastError(new Error(t("files.e2ee_not_ready")));
@@ -729,6 +747,23 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
         data-testid="files-list"
         data-view={view}
       >
+        {preview && (
+          <div className="mb-2 space-y-2">
+            <PreviewRights
+              perms={channelPermissions(room, channel.id, "")}
+              testId="preview-files-rights"
+              rights={[
+                { label: t("roleview.files.upload"), bit: Permission.ATTACH_FILES },
+                { label: t("roleview.files.manage"), bit: Permission.MANAGE_FILES },
+              ]}
+            />
+            {windowed.cut && historyStart !== null && (
+              <p className="text-xs font-medium text-fg-1" data-testid="preview-history-start">
+                {t("roleview.files_history_start")}
+              </p>
+            )}
+          </div>
+        )}
         {encrypted && lockState === "locked" && <YourFilesPanel roomId={room.id} channelId={channel.id} onChanged={refresh} />}
         {listing.isPending && <p className="p-4 text-sm text-fg-2">{t("common.loading")}</p>}
         {listing.isError && <p className="p-4 text-sm text-danger">{describeError(listing.error)}</p>}

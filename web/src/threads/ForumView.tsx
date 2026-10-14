@@ -23,6 +23,8 @@ import { createPost } from "./actions";
 import { useThreads } from "./store";
 import { formatCount } from "../stores/unread";
 import { LockMark } from "../components/Badges";
+import { useRoomPreview } from "../stores/rolePreview";
+import { cutHistory, previewHistoryStart } from "../lib/previewRoom";
 
 type Sort = "activity" | "created";
 
@@ -62,7 +64,12 @@ export function ForumView({ room, channel, perms, roomMembers, members, refreshM
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.next ?? undefined,
   });
-  const threads = useMemo(() => posts.data?.pages.flatMap((p) => p.items) ?? [], [posts.data]);
+  const listed = useMemo(() => posts.data?.pages.flatMap((p) => p.items) ?? [], [posts.data]);
+  // Role preview (docs/CLIENT.md): encrypted posts from before the window a new member with the roles would get are cut.
+  const rolePreview = useRoomPreview(room.id);
+  const historyStart = rolePreview ? previewHistoryStart(channel, perms, rolePreview.joinedAt) : null;
+  const windowed = useMemo(() => cutHistory(listed, historyStart), [listed, historyStart]);
+  const threads = windowed.items;
   const firsts = useMemo(() => threads.map((th) => th.first_message).filter((m): m is Message => !!m), [threads]);
   const decrypted = useDecrypted(q, firsts, e2ee.mls, e2ee.tick);
   const titles = useThreadTitles(q, threads, e2ee.tick);
@@ -134,6 +141,11 @@ export function ForumView({ room, channel, perms, roomMembers, members, refreshM
             </li>
           ))}
         </ul>
+        {windowed.cut && (
+          <p className="mt-3 text-center text-xs font-medium text-fg-1" data-testid="preview-history-start">
+            {t("roleview.forum_history_start")}
+          </p>
+        )}
         {posts.hasNextPage && (
           <div className="mt-3 flex justify-center">
             <Button variant="ghost" onClick={() => void posts.fetchNextPage()} disabled={posts.isFetchingNextPage}>

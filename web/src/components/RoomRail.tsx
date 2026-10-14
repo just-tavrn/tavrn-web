@@ -9,6 +9,8 @@
  * drop action (HTML5 drag and drop with a mouse) has a menu entry, so touch and keyboard reach all of them; on touch
  * nothing is draggable and a long press opens the menus.
  */
+import { useRolePreview } from "../stores/rolePreview";
+import { previewRoom } from "../lib/previewRoom";
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useState, type DragEvent, type KeyboardEvent, type TouchEvent } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { NavLink, useLocation, useNavigate } from "react-router";
@@ -139,7 +141,12 @@ function detailQuery(node: string | null, roomId: string) {
 function useCounts(rooms: Resolved[]): Counts {
   const details = useQueries({ queries: rooms.map((r) => detailQuery(r.node, r.room.id)) });
   const settings = useNotifications((s) => s.settings);
-  const groups = details.map((d, i) => ({ roomId: rooms[i]!.room.id, ids: (d.data?.channels ?? []).filter((c) => c.kind !== "voice").map((c) => c.id) }));
+  // A role preview counts only the channels the roles may view (lib/previewRoom.ts).
+  const preview = useRolePreview((s) => s.preview);
+  const groups = details.map((d, i) => {
+    const data = d.data && preview?.roomId === d.data.id ? previewRoom(d.data, preview.roleIds) : d.data;
+    return { roomId: rooms[i]!.room.id, ids: (data?.channels ?? []).filter((c) => c.kind !== "voice").map((c) => c.id) };
+  });
   const channelIds = groups.flatMap((g) => g.ids);
   const listedIds = groups.filter((g) => roomBadgeLevel(settings, g.roomId) === "all").flatMap((g) => g.ids);
   const unread = useUnread((s) => roomCounts(s.states, channelIds).unread);

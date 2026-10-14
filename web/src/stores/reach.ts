@@ -5,6 +5,7 @@
  * the "unreachable" state; everything else keeps working (design note 9, FEDERATION.md §4).
  */
 import { create } from "zustand";
+import { previewGuard } from "../lib/previewGuard";
 
 export type Reach = "ok" | "unreachable";
 
@@ -25,9 +26,14 @@ export function isUnreachable(domain: string): boolean {
   return useReach.getState().nodes[domain] === "unreachable";
 }
 
-/** A `fetch` that records the reachability of `domain()` (the domain is read per request). */
+/**
+ * A `fetch` that records the reachability of `domain()` (the domain is read per request). It also applies the role
+ * preview's write guard (lib/previewGuard.ts): a refused request never leaves this device.
+ */
 export function trackingFetch(domain: () => string | null, inner: typeof fetch = (...args) => fetch(...args)): typeof fetch {
   return async (input, init) => {
+    const refused = previewGuard(input, init);
+    if (refused) return refused;
     const d = domain();
     try {
       const resp = await inner(input, init);

@@ -3,6 +3,7 @@
  * The context menu of a room in the rail and of the room header in the sidebar (design note 4.11): invite,
  * settings, mark as read, notification settings, leave. The room detail (channels, permissions) is loaded when the menu opens.
  */
+import { usePreviewedRoom } from "../../stores/rolePreview";
 import { useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
@@ -50,15 +51,17 @@ export function useRoomMenu(room: Pick<Room, "id" | "name">, node: string | null
     enabled: menu.open,
     staleTime: 30_000,
   });
-  const channelIds = (detail.data?.channels ?? []).filter((c) => c.kind !== "voice").map((c) => c.id);
+  // A role preview: the menu of the simulated member (lib/previewRoom.ts).
+  const data = usePreviewedRoom(detail.data);
+  const channelIds = (data?.channels ?? []).filter((c) => c.kind !== "voice").map((c) => c.id);
   const unread = useUnread((s) => channelIds.some((id) => isUnread(s.states, id)));
   const notify = useNotifyMenu("room", room.id, null);
-  const perms = parsePermissions(detail.data?.my_permissions);
+  const perms = parsePermissions(data?.my_permissions);
 
   const entries = menu.open
     ? withExtra(
         roomMenu(
-          { unread, canInvite: hasPermission(perms, Permission.CREATE_INVITES), isOwner: !!detail.data?.is_owner, notify: notify.state, canReport, openReports },
+          { unread, canInvite: hasPermission(perms, Permission.CREATE_INVITES), isOwner: !!data?.is_owner, notify: notify.state, canReport, openReports },
           {
             ...notify.actions,
             markRead: () =>

@@ -28,6 +28,15 @@ First public release of the web client and the desktop apps.
 
 ### Added
 
+- **View the room as a role** (#130): Room settings → Roles → "View room as this role" opens the room as a member
+  holding only the chosen roles (or `@everyone` alone) sees it, with a join date for the encrypted history window: the
+  channels and categories the role may view with its access marks, the composer and message actions, the member
+  list's moderation items, the settings tabs and, in voice and files channels, a list of what the role may do. A banner
+  "Viewing as <role>" with "Exit preview" stays on every page of the room; leaving the room, a reload or signing out
+  ends it. The preview is a simulation on the device with the shared permission evaluation and strictly read-only:
+  every request that would change something is refused before it leaves the device, typing, voice joins, moves,
+  uploads and pasted files are off, and nothing of the hidden channels shows up (notifications, counts, search hits,
+  deep links). Encrypted history from before the window is cut behind "History for this role starts here".
 - **A hint when you talk while muted** (#125): with "Remind me when I talk while muted" (Settings → Voice & video →
   Input mode, on by default) the client keeps listening to your microphone locally while it is muted (nothing is sent:
   the gate is closed and the track muted) and, once your voice is picked up for about 0.7 seconds, plays a soft double

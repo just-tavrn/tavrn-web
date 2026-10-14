@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
+import { previewing } from "../stores/rolePreview";
+import { toastPreviewRefused } from "../lib/previewGuard";
 import type { Attachment, Gif } from "@tavrn/sdk";
 import { errorMessage, t as translate, useT } from "../i18n";
 import { formatSize } from "./AttachmentView";
@@ -502,6 +504,12 @@ export function Composer({
             }
           }}
           onPaste={(e) => {
+            // Role preview: pasted files are refused with the preview's notice (text stays a local edit).
+            if (previewing() && e.clipboardData.files.length) {
+              e.preventDefault();
+              toastPreviewRefused();
+              return;
+            }
             if (!canAttach) return;
             // A pasted screenshot carries a made-up name (image.png, {GUID}.png): named by date and time instead;
             // a file copied from a file manager keeps its name (#95).

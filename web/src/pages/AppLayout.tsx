@@ -8,6 +8,7 @@ import { useNodeRealtime, useRealtime } from "../hooks/useRealtime";
 import { useLocale, useT } from "../i18n";
 import { syncMailLocale } from "../lib/mailLocale";
 import { AppShell } from "../components/AppShell";
+import { RolePreviewBanner } from "../components/RolePreviewBanner";
 import { Toaster } from "../components/Toaster";
 import { NotificationBell } from "../components/NotificationCenter";
 import { useNotifications } from "../stores/notifications";
@@ -306,6 +307,7 @@ export function AppLayout() {
           ) : null
         }
       >
+        <RolePreviewBanner roomId={roomId} />
         <E2eeBanner />
         <Scoped node={node}>
           {node && <ScopedNodeBanner />}

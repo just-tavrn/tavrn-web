@@ -940,6 +940,37 @@ is also the accessible description of the choice. **Reset to category** removes 
 confirmation. `channelPermissions` (`web/src/lib/channelPermissions.ts`) computes exactly like the node, including the
 view, read and connect a moved participation grants in the voice channel the user's own session is in.
 
+### View the room as a role
+
+**Room settings → Roles → View room as this role** (for `@everyone` and every role you may manage, i.e. below your
+highest role; the owner may preview all) opens the room as a member holding only the chosen roles sees it. The dialog
+can combine further roles and sets the **join date** (now by default), the start of the encrypted history window. A
+banner "Viewing as <role>" with **Exit preview** stays on every page of the room; "What is simulated" lists the
+approximations. The preview ends on exit, on leaving the room, on a reload and on sign-out (it lives in the tab's
+memory only, `web/src/stores/rolePreview.ts`).
+
+It is a simulation on the device, nothing is asked of the node and nothing acts as the role:
+`web/src/lib/previewRoom.ts` derives the room detail with the SDK's `computePermissions` (the protocol's permission
+test vectors pin it) with `my_roles` = the chosen roles, `is_owner` = false and no member overrides, and `useRoom()`
+returns it while the preview is active, so every room view follows: the channel list with the access marks the role
+gets (categories only with a visible channel), the channel page (composer, reactions, pins, threads, `@everyone`,
+slash commands, the message menu), the member list's moderation items under the role hierarchy, and the settings
+tabs the role would see. Voice channels list join, speak, screen sharing, camera, soundboard and whiteboard as allowed
+or not without joining; files channels list upload and manage. In encrypted channels the messages, forum posts and
+file entries from before the window a new member with these roles gets (the channel's history setting from the join
+date, the join itself without `read_history`) are cut behind "History for this role starts here"; plaintext is never
+cut.
+
+**Read-only.** While a preview is active the client refuses every request that would change something before it
+leaves the device (`web/src/lib/previewGuard.ts`, applied by `trackingFetch` to every node client): one toast "Read-only
+preview" explains it, read markers are refused silently, and only the device's own upkeep passes (session refresh and
+federated sessions, presence, MLS and key upkeep, history keys for other members, the conversation index and
+backups). Typing indicators are not sent, voice joins, voice moves and other drag-and-drop moves, uploads and pasted
+files are off. Notifications, rail counts and search hits of channels the role cannot view are dropped, and a deep
+link into one lands on "Members with this role cannot see this channel". Approximations: an adult member (age gates
+are not simulated), not timed out, without a moved voice participation, joined at the chosen date; channels you cannot
+see yourself cannot be previewed (the client never gets them), and for owners and administrators the preview is exact.
+
 ## Context menus
 
 Members, messages, channels, rooms in the rail, DMs and friends have context menus, and a thread's header has a menu: right-click (or the

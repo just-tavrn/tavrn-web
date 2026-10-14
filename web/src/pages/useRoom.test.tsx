@@ -16,6 +16,7 @@ vi.mock("../crypto/groupJoins", () => ({ joinRoomGroups: joins, resetGroupJoins:
 import { useRoom } from "./ChannelSidebar";
 import { useAuth } from "../stores/auth";
 import { useE2ee } from "../stores/e2ee";
+import { useRolePreview } from "../stores/rolePreview";
 
 const channels = [{ id: "c1", encrypted: true, has_webhooks: true }];
 
@@ -56,5 +57,30 @@ describe("useRoom", () => {
     expect(joins).not.toHaveBeenCalled();
     act(() => useE2ee.setState({ status: "unlocked" }));
     await waitFor(() => expect(joins).toHaveBeenCalledWith("localhost", channels));
+  });
+
+  it("returns the room as the previewed roles see it while a preview is active; the session work keeps the real channels", async () => {
+    globalThis.fetch = vi.fn(() => new Promise<Response>(() => undefined)) as unknown as typeof fetch;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const everyone = { id: "e", is_everyone: true, permissions: "1", position: 0, name: "@everyone" };
+    const detail = {
+      id: "r1", is_owner: true, my_roles: [], my_permissions: "-1", categories: [], roles: [everyone], read_states: [],
+      channels: [{ id: "c1", kind: "text", encrypted: true, has_webhooks: true }, { id: "c2", kind: "text", encrypted: true }],
+      overrides: [{ id: "o", target_type: "channel", target_id: "c2", subject_type: "role", subject_id: "e", allow: "0", deny: "1" }],
+    };
+    client.setQueryData(["room", "r1"], detail);
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>
+        <MemoryRouter>{children}</MemoryRouter>
+      </QueryClientProvider>
+    );
+    const { result } = renderHook(() => useRoom("r1"), { wrapper });
+    await waitFor(() => expect(result.current.data?.channels.map((c) => c.id)).toEqual(["c1", "c2"]));
+    act(() => useRolePreview.getState().start({ roomId: "r1", roleIds: [], joinedAt: Date.now(), label: "@everyone" }));
+    await waitFor(() => expect(result.current.data?.channels.map((c) => c.id)).toEqual(["c1"]));
+    expect(result.current.data?.is_owner).toBe(false);
+    expect(sync).toHaveBeenLastCalledWith("localhost", detail.channels);
+    act(() => useRolePreview.getState().exit());
+    await waitFor(() => expect(result.current.data).toBe(detail));
   });
 });

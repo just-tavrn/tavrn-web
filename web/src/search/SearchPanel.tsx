@@ -6,6 +6,8 @@
  * the status line says what was searched. Scopes: this room (or this conversation for DMs) and everywhere
  * (all rooms on all nodes, at most 20 rooms, plus everything the local index holds).
  */
+import { useRolePreview } from "../stores/rolePreview";
+import { previewKeepsHit } from "../lib/previewRoom";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
@@ -144,6 +146,14 @@ function SearchPanel(p: { conversationId: string; encrypted: boolean; roomId?: s
 
   const close = () => ui.set({ open: false });
 
+  /** A role preview drops the hits the roles could not see (lib/previewRoom.ts). */
+  const previewed = (rows: SearchRow[]): SearchRow[] => {
+    const preview = useRolePreview.getState().preview;
+    const real = preview ? queryClient.getQueryData<RoomDetail>(["room", preview.roomId]) : undefined;
+    if (!preview || !real) return rows;
+    return rows.filter((r) => r.roomId !== preview.roomId || previewKeepsHit(real, preview.roleIds, preview.joinedAt, { conversationId: r.conversationId, ts: r.ts, encrypted: r.source === "local" }));
+  };
+
   const run = async () => {
     const { query, filters, scope } = useSearchUi.getState();
     if (!searchable(query, filters)) {
@@ -194,12 +204,12 @@ function SearchPanel(p: { conversationId: string; encrypted: boolean; roomId?: s
         result.status.localSearched = synced.length;
         result.status.localComplete = [...knownQs].filter((q) => coverage[q]?.complete).length;
         result.status.localNotSynced = knownQs.size - synced.length;
-        ui.set({ rows: result.rows, status: result.status, busy: false, context });
+        ui.set({ rows: previewed(result.rows), status: result.status, busy: false, context });
         return;
       }
       const index = await localIndex();
       const result = await runSearch({ query, filters, rooms, local, roomsSkipped }, index, coverage);
-      ui.set({ rows: result.rows, status: result.status, busy: false, context });
+      ui.set({ rows: previewed(result.rows), status: result.status, busy: false, context });
     } catch {
       ui.set({ rows: [], status: null, busy: false, context });
     }

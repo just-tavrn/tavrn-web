@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { useRoomPreview } from "../../stores/rolePreview";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, useNavigate } from "react-router";
 import { Permission, hasPermission, type Channel, type RoomDetail, type VoiceParticipant } from "@tavrn/sdk";
@@ -83,6 +84,8 @@ export function VoiceChannelRow({ room, channel, onNavigate }: { room: RoomDetai
   // Access marks (private first, then restricted for this viewer); the link's own name repeats them.
   const marks = channelAccessMarks(room, channel.id, perms);
   const canConnect = hasPermission(perms, Permission.CONNECT);
+  // Role preview: no joins, no moves (no drag and drop, the stage shows what the role may do instead).
+  const preview = useRoomPreview(room.id);
   const [drop, setDrop] = useState<DropState>(null);
   // Entering a child fires dragleave on this element (and dragenter on the child, both bubbling here): the indicator
   // clears only when the drag left the whole channel, so it does not flicker over the name, the count or the rows.
@@ -111,7 +114,7 @@ export function VoiceChannelRow({ room, channel, onNavigate }: { room: RoomDetai
   // move needs `move_members` here, the own participation `connect` (the node decides either way); the source channel
   // is no target. `refuse` shows, `accept` also allows the drop.
   const dropState = (e: React.DragEvent): DropState => {
-    if (!dragging || !e.dataTransfer.types.includes(DRAG_TYPE)) return null;
+    if (!dragging || !e.dataTransfer.types.includes(DRAG_TYPE) || preview) return null;
     if (dragging.roomId !== room.id || dragging.channelId === channel.id) return null;
     return (dragging.self ? canConnect : canMove) ? "accept" : "refuse";
   };
@@ -136,7 +139,7 @@ export function VoiceChannelRow({ room, channel, onNavigate }: { room: RoomDetai
     onNavigate();
     navigate(roomPath(room.id, channel.id));
     // Without connect the stage explains it ("You may not join this voice channel."); no join attempt to refuse.
-    if (!connected && canConnect) void joinVoice({ domain, roomId: room.id, channelId: channel.id }, { canCreate });
+    if (!connected && canConnect && !preview) void joinVoice({ domain, roomId: room.id, channelId: channel.id }, { canCreate });
   };
 
   return (
@@ -215,7 +218,7 @@ export function VoiceChannelRow({ room, channel, onNavigate }: { room: RoomDetai
           participants={participants}
           look={look}
           // The own participation (this device's) can always be dragged to where one may join; others with `move_members`.
-          drag={(p) => (p.user_id === me?.id ? (voiceChannelId === channel.id ? "self" : null) : canMove ? "move" : null)}
+          drag={(p) => (preview ? null : p.user_id === me?.id ? (voiceChannelId === channel.id ? "self" : null) : canMove ? "move" : null)}
           onStage={() => {
             onNavigate();
             navigate(roomPath(room.id, channel.id));

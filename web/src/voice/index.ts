@@ -4,6 +4,8 @@
  * RNNoise, background effects) sits behind dynamic imports and is loaded on the first join, so the text
  * client stays light (design note 9e).
  */
+import { previewing } from "../stores/rolePreview";
+import { toastPreviewRefused } from "../lib/previewGuard";
 import { useToasts } from "../stores/toasts";
 import { voiceErrorMessage } from "./errors";
 import { useVoice, type VoiceTarget } from "./store";
@@ -47,6 +49,11 @@ const warn = (e: unknown) => useToasts.getState().push({ kind: "warning", title:
 
 /** Joins a voice channel; failures end up as a toast and in `useVoice().error`. */
 export async function joinVoice(target: VoiceTarget, opts: { canCreate: boolean; start?: boolean }): Promise<boolean> {
+  // The role preview (docs/CLIENT.md) never joins: that would be the viewer's real participation.
+  if (previewing()) {
+    toastPreviewRefused();
+    return false;
+  }
   try {
     // Android: the microphone (and headsets) right before the first use (docs/ANDROID.md "Permissions").
     await prepareAndroidMedia("microphone");
