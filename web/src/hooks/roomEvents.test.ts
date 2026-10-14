@@ -69,7 +69,7 @@ describe("roomEventHandlers", () => {
     expect(keys()).toEqual(['["commands"]', '["room","r1"]']);
   });
 
-  it("role events patch the room at once and refetch it once per burst (own permissions may change)", async () => {
+  it("role events patch the room at once and refetch it once per burst when they can change the viewer's permissions", async () => {
     const { emit, invalidate, keys, room } = setup();
     for (let i = 1; i <= 4; i++) emit("role.update", { id: "e", room_id: "r1", name: "@everyone", color: null, position: 0, permissions: String(i), hoist: false, mentionable: false, is_everyone: true });
     emit("role.create", { id: "a", room_id: "r1", name: "A", color: null, position: 1, permissions: "0", hoist: false, mentionable: false, is_everyone: false });
@@ -81,6 +81,24 @@ describe("roomEventHandlers", () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["room", "r1"] }, { cancelRefetch: false });
     emit("role.delete", { room_id: "r1", id: "a" });
     expect(room().roles.map((r) => r.id)).toEqual(["e"]);
+  });
+
+  it("roles the viewer does not hold, and any role of the owner, do not refetch; deleting a held role does", async () => {
+    const { client, emit, keys, room } = setup();
+    client.setQueryData(["room", "r1"], { ...room(), my_roles: ["held"] });
+    emit("role.create", { id: "other", room_id: "r1", name: "B", color: null, position: 2, permissions: "8", hoist: false, mentionable: false, is_everyone: false });
+    emit("role.update", { id: "other", room_id: "r1", name: "B", color: null, position: 2, permissions: "9", hoist: false, mentionable: false, is_everyone: false });
+    emit("role.delete", { room_id: "r1", id: "other" });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(keys().filter((k) => k.startsWith('["room"'))).toEqual([]);
+    emit("role.delete", { room_id: "r1", id: "held" });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(keys().filter((k) => k.startsWith('["room"'))).toEqual(['["room","r1"]']);
+    expect(room().my_roles).toEqual([]);
+    client.setQueryData(["room", "r1"], { ...room(), is_owner: true });
+    emit("role.update", { id: "e", room_id: "r1", name: "@everyone", color: null, position: 0, permissions: "0", hoist: false, mentionable: false, is_everyone: true });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(keys().filter((k) => k.startsWith('["room"'))).toEqual(['["room","r1"]']);
   });
 
   it("room.update patches the room and refreshes the room list; room.delete refreshes the list", async () => {

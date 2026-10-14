@@ -3,13 +3,14 @@
  * Realtime events of a room's metadata (PROTOCOL.md §6) and what they do to the query cache. The payloads carry the
  * changed objects, so the cached room detail is patched in place (lib/roomCache.ts) instead of refetched: an admin
  * action costs its own request and nothing more. The room is refetched (coalesced and debounced per room) only when
- * the viewer's own room permissions can change: role events, the viewer's own membership, the ownership. Channels
+ * the viewer's own room permissions can change: changes of a role the viewer holds (or @everyone), the viewer's own
+ * membership, the ownership. Channels
  * and categories the viewer gains or loses through any change arrive as their own `channel.*` / `category.*` events
  * (the node's per-connection visibility). The room list follows `room.update`, `room.delete` and the viewer's own
  * joins and leaves; the command palettes follow the events that change permissions.
  */
 import type { QueryClient } from "@tanstack/react-query";
-import type { Category, Channel, Member, PermissionOverride, Role, Room, TavrnSocket, User } from "@tavrn/sdk";
+import type { Category, Channel, Member, PermissionOverride, Role, Room, RoomDetail, TavrnSocket, User } from "@tavrn/sdk";
 import { patchRoom, roomRefetcher, withCategory, withChannel, withOverrides, withRole, withRoom, withoutCategory, withoutChannel, withoutRole } from "../lib/roomCache";
 
 /** Debounce of the room refetch: a burst of changes (a role reorder, a bot's setup) costs one request. */
@@ -44,6 +45,11 @@ export function roomEventHandlers(socket: TavrnSocket, queryClient: QueryClient,
     // Without a user the event may concern the viewer.
     return !id || id === me()?.id;
   };
+  /** Does the viewer's room permission depend on this role? Not for the owner (who holds every permission). */
+  const holdsRole = (roomId: string, roleId: string, everyone: boolean) => {
+    const room = queryClient.getQueryData<RoomDetail>(["room", roomId]);
+    return !!room && !room.is_owner && (everyone || room.my_roles.includes(roleId));
+  };
   return [
     socket.on<Channel>("channel.create", (c) => patchRoom(queryClient, c.room_id, withChannel(c))),
     socket.on<Channel>("channel.update", (c) => patchRoom(queryClient, c.room_id, withChannel(c))),
@@ -56,17 +62,22 @@ export function roomEventHandlers(socket: TavrnSocket, queryClient: QueryClient,
       else refetch.schedule(d.room_id);
       commands();
     }),
-    // A role's permissions or position can change the viewer's `my_permissions` (computed by the node).
-    ...["role.create", "role.update"].map((type) =>
-      socket.on<Role>(type, (r) => {
-        patchRoom(queryClient, r.room_id, withRole(r));
-        refetch.schedule(r.room_id);
-        commands();
-      }),
-    ),
+    // A role the viewer holds (or @everyone) can change the viewer's `my_permissions`, which the node computes: those
+    // refetch the room (checked before the patch). A new role is nobody's yet.
+    socket.on<Role>("role.create", (r) => {
+      patchRoom(queryClient, r.room_id, withRole(r));
+      commands();
+    }),
+    socket.on<Role>("role.update", (r) => {
+      const mine = holdsRole(r.room_id, r.id, r.is_everyone);
+      patchRoom(queryClient, r.room_id, withRole(r));
+      if (mine) refetch.schedule(r.room_id);
+      commands();
+    }),
     socket.on<Removed>("role.delete", (d) => {
+      const mine = holdsRole(d.room_id, d.id, false);
       patchRoom(queryClient, d.room_id, withoutRole(d.id));
-      refetch.schedule(d.room_id);
+      if (mine) refetch.schedule(d.room_id);
       commands();
     }),
     socket.on<Room>("room.update", (r) => {
