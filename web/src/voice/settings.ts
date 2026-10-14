@@ -4,7 +4,8 @@
  * call. Pure helpers (validation, constraints, limits) are exported for the session and the settings tab.
  */
 import { create } from "zustand";
-import type { HotkeyAction } from "../platform";
+import { platform, type HotkeyAction } from "../platform";
+import { browserOs } from "./screenAudio";
 
 export type NoiseSuppression = "off" | "browser" | "rnnoise";
 export type InputMode = "vad" | "ptt";
@@ -76,7 +77,10 @@ export interface VoiceSettings {
   ringVolume: number;
   /** Push-to-talk, priority speaker (held), mute and deafen (toggles): one binding each, window and system-wide. */
   hotkeys: Hotkeys;
-  /** A soft cue and a pulsing microphone button when the user talks while muted (`mutedTalk.ts`, issue #125). */
+  /**
+   * A soft cue and a pulsing microphone button when the user talks while muted (`mutedTalk.ts`, issue #125). The default
+   * depends on the platform ({@link mutedTalkHintDefault}); only a choice that differs from it is stored.
+   */
   mutedTalkHint: boolean;
   /** Keep the screen on while in a voice channel or call (Screen Wake Lock, `wakeLock.ts`; browsers: visible page only). */
   keepScreenOn: boolean;
@@ -87,6 +91,7 @@ export interface VoiceSettings {
   nativeOutputDeviceId: string;
 }
 
+/** The defaults outside Android; {@link defaultSettings} has this device's (the talking-while-muted hint differs). */
 export const DEFAULT_SETTINGS: VoiceSettings = {
   inputDeviceId: "",
   outputDeviceId: "",
@@ -123,6 +128,29 @@ export const DEFAULT_SETTINGS: VoiceSettings = {
   nativeInputDeviceId: "",
   nativeOutputDeviceId: "",
 };
+
+/**
+ * The browser on Android or the Android app (the same engine): the platform layer knows the app once it started, the
+ * user agent says Android for both from the first line on (the settings load before the platform is detected).
+ */
+function onAndroid(): boolean {
+  const p = platform();
+  if (p.kind === "android" || p.shell?.os === "android") return true;
+  return typeof navigator !== "undefined" && browserOs(navigator.userAgent) === "android";
+}
+
+/**
+ * The talking-while-muted hint keeps the capture open while muted; on Android that holds the device in its call audio
+ * mode, so the hint is off there unless the user turns it on (issue #147).
+ */
+export function mutedTalkHintDefault(): boolean {
+  return !onAndroid();
+}
+
+/** The defaults of this device. */
+export function defaultSettings(): VoiceSettings {
+  return { ...DEFAULT_SETTINGS, mutedTalkHint: mutedTalkHintDefault() };
+}
 
 export const SETTINGS_KEY = "tavrn.voice.settings";
 
@@ -193,7 +221,7 @@ function hotkeys(r: Record<string, unknown>): Hotkeys {
 /** Validates stored or edited settings; anything unknown falls back to the default. */
 export function normalizeSettings(raw: unknown): VoiceSettings {
   const r = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
-  const d = DEFAULT_SETTINGS;
+  const d = defaultSettings();
   const image = typeof r.backgroundImage === "string" && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(r.backgroundImage) ? r.backgroundImage : null;
   let background = oneOf(r.background, ["none", "blur", "image"] as const, d.background);
   if (background === "image" && !image) background = "none";
@@ -240,13 +268,15 @@ function load(): VoiceSettings {
     const raw = localStorage.getItem(SETTINGS_KEY);
     return normalizeSettings(raw ? JSON.parse(raw) : null);
   } catch {
-    return DEFAULT_SETTINGS;
+    return defaultSettings();
   }
 }
 
+/** The talking-while-muted hint only as a choice that differs from the platform's default, so the default can follow it. */
 function save(settings: VoiceSettings): void {
   try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    const { mutedTalkHint, ...rest } = settings;
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(mutedTalkHint === mutedTalkHintDefault() ? rest : settings));
   } catch {
     /* storage full or disabled: the settings still apply to this session */
   }
