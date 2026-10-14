@@ -165,6 +165,23 @@ describe("PollView", () => {
     await waitFor(() => expect(onClosed).toHaveBeenCalled());
   });
 
+  it("shows a poll closed early at once (its close time just passed)", async () => {
+    const api = fakeApi([]);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const view = (m: Message) => (
+      <QueryClientProvider client={client}>
+        <Env api={api}>
+          <MessageList messages={[m]} currentUserId="u1" canManage={false} hasMore={false} />
+        </Env>
+      </QueryClientProvider>
+    );
+    const { rerender } = render(view(message(choicePoll, { poll_closes_at: "2099-01-01T00:00:00Z" })));
+    expect(await screen.findByTestId("poll-closes")).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 20));
+    rerender(view(message(choicePoll, { poll_closes_at: new Date().toISOString() })));
+    expect(await screen.findByTestId("poll-closed")).toHaveTextContent("Beendet");
+  });
+
   it("only the author or a moderator may close; a poll without a close time cannot be closed early", async () => {
     const api = fakeApi([]);
     show([message(choicePoll, { poll_closes_at: "2099-01-01T00:00:00Z" }), message(choicePoll, { id: "01POLL2", author_id: "u1", author: ME })], api);

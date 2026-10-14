@@ -73,11 +73,11 @@ test.describe("Polls", () => {
     await page.getByTestId("composer-plus").click();
     await page.getByTestId("plus-poll").click();
     const dialog = page.getByRole("dialog", { name: "Umfrage erstellen" });
-    await dialog.getByLabel("Frage").fill("Wohin gehen wir?");
-    await dialog.getByLabel("Antwort 1").fill("Küche");
-    await dialog.getByLabel("Antwort 1").press("Enter");
-    await dialog.getByLabel("Antwort 2").fill("Garten");
-    await dialog.getByLabel("Antwort 3").fill("Keller");
+    await dialog.getByLabel("Frage", { exact: true }).fill("Wohin gehen wir?");
+    await dialog.getByLabel("Antwort 1", { exact: true }).fill("Küche");
+    await dialog.getByLabel("Antwort 1", { exact: true }).press("Enter");
+    await dialog.getByLabel("Antwort 2", { exact: true }).fill("Garten");
+    await dialog.getByLabel("Antwort 3", { exact: true }).fill("Keller");
     await dialog.getByRole("button", { name: "Antwort 3 entfernen" }).click();
     await dialog.getByText("1 Tag", { exact: true }).click();
     await axe(page, "[data-testid='poll-composer']");
@@ -138,8 +138,8 @@ test.describe("Polls", () => {
     await box.fill("/poll Teamessen?");
     await box.press("Enter");
     const dialog = page.getByRole("dialog", { name: "Umfrage erstellen" });
-    await expect(dialog.getByLabel("Frage")).toHaveValue("Teamessen?");
-    await dialog.getByText("Terminumfrage", { exact: true }).click();
+    await expect(dialog.getByLabel("Frage", { exact: true })).toHaveValue("Teamessen?");
+    await dialog.getByRole("radio", { name: /Terminumfrage/ }).check();
     const calendar = dialog.getByTestId("poll-calendar");
     await expect(calendar).toBeVisible();
     await dialog.getByRole("button", { name: "Nächster Monat" }).click();
@@ -180,13 +180,13 @@ test.describe("Polls", () => {
     await bob.goto(`/rooms/${room.id}/channels/${channelId}`);
     const bobPoll = pollIn(bob, "Teamessen?");
     await expect(bobPoll).toBeVisible({ timeout: scaled(20_000) });
-    await bobPoll.locator('[data-slot="s1"]').getByText("Ja", { exact: true }).click();
-    await bobPoll.locator('[data-slot="s2"]').getByText("Vielleicht", { exact: true }).click();
+    await bobPoll.locator('[data-slot="s1"]').locator("label", { hasText: "Ja" }).click();
+    await bobPoll.locator('[data-slot="s2"]').locator("label", { hasText: "Vielleicht" }).click();
     await bobPoll.getByTestId("poll-vote").click();
     await expect(poll.getByTestId("poll-voters")).toHaveText("1 Stimme", { timeout: scaled(20_000) });
 
-    await poll.locator('[data-slot="s1"]').getByText("Ja", { exact: true }).click();
-    await poll.locator('[data-slot="s2"]').getByText("Nein", { exact: true }).click();
+    await poll.locator('[data-slot="s1"]').locator("label", { hasText: "Ja" }).click();
+    await poll.locator('[data-slot="s2"]').locator("label", { hasText: "Nein" }).click();
     await poll.getByTestId("poll-vote").click();
     await expect(poll.getByTestId("poll-voters")).toHaveText("2 Stimmen");
     await expect(poll.locator('[data-slot="s1"]')).toHaveAttribute("data-best", "true");

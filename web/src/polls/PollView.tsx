@@ -29,8 +29,13 @@ function useNow(closesAt: string | null | undefined): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!closesAt) return;
-    const left = Date.parse(closesAt) - Date.now();
-    if (left <= 0) return;
+    const at = Date.parse(closesAt);
+    const left = at - Date.now();
+    // Closed meanwhile (closed early just now, or the tab slept): the stored clock is behind.
+    if (left <= 0) {
+      if (at > now) setNow(Date.now());
+      return;
+    }
     const timer = setTimeout(() => setNow(Date.now()), Math.min(left + 50, 60_000));
     return () => clearTimeout(timer);
   }, [closesAt, now]);
