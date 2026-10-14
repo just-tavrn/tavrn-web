@@ -3618,5 +3618,16 @@
   "errors.history.nothing_to_restore": "Für diese Mitgliedschaft gibt es nichts wiederherzustellen.",
   "errors.history.restore_disabled": "Dieser Raum stellt den Verlauf nach einem Schlüssel-Reset nicht wieder her.",
   "errors.history.request_decided": "Über diese Anfrage wurde schon entschieden, oder sie wurde zurückgezogen.",
-  "errors.history.request_not_found": "Die Anfrage gibt es nicht mehr."
+  "errors.history.request_not_found": "Die Anfrage gibt es nicht mehr.",
+  "perm.VOICE_STATUS": "Sprachkanal-Status setzen",
+  "perm.hint.VOICE_STATUS": "Die Statuszeile eines Sprachkanals jederzeit ändern, ohne Kanäle zu verwalten.",
+  "voice.session.timer_label": "Sitzung läuft seit {time}",
+  "voice.session.announce": "Sprachsitzung läuft seit {time}",
+  "voice.session.row_tooltip": "Läuft seit {time}",
+  "voice.channel_status.label": "Kanalstatus",
+  "voice.channel_status.edit": "Kanalstatus bearbeiten",
+  "voice.channel_status.placeholder": "Was ist hier los?",
+  "voice.channel_status.empty": "Status setzen",
+  "voice.channel_status.remaining": "{count} von {max} Zeichen",
+  "voice.channel_status.hint": "Enter speichert, Escape bricht ab"
 }

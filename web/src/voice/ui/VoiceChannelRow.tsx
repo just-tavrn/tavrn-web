@@ -6,7 +6,7 @@ import { useLocale, useT } from "../../i18n";
 import { useNode } from "../../components/NodeScope";
 import { channelName } from "../../lib/names";
 import { channelPermissions } from "../../pages/ChannelPage";
-import { participantsOf, useVoicePresence } from "../presence";
+import { participantsOf, sessionStartOf, useVoicePresence } from "../presence";
 import { ownVoiceChannel, useVoice } from "../store";
 import { joinStream, joinVoice } from "../index";
 import { rowStreamAction } from "../streams";
@@ -15,6 +15,7 @@ import { AvatarTile } from "./AvatarTile";
 import { ConnectionGlyph, LocalMuteMark, ParticipantFlags, levelStyle, useMemberLooks, useParticipantStatus, usePriority } from "./common";
 import { useParticipantMenu } from "./useParticipantMenu";
 import { MegaphoneIcon, SpeakerIcon } from "./icons";
+import { elapsedSince, formatElapsed, useNow } from "./VoiceHeaderMeta";
 import { AccessMark, LockMark, accessMarkKey } from "../../components/Badges";
 import { channelAccessMarks } from "../../lib/channelPermissions";
 import { sortByRank, type ParticipantLook } from "../order";
@@ -99,6 +100,12 @@ export function VoiceChannelRow({ room, channel, onNavigate }: { room: RoomDetai
   }, [drop]);
   const { menu, overlay } = useChannelMenu(room, channel);
   const canCreate = hasPermission(perms, Permission.SEND_MESSAGES);
+  // The tooltip: the channel's status (VOICE.md §2a) and how long the session has been running (§5). The clock
+  // only ticks while the pointer or the focus is on the row, so idle rows never re-render.
+  const sessionStart = useVoicePresence((s) => sessionStartOf(s, domain, channel.id));
+  const [tooltipOpen, setTooltipOpen] = useState(false);
+  const now = useNow(tooltipOpen && sessionStart ? 1000 : 0);
+  const tooltip = [channel.status || null, sessionStart ? t("voice.session.row_tooltip", { time: formatElapsed(elapsedSince(sessionStart, now)) }) : null].filter(Boolean).join("\n") || undefined;
 
   // A participant of another channel of this room dragged over this one (design note 4.11, issue #119): a moderator's
   // move needs `move_members` here, the own participation `connect` (the node decides either way); the source channel
@@ -169,6 +176,13 @@ export function VoiceChannelRow({ room, channel, onNavigate }: { room: RoomDetai
         }}
         className={({ isActive }) => `group/ch flex min-h-10 items-center gap-2 rounded-md px-2 text-sm ${isActive ? "bg-accent-soft text-fg-0" : connected ? "text-fg-0 hover:bg-bg-3/60" : "text-fg-1 hover:bg-bg-3/60 hover:text-fg-0"}`}
         aria-label={[t("voice.channel_label", { name: channelName(channel) }), ...marks.map((m) => t(accessMarkKey(m)))].join(", ")}
+        aria-description={tooltip}
+        title={tooltip}
+        data-testid="voice-channel-link"
+        onPointerEnter={() => setTooltipOpen(true)}
+        onPointerLeave={() => setTooltipOpen(false)}
+        onFocus={() => setTooltipOpen(true)}
+        onBlur={() => setTooltipOpen(false)}
       >
         {/* Voice is always end-to-end encrypted: the speaker and the 16 px lock, aligned with the text channels. */}
         <span className="flex w-9 shrink-0 items-center gap-1">

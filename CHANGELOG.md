@@ -39,6 +39,12 @@ First public release of the web client and the desktop apps.
   nobody else is told. A muted person carries a crossed speaker on their tile and in the member list (the marker is
   the one-click undo, the tooltip says "Muted for you"), they are never shown speaking, and the stage header counts
   "Muted for you: n" so a forgotten mute is noticed.
+- **Voice session timer and channel status** (protocol VOICE.md §5, §2a; fixes #126, #127): the voice header shows
+  how long the session has been running (from the node's `session_started_at`, right for late joiners and for
+  members outside the call; hidden while the channel is empty; announced once a minute) and the channel's status
+  line under its name, edited in place by members with the new permission *Set voice channel status*
+  (`voice_status`; Enter saves, Escape cancels, 128 characters with a counter). The channel list's tooltip of a
+  voice channel names both. The role and override editors list the permission in the voice group.
 - **Forwarding reports to the reported user's home node** (protocol MODERATION.md §1.6, `reports.v2`): node admins
   forward a report about a user of another node from Admin → Reports after a confirmation that says what is shared
   (never the reporter's address); forwarded reports show where they went, and reports other nodes forwarded show

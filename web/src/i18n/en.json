@@ -3618,5 +3618,16 @@
   "errors.history.nothing_to_restore": "There is nothing to restore for this membership.",
   "errors.history.restore_disabled": "This room does not restore history after a key reset.",
   "errors.history.request_decided": "This request was already decided or withdrawn.",
-  "errors.history.request_not_found": "The request no longer exists."
+  "errors.history.request_not_found": "The request no longer exists.",
+  "perm.VOICE_STATUS": "Set voice channel status",
+  "perm.hint.VOICE_STATUS": "Change the status line of a voice channel at any time, without managing channels.",
+  "voice.session.timer_label": "Session running for {time}",
+  "voice.session.announce": "Voice session running for {time}",
+  "voice.session.row_tooltip": "Running for {time}",
+  "voice.channel_status.label": "Channel status",
+  "voice.channel_status.edit": "Edit channel status",
+  "voice.channel_status.placeholder": "What is going on here?",
+  "voice.channel_status.empty": "Set a status",
+  "voice.channel_status.remaining": "{count} of {max} characters",
+  "voice.channel_status.hint": "Enter saves, Escape cancels"
 }

@@ -636,6 +636,17 @@ Tauri app uses its native voice engine ("The desktop app" below).
 
 ### Voice channels
 
+The voice header carries two things next to the channel's name (VOICE.md §5, §2a): a **session timer** (`hh:mm:ss`
+since the first participant connected to the empty channel, from the node's `session_started_at`, so late joiners
+and members who only look at the channel see the same count; hidden while the channel is empty; its live region
+announces the running time once a minute, not once a second) and the channel's **status** line under the name
+("Raid at nine"). Members with *Set voice channel status* (`voice_status`) edit the status in place: click the
+pencil or the text, type (at most 128 characters, a counter shows them), Enter saves, Escape or leaving the field
+cancels; everybody else reads it, and `channel.update` brings changes to every member at once. The voice channel's
+row in the channel list shows both in its tooltip (the status, then "Running for hh:mm:ss"), ticking while the
+pointer or the focus is on the row. The room's role editor lists the permission in the voice group; a channel
+override can grant it alone.
+
 Clicking a voice channel joins it. While connected, the voice channel shows the stage: one tile per participant with
 avatar or camera, a glowing border and level meter while someone speaks, screen shares and the whiteboard as tiles
 of their own that are joined on demand ("Streams are joined" below; enlarge, picture-in-picture); phones get a

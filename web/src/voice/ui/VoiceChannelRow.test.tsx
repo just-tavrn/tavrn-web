@@ -40,7 +40,8 @@ const participant = (user: string, device: string, extra: Partial<VoiceParticipa
   ({ identity: `${user}/${device}`, user, user_id: `u-${user.split("@")[0]}`, device_id: device, muted: false, deafened: false, server_muted: false, streaming: false, camera: false, ...extra }) as VoiceParticipant;
 
 const room = { id: "R", roles: [], channels: [] } as never;
-const channel = { id: "C", kind: "voice", name: "Sprache" } as never;
+const channelData = { id: "C", kind: "voice", name: "Sprache" };
+const channel = channelData as never;
 const raid = { id: "D", kind: "voice", name: "Raid" } as never;
 
 function Where() {
@@ -84,7 +85,7 @@ beforeEach(() => {
 
 afterEach(() => {
   useVoice.setState(IDLE);
-  useVoicePresence.setState({ channels: {}, epochs: {}, rooms: {} });
+  useVoicePresence.setState({ channels: {}, epochs: {}, sessions: {}, rooms: {} });
   useLocalMute.setState({ muted: {} });
   useSpeaking.setState({ levels: {} });
 });
@@ -107,6 +108,43 @@ describe("muted for you (issue #124)", () => {
     expect(useLocalMute.getState().muted).toEqual({});
     expect(within(row("alice@n.test")).queryByTestId("local-mute-mark")).toBeNull();
     expect(row("alice@n.test")).toHaveAttribute("data-speaking", "true");
+  });
+});
+
+
+describe("the row's tooltip: status and session timer (VOICE.md §2a, §5)", () => {
+  it("names the status and how long the session has been running, ticking while hovered", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-10-14T12:05:03.000Z"));
+      useVoicePresence.getState().apply("n.test", { room_id: "R", channel_id: "C", epoch: null, session_started_at: "2026-10-14T12:00:00.000Z", participants: [participant("alice@n.test", "DA")] } as never);
+      render(
+        <MemoryRouter initialEntries={["/rooms/R/channels/T"]}>
+          <VoiceChannelRow room={room} channel={{ ...channelData, status: "Raid night" } as never} onNavigate={() => undefined} />
+        </MemoryRouter>,
+      );
+      const link = screen.getByTestId("voice-channel-link");
+      expect(link).toHaveAttribute("title", "Raid night\nLäuft seit 00:05:03");
+      expect(link).toHaveAttribute("aria-description", "Raid night\nLäuft seit 00:05:03");
+      fireEvent.pointerEnter(link);
+      act(() => {
+        vi.advanceTimersByTime(2000);
+      });
+      expect(link).toHaveAttribute("title", "Raid night\nLäuft seit 00:05:05");
+      fireEvent.pointerLeave(link);
+      act(() => {
+        vi.advanceTimersByTime(5000);
+      });
+      expect(link).toHaveAttribute("title", "Raid night\nLäuft seit 00:05:05");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("has no tooltip without a status and a session", () => {
+    useVoicePresence.getState().apply("n.test", { room_id: "R", channel_id: "C", epoch: null, session_started_at: null, participants: [participant("alice@n.test", "DA")] } as never);
+    renderRow();
+    expect(screen.getByTestId("voice-channel-link")).not.toHaveAttribute("title");
   });
 });
 

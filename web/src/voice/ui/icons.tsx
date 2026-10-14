@@ -69,6 +69,12 @@ export const SoundboardIcon = (p: IconProps) => (
   </Svg>
 );
 
+export const PencilIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z" />
+    <path d="m13.5 6.5 3 3" />
+  </Svg>
+);
 export const SpeakerIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M11 5 6 9H2v6h4l5 4V5z" />
