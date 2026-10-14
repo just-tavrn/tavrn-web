@@ -475,6 +475,7 @@
   "voice.cue.ptt_off": "Push to talk: microphone closes",
   "voice.cue.priority_on": "Priority speaker on",
   "voice.cue.priority_off": "Priority speaker off",
+  "voice.cue.muted_talk": "Talking while muted",
   "voice.test.title": "Connection test",
   "voice.test.description": "Checks which paths to this node's media server work from this device: UDP to every announced address, TCP and TURN. Nothing is sent but test packets.",
   "voice.test.run": "Test connection",

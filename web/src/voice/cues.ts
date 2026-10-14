@@ -5,6 +5,20 @@
  * with WebAudio (sine/triangle notes with gentle envelopes, each under 300 ms, no asset files). Played on
  * their own AudioContext on the chosen output device, so they also sound after leaving a call. The ringtone
  * of incoming calls uses the same engine.
+ *
+ * Musical reasoning (issue #123). Everything sits in C major around C5 (523 Hz), the register where small speakers
+ * and phones still carry a sine and nothing is shrill. The cues are grouped by what they say:
+ * - People (join, leave) and streams (stream_on, stream_off) are the ones that are easy to miss in a lively call, so
+ *   they are the "present" cues: full gain, a triangle wave (odd harmonics, a clearer onset than a sine) and a 5 ms
+ *   attack. Join is the rising fifth C5–G5 (the open, friendly "hello" interval), leave the same fifth falling; a
+ *   stream climbs the triad E5–G5–C6, so it sounds brighter and higher than a join, and falls back when it ends.
+ * - The user's own switches (mute, unmute, deafen, undeafen) are short triangle ticks at 65 % gain with the default
+ *   12 ms attack: felt rather than heard. Mute is low (G4), unmute high (E5); deafen falls D5–A4, undeafen rises back.
+ * - The connection tones are muted and a bit longer (an Eb4 triangle for lost, G4–C5 for restored) and stay quiet.
+ * - Push-to-talk and the priority key are single sines gliding a fourth (A4–D5) and, for priority, a fourth higher.
+ * - Talking while muted (issue #125) is a soft double tap on G4: two identical sine blips, low enough not to startle,
+ *   clearly not any of the other cues, and rate-limited by the session.
+ * The ringtone is below, with its own notes.
  */
 import { CUE_NAMES, useVoiceSettings, type Cue, type VoiceSettings } from "./settings";
 
@@ -23,35 +37,52 @@ export interface Note {
   gain: number;
   /** Hz at the end of the note: the pitch glides there (a single rising or falling tone). */
   to?: number;
+  /** Attack in seconds (default `ATTACK`): shorter = a clearer onset. */
+  attack?: number;
 }
 
+/** Note names used below (Hz, equal temperament). */
+const G4 = 392.0;
+const A4 = 440.0;
+const C5 = 523.25;
+const D5 = 587.33;
+const E5 = 659.25;
+const G5 = 783.99;
+const A5 = 880.0;
+const C6 = 1046.5;
+const Eb4 = 311.13;
+
 const n = (freq: number, at: number, dur: number, gain = 1, type: OscillatorType = "sine"): Note => ({ freq, at, dur, type, gain });
+/** A "present" note (issue #123): triangle wave, full gain by default, a 5 ms attack. */
+const bright = (freq: number, at: number, dur: number, gain = 1): Note => ({ ...n(freq, at, dur, gain, "triangle"), attack: 0.005 });
 /** One soft sine gliding from `from` to `to` Hz. */
 const glide = (from: number, to: number, dur: number, gain: number): Note => ({ ...n(from, 0, dur, gain), to });
 
-/** The notes of every cue (C major, mid register, nothing shrill). */
+/** The notes of every cue (C major, mid register, nothing shrill; the reasoning is in the module comment). */
 export const PATTERNS: Record<Cue, Note[]> = {
-  // Two rising notes / two falling notes.
-  join: [n(523.25, 0, 0.11), n(783.99, 0.1, 0.16)],
-  leave: [n(783.99, 0, 0.11), n(523.25, 0.1, 0.16)],
+  // People: the rising fifth C5–G5, and the same fifth falling.
+  join: [bright(C5, 0, 0.12), bright(G5, 0.1, 0.19)],
+  leave: [bright(G5, 0, 0.12), bright(C5, 0.1, 0.19)],
   // A low and a high tick.
-  mute: [n(392, 0, 0.07, 0.8, "triangle")],
-  unmute: [n(659.25, 0, 0.07, 0.8, "triangle")],
+  mute: [n(G4, 0, 0.07, 0.65, "triangle")],
+  unmute: [n(E5, 0, 0.07, 0.65, "triangle")],
   // Double tick down and up.
-  deafen: [n(587.33, 0, 0.06, 0.8, "triangle"), n(440, 0.09, 0.07, 0.8, "triangle")],
-  undeafen: [n(440, 0, 0.06, 0.8, "triangle"), n(587.33, 0.09, 0.07, 0.8, "triangle")],
-  // A bright short triad and back.
-  stream_on: [n(659.25, 0, 0.08, 0.7), n(783.99, 0.07, 0.08, 0.7), n(1046.5, 0.14, 0.12, 0.6)],
-  stream_off: [n(1046.5, 0, 0.08, 0.6), n(783.99, 0.07, 0.08, 0.7), n(659.25, 0.14, 0.12, 0.7)],
+  deafen: [n(D5, 0, 0.06, 0.65, "triangle"), n(A4, 0.09, 0.07, 0.65, "triangle")],
+  undeafen: [n(A4, 0, 0.06, 0.65, "triangle"), n(D5, 0.09, 0.07, 0.65, "triangle")],
+  // Streams: the triad E5–G5–C6 climbing above the join, and back down.
+  stream_on: [bright(E5, 0, 0.09, 0.9), bright(G5, 0.08, 0.09, 0.9), bright(C6, 0.16, 0.13, 0.85)],
+  stream_off: [bright(C6, 0, 0.09, 0.85), bright(G5, 0.08, 0.09, 0.9), bright(E5, 0.16, 0.13, 0.9)],
   // A muted tone, as the plug glyph.
-  connection_lost: [n(311.13, 0, 0.24, 0.6, "triangle")],
-  connection_restored: [n(392, 0, 0.12, 0.6, "triangle"), n(523.25, 0.11, 0.16, 0.6, "triangle")],
+  connection_lost: [n(Eb4, 0, 0.24, 0.5, "triangle")],
+  connection_restored: [n(G4, 0, 0.12, 0.5, "triangle"), n(C5, 0.11, 0.16, 0.5, "triangle")],
   // Push-to-talk (issue #37): one short, soft tone gliding up when the microphone opens and down when it closes; the
   // priority speaker's sit a fourth higher.
-  ptt_on: [glide(440, 587.33, 0.09, 0.5)],
-  ptt_off: [glide(587.33, 440, 0.09, 0.45)],
-  priority_on: [glide(587.33, 783.99, 0.09, 0.5)],
-  priority_off: [glide(783.99, 587.33, 0.09, 0.45)],
+  ptt_on: [glide(A4, D5, 0.09, 0.42)],
+  ptt_off: [glide(D5, A4, 0.09, 0.38)],
+  priority_on: [glide(D5, G5, 0.09, 0.42)],
+  priority_off: [glide(G5, D5, 0.09, 0.38)],
+  // Talking while muted (issue #125): a soft double tap on G4.
+  muted_talk: [n(G4, 0, 0.07, 0.5), n(G4, 0.12, 0.07, 0.5)],
 };
 
 /** Total length of a cue in seconds. */
@@ -86,7 +117,10 @@ export interface ScheduleTarget {
   keep?: (osc: OscillatorNode) => void;
 }
 
-const ATTACK = 0.012;
+/** Default attack of a note in seconds (`Note.attack` overrides it). */
+export const ATTACK = 0.012;
+/** The gain of a note with `gain` 1 at full cue volume: moderate, cues sit well below voices. */
+export const PEAK = 0.3;
 /** Minimum distance of a note start from "now": a start in the past would be clipped. */
 export const LEAD = 0.02;
 /** Silence between two queued cues. */
@@ -110,8 +144,7 @@ function onEnded(osc: OscillatorNode, fn: () => void): void {
  */
 export function scheduleCue(ctx: CueContext, cue: Cue, volume: number, target: ScheduleTarget = {}): number {
   const t0 = Math.max(target.at ?? 0, ctx.currentTime + LEAD);
-  // Moderate even at full volume: cues sit well below voices.
-  const peak = Math.max(0, Math.min(1, volume)) * 0.25;
+  const peak = Math.max(0, Math.min(1, volume)) * PEAK;
   const bus = target.destination ? null : ctx.createGain();
   bus?.connect(ctx.destination);
   const out = target.destination ?? bus!;
@@ -123,7 +156,7 @@ export function scheduleCue(ctx: CueContext, cue: Cue, volume: number, target: S
     osc.frequency.setValueAtTime(note.freq, t0 + note.at);
     if (note.to) osc.frequency.exponentialRampToValueAtTime(note.to, t0 + note.at + note.dur);
     gain.gain.setValueAtTime(0, t0 + note.at);
-    gain.gain.linearRampToValueAtTime(peak * note.gain, t0 + note.at + ATTACK);
+    gain.gain.linearRampToValueAtTime(peak * note.gain, t0 + note.at + (note.attack ?? ATTACK));
     gain.gain.exponentialRampToValueAtTime(0.0001, t0 + note.at + note.dur);
     osc.connect(gain);
     gain.connect(out);
@@ -394,8 +427,10 @@ export function previewCue(cue: Cue, s: Pick<VoiceSettings, "cueVolume" | "outpu
 
 // ---------------------------------------------------------------- ringtone of incoming calls
 
-/** Length of one loop of the ringtone in seconds (two bars of four beats at 100 bpm). */
-export const RING_LOOP = 2.4;
+/** An eighth note of the ringtone in seconds (two bars of 4/4 at 120 bpm: a quarter is 0.5 s). */
+export const RING_EIGHTH = 0.25;
+/** Length of one loop of the ringtone in seconds (sixteen eighths, the last ones a rest). */
+export const RING_LOOP = 16 * RING_EIGHTH;
 
 /** Vibration of one ringtone loop on phones (on, off, on in milliseconds); the service worker uses its own copy. */
 export const RING_VIBRATION: number[] = [500, 300, 500];
@@ -420,29 +455,25 @@ export interface RingtoneHooks {
   vibrate?: ((pattern: number | number[]) => boolean) | null;
 }
 
+/** A ringtone note on the eighth-note grid: `e` = the eighth it starts on, `len` = its length in eighths (a little shorter, so notes ring apart). */
+const ring = (freq: number, e: number, len: number, gain: number): Note => n(freq, e * RING_EIGHTH, len * RING_EIGHTH - 0.02, gain);
+
 /**
- * The ringtone (design note 4.11): a friendly two-bar motif in C major pentatonic (no semitones, nothing
- * shrill), each note a soft sine with a quiet octave on top for a bell-like colour, then a rest before the
- * loop repeats. Group calls get a gentler, lower variant with fewer notes.
+ * The ringtone (design note 4.11, melodic since issue #123): two bars of 4/4 at 120 bpm in C major pentatonic (no
+ * semitones, nothing shrill), each note a soft sine with a quiet octave on top for a bell-like colour, and a rest
+ * before the loop repeats.
+ *
+ * Direct calls, in eighths: | C5 E5 G5 – A5 – G5 E5 | D5 – E5 D5 C5 – – ·|. The first bar climbs the triad and
+ * reaches up a step to A5, the "question"; the second turns around D5 (a step below the fifth) and walks down to
+ * the tonic, the "answer", held for three eighths, then an eighth of rest. Steps and small leaps make it a tune one
+ * can hum; the top stays at A5 (880 Hz), the loop ends settled and starts fresh.
+ *
+ * Group calls: | G4 – C5 – E5 – – · | D5 – C5 – – – · ·|, the same rise-and-settle shape with fewer, longer notes,
+ * starting a fifth lower and at a lower gain: calmer, since several people are rung at once.
  */
 export const RINGTONES: Record<"direct" | "group", Note[]> = {
-  direct: [
-    // Bar 1: rising G–C–E–G, bar 2: falling E–D and a long C.
-    n(392.0, 0.0, 0.26, 0.85),
-    n(523.25, 0.3, 0.26, 0.9),
-    n(659.25, 0.6, 0.26, 0.95),
-    n(783.99, 0.9, 0.34, 1),
-    n(659.25, 1.2, 0.26, 0.9),
-    n(587.33, 1.5, 0.26, 0.85),
-    n(523.25, 1.8, 0.46, 0.85),
-  ],
-  group: [
-    n(261.63, 0.0, 0.32, 0.7),
-    n(329.63, 0.3, 0.32, 0.7),
-    n(392.0, 0.6, 0.42, 0.75),
-    n(329.63, 1.2, 0.32, 0.65),
-    n(261.63, 1.5, 0.5, 0.65),
-  ],
+  direct: [ring(C5, 0, 1, 0.85), ring(E5, 1, 1, 0.9), ring(G5, 2, 2, 0.95), ring(A5, 4, 2, 1), ring(G5, 6, 1, 0.9), ring(E5, 7, 1, 0.85), ring(D5, 8, 2, 0.85), ring(E5, 10, 1, 0.85), ring(D5, 11, 1, 0.8), ring(C5, 12, 3, 0.85)],
+  group: [ring(G4, 0, 2, 0.7), ring(C5, 2, 2, 0.7), ring(E5, 4, 3, 0.75), ring(D5, 8, 2, 0.65), ring(C5, 10, 4, 0.65)],
 };
 
 /**

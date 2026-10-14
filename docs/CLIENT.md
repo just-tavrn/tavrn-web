@@ -815,7 +815,9 @@ The voice settings are kept per device and applied live:
 - soft notification sounds (join, leave, mute, deafen, streams, connection, and a soft rising and falling tone when
   push-to-talk or the priority key opens and closes the microphone, heard only by you, never while the server keeps
   the microphone closed), with a volume, a switch and a preview per sound and "All notification sounds off", and the
-  ringtone volume;
+  ringtone volume. The sounds are synthesized (`web/src/voice/cues.ts` explains the notes): join, leave and the
+  stream cues are the present ones (a fifth and a triad with a clear onset), the ticks for your own switches stay
+  quiet, and the ringtone is a two-bar tune in C major pentatonic;
 - "Volumes of other people" ("Voice and stream audio" above), "Keep the screen on during voice calls" (below) and a
   **connection test** that tries every path to the node's media server (UDP per address, TCP, TURN) and says what to
   fix when one fails.

@@ -475,6 +475,7 @@
   "voice.cue.ptt_off": "Push-to-Talk: Mikrofon geht zu",
   "voice.cue.priority_on": "Gesprächsleitung an",
   "voice.cue.priority_off": "Gesprächsleitung aus",
+  "voice.cue.muted_talk": "Sprechen bei stummem Mikrofon",
   "voice.test.title": "Verbindungstest",
   "voice.test.description": "Prüft, welche Wege zum Medienserver dieses Knotens von diesem Gerät aus funktionieren: UDP zu jeder angekündigten Adresse, TCP und TURN. Es werden nur Testpakete gesendet.",
   "voice.test.run": "Verbindung testen",

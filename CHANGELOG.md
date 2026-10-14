@@ -67,6 +67,11 @@ First public release of the web client and the desktop apps.
 - **Mentions stand out**: `@name`, `@name@domain`, `@Role` and `@everyone`/`@here` in messages are pills; mentions
   of yourself and @everyone/@here use the warning colour with a border, and a message that mentions you keeps its
   left border with a stronger tint (#122).
+- **Voice cues and the ringtone** (#123): the ringtone of incoming calls is a tune now, two bars in C major
+  pentatonic that climb to a question and walk back down to the tonic (group calls get the calmer, lower variant);
+  the join, leave and stream cues are a little louder with a clearer onset, so they are not lost in a lively call,
+  while the mute, deafen, connection and push-to-talk tones stay as quiet as before. The volume, the switch and the
+  preview per sound in Settings → Voice & video are unchanged.
 - **A limit per external store** (protocol FILES.md §5): the storage settings of a files channel on WebDAV or S3 get
   "Limit on the store (GB)" (empty = no limit), which the channel's meter shows; the node's own quota no longer
   applies to external stores.

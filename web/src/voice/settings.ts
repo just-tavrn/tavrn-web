@@ -16,7 +16,7 @@ export type Resolution = "360p" | "720p" | "1080p" | "1440p" | "4k";
 export type CameraFacing = "user" | "environment";
 
 /** Notification sounds (`cues.ts`). */
-export const CUE_NAMES = ["join", "leave", "mute", "unmute", "deafen", "undeafen", "stream_on", "stream_off", "connection_lost", "connection_restored", "ptt_on", "ptt_off", "priority_on", "priority_off"] as const;
+export const CUE_NAMES = ["join", "leave", "mute", "unmute", "deafen", "undeafen", "stream_on", "stream_off", "connection_lost", "connection_restored", "ptt_on", "ptt_off", "priority_on", "priority_off", "muted_talk"] as const;
 export type Cue = (typeof CUE_NAMES)[number];
 
 /**
