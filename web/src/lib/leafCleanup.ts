@@ -88,13 +88,15 @@ export interface CleanupOptions {
   urgent?: boolean;
   /** A voice join: no election wait, `postponed` when another device is elected (`LeafCleaner`, `noWait`). */
   noWait?: boolean;
+  /** The pending removals from a request started earlier (`loadPending`); fetched here otherwise. */
+  pending?: Promise<PendingRemovalLike[]>;
 }
 
 /** Cleans the group of `q` (qualified id); null without a session manager or local group. */
 export async function cleanupConversation(q: string, opts: CleanupOptions): Promise<CleanupResult | null> {
   const mls = await getMls();
   if (!mls?.hasGroup(q)) return null;
-  const pending = await loadPending(q);
+  const pending = await (opts.pending ?? loadPending(q));
   let members = opts.members ?? null;
   if (opts.members === undefined) {
     const gone = new Set(pending.filter((p) => p.reason === "not_member").map((p) => splitIdentity(p.identity).address));
@@ -122,10 +124,11 @@ export async function cleanupConversation(q: string, opts: CleanupOptions): Prom
  * waiting for the election: a running cleanup of the channel stops waiting and is shared, an elected device removes at
  * once, otherwise nothing is committed now. Resolves with a function that runs a postponed cleanup in the background
  * (with the election wait; call it once connected) and does nothing otherwise. `online`: the devices in the channel
- * (read again for the background run). Best effort: failures count as nothing to do.
+ * (read again for the background run); `pending`: the pending removals, requested while the group was joined.
+ * Best effort: failures count as nothing to do.
  */
-export async function cleanupBeforeVoice(q: string, opts: { online: () => Iterable<string> }): Promise<() => void> {
-  const first = await cleanupConversation(q, { members: null, mayManage: false, online: opts.online(), noWait: true }).catch(() => null);
+export async function cleanupBeforeVoice(q: string, opts: { online: () => Iterable<string>; pending?: Promise<PendingRemovalLike[]> }): Promise<() => void> {
+  const first = await cleanupConversation(q, { members: null, mayManage: false, online: opts.online(), noWait: true, pending: opts.pending }).catch(() => null);
   if (first?.outcome !== "postponed") return () => undefined;
   return () => void cleanupConversation(q, { members: null, mayManage: false, online: opts.online() }).catch(() => null);
 }

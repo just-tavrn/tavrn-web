@@ -19,6 +19,7 @@ const fake = vi.hoisted(() => ({
   unattested: [] as string[],
   pending: [] as Array<{ identity: string; reason: string }>,
   removed: [] as string[][],
+  pendingCalls: 0,
   /** One session manager per test: the cleaner (single flight, election wait) belongs to it. */
   mls: null as unknown,
 }));
@@ -42,7 +43,16 @@ function makeMls() {
   };
 }
 vi.mock("../stores/mls", () => ({ getMls: async () => fake.mls }));
-vi.mock("../stores/nodes", () => ({ apiFor: () => ({ mls: { pendingRemovals: async () => ({ items: fake.pending }) } }) }));
+vi.mock("../stores/nodes", () => ({
+  apiFor: () => ({
+    mls: {
+      pendingRemovals: async () => {
+        fake.pendingCalls++;
+        return { items: fake.pending };
+      },
+    },
+  }),
+}));
 
 const { cleanupBeforeVoice, cleanupConversation, isGhostRefusal, withDepartedLeavesGone } = await import("./leafCleanup");
 const { usePresence } = await import("../stores/presence");
@@ -52,6 +62,7 @@ beforeEach(() => {
   fake.unattested = [];
   fake.pending = [{ identity: carol, reason: "not_member" }];
   fake.removed = [];
+  fake.pendingCalls = 0;
   fake.mls = makeMls();
   usePresence.getState().clear();
 });
@@ -133,6 +144,19 @@ describe("the cleanup of a voice join never waits for the election (ENCRYPTION.m
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("the pending removals of a voice join", () => {
+  it("come from the request started beforehand (in parallel with the group join): no second request", async () => {
+    const deleted = "dave@t.local/01J9ZK3G5M8Q2W4E6R8T0Y2VD9";
+    fake.roster = [me, deleted];
+    fake.unattested = [deleted];
+    const after = await cleanupBeforeVoice(Q, { online: () => [], pending: Promise.resolve([{ identity: deleted, reason: "deleted" }]) });
+    after();
+    expect(fake.removed).toEqual([[deleted]]);
+    // Only the refresh after the removal (for the warning's labels).
+    expect(fake.pendingCalls).toBe(1);
   });
 });
 

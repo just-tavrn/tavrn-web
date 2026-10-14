@@ -31,7 +31,7 @@ vi.mock("../stores/mls", async () => {
   return { getMls: async () => h.mls, useMlsUi: create(() => ({ epochs: {} as Record<string, number> })) };
 });
 vi.mock("../stores/nodes", () => ({ apiFor: () => h.api }));
-vi.mock("../lib/leafCleanup", () => ({ cleanupBeforeVoice: async () => () => undefined }));
+vi.mock("../lib/leafCleanup", () => ({ cleanupBeforeVoice: async () => () => undefined, loadPending: async () => [] }));
 vi.mock("./cues", () => ({ playCue: vi.fn() }));
 vi.mock("./entitlementCaps", () => ({ withEntitlementCaps: (i: unknown) => i }));
 

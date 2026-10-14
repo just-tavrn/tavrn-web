@@ -13,7 +13,7 @@
  * as the browser engine only does after "Join stream"); joining one shows a hint. Security rules as in the browser engine: the shell publishes only once the frame
  * cryptor of the own track is active (`e2ee_failed` otherwise) and has no unencrypted path.
  */
-import { cleanupBeforeVoice } from "../lib/leafCleanup";
+import { cleanupBeforeVoice, loadPending } from "../lib/leafCleanup";
 import { apiFor } from "../stores/nodes";
 import { getMls, useMlsUi } from "../stores/mls";
 import { qualify, splitIdentity, type MlsManager } from "@tavrn/e2ee";
@@ -302,12 +302,14 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
   const mls = await getMls();
   if (!mls) throw new VoiceError("locked");
   const q = qualify(target.domain, target.channelId);
+  // The node's pending removals for the cleanup below, requested while the group is joined (one round trip less).
+  const pending = opts.rejoin ? undefined : loadPending(q);
   if ((await mls.ensureJoined(q, { canCreate })) === "no_group") throw new VoiceError("no_group");
   // Ghost leaves first, without waiting for the election (as session.ts), then the fresh voice key (ENCRYPTION.md §5a).
   const online = () => participantsOf(useVoicePresence.getState(), target.domain, target.channelId).map((p) => p.identity);
   let cleanupLater = () => undefined as void;
   if (!opts.rejoin) {
-    cleanupLater = await cleanupBeforeVoice(q, { online });
+    cleanupLater = await cleanupBeforeVoice(q, { online, pending });
     await mls.selfUpdate(q).catch(() => false);
   }
   const ep = endpoints(apiFor(target.domain), target);
