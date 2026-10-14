@@ -56,10 +56,11 @@ export function PollView({ poll, raw, m, own, canManage }: { poll: Poll; raw: Re
   const mine = me ? (tally?.byUser.get(me) ?? null) : null;
   // The viewer's newest record was cast on another version of the poll (an edited poll).
   const mineStale = !mine && !!me && !!checked?.some((c) => c.user === me && !c.check.ok && c.check.reason === "stale");
-  const show = pollVisibility(poll, { closed }, !!mine);
+  // The author always sees the results of their own poll ("after voting" applies to the other members).
+  const show = pollVisibility(poll, { closed }, !!mine || own);
   const canVote = !!env?.canVote && !!env.me && !closed;
-  // Only a poll with a close time can be closed early (the node moves it earlier, never from none, §7g).
-  const mayClose = !!env && !!closesAt && !closed && (own || canManage || env.canManage);
+  // The author or a moderator closes an open poll (with or without a close time) at once (§7g).
+  const mayClose = !!env && !closed && (own || canManage || env.canManage);
   const [busy, setBusy] = useState(false);
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);

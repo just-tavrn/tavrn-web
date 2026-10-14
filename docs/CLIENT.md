@@ -396,8 +396,9 @@ creator's time when the offsets differ; all-day slots keep the creator's date) w
 never colour alone) and "✓ n · ? n"; the best slots (most yes, then most maybe) are summarised on top and marked
 ★, and **Show all answers** opens the grid of members × slots. Hidden results read "Results are shown after you vote"
 or "… when the poll closes", hidden voters "Who voted for what is hidden until the poll closes". A closed poll takes no
-votes. The author, or a member with *Manage messages*, can **Close poll now** (after a confirmation) when the poll has
-a close time; a poll without one stays open until it is deleted. Polls cannot be edited.
+votes. The author, or a member with *Manage messages*, can **Close poll now** (after a confirmation), also a poll without a
+close time; a close time only ever moves earlier. The author always sees the results of their own poll, also with
+"after voting" before they voted. Polls cannot be edited.
 
 **Votes** are records next to the message, one per member and poll (`polls/votes.ts`): loaded when a poll is shown
 (`GET …/poll/votes`), kept current by `poll.vote` and `poll.vote.delete`, never counted as unread and never notifying.

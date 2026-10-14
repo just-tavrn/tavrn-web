@@ -182,11 +182,47 @@ describe("PollView", () => {
     expect(await screen.findByTestId("poll-closed")).toHaveTextContent("Beendet");
   });
 
-  it("only the author or a moderator may close; a poll without a close time cannot be closed early", async () => {
+  it("only the author or a moderator may close", async () => {
     const api = fakeApi([]);
-    show([message(choicePoll, { poll_closes_at: "2099-01-01T00:00:00Z" }), message(choicePoll, { id: "01POLL2", author_id: "u1", author: ME })], api);
-    await waitFor(() => expect(screen.getAllByTestId("poll")).toHaveLength(2));
+    show([message(choicePoll, { poll_closes_at: "2099-01-01T00:00:00Z" })], api);
+    await waitFor(() => expect(screen.getByTestId("poll")).toBeInTheDocument());
     expect(screen.queryByTestId("poll-close-now")).toBeNull();
+  });
+
+  it("a moderator closes someone else's poll without a close time", async () => {
+    const user = userEvent.setup();
+    const api = fakeApi([]);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    show([message(choicePoll)], api, { canManage: true });
+    const poll = await screen.findByTestId("poll");
+    expect(within(poll).queryByTestId("poll-closes")).toBeNull();
+    await user.click(within(poll).getByRole("button", { name: "Umfrage jetzt beenden" }));
+    expect(api.polls.close).toHaveBeenCalledWith("c1", "01POLL");
+  });
+
+  it("the author of a poll without a close time can close it; a declined confirmation changes nothing", async () => {
+    const user = userEvent.setup();
+    const api = fakeApi([]);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    show([message(choicePoll, { author_id: "u1", author: ME })], api);
+    const poll = await screen.findByTestId("poll");
+    await user.click(within(poll).getByRole("button", { name: "Umfrage jetzt beenden" }));
+    expect(api.polls.close).not.toHaveBeenCalled();
+    confirm.mockReturnValue(true);
+    await user.click(within(poll).getByRole("button", { name: "Umfrage jetzt beenden" }));
+    expect(api.polls.close).toHaveBeenCalledWith("c1", "01POLL");
+  });
+
+  it("the author sees the results of their own poll before voting; other members only after voting", async () => {
+    const hidden = { ...choicePoll, results_visible: "after_vote" };
+    const api = fakeApi([await record("bob@t.local", hidden, { choices: ["b"] })]);
+    show([message(hidden, { author_id: "u1", author: ME }), message(hidden, { id: "01OTHER" })], api);
+    await waitFor(() => expect(screen.getAllByTestId("poll")).toHaveLength(2));
+    const [mine, other] = screen.getAllByTestId("poll").sort((a, b) => (a.closest("[data-message-id]")!.getAttribute("data-message-id")! === "01POLL" ? -1 : 1) - (b.closest("[data-message-id]")!.getAttribute("data-message-id")! === "01POLL" ? -1 : 1));
+    await waitFor(() => expect(within(mine!).getAllByTestId("poll-count")).toHaveLength(2));
+    expect(within(mine!).queryByTestId("poll-results-hidden")).toBeNull();
+    expect(within(other!).queryByTestId("poll-count")).toBeNull();
+    expect(within(other!).getByTestId("poll-results-hidden")).toBeInTheDocument();
   });
 
   it("date polls: yes / maybe / no per slot with text and icon, the best slot and the grid of answers", async () => {
