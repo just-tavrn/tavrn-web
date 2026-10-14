@@ -971,15 +971,15 @@ valid key offer no updates (`updater: false`).
 ### Packages and the Chromium sandbox
 
 `just electron-package` writes `Tavrn-<version>.AppImage`, `tavrn_<version>_amd64.deb` and `latest-linux.yml` into
-`apps/desktop-electron/release/` (the app in `/opt/Tavrn`, the command `tavrn`, the menu entry `tavrn.desktop`, the
-licence and terms of "Licence and terms in the installers" as `resources/LICENSE.txt` and, in the `.deb`, as
-`/usr/share/doc/tavrn/LICENSE.txt`; Electron's and Chromium's licences ship next to the binary). The `.deb` depends on
-electron-builder's list plus ALSA and GBM (`libasound2t64 | libasound2`, `libgbm1`), which minimal systems lack, and
-`libudev1` for the passkeys module.
+`apps/desktop-electron/release/` (the app in `/opt/tavrn`, `/opt/Tavrn` before version 0.4.0, the command `tavrn`,
+the menu entry `tavrn.desktop`, the licence and terms of "Licence and terms in the installers" as
+`resources/LICENSE.txt` and, in the `.deb`, as `/usr/share/doc/tavrn/LICENSE.txt`; Electron's and Chromium's
+licences ship next to the binary). The `.deb` depends on electron-builder's list plus ALSA and GBM
+(`libasound2t64 | libasound2`, `libgbm1`), which minimal systems lack, and `libudev1` for the passkeys module.
 
 Chromium's renderer sandbox needs unprivileged user namespaces, or a setuid `chrome-sandbox`. Ubuntu 24.04 and later
 restrict user namespaces with AppArmor; the `.deb`'s `postinst` therefore installs an AppArmor profile for
-`/opt/Tavrn/tavrn` that allows them (`/etc/apparmor.d/tavrn`, on systems whose AppArmor supports it), and makes
+`/opt/tavrn/tavrn` that allows them (`/etc/apparmor.d/tavrn`, on systems whose AppArmor supports it), and makes
 `chrome-sandbox` setuid root only where user namespaces do not work at all. So the `.deb` runs sandboxed out of the box
 and is the recommended package on Ubuntu. Checked in an `ubuntu:noble` container: the package installs with its
 dependencies (no library missing), the profile, the licence and the menu entry are in place; where user namespaces work
@@ -1322,7 +1322,7 @@ All artifacts are kept for 7 days.
 
 The names are the ones the website's download page reads (tavrn-website `src/lib/releases.ts`): every Linux package and
 every file with "electron" in its name counts as the Electron shell, every other installer as Tauri (so the Windows
-fallback must carry "electron" in its name; electron-builder's default `Tavrn Setup <version>.exe` would be ignored),
+fallback must carry "electron" in its name; electron-builder's default `tavrn Setup <version>.exe` would be ignored),
 an AppImage without an architecture in its name counts as x64, and feeds, sums, signatures and block maps are not
 downloads. `apps/desktop/scripts/release-assets.mjs` keeps the list: it checks a release against it with those rules
 re-implemented (a file missing, unexpected or misread fails the release), and writes the table of downloads at the top
@@ -1395,7 +1395,7 @@ jobs of the run (the upload replaces files), never tag again.
 
 **The Windows fallback.** The Electron shell built for Windows (`pnpm --filter @tavrn/desktop-electron package:win` on
 Windows, after `pnpm --filter @tavrn/keywatch-native build`): an NSIS installer for the current user with the licence
-page and the icon of the Tauri installer, installed to `%LOCALAPPDATA%\Programs\Tavrn` with the start menu entry "Tavrn
+page and the icon of the Tauri installer, installed to `%LOCALAPPDATA%\Programs\tavrn` with the start menu entry "tavrn
 (Electron)" and an app id of its own (`org.tavrn.desktop.electron`), so it can live next to an installed Tauri app; its
 first start takes over the Tauri app's home node, as on Linux ([Settings and profile](#settings-and-profile)). It
 updates itself through `latest.yml`. CI builds and packages it on `windows-latest`; its behaviour on Windows has not
