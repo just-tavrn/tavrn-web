@@ -115,13 +115,14 @@ describe("poll time zones", () => {
     const tokyo = slotText(slot, "de-DE", "Asia/Tokyo");
     expect(tokyo.day).toBe("2026-11-07");
     expect(tokyo.time).toBe("03:00 – 06:00");
+    expect([berlin.minutes, ny.minutes, tokyo.minutes]).toEqual([19 * 60, 13 * 60, 3 * 60]);
   });
 
   it("all-day slots keep the creator's date in every zone", () => {
     const slot = { id: "s2", start: "2026-11-07T00:00:00+01:00", all_day: true };
     for (const zone of ["America/Los_Angeles", "Pacific/Auckland", "Europe/Berlin"]) {
       const x = slotText(slot, "de-DE", zone);
-      expect(x).toMatchObject({ day: "2026-11-07", allDay: true, time: "", creator: null });
+      expect(x).toMatchObject({ day: "2026-11-07", allDay: true, time: "", creator: null, minutes: -1 });
       expect(x.date).toBe("Sa., 7. Nov.");
     }
   });
