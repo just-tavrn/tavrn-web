@@ -14,6 +14,7 @@
  * cryptor of the own track is active (`e2ee_failed` otherwise) and has no unencrypted path.
  */
 import { cleanupBeforeVoice, loadPending } from "../lib/leafCleanup";
+import { startJoin } from "./joinFlow";
 import { apiFor } from "../stores/nodes";
 import { getMls, useMlsUi } from "../stores/mls";
 import { qualify, splitIdentity, type MlsManager } from "@tavrn/e2ee";
@@ -302,21 +303,24 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
   const mls = await getMls();
   if (!mls) throw new VoiceError("locked");
   const q = qualify(target.domain, target.channelId);
-  // The node's pending removals for the cleanup below, requested while the group is joined (one round trip less).
-  const pending = opts.rejoin ? undefined : loadPending(q);
-  if ((await mls.ensureJoined(q, { canCreate })) === "no_group") throw new VoiceError("no_group");
-  // Ghost leaves first, without waiting for the election (as session.ts), then the fresh voice key (ENCRYPTION.md §5a).
-  const online = () => participantsOf(useVoicePresence.getState(), target.domain, target.channelId).map((p) => p.identity);
-  let cleanupLater = () => undefined as void;
-  if (!opts.rejoin) {
-    cleanupLater = await cleanupBeforeVoice(q, { online, pending });
-    await mls.selfUpdate(q).catch(() => false);
-  }
   const ep = endpoints(apiFor(target.domain), target);
-  const info = withEntitlementCaps(await ep.join(!!opts.start && !opts.rejoin));
+  // Ghost leaves first, without waiting for the election, then the fresh voice key (ENCRYPTION.md §4.7, §5a), with
+  // voice/join in parallel (joinFlow.ts). The shell gets the key with its join, so it waits for the fresh epoch.
+  const online = () => participantsOf(useVoicePresence.getState(), target.domain, target.channelId).map((p) => p.identity);
+  const flow = await startJoin({
+    mls,
+    q,
+    canCreate,
+    rejoin: !!opts.rejoin,
+    join: async () => withEntitlementCaps(await ep.join(!!opts.start && !opts.rejoin)),
+    leave: () => ep.leave(),
+    pending: () => loadPending(q),
+    cleanup: (pending) => cleanupBeforeVoice(q, { online, pending }),
+  });
+  const { info } = flow;
   let joined = false;
   try {
-    if (info.epoch != null && (mls.epoch(q) ?? -1) < info.epoch) await mls.catchUp(q);
+    await flow.fresh;
     const vk = mls.voiceKey(q);
     if (!vk) throw new VoiceError("e2ee_failed");
     const ring = new VoiceKeyRing();
@@ -374,13 +378,14 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
     applyVolumes(s);
     follow(s);
     cue(opts.rejoin ? "connection_restored" : "join", true);
-    cleanupLater();
+    flow.cleanupLater();
     await reportState(s, { muted: useVoice.getState().muted || !canSpeak, deafened });
   } catch (e) {
     const s = current;
     if (s && s.id === id) await cleanup(s);
     else if (joined) await voice.leave().catch(() => undefined);
-    if (!opts.rejoin) await ep.leave().catch(() => undefined);
+    // A failed rejoin keeps the seat; a failed join frees it.
+    await flow.abandon();
     throw e;
   }
 }

@@ -23,6 +23,7 @@
 import { platform } from "../platform";
 import { displayMediaAudio, type ScreenAudio } from "./screenAudio";
 import { cleanupBeforeVoice, loadPending } from "../lib/leafCleanup";
+import { earlyPipeline, startJoin, type EarlyPipeline, type Releasable } from "./joinFlow";
 import {
   ConnectionQuality,
   DisconnectReason,
@@ -123,6 +124,8 @@ interface Session {
   streams: StreamSubscriptions;
   /** The Android app's screen share through the shell (VOICE.md §4b); null elsewhere. */
   nativeScreen: NativeScreenShare | null;
+  /** The session's fresh epoch is in place (`JoinFlow.fresh`): nothing is published before. */
+  fresh: Promise<void>;
 }
 
 interface Tap {
@@ -444,7 +447,16 @@ async function rekey(s: Session) {
   }
 }
 
+/** Sets the frame key of the group's current epoch unless the key provider holds it already. */
+async function keyCurrent(s: Session) {
+  if (s.keyProvider.ring.needs(s.mls.epoch(s.q) ?? -1)) await rekey(s);
+}
+
 async function publishMic(s: Session) {
+  // Never before the session's fresh key is the sending key (a permission change may call this while joining).
+  await s.fresh;
+  await keyCurrent(s);
+  if (current !== s) return;
   if (!canPublish(s.room, Track.Source.Microphone) || s.room.localParticipant.getTrackPublication(Track.Source.Microphone)) return;
   // Never publish before encryption is confirmed for this device (VOICE.md §6).
   if (!s.room.isE2EEEnabled || !s.room.localParticipant.isE2EEEnabled) throw new VoiceError("e2ee_failed");
@@ -726,31 +738,45 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
   set(opts.rejoin ? { target, error: null } : { status: "joining", target, error: null, e2eeBlocked: false });
   // E2EE is mandatory: without insertable streams (or RTCRtpScriptTransform) there is no voice.
   if (!isE2ESupportedSafe()) throw new VoiceError("e2ee_unsupported");
-  const mls = await getMls();
-  if (!mls) throw new VoiceError("locked");
+  // The media start at the click, in parallel with the MLS work and the node's join (joinFlow.ts).
+  const media = startMedia(target);
+  const mls = await getMls().catch(() => null);
+  if (!mls) {
+    await media.release();
+    throw new VoiceError("locked");
+  }
   const q = qualify(target.domain, target.channelId);
-  // The node's pending removals for the cleanup below, requested while the group is joined (one round trip less).
-  const pending = opts.rejoin ? undefined : loadPending(q);
-  if ((await mls.ensureJoined(q, { canCreate })) === "no_group") throw new VoiceError("no_group");
+  const api = apiFor(target.domain);
+  const ep = endpoints(api, target);
   // Ghost leaves (deleted devices, this user's old devices) go before the new voice key (ENCRYPTION.md §4.7); the
   // node lists who is in the channel, so only those devices are online for the election. Never waits for the
   // election: when another device is elected the cleanup runs in the background once connected. Best effort.
   const online = () => participantsOf(useVoicePresence.getState(), target.domain, target.channelId).map((p) => p.identity);
-  const cleanupLater = opts.rejoin ? () => undefined : await cleanupBeforeVoice(q, { online, pending });
-  // A fresh key for every voice session (ENCRYPTION.md §5a); best effort, the current epoch also works.
-  // A rejoin after a dropped connection continues the session on the current epoch.
-  if (!opts.rejoin) await mls.selfUpdate(q).catch(() => false);
-  const api = apiFor(target.domain);
-  const ep = endpoints(api, target);
-  // Entitlement caps (stream/camera) are folded into the limits once (ENTITLEMENTS.md §4).
-  const info = withEntitlementCaps(await ep.join(!!opts.start && !opts.rejoin));
+  // A fresh key for every voice session (ENCRYPTION.md §5a, the self update in `startJoin`); best effort, the current
+  // epoch also works. A rejoin after a dropped connection continues the session on the current epoch.
+  const flow = await startJoin({
+    mls,
+    q,
+    canCreate,
+    rejoin: !!opts.rejoin,
+    // Entitlement caps (stream/camera) are folded into the limits once (ENTITLEMENTS.md §4).
+    join: async () => withEntitlementCaps(await ep.join(!!opts.start && !opts.rejoin)),
+    leave: () => ep.leave(),
+    pending: () => loadPending(q),
+    cleanup: (pending) => cleanupBeforeVoice(q, { online, pending }),
+    media,
+  });
+  const { info } = flow;
+  const music = isMusic(info.limits.audio_bitrate_kbps);
+  musicGuess.set(musicKey(target), music);
   let pipeline: MicPipeline | null = null;
   let room: Room | null = null;
-  let audio: AudioContext | null = null;
+  const audio = media.audio;
   try {
-    if (info.epoch != null && (mls.epoch(q) ?? -1) < info.epoch) await mls.catchUp(q);
     const s0 = settings();
-    pipeline = await MicPipeline.create(s0, onLevel, { music: isMusic(info.limits.audio_bitrate_kbps) });
+    pipeline = await media.pipeline.take(music);
+    // The key of the current epoch for what the others send meanwhile; the session's own (fresh) key follows with the
+    // self update through the re-key subscription below, before anything is published (`publishMic`).
     const keyProvider = new TavrnKeyProvider();
     const vk = mls.voiceKey(q);
     if (!vk) throw new VoiceError("e2ee_failed");
@@ -759,14 +785,13 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
     } finally {
       vk.key.fill(0);
     }
-    audio = newAudioContext();
     room = new Room({
       adaptiveStream: true,
       dynacast: true,
       // Web Audio playback: per-user volume above 100 % and output device selection; our own context so
       // the analysers and ducking gains live in it (closed by `cleanup`).
       webAudioMix: audio ? { audioContext: audio } : true,
-      encryption: { keyProvider, worker: new E2EEWorker() },
+      encryption: { keyProvider, worker: media.worker },
       ...(s0.outputDeviceId ? { audioOutput: { deviceId: s0.outputDeviceId } } : {}),
     });
     const reducedMotion = typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -818,6 +843,7 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
         },
       ),
       nativeScreen: null,
+      fresh: flow.fresh,
     };
     s.nativeScreen = nativeScreenFor(s);
     current = s;
@@ -840,6 +866,9 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
     await room.connect(info.url, info.token, { autoSubscribe: false });
     s.streams.applyAll();
     await confirmE2ee(room);
+    // The session's fresh epoch (self update) is the sending key before "connected" and before anything is published.
+    await flow.fresh;
+    await keyCurrent(s);
     if (current !== s) return;
     await room.startAudio().catch(() => undefined);
     const canSpeak = canPublish(room, Track.Source.Microphone);
@@ -853,7 +882,7 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
     for (const p of room.remoteParticipants.values()) followPriorityClaim(s, p);
     const { muted, deafened } = useVoice.getState();
     cue(opts.rejoin ? "connection_restored" : "join", true);
-    cleanupLater();
+    flow.cleanupLater();
     await reportState(s, { muted: muted || !canSpeak, deafened });
     if (import.meta.env.DEV) exposeForTests(s);
   } catch (e) {
@@ -861,13 +890,43 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
     if (s && s.id === id) await cleanup(s);
     else {
       await room?.disconnect().catch(() => undefined);
-      await audio?.close().catch(() => undefined);
       await pipeline?.close();
     }
-    // A failed rejoin keeps the seat (the node holds it for the grace period); a failed join frees it.
-    if (!opts.rejoin) await ep.leave().catch(() => undefined);
+    // The media (playback context, worker, an untaken pipeline) go back; a failed rejoin keeps the seat (the node
+    // holds it for the grace period), a failed join frees it.
+    await flow.abandon();
     throw e;
   }
+}
+
+/** The music mode of the last join per channel: the early pipeline's guess (`earlyPipeline`). */
+const musicGuess = new Map<string, boolean>();
+const musicKey = (t: VoiceTarget) => `${t.call ? "call" : "channel"}:${t.domain}/${t.channelId}`;
+
+/** What a session needs besides the MLS and the node, started at the click (`joinFlow.ts`). */
+interface Media extends Releasable {
+  pipeline: EarlyPipeline<MicPipeline>;
+  audio: AudioContext | null;
+  worker: Worker;
+}
+
+function startMedia(target: VoiceTarget): Media {
+  const pipeline = earlyPipeline((music) => MicPipeline.create(settings(), onLevel, { music }), musicGuess.get(musicKey(target)) ?? false);
+  const audio = newAudioContext();
+  const worker = new E2EEWorker();
+  let released = false;
+  return {
+    pipeline,
+    audio,
+    worker,
+    async release() {
+      if (released) return;
+      released = true;
+      await pipeline.release();
+      await audio?.close().catch(() => undefined);
+      worker.terminate();
+    },
+  };
 }
 
 /** The playback context of a call; null without Web Audio (LiveKit then plays through audio elements). */
