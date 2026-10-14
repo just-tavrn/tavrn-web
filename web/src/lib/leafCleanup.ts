@@ -17,6 +17,7 @@ import { cryptoStore } from "../crypto/store";
 import { quietApi as api } from "./api";
 import { getMls } from "../stores/mls";
 import { apiFor } from "../stores/nodes";
+import { onlineUsers } from "../stores/presence";
 
 interface PendingState {
   /** Pending removals per qualified conversation id, as the hosting node listed them last. */
@@ -79,6 +80,8 @@ export interface CleanupOptions {
   mayManage: boolean;
   /** Device identities known to be online (voice participants). */
   online?: Iterable<string> | null;
+  /** Users who may remove departed members' leaves (`roomManagers`); null/absent: unknown, every member counts. */
+  managers?: Iterable<string> | null;
   /** The channel's effective "no bots" flag: bot leaves are ghosts and go like departed members (APPLICATIONS.md §3.5). */
   noBots?: boolean;
   /** Content waits for the removal: no election wait (`LeafCleaner`, `urgent`). */
@@ -97,7 +100,19 @@ export async function cleanupConversation(q: string, opts: CleanupOptions): Prom
     const gone = new Set(pending.filter((p) => p.reason === "not_member").map((p) => splitIdentity(p.identity).address));
     members = [...new Set(mls.roster(q).map((i) => splitIdentity(i).address))].filter((a) => !gone.has(a));
   }
-  const result = await cleanerFor(mls).clean({ q, members, mayManage: opts.mayManage, pending, online: opts.online ?? null, noBots: opts.noBots, urgent: opts.urgent, noWait: opts.noWait });
+  // The election counts only devices that may do the removal and users the presence lists show online (§4.7).
+  const result = await cleanerFor(mls).clean({
+    q,
+    members,
+    mayManage: opts.mayManage,
+    pending,
+    online: opts.online ?? null,
+    onlineUsers: onlineUsers(mls.address),
+    managers: opts.managers ?? null,
+    noBots: opts.noBots,
+    urgent: opts.urgent,
+    noWait: opts.noWait,
+  });
   if (result.outcome === "removed") void loadPending(q);
   return result;
 }

@@ -45,6 +45,7 @@ vi.mock("../stores/mls", () => ({ getMls: async () => fake.mls }));
 vi.mock("../stores/nodes", () => ({ apiFor: () => ({ mls: { pendingRemovals: async () => ({ items: fake.pending }) } }) }));
 
 const { cleanupBeforeVoice, cleanupConversation, isGhostRefusal, withDepartedLeavesGone } = await import("./leafCleanup");
+const { usePresence } = await import("../stores/presence");
 
 beforeEach(() => {
   fake.roster = [bob, me, carol];
@@ -52,6 +53,7 @@ beforeEach(() => {
   fake.pending = [{ identity: carol, reason: "not_member" }];
   fake.removed = [];
   fake.mls = makeMls();
+  usePresence.getState().clear();
 });
 
 /** An encryption the ghost check refuses while Carol's leaf is in the group. */
@@ -128,6 +130,51 @@ describe("the cleanup of a voice join never waits for the election (ENCRYPTION.m
       after();
       await vi.advanceTimersByTimeAsync(10_000);
       await vi.waitFor(() => expect(fake.removed).toEqual([[deleted]]));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("the election of a background cleanup counts only devices that may do it and are online", () => {
+  it("a lower device id of a user the presence lists show offline: this device removes at once", async () => {
+    vi.useFakeTimers();
+    try {
+      usePresence.getState().seed([{ user: "carol@t.local", status: "online" } as never]);
+      const r = await cleanupConversation(Q, { mayManage: true });
+      expect(r?.outcome).toBe("removed");
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a lower device id of a member who may not remove departed members: this device removes at once", async () => {
+    vi.useFakeTimers();
+    try {
+      const r = await cleanupConversation(Q, { mayManage: true, managers: ["alice@t.local"] });
+      expect(r?.outcome).toBe("removed");
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("before the presence lists are loaded, and with Bob online and allowed, the election waits as before", async () => {
+    vi.useFakeTimers();
+    try {
+      const first = cleanupConversation(Q, { mayManage: true, managers: ["alice@t.local", "bob@t.local"] });
+      await vi.advanceTimersByTimeAsync(100);
+      expect(fake.removed).toEqual([]);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect((await first)?.outcome).toBe("removed");
+      fake.roster = [bob, me, carol];
+      usePresence.getState().seed([{ user: "bob@t.local", status: "online" } as never]);
+      const second = cleanupConversation(Q, { mayManage: true });
+      await vi.advanceTimersByTimeAsync(100);
+      expect(fake.removed).toEqual([[carol]]);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect((await second)?.outcome).toBe("removed");
     } finally {
       vi.useRealTimers();
     }
