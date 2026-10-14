@@ -13,7 +13,9 @@
  * as the browser engine only does after "Join stream"); joining one shows a hint. Security rules as in the browser engine: the shell publishes only once the frame
  * cryptor of the own track is active (`e2ee_failed` otherwise) and has no unencrypted path.
  */
-import { cleanupConversation } from "../lib/leafCleanup";
+import { cleanupBeforeVoice, loadPending } from "../lib/leafCleanup";
+import { holdGroupJoins } from "../crypto/groupJoins";
+import { BackgroundLeaves, startJoin } from "./joinFlow";
 import { apiFor } from "../stores/nodes";
 import { getMls, useMlsUi } from "../stores/mls";
 import { qualify, splitIdentity, type MlsManager } from "@tavrn/e2ee";
@@ -302,17 +304,25 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
   const mls = await getMls();
   if (!mls) throw new VoiceError("locked");
   const q = qualify(target.domain, target.channelId);
-  if ((await mls.ensureJoined(q, { canCreate })) === "no_group") throw new VoiceError("no_group");
-  if (!opts.rejoin) {
-    const online = participantsOf(useVoicePresence.getState(), target.domain, target.channelId).map((p) => p.identity);
-    await cleanupConversation(q, { members: null, mayManage: false, online }).catch(() => null);
-    await mls.selfUpdate(q).catch(() => false);
-  }
   const ep = endpoints(apiFor(target.domain), target);
-  const info = withEntitlementCaps(await ep.join(!!opts.start && !opts.rejoin));
+  // Ghost leaves first, without waiting for the election, then the fresh voice key (ENCRYPTION.md §4.7, §5a), with
+  // voice/join in parallel (joinFlow.ts). The shell gets the key with its join, so it waits for the fresh epoch.
+  const online = () => participantsOf(useVoicePresence.getState(), target.domain, target.channelId).map((p) => p.identity);
+  const flow = await startJoin({
+    mls,
+    q,
+    canCreate,
+    rejoin: !!opts.rejoin,
+    join: async () => withEntitlementCaps(await ep.join(!!opts.start && !opts.rejoin)),
+    leave: () => ep.leave(),
+    pending: () => loadPending(q),
+    cleanup: (pending) => cleanupBeforeVoice(q, { online, pending }),
+    hold: holdGroupJoins,
+  });
+  const { info } = flow;
   let joined = false;
   try {
-    if (info.epoch != null && (mls.epoch(q) ?? -1) < info.epoch) await mls.catchUp(q);
+    await flow.fresh;
     const vk = mls.voiceKey(q);
     if (!vk) throw new VoiceError("e2ee_failed");
     const ring = new VoiceKeyRing();
@@ -370,12 +380,14 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
     applyVolumes(s);
     follow(s);
     cue(opts.rejoin ? "connection_restored" : "join", true);
+    flow.cleanupLater();
     await reportState(s, { muted: useVoice.getState().muted || !canSpeak, deafened });
   } catch (e) {
     const s = current;
     if (s && s.id === id) await cleanup(s);
     else if (joined) await voice.leave().catch(() => undefined);
-    if (!opts.rejoin) await ep.leave().catch(() => undefined);
+    // A failed rejoin keeps the seat; a failed join frees it.
+    await flow.abandon();
     throw e;
   }
 }
@@ -385,7 +397,9 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
 export function join(target: VoiceTarget, opts: { canCreate: boolean; start?: boolean }): Promise<void> {
   const run = async () => {
     if (current && sameTarget(current.target, target)) return;
-    if (current) await leave();
+    // Switching channels: the node's leave of the previous one runs in the background (BackgroundLeaves).
+    if (current) await leaveForSwitch(current);
+    await backgroundLeaves.settled(targetKey(target));
     try {
       await connect(target, opts.canCreate, { start: opts.start });
     } catch (e) {
@@ -397,6 +411,17 @@ export function join(target: VoiceTarget, opts: { canCreate: boolean; start?: bo
   const next = (pending ?? Promise.resolve()).then(run, run);
   pending = next.catch(() => undefined);
   return next;
+}
+
+/** Leaves of earlier channels on their way to the node while the next one is joined. */
+const backgroundLeaves = new BackgroundLeaves();
+const targetKey = (t: VoiceTarget) => `${t.call ? "call" : "channel"}:${t.domain}/${t.roomId}/${t.channelId}`;
+
+/** Ends the session on this device at once; the node learns it in the background (the next join does not wait). */
+async function leaveForSwitch(s: Session) {
+  await cleanup(s);
+  cue("leave", true);
+  backgroundLeaves.start(targetKey(s.target), () => s.ep.leave());
 }
 
 export async function leave(): Promise<void> {

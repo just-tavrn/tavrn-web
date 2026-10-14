@@ -41,3 +41,28 @@ describe("VoiceSettingsTab: the talking-while-muted hint's default (issue #147)"
     expect(renderTab(ANDROID_UA)).toBeChecked();
   });
 });
+
+describe("VoiceSettingsTab: log join timings (docs/CLIENT.md \"Voice troubleshooting\")", () => {
+  beforeEach(() => localStorage.clear());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    localStorage.clear();
+  });
+
+  it("is off by default and switches the debug flag in this browser", async () => {
+    renderTab(DESKTOP_UA);
+    const toggle = screen.getByTestId("log-join-timings");
+    expect(toggle).not.toBeChecked();
+    await userEvent.setup().click(toggle);
+    expect(toggle).toBeChecked();
+    expect(localStorage.getItem("tavrn.debug.voice")).toBe("1");
+    await userEvent.setup().click(toggle);
+    expect(localStorage.getItem("tavrn.debug.voice")).toBeNull();
+  });
+
+  it("shows the flag set by hand", () => {
+    localStorage.setItem("tavrn.debug.voice", "1");
+    renderTab(DESKTOP_UA);
+    expect(screen.getByTestId("log-join-timings")).toBeChecked();
+  });
+});

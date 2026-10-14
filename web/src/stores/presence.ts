@@ -19,6 +19,8 @@ interface PresenceState {
   mine: MyPresence | null;
   /** The own status before the client set `idle` automatically (restored on activity). */
   autoIdle: boolean;
+  /** The presence lists were loaded (`seed`): a user without an entry is known to be offline, not just unknown. */
+  seeded: boolean;
   apply: (p: Presence) => void;
   seed: (list: Presence[]) => void;
   setMine: (m: MyPresence | null) => void;
@@ -30,12 +32,22 @@ export const usePresence = create<PresenceState>((set) => ({
   users: {},
   mine: null,
   autoIdle: false,
+  seeded: false,
   apply: (p) => set((s) => ({ users: applyPresence(s.users, p) })),
-  seed: (list) => set((s) => ({ users: list.reduce(applyPresence, s.users) })),
+  seed: (list) => set((s) => ({ users: list.reduce(applyPresence, s.users), seeded: true })),
   setMine: (mine) => set({ mine }),
   setAutoIdle: (autoIdle) => set({ autoIdle }),
-  clear: () => set({ users: {}, mine: null, autoIdle: false }),
+  clear: () => set({ users: {}, mine: null, autoIdle: false, seeded: false }),
 }));
+
+/**
+ * The users known to be online (every status but offline; `invisible` users look offline and count as such), with
+ * `self`; null before the presence lists were loaded. The ghost cleanup's election leaves the others out.
+ */
+export function onlineUsers(self: string): string[] | null {
+  const { users, seeded } = usePresence.getState();
+  return seeded ? [...new Set([self, ...Object.keys(users)])] : null;
+}
 
 /** Adds or replaces a presence; `offline` removes the entry. */
 export function applyPresence(users: Record<string, Presence>, p: Presence): Record<string, Presence> {

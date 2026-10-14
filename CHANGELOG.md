@@ -28,6 +28,11 @@ First public release of the web client and the desktop apps.
 
 ### Added
 
+- **Log join timings** for slow voice joins: Settings → Voice & video → Connection test → "Log join timings" (or
+  `localStorage` `tavrn.debug.voice=1`) prints one table to the browser console after each join with every stage's
+  duration (`vj:*` performance marks), the opening of the `/rtc` WebSocket, each peer connection from creation through
+  ICE checking to connected and the selected candidate pair (candidate types, UDP or TCP, RTT); off by default, nothing
+  is recorded without it (docs/CLIENT.md "Voice troubleshooting").
 - **View the room as a role** (#130): Room settings → Roles → "View room as this role" opens the room as a member
   holding only the chosen roles (or `@everyone` alone) sees it, with a join date for the encrypted history window: the
   channels and categories the role may view with its access marks, the composer and message actions, the member
@@ -101,6 +106,20 @@ First public release of the web client and the desktop apps.
   times as rows (yes / maybe counts, a totals bar, ★ for the best slots summarised on top, your answer as a badge;
   arrow keys move between the slots and a slot opens its answers; phones scroll the grid sideways with the times
   fixed). Your own vote is clearly marked in the results of choice polls.
+- **Faster voice joins**: the microphone, the playback and the encryption worker start at the click; the node's
+  pending leaf removals are fetched with the group join, the members' device keys in parallel (and not again for an
+  unchanged group), the self update no longer fetches the handshake log a second time, and `voice/join` goes out as
+  soon as the device is in the group while the cleanup and the self update run; the call connects meanwhile and only
+  the own sending key and the microphone wait for the fresh epoch. Switching channels leaves the previous one in the
+  background; the join's group work runs in the MLS manager's priority lane and pauses the background group joins.
+  Measured to the published microphone: locally 0.15–0.28 s instead of 0.18–0.33 s, at 40 ms to the node 0.45–0.62 s
+  instead of 0.63–0.91 s, a join right after a member left 0.15 s / 0.45 s instead of 9.7 s / 10.2 s
+  (docs/CLIENT.md "Voice troubleshooting").
+- **A voice join never waits for the ghost cleanup's election**: a join while a background cleanup of the channel
+  waited for another device (after a member left, up to ten seconds) cuts that wait short; when another device is
+  elected the join goes on and the cleanup follows in the background. Background cleanups elect only devices that may
+  do the removal (room managers for departed members) and users the presence lists show online.
+
 - **The talking-while-muted hint is off by default on Android** (#147): it keeps the microphone capture open while
   muted, which holds an Android device in its call audio mode, so in the browser on Android and in the Android app
   it now starts off; Settings → Voice & video turns it on. Elsewhere it stays on by default, and a choice made in

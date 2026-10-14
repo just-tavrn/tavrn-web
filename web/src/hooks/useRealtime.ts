@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
-import { TavrnSocket, type Conversation, type EphemeralReply, type FriendRequest, type Message, type PendingInvite, type Presence, type RoomDetail, type SocketStatus, type User } from "@tavrn/sdk";
+import { TavrnSocket, type Conversation, type EphemeralReply, type FriendRequest, type Member, type Message, type PendingInvite, type Presence, type RoomDetail, type SocketStatus, type User } from "@tavrn/sdk";
 import { create } from "zustand";
 import { refreshHome, wsUrl } from "../lib/api";
 import { cleanupConversation, cleanupOwnLeaves } from "../lib/leafCleanup";
@@ -19,7 +19,7 @@ import { cryptoStore } from "../crypto/store";
 import { ownIdentityChange } from "../lib/ownIdentity";
 import { qualify, splitIdentity } from "@tavrn/e2ee";
 import { acceptInvite, autoAccepts } from "../lib/invites";
-import { mayManageRoom } from "../lib/rooms";
+import { mayManageRoom, roomManagers } from "../lib/rooms";
 import { mapMessages, prependMessage, type MessagePages } from "../lib/messagePages";
 import { threadHandlers, threadMessage } from "../threads/realtime";
 import { useUnread } from "../stores/unread";
@@ -51,6 +51,17 @@ export function mayManageConversation(queryClient: QueryClient, conversationId: 
   }
   // The conversation lists of every node (["conversations"] and ["conversations", domain]).
   return queryClient.getQueriesData<Conversation[]>({ queryKey: ["conversations"] }).some(([, list]) => !!list?.some((c) => c.id === conversationId));
+}
+
+/**
+ * The users who may remove departed members' leaves of a channel (the cleanup election, ENCRYPTION.md §4.7), from the
+ * cached room and member list; null when unknown and for DMs and group DMs (there every member may).
+ */
+export function conversationManagers(queryClient: QueryClient, conversationId: string): string[] | null {
+  for (const [, room] of queryClient.getQueriesData<RoomDetail>({ queryKey: ["room"] })) {
+    if (room?.channels?.some((c) => c.id === conversationId)) return roomManagers(room, queryClient.getQueryData<Member[]>(["members", room.id]));
+  }
+  return null;
 }
 
 /** The history policy of a channel whose room is cached (ENCRYPTION.md §7b); null if unknown. */
@@ -130,7 +141,7 @@ export function mlsHandlers(socket: TavrnSocket, queryClient: QueryClient, domai
             await m.verifiedDevices(address).catch(() => null);
           }
           // Election and single flight per conversation: not every member commits the same removal.
-          await cleanupConversation(c, { mayManage: mayManageConversation(queryClient, d.conversation_id) });
+          await cleanupConversation(c, { mayManage: mayManageConversation(queryClient, d.conversation_id), managers: conversationManagers(queryClient, d.conversation_id) });
         })
         .catch(() => undefined);
     }),
