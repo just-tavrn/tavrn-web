@@ -300,7 +300,7 @@ test.describe("Passkeys (Chromium, virtual authenticator)", () => {
     await expect(page.getByTestId("e2ee-status")).toHaveText(/Gesperrt/);
     const item = await addPasskeyInSettings(page, "Später aktiviert", account.password);
     await expect(item).toContainText("noch nicht aktiviert");
-    const enable = item.getByRole("button", { name: "Nachrichten-Entsperrung mit Später aktiviert aktivieren" });
+    const enable = item.getByRole("button", { name: "Nachrichten-Entsperrung aktivieren: Später aktiviert" });
     await expect(enable).toBeDisabled();
     await expect(item).toContainText("Entsperre zuerst");
     const headers = { Authorization: `Bearer ${await tokenOf(page)}` };
@@ -312,17 +312,20 @@ test.describe("Passkeys (Chromium, virtual authenticator)", () => {
     await page.getByRole("button", { name: "Entsperren", exact: true }).click();
     await expect(page.getByTestId("e2ee-status")).toHaveText(/Entsperrt/);
     const unlocked = page.getByTestId("passkey-list").locator("li").filter({ hasText: "Später aktiviert" });
-    await unlocked.getByRole("button", { name: "Nachrichten-Entsperrung mit Später aktiviert aktivieren" }).click();
+    await unlocked.getByRole("button", { name: "Nachrichten-Entsperrung aktivieren: Später aktiviert" }).click();
     await confirmWithPasswordIfAsked(page, account.password);
     await expect(unlocked).toContainText("entsperrt Nachrichten");
     await expect(unlocked.getByRole("button", { name: /aktivieren/ })).toHaveCount(0);
     const factors = await (await request.get(`${NODE}/api/v1/auth/factors`, { headers })).json();
     const after = await (await request.get(`${NODE}/api/v1/users/me/secret-storage`, { headers })).json();
     expect(after.items.map((i: { method: string }) => i.method)).toContain(`passkey:${factors.webauthn[0].id}`);
-    // Lock on close is still on: the reload asks again, and the enabled passkey unlocks.
+    // Lock on close is still on: the reload locks again (this device chose to continue without the messages earlier,
+    // so the app opens locked instead of asking), and the enabled passkey unlocks.
     await page.reload();
+    await expect(page.getByTestId("e2ee-status")).toHaveText(/Gesperrt/);
+    await page.getByTestId("e2ee-status").getByRole("link", { name: "Entsperren" }).click();
     await expect(page.getByTestId("encryption-title")).toHaveText("Verschlüsselte Nachrichten entsperren");
     await page.getByRole("button", { name: "Mit Passkey entsperren" }).click();
-    await expect(page.getByTestId("app-shell")).toBeVisible();
+    await expect(page.getByTestId("e2ee-status")).toHaveText(/Entsperrt/);
   });
 });

@@ -1658,7 +1658,7 @@
   "security.prf_hint": "Unterstützt die PRF-Erweiterung und kann deine verschlüsselten Nachrichten auf neuen Geräten entsperren",
   "security.prf_can_enable": "kann Nachrichten entsperren – noch nicht aktiviert",
   "security.prf_enable": "Nachrichten-Entsperrung aktivieren",
-  "security.prf_enable_for": "Nachrichten-Entsperrung mit {name} aktivieren",
+  "security.prf_enable_for": "Nachrichten-Entsperrung aktivieren: {name}",
   "security.prf_enable_hint": "Bestätigt einmal mit diesem Passkey und speichert deinen Nachrichtenschlüssel für ihn verpackt, damit er deine verschlüsselten Nachrichten auf neuen Geräten entsperren kann.",
   "security.prf_enable_locked": "Entsperre zuerst die verschlüsselten Nachrichten auf diesem Gerät, dann lässt sich dieser Passkey aktivieren.",
   "security.prf_enabled": "{name} entsperrt jetzt deine verschlüsselten Nachrichten",

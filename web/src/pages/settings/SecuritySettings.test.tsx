@@ -79,7 +79,7 @@ describe("Security settings", () => {
     const handy = within(list).getByText("Handy").closest("li")!;
     expect(handy).toHaveTextContent("noch nicht aktiviert");
     expect(handy).toHaveTextContent("Entsperre zuerst die verschlüsselten Nachrichten");
-    expect(within(handy).getByRole("button", { name: "Nachrichten-Entsperrung mit Handy aktivieren" })).toBeDisabled();
+    expect(within(handy).getByRole("button", { name: "Nachrichten-Entsperrung aktivieren: Handy" })).toBeDisabled();
     expect(screen.getByTestId("totp-row")).toHaveTextContent("Aktiv");
     expect(screen.getByTestId("codes-left")).toHaveTextContent("Noch 7 Codes übrig");
     expect(screen.getByTestId("security-address")).toHaveTextContent("sec@t.local");
@@ -157,7 +157,7 @@ describe("Security settings", () => {
     const list = await screen.findByTestId("passkey-list");
     const handy = await waitFor(() => within(list).getByText("Handy").closest("li")!);
     const u = userEvent.setup();
-    const button = await within(handy).findByRole("button", { name: "Nachrichten-Entsperrung mit Handy aktivieren" });
+    const button = await within(handy).findByRole("button", { name: "Nachrichten-Entsperrung aktivieren: Handy" });
     await waitFor(() => expect(button).toBeEnabled());
     await u.click(button);
     await waitFor(() => expect(handy).toHaveTextContent("entsperrt Nachrichten"));
@@ -181,7 +181,7 @@ describe("Security settings", () => {
     const list = await screen.findByTestId("passkey-list");
     const handy = await waitFor(() => within(list).getByText("Handy").closest("li")!);
     const u = userEvent.setup();
-    const button = await within(handy).findByRole("button", { name: "Nachrichten-Entsperrung mit Handy aktivieren" });
+    const button = await within(handy).findByRole("button", { name: "Nachrichten-Entsperrung aktivieren: Handy" });
     await waitFor(() => expect(button).toBeEnabled());
     await u.click(button);
     expect(await screen.findByRole("alert")).toHaveTextContent("Handy hat hier keine PRF-Ausgabe geliefert");

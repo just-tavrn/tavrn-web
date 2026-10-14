@@ -1658,7 +1658,7 @@
   "security.prf_hint": "Supports the PRF extension and can unlock your encrypted messages on new devices",
   "security.prf_can_enable": "can unlock messages: not enabled yet",
   "security.prf_enable": "Enable message unlock",
-  "security.prf_enable_for": "Enable message unlock with {name}",
+  "security.prf_enable_for": "Enable message unlock: {name}",
   "security.prf_enable_hint": "Confirms once with this passkey and stores your message key wrapped for it, so it can unlock your encrypted messages on new devices.",
   "security.prf_enable_locked": "Unlock the encrypted messages on this device first; then this passkey can be enabled.",
   "security.prf_enabled": "{name} now unlocks your encrypted messages",
