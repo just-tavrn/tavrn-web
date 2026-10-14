@@ -14,7 +14,11 @@ const updaterPubkey = JSON.parse(readFileSync(new URL("../desktop/src-tauri/taur
 /** @type {import("electron-builder").Configuration} */
 export default {
   appId: "org.tavrn.desktop",
-  productName: "Tavrn",
+  // The product is written "tavrn" (tavrn-web#114): the menu entry, the window class, the Windows shortcut and the
+  // uninstall entry. The package names stay as before (an upgrade must keep its data and the feeds their names):
+  // the AppImage's artifactName below, the .deb's packageName, the Windows fallback's artifactName, the app id and
+  // the profile directory (src/main/index.ts pins userData to tavrn-desktop) do not follow the product name.
+  productName: "tavrn",
   executableName: "tavrn",
   copyright: "Copyright 2026 The tavrn authors",
   // desktopName: the window's WM_CLASS / app id matches the menu entry (tavrn.desktop).
@@ -60,6 +64,9 @@ export default {
   // The licence and terms the Tauri installers show (apps/desktop/LICENSE.txt, "Licence and terms in the installers"):
   // next to the app in every package, and as /usr/share/doc/tavrn/LICENSE.txt in the .deb.
   extraResources: [{ from: "../desktop/LICENSE.txt", to: "LICENSE.txt" }],
+  // The release's file name of the earlier releases (Tavrn-<version>.AppImage: release-assets.mjs, latest-linux.yml,
+  // the website's download page); electron-builder's default would follow the product name.
+  appImage: { artifactName: "Tavrn-${version}.${ext}" },
   deb: {
     packageName: "tavrn",
     // electron-builder's list plus what Electron's binary links that minimal systems lack (ALSA, GBM), and libudev for
@@ -84,8 +91,8 @@ export default {
     license: "../desktop/LICENSE.txt",
     installerIcon: "../desktop/src-tauri/icons/icon.ico",
     uninstallerIcon: "../desktop/src-tauri/icons/icon.ico",
-    shortcutName: "Tavrn (Electron)",
-    uninstallDisplayName: "Tavrn (Electron) ${version}",
+    shortcutName: "tavrn (Electron)",
+    uninstallDisplayName: "tavrn (Electron) ${version}",
     deleteAppDataOnUninstall: false,
   },
   // The update feed (electron-updater, src/main/updater.ts): written into the package as resources/app-update.yml;

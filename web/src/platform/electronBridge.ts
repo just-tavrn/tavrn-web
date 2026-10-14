@@ -72,6 +72,8 @@ export interface ShellAppInfo {
   version: string;
   /** False while the build cannot update itself (no update feed configured, development builds). */
   updater: boolean;
+  /** The operating system (`linux`, `windows`, `macos`); older shells send nothing. */
+  os?: string;
 }
 
 /** The update channel (`stable`: releases only, `beta`: pre-releases too). */

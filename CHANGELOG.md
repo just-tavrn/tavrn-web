@@ -83,6 +83,14 @@ First public release of the web client and the desktop apps.
   the join, leave and stream cues are a little louder with a clearer onset, so they are not lost in a lively call,
   while the mute, deafen, connection and push-to-talk tones stay as quiet as before. The volume, the switch and the
   preview per sound in Settings → Voice & video are unchanged.
+- **The apps are called "tavrn"** wherever the system shows the name (tavrn-web#114): the Windows start menu and
+  desktop shortcut, the installer and its uninstall entry, the Linux menu entry and window class, the macOS bundle and
+  the Android launcher said "Tavrn" before. An update from an earlier release keeps everything: the identifiers
+  (`org.tavrn.desktop`, `org.tavrn.app`), the settings and profile directories, the keychain entries and the
+  `tavrn://` links never carried the product name; the MSI's upgrade code is pinned to the one the earlier installers
+  carry (the bundler would otherwise derive a new one from the new name and install a second product); the NSIS
+  installer finds the old installation in registry keys and folders that Windows compares without case. The release
+  files and the update feeds keep their names (`Tavrn_<version>_x64-setup.exe`, `Tavrn-<version>.AppImage`, …).
 - **A limit per external store** (protocol FILES.md §5): the storage settings of a files channel on WebDAV or S3 get
   "Limit on the store (GB)" (empty = no limit), which the channel's meter shows; the node's own quota no longer
   applies to external stores.
@@ -157,6 +165,15 @@ First public release of the web client and the desktop apps.
   to be the only row that could not be dragged. A drag over a voice channel highlights it, a channel that cannot take
   the drop (you may not join it, or a moderator's drag without `move_members` there) shows a red outline and refuses
   it. Clicking the channel and the participant menu remain the non-drag ways.
+- **Screen share sound** (tavrn-web#128): the share dialog has one choice, **No sound** or **Whole system** (and
+  **This window only** where a platform can capture it, which no browser or app does today), instead of a box that
+  depended on what the browser's own picker offered; a line under the choice says what it means where the client
+  runs. With the whole system's sound the call's own playback is left out (`restrictOwnAudio`, Chrome and Edge 141 or
+  newer on Windows and macOS, the Windows app's WebView2 included), so nobody hears themselves; where it cannot be
+  left out (the Windows fallback with Electron, older browsers) the dialog starts without sound and warns. The Linux
+  app, the macOS app, Firefox and Safari share no sound and say so; the Android app offers the sound of other apps
+  as before ([docs/CLIENT.md](docs/CLIENT.md) "Screen share audio").
+
 - An image pasted from the clipboard no longer keeps the name the system made up (`image.png`, `{GUID}.png` on
   Windows): it is named "Image <date> <time>.<ext>" (de: "Bild …"); a file copied from a file manager keeps its
   real name, nobody is asked (#95).

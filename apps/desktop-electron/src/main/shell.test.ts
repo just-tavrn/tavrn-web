@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { Settings, loadConfig } from "./config.ts";
 import { IpcRegistry, type IpcEventLike } from "./ipc.ts";
 import { PendingLinks } from "./deeplink.ts";
-import { registerShellHandlers } from "./shell.ts";
+import { registerShellHandlers, shellOs } from "./shell.ts";
 
 const me: IpcEventLike = { sender: "main", senderFrame: { url: "app://tavrn/" } };
 
@@ -45,9 +45,12 @@ test("getConfig and setNode work on the settings file", async (t) => {
   assert.deepEqual(await call("setNode", 42), { ok: false, error: "ipc.invalid_arguments" });
 });
 
-test("appInfo names the version; this build does not update itself yet", async (t) => {
+test("appInfo names the version and the operating system; this build does not update itself yet", async (t) => {
   const { call } = setup(t);
-  assert.deepEqual(await call("appInfo"), { ok: true, value: { version: "0.2.0", updater: false } });
+  assert.deepEqual(await call("appInfo"), { ok: true, value: { version: "0.2.0", updater: false, os: shellOs(process.platform) } });
+  assert.equal(shellOs("win32"), "windows");
+  assert.equal(shellOs("darwin"), "macos");
+  assert.equal(shellOs("linux"), "linux");
 });
 
 test("openExternal hands web links to the system browser and refuses everything else", async (t) => {

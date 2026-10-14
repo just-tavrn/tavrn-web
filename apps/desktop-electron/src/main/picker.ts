@@ -4,8 +4,8 @@
  * shows and what it accepts back. The page is static HTML without any script (`script-src 'none'`); its preload
  * (`src/preload/picker.ts`) builds the list from {@link PickerData} in its own isolated world and answers the chosen
  * source's id, or null (Escape, Cancel, the window closed). `capture.ts` opens the window and hands the choice to
- * Chromium. Linux offers no system audio for a shared screen in Electron (its `loopback` capture is Windows-only), so
- * the picker has no audio switch.
+ * Chromium with the audio of {@link captureAudio}: the client's share dialog made the sound choice (docs/CLIENT.md
+ * "Screen share audio"), so the picker has no audio switch of its own.
  */
 
 export interface PickerSource {
@@ -89,4 +89,15 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 /** The page as a URL for `loadURL`. */
 export function pickerUrl(lang: string): string {
   return `data:text/html;charset=utf-8,${encodeURIComponent(pickerHtml(lang))}`;
+}
+
+/**
+ * The audio of a share for Chromium's handler: the system's sound through Electron's loopback capture when the page
+ * asked for audio (the client's "Whole system"), which Electron has on Windows only. Linux gets none: neither X11 nor
+ * the PipeWire portal gives Electron any audio. The loopback carries the app's own playback too (Electron has no way
+ * to leave a process out, and `loopbackWithMute` would silence the call for the sharer); the client says so in its
+ * dialog (docs/DESKTOP.md "Voice, video and screen sharing (Electron)").
+ */
+export function captureAudio(platform: NodeJS.Platform, audioRequested: boolean): "loopback" | undefined {
+  return audioRequested && platform === "win32" ? "loopback" : undefined;
 }

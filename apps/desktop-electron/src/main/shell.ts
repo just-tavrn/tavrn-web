@@ -40,7 +40,7 @@ export function registerShellHandlers(registry: IpcRegistry, deps: ShellDeps): v
   registry.handle("shell", "setNode", check.args([check.string(URL_MAX)], [check.nullableString(URL_MAX), check.nullableString(DOMAIN_MAX)]), (url: string, web?: string | null, domain?: string | null) =>
     deps.settings.setNode(url, web, domain),
   );
-  registry.handle("shell", "appInfo", none, () => ({ version: deps.version, updater: deps.updater }));
+  registry.handle("shell", "appInfo", none, () => ({ version: deps.version, updater: deps.updater, os: shellOs(process.platform) }));
   registry.handle("shell", "openExternal", check.args([check.string(LINK_MAX)]), async (url: string) => {
     const link = externalLink(url);
     if (!link) throw "link.refused";
@@ -57,4 +57,9 @@ export function registerShellHandlers(registry: IpcRegistry, deps: ShellDeps): v
   });
   registry.handle("shell", "closeConnect", none, () => deps.connect.close());
   registry.handle("shell", "takeLinks", none, () => deps.links.take());
+}
+
+/** The operating system as the client's platform layer names it (`web/src/platform/shellOs.ts`). */
+export function shellOs(platform: NodeJS.Platform): "windows" | "macos" | "linux" {
+  return platform === "win32" ? "windows" : platform === "darwin" ? "macos" : "linux";
 }

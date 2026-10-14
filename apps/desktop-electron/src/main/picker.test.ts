@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PICKER_CSP, pickerChoice, pickerHtml, pickerLabels, pickerSources, pickerUrl } from "./picker.ts";
+import { PICKER_CSP, captureAudio, pickerChoice, pickerHtml, pickerLabels, pickerSources, pickerUrl } from "./picker.ts";
 
 const png = "data:image/png;base64,iVBORw0KGgo=";
 
@@ -40,4 +40,10 @@ test("the answer must be one of the offered sources", () => {
   const offered = pickerSources([{ id: "screen:0:0", name: "Screen", thumbnail: png }]);
   assert.equal(pickerChoice("screen:0:0", offered), "screen:0:0");
   for (const bad of [null, undefined, "screen:1:0", 42, { id: "screen:0:0" }]) assert.equal(pickerChoice(bad, offered), null);
+});
+
+test("the system's sound goes with the share on Windows only, and only when the page asked for audio", () => {
+  assert.equal(captureAudio("win32", true), "loopback");
+  assert.equal(captureAudio("win32", false), undefined);
+  for (const platform of ["linux", "darwin", "freebsd"] as const) assert.equal(captureAudio(platform, true), undefined);
 });
