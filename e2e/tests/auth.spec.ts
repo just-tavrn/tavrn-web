@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-import { expect, test } from "@playwright/test";
-import { ADULT_DOB, NODE, addVirtualAuthenticator, confirmRecoveryCodes, confirmRecoveryKey, confirmWithPassword, loginViaUi, nextTotpCode, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, uniqueName, logoutViaUi } from "./helpers";
+import { expect, test, type Page } from "@playwright/test";
+import { ADULT_DOB, NODE, addVirtualAuthenticator, confirmRecoveryCodes, confirmRecoveryKey, confirmWithPassword, confirmWithPasswordIfAsked, loginViaUi, nextTotpCode, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, uniqueName, logoutViaUi } from "./helpers";
 import { scaled } from "./timeouts";
 
 test.describe("Sign-in with a second factor", () => {
@@ -234,5 +234,95 @@ test.describe("Passkeys (Chromium, virtual authenticator)", () => {
     await expect(page.getByTestId("e2ee-banner")).toHaveCount(0);
     const me = await request.get(`${NODE}/api/v1/users/me`, { headers: { Authorization: `Bearer ${await tokenOf(page)}` } });
     expect(me.ok()).toBeTruthy();
+  });
+
+  /** Adds a passkey named `name` in Settings → Security (open) and returns its list item. */
+  async function addPasskeyInSettings(page: Page, name: string, password: string) {
+    await page.getByRole("button", { name: "Passkey hinzufügen" }).click();
+    await page.getByLabel("Name des Passkeys", { exact: true }).fill(name);
+    await page.getByRole("button", { name: "Passkey hinzufügen" }).click();
+    await confirmWithPasswordIfAsked(page, password);
+    const item = page.getByTestId("passkey-list").locator("li").filter({ hasText: name });
+    await expect(item).toBeVisible();
+    return item;
+  }
+
+  test("A second passkey unlocks the messages as well: first one removed, lock on close, reload, unlock with the second", async ({ page, request, browserName }) => {
+    test.skip(browserName !== "chromium", "CDP virtual authenticator is Chromium only");
+    test.setTimeout(scaled(120_000));
+    const first = await addVirtualAuthenticator(page);
+    test.skip(!first.prf, "this Chromium's virtual authenticator has no PRF: nothing to unlock with");
+    const account = await registerViaUi(page);
+    await page.goto("/settings/security");
+    await expect(page.getByTestId("e2ee-status")).toHaveText(/Entsperrt/);
+    const one = await addPasskeyInSettings(page, "Erster Schlüssel", account.password);
+    await expect(one).toContainText("entsperrt Nachrichten");
+    // Another authenticator (a passkey added later, on another device): its entry is written right away as well.
+    await first.remove();
+    await addVirtualAuthenticator(page);
+    const two = await addPasskeyInSettings(page, "Zweiter Schlüssel", account.password);
+    await expect(two).toContainText("entsperrt Nachrichten");
+    const headers = { Authorization: `Bearer ${await tokenOf(page)}` };
+    const entriesOf = async () => ((await (await request.get(`${NODE}/api/v1/users/me/secret-storage`, { headers })).json()).items as Array<{ method: string }>).map((i) => i.method).filter((m) => m.startsWith("passkey:"));
+    expect(await entriesOf()).toHaveLength(2);
+    // Removing the first passkey removes its entry (the node does that with the credential).
+    await page.getByRole("button", { name: "Erster Schlüssel entfernen" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Entfernen" }).click();
+    await expect(one).toHaveCount(0);
+    const factors = await (await request.get(`${NODE}/api/v1/auth/factors`, { headers })).json();
+    expect(factors.webauthn.map((c: { name: string }) => c.name)).toEqual(["Zweiter Schlüssel"]);
+    expect(await entriesOf()).toEqual([`passkey:${factors.webauthn[0].id}`]);
+    // Lock on close, reload: the second passkey alone unlocks.
+    await page.getByTestId("lock-on-close").check();
+    await expect(page.getByRole("status").filter({ hasText: "sperrt sich jetzt" })).toBeVisible();
+    await page.reload();
+    await expect(page.getByTestId("encryption-title")).toHaveText("Verschlüsselte Nachrichten entsperren");
+    await page.getByRole("button", { name: "Mit Passkey entsperren" }).click();
+    await expect(page.getByTestId("app-shell")).toBeVisible();
+    await expect(page.getByTestId("e2ee-banner")).toHaveCount(0);
+  });
+
+  test("A passkey added on a locked device is enabled for the message unlock later", async ({ page, request, browserName }) => {
+    test.skip(browserName !== "chromium", "CDP virtual authenticator is Chromium only");
+    test.setTimeout(scaled(120_000));
+    const authenticator = await addVirtualAuthenticator(page);
+    test.skip(!authenticator.prf, "this Chromium's virtual authenticator has no PRF: nothing to enable");
+    const account = await registerViaUi(page);
+    await page.goto("/settings/security");
+    await page.getByTestId("lock-on-close").check();
+    await expect(page.getByRole("status").filter({ hasText: "sperrt sich jetzt" })).toBeVisible();
+    // Locked after the reload; continue without the messages and add the passkey: no wrap can be written.
+    await page.reload();
+    await expect(page.getByTestId("encryption-title")).toHaveText("Verschlüsselte Nachrichten entsperren");
+    await page.getByTestId("skip-unlock").click();
+    await expect(page.getByTestId("app-shell")).toBeVisible();
+    await page.goto("/settings/security");
+    await expect(page.getByTestId("e2ee-status")).toHaveText(/Gesperrt/);
+    const item = await addPasskeyInSettings(page, "Später aktiviert", account.password);
+    await expect(item).toContainText("noch nicht aktiviert");
+    const enable = item.getByRole("button", { name: "Nachrichten-Entsperrung mit Später aktiviert aktivieren" });
+    await expect(enable).toBeDisabled();
+    await expect(item).toContainText("Entsperre zuerst");
+    const headers = { Authorization: `Bearer ${await tokenOf(page)}` };
+    const before = await (await request.get(`${NODE}/api/v1/users/me/secret-storage`, { headers })).json();
+    expect(before.items.some((i: { method: string }) => i.method.startsWith("passkey:"))).toBe(false);
+    // Unlock this device with the recovery key, then enable: one PRF assertion, the entry is stored.
+    await page.getByTestId("e2ee-status").getByRole("link", { name: "Entsperren" }).click();
+    await page.getByTestId("recovery-key-input").fill(account.recoveryWords);
+    await page.getByRole("button", { name: "Entsperren", exact: true }).click();
+    await expect(page.getByTestId("e2ee-status")).toHaveText(/Entsperrt/);
+    const unlocked = page.getByTestId("passkey-list").locator("li").filter({ hasText: "Später aktiviert" });
+    await unlocked.getByRole("button", { name: "Nachrichten-Entsperrung mit Später aktiviert aktivieren" }).click();
+    await confirmWithPasswordIfAsked(page, account.password);
+    await expect(unlocked).toContainText("entsperrt Nachrichten");
+    await expect(unlocked.getByRole("button", { name: /aktivieren/ })).toHaveCount(0);
+    const factors = await (await request.get(`${NODE}/api/v1/auth/factors`, { headers })).json();
+    const after = await (await request.get(`${NODE}/api/v1/users/me/secret-storage`, { headers })).json();
+    expect(after.items.map((i: { method: string }) => i.method)).toContain(`passkey:${factors.webauthn[0].id}`);
+    // Lock on close is still on: the reload asks again, and the enabled passkey unlocks.
+    await page.reload();
+    await expect(page.getByTestId("encryption-title")).toHaveText("Verschlüsselte Nachrichten entsperren");
+    await page.getByRole("button", { name: "Mit Passkey entsperren" }).click();
+    await expect(page.getByTestId("app-shell")).toBeVisible();
   });
 });

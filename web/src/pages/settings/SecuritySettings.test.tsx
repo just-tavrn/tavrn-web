@@ -24,8 +24,22 @@ const factors = {
   webauthn: [
     { id: "Y3JlZC0x", name: "YubiKey", created_at: "2026-10-01T10:00:00Z", last_used_at: null, prf_supported: true },
     { id: "Y3JlZC0y", name: "Laptop", created_at: "2026-10-02T10:00:00Z", last_used_at: "2026-10-03T10:00:00Z", prf_supported: false },
+    { id: "Y3JlZC0z", name: "Handy", created_at: "2026-10-04T10:00:00Z", last_used_at: null, prf_supported: true },
   ],
 };
+/** The secret storage with the YubiKey's entry; a PUT of another passkey's entry adds it (as the node does). */
+function secretStorage() {
+  let items = [{ method: "passkey:Y3JlZC0x", wrapped: "x", params: {}, updated_at: "2026-10-01T10:00:00Z" }];
+  return (init: RequestInit, url: string) => {
+    if (init.method === "PUT" && url.includes("/passkey/")) {
+      items = [...items, { method: `passkey:${decodeURIComponent(url.split("/passkey/")[1]!)}`, wrapped: "y", params: {}, updated_at: "2026-10-05T10:00:00Z" }];
+      return { body: {} };
+    }
+    return { body: { items } };
+  };
+}
+/** A WebAuthn assertion of `id` with a PRF output (the browser's `getClientExtensionResults`). */
+const prfAssertion = (id: string) => ({ id, rawId: new Uint8Array(4).buffer, type: "public-key", response: { clientDataJSON: new Uint8Array(2).buffer, authenticatorData: new Uint8Array(2).buffer, signature: new Uint8Array(2).buffer, userHandle: null }, getClientExtensionResults: () => ({ prf: { results: { first: new Uint8Array(32).fill(1).buffer } } }) });
 const lastFactor = { status: 409, body: { code: "auth.last_factor", status: 409, title: "x", detail: "last", type: "x" } };
 
 function renderSecurity() {
@@ -45,15 +59,27 @@ beforeEach(async () => {
 });
 
 describe("Security settings", () => {
-  it("lists the factors with names, dates and the PRF badge, and the codes left", async () => {
-    mockFetch({ "/auth/factors": { body: factors } });
+  it("lists the factors with names, dates and what each passkey does for the messages, and the codes left", async () => {
+    mockFetch({ "/auth/factors": { body: factors }, "/users/me/secret-storage": secretStorage() });
     renderSecurity();
     const list = await screen.findByTestId("passkey-list");
-    await waitFor(() => expect(list.querySelectorAll("li")).toHaveLength(2));
+    await waitFor(() => expect(list.querySelectorAll("li")).toHaveLength(3));
     const yubi = within(list).getByText("YubiKey").closest("li")!;
-    expect(yubi).toHaveTextContent("entsperrt Nachrichten");
+    // Its secret storage entry exists: this one unlocks.
+    await waitFor(() => expect(yubi).toHaveTextContent("entsperrt Nachrichten"));
     expect(yubi).toHaveTextContent("noch nie verwendet");
-    expect(within(list).getByText("Laptop").closest("li")).toHaveTextContent("zuletzt verwendet");
+    expect(yubi).not.toHaveTextContent("kann Nachrichten");
+    // No PRF at creation: the reason, no button.
+    const laptop = within(list).getByText("Laptop").closest("li")!;
+    expect(laptop).toHaveTextContent("zuletzt verwendet");
+    expect(laptop).toHaveTextContent("kann Nachrichten nicht entsperren");
+    expect(laptop).toHaveTextContent("PRF-Erweiterung beim Erstellen des Passkeys nicht aktiviert");
+    expect(within(laptop).queryByRole("button", { name: /aktivieren/ })).toBeNull();
+    // PRF enabled, no entry yet (registered on a locked device, or the assertion was cancelled): enable, once unlocked.
+    const handy = within(list).getByText("Handy").closest("li")!;
+    expect(handy).toHaveTextContent("noch nicht aktiviert");
+    expect(handy).toHaveTextContent("Entsperre zuerst die verschlüsselten Nachrichten");
+    expect(within(handy).getByRole("button", { name: "Nachrichten-Entsperrung mit Handy aktivieren" })).toBeDisabled();
     expect(screen.getByTestId("totp-row")).toHaveTextContent("Aktiv");
     expect(screen.getByTestId("codes-left")).toHaveTextContent("Noch 7 Codes übrig");
     expect(screen.getByTestId("security-address")).toHaveTextContent("sec@t.local");
@@ -120,6 +146,47 @@ describe("Security settings", () => {
     const put = calls.find((c) => c.url.endsWith("/secret-storage/recovery"))!;
     expect(put.init.method).toBe("PUT");
     expect(JSON.parse(put.init.body as string).wrapped).toMatch(/^[A-Za-z0-9_-]{82}$/);
+  });
+
+  it("enables the message unlock of a passkey: one PRF assertion with exactly that passkey, then its entry (unlocked device)", async () => {
+    await cryptoStore.saveMaster(user.address, DEV, new Uint8Array(32).fill(3));
+    const get = vi.fn(async () => prfAssertion("Y3JlZC0z"));
+    Object.defineProperty(navigator, "credentials", { value: { get }, configurable: true });
+    const calls = mockFetch({ "/auth/factors": { body: factors }, "/users/me/secret-storage": secretStorage() });
+    renderSecurity();
+    const list = await screen.findByTestId("passkey-list");
+    const handy = await waitFor(() => within(list).getByText("Handy").closest("li")!);
+    const u = userEvent.setup();
+    const button = await within(handy).findByRole("button", { name: "Nachrichten-Entsperrung mit Handy aktivieren" });
+    await waitFor(() => expect(button).toBeEnabled());
+    await u.click(button);
+    await waitFor(() => expect(handy).toHaveTextContent("entsperrt Nachrichten"));
+    expect(handy).not.toHaveTextContent("noch nicht aktiviert");
+    const options = (get.mock.calls[0] as unknown as [CredentialRequestOptions])[0].publicKey!;
+    expect(options.allowCredentials?.map((c) => b64urlEncode(new Uint8Array(c.id as ArrayBuffer)))).toEqual(["Y3JlZC0z"]);
+    expect(options.userVerification).toBe("required");
+    const put = calls.find((c) => c.init.method === "PUT" && c.url.includes("/secret-storage/passkey/"))!;
+    expect(put.url).toMatch(/\/secret-storage\/passkey\/Y3JlZC0z$/);
+    expect(JSON.parse(put.init.body as string).wrapped).toMatch(/^[A-Za-z0-9_-]{82}$/);
+    // The other passkeys are untouched.
+    expect(calls.filter((c) => c.init.method === "PUT")).toHaveLength(1);
+  });
+
+  it("says when the assertion gave no PRF output, and stores nothing", async () => {
+    await cryptoStore.saveMaster(user.address, DEV, new Uint8Array(32).fill(3));
+    const plain = { ...prfAssertion("Y3JlZC0z"), getClientExtensionResults: () => ({}) };
+    Object.defineProperty(navigator, "credentials", { value: { get: vi.fn(async () => plain) }, configurable: true });
+    const calls = mockFetch({ "/auth/factors": { body: factors }, "/users/me/secret-storage": secretStorage() });
+    renderSecurity();
+    const list = await screen.findByTestId("passkey-list");
+    const handy = await waitFor(() => within(list).getByText("Handy").closest("li")!);
+    const u = userEvent.setup();
+    const button = await within(handy).findByRole("button", { name: "Nachrichten-Entsperrung mit Handy aktivieren" });
+    await waitFor(() => expect(button).toBeEnabled());
+    await u.click(button);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Handy hat hier keine PRF-Ausgabe geliefert");
+    expect(calls.some((c) => c.init.method === "PUT")).toBe(false);
+    expect(handy).toHaveTextContent("noch nicht aktiviert");
   });
 });
 

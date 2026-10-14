@@ -8,10 +8,10 @@ import { intlLocale, useT } from "../../i18n";
 import { useAuth } from "../../stores/auth";
 import { e2eeContext, useE2ee } from "../../stores/e2ee";
 import { describeError, useToasts } from "../../stores/toasts";
-import { addPasskeySecret, regenerateRecoveryKey, rotateIdentity } from "../../crypto/e2ee";
+import { passkeyEntryIds, regenerateRecoveryKey, rotateIdentity } from "../../crypto/e2ee";
 import { ownIdentityRotated } from "../../stores/mls";
 import { cryptoStore } from "../../crypto/store";
-import { evaluatePrf } from "../../lib/passkeys";
+import { enablePasskeyUnlock, passkeyUnlockState, windowsHello } from "../../lib/passkeyUnlock";
 import { Button, Dialog, ErrorText, Field, Input } from "../../components/ui";
 import { PasskeyEnroll, TotpEnroll, type EnrollResult } from "../../components/auth/SecondFactorEnroll";
 import { RecoveryCodesView } from "../../components/auth/RecoveryCodes";
@@ -81,18 +81,14 @@ function PasswordSection() {
   );
 }
 
-/** Uploads the passkey's secret storage entry if it supports PRF and this device is unlocked. */
+/**
+ * Stores the new passkey's secret storage entry right away when the authenticator enabled the PRF and this device is
+ * unlocked (`lib/passkeyUnlock.ts`); otherwise the list offers "Enable message unlock" for it later.
+ */
 async function storePasskeySecret(r: EnrollResult): Promise<boolean> {
   const pk = r.passkey;
-  if (!pk?.prfSupported || !cryptoStore.isUnlocked()) return false;
-  const prf = pk.prf ? { credentialId: pk.credentialId, prf: pk.prf } : await evaluatePrf([pk.credentialId]).catch(() => null);
-  if (!prf) return false;
-  try {
-    await addPasskeySecret(await e2eeContext(), prf.credentialId, prf.prf);
-    return true;
-  } finally {
-    prf.prf.fill(0);
-  }
+  if (!pk?.prfSupported) return false;
+  return (await enablePasskeyUnlock(pk.credentialId, pk.prf)) === "enabled";
 }
 
 function FactorsSection() {
@@ -104,8 +100,29 @@ function FactorsSection() {
   const [removePasskey, setRemovePasskey] = useState<WebauthnCredential | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [codes, setCodes] = useState<string[] | null>(null);
+  const [enabling, setEnabling] = useState<string | null>(null);
   const account = useAuth((s) => s.user?.address ?? "");
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["factors"] });
+  const unlocked = useE2ee((s) => s.status) === "unlocked";
+  // Which passkeys hold a secret storage entry: only those unlock the messages (ENCRYPTION.md §2.4).
+  const entries = useQuery({ queryKey: ["secret-storage", "passkeys"], queryFn: () => passkeyEntryIds(api) });
+  const refresh = () => Promise.all([queryClient.invalidateQueries({ queryKey: ["factors"] }), queryClient.invalidateQueries({ queryKey: ["secret-storage", "passkeys"] })]);
+  const windows = windowsHello();
+
+  /** "Enable message unlock": one PRF assertion with that passkey, then its entry. */
+  const enable = async (c: WebauthnCredential) => {
+    setEnabling(c.id);
+    setError(null);
+    try {
+      const r = await enablePasskeyUnlock(c.id);
+      if (r === "enabled") info(t("security.prf_enabled", { name: c.name }));
+      else setError(r === "no_prf" ? t("security.prf_no_output", { name: c.name }) : t("security.prf_enable_locked"));
+    } catch (e) {
+      setError(describeError(e));
+    } finally {
+      setEnabling(null);
+    }
+    await refresh();
+  };
 
   const enrolled = async (r: EnrollResult) => {
     setAdding(null);
@@ -143,22 +160,47 @@ function FactorsSection() {
       <div>
         <p className="text-sm font-medium">{t("security.passkeys")}</p>
         <ul className="divide-y divide-line" data-testid="passkey-list">
-          {f?.webauthn.map((c) => (
-            <li key={c.id} className="flex min-h-12 flex-wrap items-center gap-2 py-2 text-sm">
-              <div className="min-w-0 flex-1">
-                <p className="flex flex-wrap items-center gap-2">
-                  <span className="truncate font-medium">{c.name}</span>
-                  {c.prf_supported && <span className="rounded bg-ok/15 px-1.5 text-xs text-ok" title={t("security.prf_hint")}>{t("security.prf_badge")}</span>}
-                </p>
-                <p className="text-xs text-fg-2">
-                  {t("security.created", { date: date(c.created_at) })} · {c.last_used_at ? t("security.last_used", { date: date(c.last_used_at) }) : t("security.never_used")}
-                </p>
-              </div>
-              <Button variant="ghost" aria-label={t("security.passkey_remove", { name: c.name })} onClick={() => { setError(null); setRemovePasskey(c); }}>
-                {t("common.remove")}
-              </Button>
-            </li>
-          ))}
+          {f?.webauthn.map((c) => {
+            // Without the entry list (an older node, a failed request) only "no PRF at creation" is certain.
+            const state = entries.data ? passkeyUnlockState(c, entries.data) : c.prf_supported ? null : "unsupported";
+            return (
+              <li key={c.id} className="flex min-h-12 flex-wrap items-center gap-2 py-2 text-sm" data-testid="passkey-item" data-unlock={state ?? ""}>
+                <div className="min-w-0 flex-1">
+                  <p className="flex flex-wrap items-center gap-2">
+                    <span className="truncate font-medium">{c.name}</span>
+                    {state === "unlocks" && <span className="rounded bg-ok/15 px-1.5 text-xs text-ok" title={t("security.prf_hint")}>{t("security.prf_badge")}</span>}
+                    {state === "enable" && <span className="rounded border border-line bg-bg-0 px-1.5 text-xs text-fg-1">{t("security.prf_can_enable")}</span>}
+                    {state === "unsupported" && <span className="rounded border border-line bg-bg-0 px-1.5 text-xs text-fg-1">{t("security.prf_none")}</span>}
+                  </p>
+                  <p className="text-xs text-fg-2">
+                    {t("security.created", { date: date(c.created_at) })} · {c.last_used_at ? t("security.last_used", { date: date(c.last_used_at) }) : t("security.never_used")}
+                  </p>
+                  {state === "enable" && <p className="mt-1 text-xs text-fg-2">{unlocked ? t("security.prf_enable_hint") : t("security.prf_enable_locked")}</p>}
+                  {state === "unsupported" && (
+                    <p className="mt-1 text-xs text-fg-2">
+                      {t("security.prf_none_hint")}
+                      {windows && ` ${t("security.prf_none_windows")}`}
+                    </p>
+                  )}
+                </div>
+                {state === "enable" && (
+                  <Button
+                    variant="ghost"
+                    className="border border-line"
+                    aria-label={t("security.prf_enable_for", { name: c.name })}
+                    disabled={!unlocked || enabling === c.id}
+                    onClick={() => void enable(c)}
+                    data-testid="passkey-enable-unlock"
+                  >
+                    {enabling === c.id ? t("auth.wait") : t("security.prf_enable")}
+                  </Button>
+                )}
+                <Button variant="ghost" aria-label={t("security.passkey_remove", { name: c.name })} onClick={() => { setError(null); setRemovePasskey(c); }}>
+                  {t("common.remove")}
+                </Button>
+              </li>
+            );
+          })}
           {f && f.webauthn.length === 0 && <li className="py-2 text-sm text-fg-2">{t("security.no_passkeys")}</li>}
         </ul>
       </div>

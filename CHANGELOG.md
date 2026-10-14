@@ -111,6 +111,14 @@ First public release of the web client and the desktop apps.
 
 ### Fixed
 
+- **A passkey added later unlocks the messages too** (#120): Settings → Security now says for every passkey whether it
+  *unlocks messages* (its secret storage entry exists), *can unlock messages: not enabled yet* with **Enable message
+  unlock** (one PRF assertion with that passkey from an unlocked device stores the entry: a passkey added while the
+  device was locked, or whose assertion after the registration was cancelled), or *cannot unlock messages* with the
+  reason: the authenticator did not enable the PRF extension when the passkey was created (Windows Hello does so only
+  on Windows 11 24H2/25H2 with the February 2026 update or newer). Before, the badge followed the node's flag alone
+  and a missing entry could not be added afterwards.
+
 - An image pasted from the clipboard no longer keeps the name the system made up (`image.png`, `{GUID}.png` on
   Windows): it is named "Image <date> <time>.<ext>" (de: "Bild …"); a file copied from a file manager keeps its
   real name, nobody is asked (#95).

@@ -32,7 +32,17 @@ or a passkey → ten recovery codes shown once → recovery key), and sign-in as
 passkey; "Sign in with a passkey" skips the password. The **recovery key** (24 words or a compact string, generated in
 the browser and never sent anywhere) unlocks the encrypted messages on a new device or browser; passkeys with the PRF
 extension can do the same (the client's own PRF assertions name the relying party id the node publishes,
-`webauthn.rp_id`, so they also work when passkeys belong to a parent domain of the web client's host). Local keys live
+`webauthn.rp_id`, so they also work when passkeys belong to a parent domain of the web client's host). A passkey unlocks
+the messages once the client has stored its secret storage entry (the master secret wrapped under a key derived from
+that passkey's PRF output, ENCRYPTION.md §2.4): written from an unlocked device after a PRF assertion with exactly
+that passkey, at registration when the device is unlocked, else later. Settings → Security says for every passkey
+**unlocks messages** (its entry exists), **can unlock messages: not enabled yet** with **Enable message unlock** (the
+authenticator enabled the PRF when the passkey was created, but the entry is missing: the device was locked at
+registration, or the assertion was cancelled; the button needs an unlocked device and runs one assertion), or
+**cannot unlock messages** with the reason (the authenticator did not enable the PRF extension at creation: the node
+accepts no entry for it; Windows Hello reports the extension only on Windows 11 24H2/25H2 with the February 2026 update
+or newer, so such a passkey is removed and added again after the update). Removing a passkey removes its entry
+(the node deletes it with the credential). Local keys live
 in IndexedDB, encrypted under a device key derived from the master secret; the security settings manage factors,
 recovery codes, the recovery key and the optional lock **Require the recovery key or a passkey every time**. Without
 the recovery key the client offers a degraded mode (plaintext channels only, encrypted conversations stay locked) or
