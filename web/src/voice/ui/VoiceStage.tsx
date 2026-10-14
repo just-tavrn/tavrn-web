@@ -14,7 +14,7 @@ import { channelName } from "../../lib/names";
 import { channelPermissions, useRoomMembers } from "../../pages/ChannelPage";
 import { getMls, useMlsUi } from "../../stores/mls";
 import { qualify, splitIdentity, type GhostViolation } from "@tavrn/e2ee";
-import { participantsOf, screensOf, useVoicePresence } from "../presence";
+import { participantsOf, screensOf, sessionStartOf, useVoicePresence } from "../presence";
 import { publisherStreams, screenOwner } from "../streams";
 import { phoneCameras, useVoiceSettings } from "../settings";
 import { ownVoiceChannel, useVoice } from "../store";
@@ -25,6 +25,7 @@ import { localMutedCount, useLocalMute } from "../localMute";
 import { MegaphoneIcon, SpeakerIcon } from "./icons";
 import { FullscreenButton, FullscreenControls, exitFullscreen, useFullscreen, useFullscreenShortcut, useHeldInFullscreen } from "./fullscreen";
 import { StageGrid } from "./StageGrid";
+import { SessionTimer, VoiceStatusLine } from "./VoiceHeaderMeta";
 import { ScreenTile, StreamingIndicator } from "./ScreenTile";
 import { VideoView } from "./VideoView";
 import { useParticipantMenu } from "./useParticipantMenu";
@@ -320,19 +321,27 @@ export function VoiceStage({ room, channel }: { room: RoomDetail; channel: Chann
     return pick('[data-testid="screen-tile"][data-focused]') ?? pick('[data-testid="whiteboard-tile"]:not([data-state="available"])') ?? pick('[data-testid="screen-tile"]:not([data-state="available"])') ?? body;
   });
 
+  // The session timer (VOICE.md §5) and the status line (§2a) of the channel, for everybody who sees the stage.
+  const sessionStart = useVoicePresence((s) => sessionStartOf(s, domain, channel.id));
+  const canSetStatus = hasPermission(perms, Permission.VOICE_STATUS);
   const header = (
-    <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-4">
-      <SpeakerIcon size={16} className="text-fg-2" />
-      <h1 className="truncate text-sm font-semibold" data-testid="channel-name">
-        {channelName(channel)}
-      </h1>
-      <LockMark size={18} title={t("voice.encrypted")} testId="voice-lock" />
-      <span className="ml-auto" />
+    <header className="flex min-h-12 shrink-0 items-center gap-2 border-b border-line px-4 py-1">
+      <SpeakerIcon size={16} className="shrink-0 text-fg-2" />
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <h1 className="truncate text-sm font-semibold" data-testid="channel-name">
+            {channelName(channel)}
+          </h1>
+          <LockMark size={18} title={t("voice.encrypted")} testId="voice-lock" />
+        </div>
+        <VoiceStatusLine roomId={room.id} channel={channel} canEdit={canSetStatus} />
+      </div>
       {connected && localMuted > 0 && (
         <span className="truncate text-[11px] text-warn" title={t("voice.local_mute.reminder_hint")} data-testid="local-mute-reminder">
           {t("voice.local_mute.reminder", { count: localMuted })}
         </span>
       )}
+      <SessionTimer startedAt={sessionStart} className="shrink-0" />
       <WhiteboardButton conversationId={channel.id} encrypted />
       {connected && (
         <span className="text-[11px] text-ok" data-testid="voice-e2ee">

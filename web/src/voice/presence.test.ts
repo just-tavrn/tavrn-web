@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { beforeEach, describe, expect, it } from "vitest";
 import type { VoiceParticipant } from "@tavrn/sdk";
-import { channelKey, participantsOf, screensOf, useVoicePresence, voiceChannelOfUser } from "./presence";
+import { channelKey, participantsOf, screensOf, sessionStartOf, useVoicePresence, voiceChannelOfUser } from "./presence";
 
 function p(user: string, extra: Partial<VoiceParticipant> = {}): VoiceParticipant {
   const device = `D${user.length}`;
@@ -47,6 +47,27 @@ describe("voice presence store (VOICE.md §5)", () => {
     expect(screensOf(useVoicePresence.getState(), "n.example", "C")).toHaveLength(1);
     s.removeChannel("n.example", "C");
     expect(screensOf(useVoicePresence.getState(), "n.example", "C")).toEqual([]);
+  });
+
+  it("keeps the session start of each channel from every state and seed (VOICE.md §5)", () => {
+    const s = useVoicePresence.getState();
+    expect(sessionStartOf(useVoicePresence.getState(), "n.example", "C")).toBeNull();
+    s.apply("n.example", { room_id: "R", channel_id: "C", epoch: 1, session_started_at: "2026-10-14T12:00:00.000Z", participants: [p("alice")] });
+    expect(sessionStartOf(useVoicePresence.getState(), "n.example", "C")).toBe("2026-10-14T12:00:00.000Z");
+    // The last participant left: the node sends null (or an older node nothing); both read as "no session".
+    s.apply("n.example", { room_id: "R", channel_id: "C", epoch: 1, session_started_at: null, participants: [] });
+    expect(sessionStartOf(useVoicePresence.getState(), "n.example", "C")).toBeNull();
+    s.apply("n.example", { room_id: "R", channel_id: "C", epoch: 1, session_started_at: "2026-10-14T13:00:00.000Z", participants: [p("bob")] });
+    s.apply("n.example", { room_id: "R", channel_id: "C", epoch: 1, participants: [p("bob")] });
+    expect(sessionStartOf(useVoicePresence.getState(), "n.example", "C")).toBeNull();
+    // Seeds carry it too and replace what the room or node had.
+    s.seedRoom("n.example", "R", [{ room_id: "R", channel_id: "C", epoch: 1, session_started_at: "2026-10-14T14:00:00.000Z", participants: [p("bob")] }]);
+    expect(sessionStartOf(useVoicePresence.getState(), "n.example", "C")).toBe("2026-10-14T14:00:00.000Z");
+    s.seedAll("n.example", [{ room_id: "R", channels: [{ room_id: "R", channel_id: "D", epoch: 1, session_started_at: "2026-10-14T15:00:00.000Z", participants: [p("bob")] }] }]);
+    expect(sessionStartOf(useVoicePresence.getState(), "n.example", "C")).toBeNull();
+    expect(sessionStartOf(useVoicePresence.getState(), "n.example", "D")).toBe("2026-10-14T15:00:00.000Z");
+    s.removeChannel("n.example", "D");
+    expect(sessionStartOf(useVoicePresence.getState(), "n.example", "D")).toBeNull();
   });
 
   it("keeps channels of different nodes apart", () => {

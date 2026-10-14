@@ -21,6 +21,8 @@ interface PresenceState {
   screens: Record<string, VoiceParticipant[]>;
   /** The node's MLS epoch of each channel's group as last reported. */
   epochs: Record<string, number | null>;
+  /** When the current session of each channel began (VOICE.md §5 `session_started_at`; absent = empty or unknown). */
+  sessions: Record<string, string>;
   /** Room key `<domain>/<room id>` of each channel key. */
   rooms: Record<string, string>;
   apply: (domain: string, state: VoiceChannelState) => void;
@@ -46,6 +48,12 @@ function put(record: Record<string, VoiceParticipant[]>, key: string, list: Voic
   else delete record[key];
 }
 
+/** Sets (or, for a missing start, drops) the session start of `key` in `record`, in place. */
+function putSession(record: Record<string, string>, key: string, state: VoiceChannelState) {
+  if (state.session_started_at) record[key] = state.session_started_at;
+  else delete record[key];
+}
+
 function without<T>(record: Record<string, T>, keys: string[]): Record<string, T> {
   if (!keys.some((k) => k in record)) return record;
   const next = { ...record };
@@ -57,6 +65,7 @@ export const useVoicePresence = create<PresenceState>((set) => ({
   channels: {},
   screens: {},
   epochs: {},
+  sessions: {},
   rooms: {},
   apply: (domain, state) =>
     set((s) => {
@@ -64,7 +73,9 @@ export const useVoicePresence = create<PresenceState>((set) => ({
       const { people, screens: published } = split(state.participants);
       const channels = people.length ? { ...s.channels, [key]: people } : without(s.channels, [key]);
       const screens = published.length ? { ...s.screens, [key]: published } : without(s.screens, [key]);
-      return { channels, screens, epochs: { ...s.epochs, [key]: state.epoch ?? null }, rooms: { ...s.rooms, [key]: channelKey(domain, state.room_id) } };
+      const sessions = { ...s.sessions };
+      putSession(sessions, key, state);
+      return { channels, screens, epochs: { ...s.epochs, [key]: state.epoch ?? null }, sessions, rooms: { ...s.rooms, [key]: channelKey(domain, state.room_id) } };
     }),
   seedRoom: (domain, roomId, items) =>
     set((s) => {
@@ -75,16 +86,18 @@ export const useVoicePresence = create<PresenceState>((set) => ({
       const channels = { ...without(s.channels, stale) };
       const screens = { ...without(s.screens, stale) };
       const epochs = { ...s.epochs };
+      const sessions = { ...without(s.sessions, stale) };
       const rooms = without(s.rooms, stale);
       for (const item of items) {
         const key = channelKey(domain, item.channel_id);
         const { people, screens: published } = split(item.participants);
         put(channels, key, people);
         put(screens, key, published);
+        putSession(sessions, key, item);
         epochs[key] = item.epoch ?? null;
         rooms[key] = room;
       }
-      return { channels, screens, epochs, rooms };
+      return { channels, screens, epochs, sessions, rooms };
     }),
   seedAll: (domain, list) =>
     set((s) => {
@@ -95,6 +108,7 @@ export const useVoicePresence = create<PresenceState>((set) => ({
       const channels = { ...without(s.channels, stale) };
       const screens = { ...without(s.screens, stale) };
       const epochs = { ...s.epochs };
+      const sessions = { ...without(s.sessions, stale) };
       const rooms = without(s.rooms, stale);
       for (const room of list) {
         for (const item of room.channels) {
@@ -102,16 +116,17 @@ export const useVoicePresence = create<PresenceState>((set) => ({
           const { people, screens: published } = split(item.participants);
           put(channels, key, people);
           put(screens, key, published);
+          putSession(sessions, key, item);
           epochs[key] = item.epoch ?? null;
           rooms[key] = channelKey(domain, room.room_id);
         }
       }
-      return { channels, screens, epochs, rooms };
+      return { channels, screens, epochs, sessions, rooms };
     }),
   removeChannel: (domain, channelId) =>
     set((s) => {
       const key = channelKey(domain, channelId);
-      return { channels: without(s.channels, [key]), screens: without(s.screens, [key]), epochs: without(s.epochs, [key]), rooms: without(s.rooms, [key]) };
+      return { channels: without(s.channels, [key]), screens: without(s.screens, [key]), epochs: without(s.epochs, [key]), sessions: without(s.sessions, [key]), rooms: without(s.rooms, [key]) };
     }),
   clearRoom: (domain, roomId) =>
     set((s) => {
@@ -119,9 +134,9 @@ export const useVoicePresence = create<PresenceState>((set) => ({
       const keys = Object.entries(s.rooms)
         .filter(([, r]) => r === room)
         .map(([k]) => k);
-      return { channels: without(s.channels, keys), screens: without(s.screens, keys), epochs: without(s.epochs, keys), rooms: without(s.rooms, keys) };
+      return { channels: without(s.channels, keys), screens: without(s.screens, keys), epochs: without(s.epochs, keys), sessions: without(s.sessions, keys), rooms: without(s.rooms, keys) };
     }),
-  reset: () => set({ channels: {}, screens: {}, epochs: {}, rooms: {} }),
+  reset: () => set({ channels: {}, screens: {}, epochs: {}, sessions: {}, rooms: {} }),
 }));
 
 type Snapshot = Pick<PresenceState, "channels" | "rooms">;
@@ -129,6 +144,11 @@ type Snapshot = Pick<PresenceState, "channels" | "rooms">;
 /** Participants of a channel (a stable empty list when nobody is connected), without screen publishers. */
 export function participantsOf(s: Snapshot, domain: string, channelId: string): VoiceParticipant[] {
   return s.channels[channelKey(domain, channelId)] ?? EMPTY;
+}
+
+/** When the current session of a channel began (VOICE.md §5), or null while it is empty or the node does not say. */
+export function sessionStartOf(s: Pick<PresenceState, "sessions">, domain: string, channelId: string): string | null {
+  return s.sessions[channelKey(domain, channelId)] ?? null;
 }
 
 /** The screen publishers of a channel (VOICE.md §4b; a stable empty list when there are none). */
