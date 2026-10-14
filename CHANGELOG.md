@@ -111,8 +111,10 @@ First public release of the web client and the desktop apps.
   unchanged group), the self update no longer fetches the handshake log a second time, and `voice/join` goes out as
   soon as the device is in the group while the cleanup and the self update run; the call connects meanwhile and only
   the own sending key and the microphone wait for the fresh epoch. Switching channels leaves the previous one in the
-  background. Locally a join takes about 0.2 s instead of 0.25–0.45 s, at 40 ms to the node about 0.5 s instead of
-  0.7–0.9 s (docs/CLIENT.md "Voice troubleshooting").
+  background; the join's group work runs in the MLS manager's priority lane and pauses the background group joins.
+  Measured to the published microphone: locally 0.15–0.28 s instead of 0.18–0.33 s, at 40 ms to the node 0.45–0.62 s
+  instead of 0.63–0.91 s, a join right after a member left 0.15 s / 0.45 s instead of 9.7 s / 10.2 s
+  (docs/CLIENT.md "Voice troubleshooting").
 - **A voice join never waits for the ghost cleanup's election**: a join while a background cleanup of the channel
   waited for another device (after a member left, up to ten seconds) cuts that wait short; when another device is
   elected the join goes on and the cleanup follows in the background. Background cleanups elect only devices that may
