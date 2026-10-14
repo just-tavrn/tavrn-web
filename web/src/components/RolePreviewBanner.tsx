@@ -5,7 +5,7 @@
  * ends the preview.
  */
 import { useEffect, useId, useState } from "react";
-import { useT } from "../i18n";
+import { intlLocale, useT } from "../i18n";
 import { useRolePreview } from "../stores/rolePreview";
 
 export function RolePreviewBanner({ roomId }: { roomId: string | undefined }) {
@@ -19,7 +19,7 @@ export function RolePreviewBanner({ roomId }: { roomId: string | undefined }) {
     if (preview && roomId !== preview.roomId) exit();
   }, [preview, roomId, exit]);
   if (!preview || roomId !== preview.roomId) return null;
-  const joined = new Date(preview.joinedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  const joined = new Date(preview.joinedAt).toLocaleString(intlLocale(), { dateStyle: "medium", timeStyle: "short" });
   return (
     <section aria-label={t("roleview.banner_label")} className="shrink-0 border-b border-accent/50 bg-accent-soft px-3 py-2 text-xs text-fg-0" data-testid="role-preview-banner">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
