@@ -12,6 +12,7 @@
   "include": [
     "tests",
     "fixtures",
+    "perf",
     "playwright.config.ts"
   ]
 }
