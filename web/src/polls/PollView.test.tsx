@@ -8,6 +8,7 @@ import { pollHash, pollVoteContent, type Decrypted, type Poll } from "@tavrn/e2e
 import { MessageList } from "../components/MessageList";
 import { PollContext, pollVotesKey, type PollVoteRecord } from "./context";
 import { useConversationPolls } from "./env";
+import { slotText } from "./format";
 import { pollHandlers } from "./votes";
 
 const ME = "me@t.local";
@@ -23,6 +24,10 @@ const datePoll = {
   results_visible: "always",
   votes_visible: "public",
 } as const;
+
+/** A slot as this device shows it (the test runs in the device's zone: CI in UTC, developers elsewhere). */
+const local = (slot: { id: string; start: string; end?: string; all_day?: boolean }) => slotText(slot, "de-DE");
+const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 function message(content: Record<string, unknown>, extra: Partial<Message> = {}): Message {
   return { id: "01POLL", conversation_id: "c1", author: "alice@t.local", author_id: "u2", device_id: null, encrypted: false, format: 1, epoch: null, content, reply_to_id: null, thread_id: null, mentions: [], mentions_everyone: false, created_at: new Date().toISOString(), edited_at: null, attachments: [], reactions: [], pinned: false, poll_closes_at: null, ...extra } as Message;
@@ -298,7 +303,7 @@ describe("PollView", () => {
     await waitFor(() => expect(within(poll).getByTestId("poll-voters")).toHaveTextContent("2 Stimmen"));
     expect(poll).toHaveAttribute("data-view", "form");
     // The form: one group per day, per slot yes / maybe / no with text and icon.
-    expect(within(poll).getByRole("group", { name: "Fr., 6. Nov." })).toBeInTheDocument();
+    expect(within(poll).getByRole("group", { name: local(datePoll.slots[0]).date })).toBeInTheDocument();
     const [s1, s2] = within(poll).getAllByTestId("poll-slot");
     expect(s2).toHaveTextContent("ganztägig");
     expect(within(s1!).getByRole("radio", { name: /Ja/ })).not.toBeChecked();
@@ -309,14 +314,15 @@ describe("PollView", () => {
 
     // The results: the best slot on top, a cell per slot with counts, ★ and the own answer.
     await waitFor(() => expect(poll).toHaveAttribute("data-view", "results"));
-    expect(within(poll).getByTestId("poll-best")).toHaveTextContent(/Beste Termine.*6\. Nov\., 19:00 – 22:00.*1 ja, 1 vielleicht, 1 nein/);
+    const s1Text = local(datePoll.slots[0]);
+    expect(within(poll).getByTestId("poll-best")).toHaveTextContent(new RegExp(`Beste Termine.*${escape(`${s1Text.date}, ${s1Text.time}`)}.*1 ja, 1 vielleicht, 1 nein`));
     const grid = within(poll).getByRole("grid", { name: "Ergebnisse von Teamessen?" });
     expect(within(grid).getAllByRole("columnheader")).toHaveLength(3);
-    expect(within(grid).getAllByRole("rowheader").map((h) => h.textContent)).toEqual(["ganztägig", "19:00 – 22:00"]);
+    expect(within(grid).getAllByRole("rowheader").map((h) => h.textContent)).toEqual(["ganztägig", s1Text.time]);
     const cell = (slot: string) => grid.querySelector<HTMLButtonElement>(`[data-testid="poll-cell"][data-slot="${slot}"]`)!;
     expect(cell("s1")).toHaveAttribute("data-best", "true");
     expect(cell("s1")).toHaveAttribute("data-mine", "no");
-    expect(cell("s1")).toHaveAccessibleName(/19:00 – 22:00\. 1 ja, 1 vielleicht, 1 nein\. bester Termin\. deine Antwort: Nein/);
+    expect(cell("s1")).toHaveAccessibleName(new RegExp(`${escape(s1Text.time)}\\. 1 ja, 1 vielleicht, 1 nein\\. bester Termin\\. deine Antwort: Nein`));
     expect(cell("s2")).toHaveAccessibleName(/ganztägig\. 1 ja, 1 vielleicht, 1 nein\. bester Termin\. deine Antwort: Ja/);
     // Hover: the names in the title; click: the answers of the slot.
     expect(cell("s1")).toHaveAttribute("title", "✓ BOB · ? CAROL · ✗ ME");
@@ -363,12 +369,12 @@ describe("PollView", () => {
     const poll = await screen.findByTestId("poll");
     await waitFor(() => expect(poll).toHaveAttribute("data-view", "results"));
     const grid = within(poll).getByRole("grid");
-    expect(within(grid).getAllByRole("rowheader").map((h) => h.textContent)).toEqual(["18:00", "20:00"]);
+    expect(within(grid).getAllByRole("rowheader").map((h) => h.textContent)).toEqual([local(many.slots[0]!).time, local(many.slots[1]!).time]);
     expect(within(grid).getAllByTestId("poll-cell").map((c) => c.getAttribute("data-slot"))).toEqual(["s1", "s3", "s2", "s4"]);
     // The best slot (bob yes + my maybe) is the tab stop.
     const cells = within(grid).getAllByTestId("poll-cell");
     expect(cells.filter((c) => c.tabIndex === 0).map((c) => c.getAttribute("data-slot"))).toEqual(["s3"]);
-    expect(within(poll).getByTestId("poll-best")).toHaveTextContent("7. Nov.");
+    expect(within(poll).getByTestId("poll-best")).toHaveTextContent(local(many.slots[2]!).date);
     cells[1]!.focus();
     await user.keyboard("{ArrowLeft}");
     expect(document.activeElement).toHaveAttribute("data-slot", "s1");
@@ -391,7 +397,7 @@ describe("PollView", () => {
     expect(within(poll).queryByTestId("poll-cell-bar")).toBeNull();
     const cell = within(poll).getAllByTestId("poll-cell")[1]!;
     expect(cell).toHaveAttribute("data-mine", "maybe");
-    expect(cell).toHaveAccessibleName(/19:00 – 22:00\. deine Antwort: Vielleicht$/);
+    expect(cell).toHaveAccessibleName(new RegExp(`${escape(local(hidden.slots[0]).time)}\\. deine Antwort: Vielleicht$`));
     expect(within(poll).getByRole("button", { name: "Stimme ändern" })).toBeEnabled();
   });
 
