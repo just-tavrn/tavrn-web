@@ -362,11 +362,35 @@ fn the_sign_in_window_denies_downloads_and_permissions() {
 fn version_and_identity() {
     let c = conf();
     assert_eq!(c["version"], "../../../web/package.json", "one version number: the web client's");
-    // The installers keep the capitalised product name (file names like Tavrn_<version>_x64-setup.exe, the Windows
-    // start menu); everything the app shows says "tavrn" in lowercase.
-    assert_eq!(c["productName"], "Tavrn");
+    // The product is written "tavrn" everywhere (tavrn-web#114): the start menu, the installer titles, the macOS
+    // bundle and the window follow. The release file names keep the capitalised form of the earlier releases
+    // (Tavrn_<version>_x64-setup.exe, the website's download page and the feeds read them): desktop.yml renames the
+    // bundles after the build.
+    assert_eq!(c["productName"], "tavrn");
     assert_eq!(c["app"]["windows"][0]["title"], "tavrn");
     assert_eq!(c["identifier"], "org.tavrn.desktop");
+}
+
+#[test]
+fn the_msi_upgrade_code_survives_the_product_name() {
+    // tauri-bundler derives the WiX UpgradeCode from the product name (UUID v5 of "<productName>.exe.app.x64" in the
+    // DNS namespace) unless it is pinned. The installed rc builds carry the code of "Tavrn"; a changed code would make
+    // the next .msi a second product next to the old one instead of an upgrade that keeps settings and the key
+    // store (`tauri inspect wix-upgrade-code` printed this value before the rename).
+    let c = conf();
+    assert_eq!(c["bundle"]["windows"]["wix"]["upgradeCode"], "e7ba802a-d79e-5430-affa-76356a797490");
+    // The NSIS installer and the keychain need no pin: its registry keys and the install directory take the product
+    // name, which Windows compares without case; the keychain service, the app data directory and the notification
+    // id take the identifier.
+    assert_eq!(c["identifier"], "org.tavrn.desktop");
+}
+
+#[test]
+fn the_android_app_is_called_tavrn() {
+    let strings = include_str!("../gen/android/app/src/main/res/values/strings.xml");
+    for name in ["app_name", "main_activity_title"] {
+        assert!(strings.contains(&format!("<string name=\"{name}\">tavrn</string>")), "{name} is not \"tavrn\"");
+    }
 }
 
 #[test]

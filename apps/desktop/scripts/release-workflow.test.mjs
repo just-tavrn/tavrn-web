@@ -170,6 +170,24 @@ test("macOS: GitHub-hosted, universal, unsigned, no key, never fails a release; 
 });
 
 
+test("the Tauri bundles are renamed to the release names after the build (the product is tavrn, the files keep Tavrn_…)", () => {
+  // tauri.conf.json's productName is "tavrn" (tavrn-web#114) and tauri-bundler names its files after it; the release
+  // keeps the capitalised names of the earlier releases (release-assets.mjs, latest.json, the website's download page).
+  const rename = /for f in dist-desktop\/tavrn_\*; do mv "\$f" "dist-desktop\/Tavrn_\$\{f#dist-desktop\/tavrn_\}"; done/;
+  for (const job of ["windows", "windows-nsis"]) {
+    const steps = code(desktop.jobs[job]).split(/\n(?= {6}- )/);
+    const build = steps.findIndex((s) => /tauri build/.test(s));
+    const collect = steps.findIndex((s) => rename.test(s));
+    assert.ok(build >= 0 && collect > build, `${job}: the rename follows the build`);
+    const upload = steps.findIndex((s) => /upload-artifact@/.test(s));
+    assert.ok(upload > collect, `${job}: the artifact is uploaded after the rename`);
+  }
+  const macos = code(desktop.jobs.macos);
+  assert.match(macos, /cp "\$bundle\/dmg\/tavrn_\$\{version\}_universal\.dmg" "dist-macos\/Tavrn_\$\{version\}_universal\.dmg"/);
+  assert.match(macos, /tar -czf "dist-macos\/Tavrn_\$\{version\}_universal\.app\.tar\.gz" -C "\$bundle\/macos" tavrn\.app/);
+  assert.doesNotMatch(macos, /Tavrn\.app/, "the bundle is tavrn.app now");
+});
+
 test("macOS checkout disables credential helpers, has a short timeout and precedes dependency URL rewrites", () => {
   const steps = code(desktop.jobs.macos).split(/\n(?= {6}- )/);
   const helper = steps.findIndex((s) => /git config --global credential\.helper ''/.test(s));

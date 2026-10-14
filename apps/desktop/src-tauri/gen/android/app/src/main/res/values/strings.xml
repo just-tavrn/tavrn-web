@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <resources>
-    <string name="app_name">Tavrn</string>
-    <string name="main_activity_title">Tavrn</string>
+    <string name="app_name">tavrn</string>
+    <string name="main_activity_title">tavrn</string>
     <string name="channel_messages">Messages and mentions</string>
     <string name="channel_calls">Incoming calls</string>
     <string name="channel_voice">Voice connection</string>

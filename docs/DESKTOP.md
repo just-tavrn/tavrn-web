@@ -43,11 +43,20 @@ UnifiedPush, links and the system bars. It is described in [ANDROID.md](ANDROID.
 - **It talks to the home node you choose.** The first start shows the node picker; the client then uses that node's
   API, WebSocket and media over https and wss. Rooms and conversations of other nodes work as in the browser
   (federated sessions, [CLIENT.md](CLIENT.md) "Several nodes in one client").
-- **One version number.** The app's version is `web/package.json`'s (`tauri.conf.json` points at it, and
-  `electron-builder.config.mjs` reads it); the bundle's product name is "Tavrn" (installer file names such as
-  `Tavrn_<version>_x64-setup.exe` or `Tavrn-<version>.AppImage`, the Windows start menu and the Linux menu entry follow
-  platform conventions), the identifier `org.tavrn.desktop` in both shells (the project domain tavrn.org);
-  everything the app itself shows (window title, tray, notifications) writes the name in lowercase, "tavrn".
+- **One version number, one name.** The app's version is `web/package.json`'s (`tauri.conf.json` points at it, and
+  `electron-builder.config.mjs` reads it); the product name is "tavrn" in both shells and on Android (the Windows
+  start menu and desktop shortcut, the installer and its uninstall entry, the Linux menu entry and window class, the
+  macOS bundle `tavrn.app`, the Android launcher), as is everything the app itself shows (window title, tray,
+  notifications). The identifier is `org.tavrn.desktop` in both shells (the project domain tavrn.org). The **release
+  files keep their names** from the first releases (`Tavrn_<version>_x64-setup.exe`, `Tavrn_<version>_x64_en-US.msi`,
+  `Tavrn-<version>.AppImage`, `Tavrn_<version>_universal.dmg`, `Tavrn_<version>_android-arm64.apk`: the website's
+  download page and the update feeds read them, [What a release carries](#what-a-release-carries)): the bundlers name
+  their files after the product, so `desktop.yml` renames the Tauri bundles after the build and the AppImage's
+  `artifactName` is pinned. An update from a release that was still called "Tavrn" keeps everything: the
+  identifiers, the settings and profile directories, the keychain entries and the `tavrn://` links never carried the
+  product name; the MSI's upgrade code is pinned to the one the bundler derived from "Tavrn"
+  (`bundle.windows.wix.upgradeCode`, a test keeps it); the NSIS installer finds the old installation in registry keys
+  and folders that Windows compares without case and replaces the old shortcuts.
 
 ### Security of the shell
 
@@ -1334,10 +1343,10 @@ half), and a contributor with a Mac verifies the builds (help wanted: issue just
 (`signingIdentity: "-"`). Gatekeeper therefore blocks the first start of a downloaded copy:
 
 - macOS 14 and older: right-click (or Control-click) the app in Applications → **Open** → **Open**;
-- macOS 15 and newer: open it once, then System Settings → **Privacy & Security** → "Tavrn was blocked…" → **Open
+- macOS 15 and newer: open it once, then System Settings → **Privacy & Security** → "tavrn was blocked…" → **Open
   Anyway**, and confirm;
 - if macOS calls the app "damaged" (an older download, a copy without its signature): `xattr -dr com.apple.quarantine
-  /Applications/Tavrn.app` in Terminal.
+  /Applications/tavrn.app` in Terminal (`Tavrn.app` for a copy installed before version 0.4.0).
 
 Check the download first: `shasum -a 256 -c Tavrn_<version>_universal.dmg.sha256`. Updates come through the Tauri
 updater like on Windows (`latest.json`'s `darwin-aarch64` and `darwin-x86_64` entries name the signed

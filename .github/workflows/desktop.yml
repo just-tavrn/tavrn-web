@@ -454,6 +454,10 @@ jobs:
           file "$DESKTOP_TARGET/tavrn.exe" | grep -q 'PE32+ executable.*x86-64' || { echo "::error::tavrn.exe is not a 64-bit Windows executable"; exit 1; }
           mkdir -p dist-desktop
           cp "$DESKTOP_TARGET"/bundle/nsis/*-setup.exe dist-desktop/
+          # The product is "tavrn" (the bundler names the files after it); the release files keep the capitalised
+          # names of the earlier releases (Tavrn_<version>_x64-setup.exe: release-assets.mjs, the website's download
+          # page), so the installer is renamed here as the release build does.
+          for f in dist-desktop/tavrn_*; do mv "$f" "dist-desktop/Tavrn_${f#dist-desktop/tavrn_}"; done
           file dist-desktop/*
           ls -l dist-desktop
       # Only the installer: never the target directory or XWIN_CACHE_DIR (Microsoft's SDK must not be published).
@@ -519,6 +523,10 @@ jobs:
           mkdir -p dist-desktop
           cp apps/desktop/src-tauri/target/release/bundle/msi/*.msi dist-desktop/
           cp apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe dist-desktop/
+          # The product is "tavrn" (the bundler names the files after it); the release files keep the capitalised
+          # names of the earlier releases (Tavrn_<version>_x64-setup.exe, Tavrn_<version>_x64_en-US.msi:
+          # release-assets.mjs, latest.json, the website's download page), so the installers are renamed here.
+          for f in dist-desktop/tavrn_*; do mv "$f" "dist-desktop/Tavrn_${f#dist-desktop/tavrn_}"; done
           ls -l dist-desktop
       - id: installers
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -580,10 +588,13 @@ jobs:
           version="$(node -p "require('./web/package.json').version")"
           bundle=apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle
           mkdir -p dist-macos
-          cp "$bundle/dmg/Tavrn_${version}_universal.dmg" dist-macos/
+          # The product is "tavrn" (the bundle is tavrn.app, the disk image tavrn_<version>_universal.dmg); the
+          # release files keep the capitalised names of the earlier releases (release-assets.mjs, latest.json). The
+          # updater takes the archive's one .app whatever its name and replaces the installed bundle in place.
+          cp "$bundle/dmg/tavrn_${version}_universal.dmg" "dist-macos/Tavrn_${version}_universal.dmg"
           # The updater's archive: the .app at its root, without macOS' AppleDouble files.
-          COPYFILE_DISABLE=1 tar -czf "dist-macos/Tavrn_${version}_universal.app.tar.gz" -C "$bundle/macos" Tavrn.app
-          lipo -archs "$bundle/macos/Tavrn.app/Contents/MacOS/tavrn"
+          COPYFILE_DISABLE=1 tar -czf "dist-macos/Tavrn_${version}_universal.app.tar.gz" -C "$bundle/macos" tavrn.app
+          lipo -archs "$bundle/macos/tavrn.app/Contents/MacOS/tavrn"
           ls -l dist-macos
       - id: bundles
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

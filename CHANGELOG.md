@@ -83,6 +83,14 @@ First public release of the web client and the desktop apps.
   the join, leave and stream cues are a little louder with a clearer onset, so they are not lost in a lively call,
   while the mute, deafen, connection and push-to-talk tones stay as quiet as before. The volume, the switch and the
   preview per sound in Settings → Voice & video are unchanged.
+- **The apps are called "tavrn"** wherever the system shows the name (tavrn-web#114): the Windows start menu and
+  desktop shortcut, the installer and its uninstall entry, the Linux menu entry and window class, the macOS bundle and
+  the Android launcher said "Tavrn" before. An update from an earlier release keeps everything: the identifiers
+  (`org.tavrn.desktop`, `org.tavrn.app`), the settings and profile directories, the keychain entries and the
+  `tavrn://` links never carried the product name; the MSI's upgrade code is pinned to the one the earlier installers
+  carry (the bundler would otherwise derive a new one from the new name and install a second product); the NSIS
+  installer finds the old installation in registry keys and folders that Windows compares without case. The release
+  files and the update feeds keep their names (`Tavrn_<version>_x64-setup.exe`, `Tavrn-<version>.AppImage`, …).
 - **A limit per external store** (protocol FILES.md §5): the storage settings of a files channel on WebDAV or S3 get
   "Limit on the store (GB)" (empty = no limit), which the channel's meter shows; the node's own quota no longer
   applies to external stores.
