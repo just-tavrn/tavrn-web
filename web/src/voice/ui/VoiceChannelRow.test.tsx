@@ -30,6 +30,8 @@ const { useVoicePresence } = await import("../presence");
 const { useVoice, IDLE } = await import("../store");
 const { useToasts } = await import("../../stores/toasts");
 const { useBoardPreview } = await import("../../whiteboard/stage");
+const { useLocalMute, setLocalMute } = await import("../localMute");
+const { useSpeaking } = await import("../store");
 
 const participant = (user: string, device: string, extra: Partial<VoiceParticipant> = {}) =>
   ({ identity: `${user}/${device}`, user, user_id: `u-${user.split("@")[0]}`, device_id: device, muted: false, deafened: false, server_muted: false, streaming: false, camera: false, ...extra }) as VoiceParticipant;
@@ -76,6 +78,29 @@ beforeEach(() => {
 afterEach(() => {
   useVoice.setState(IDLE);
   useVoicePresence.setState({ channels: {}, epochs: {}, rooms: {} });
+  useLocalMute.setState({ muted: {} });
+  useSpeaking.setState({ levels: {} });
+});
+
+describe("muted for you (issue #124)", () => {
+  it("marks a locally muted participant, never shows them speaking, and the marker unmutes with one click", () => {
+    inChannel("bob@n.test/DB");
+    renderRow();
+    expect(screen.queryByTestId("local-mute-mark")).toBeNull();
+    act(() => setLocalMute("alice@n.test", true));
+    act(() => useSpeaking.setState({ levels: { "alice@n.test/DA": 0.8, "carol@n.test/DC": 0.5 } }));
+    const alice = row("alice@n.test");
+    expect(alice).toHaveAttribute("data-local-muted", "true");
+    expect(alice).not.toHaveAttribute("data-speaking");
+    expect(row("carol@n.test")).toHaveAttribute("data-speaking", "true");
+    const mark = within(alice).getByTestId("local-mute-mark");
+    expect(mark).toHaveAccessibleName("alice für dich wieder laut schalten");
+    expect(mark.getAttribute("title")).toContain("Für dich stumm");
+    fireEvent.click(mark);
+    expect(useLocalMute.getState().muted).toEqual({});
+    expect(within(row("alice@n.test")).queryByTestId("local-mute-mark")).toBeNull();
+    expect(row("alice@n.test")).toHaveAttribute("data-speaking", "true");
+  });
 });
 
 describe("the voice member list and the whiteboard", () => {

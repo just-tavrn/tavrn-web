@@ -12,7 +12,7 @@ import { joinStream, joinVoice } from "../index";
 import { rowStreamAction } from "../streams";
 import { useRoomVoiceStates } from "../useVoiceRealtime";
 import { AvatarTile } from "./AvatarTile";
-import { ConnectionGlyph, ParticipantFlags, levelStyle, useMemberLooks, useParticipantStatus, usePriority } from "./common";
+import { ConnectionGlyph, LocalMuteMark, ParticipantFlags, levelStyle, useMemberLooks, useParticipantStatus, usePriority } from "./common";
 import { useParticipantMenu } from "./useParticipantMenu";
 import { MegaphoneIcon, SpeakerIcon } from "./icons";
 import { AccessMark, LockMark, accessMarkKey } from "../../components/Badges";
@@ -184,7 +184,7 @@ function ParticipantList({ room, channelId, participants, look, draggable, onSta
 function ParticipantRow({ room, channelId, p, look, draggable, board, joinBoard, onStage }: { room: RoomDetail; channelId: string; p: VoiceParticipant; look: ParticipantLook; draggable: boolean; board: boolean; joinBoard: () => void; onStage: () => void }) {
   const t = useT();
   const { domain } = useNode();
-  const { status, level } = useParticipantStatus(p);
+  const { status, level, localMuted } = useParticipantStatus(p);
   const priority = usePriority(p.identity);
   const { menu, overlay } = useParticipantMenu(room, channelId, p);
   const speaking = status === "speaking";
@@ -220,6 +220,7 @@ function ParticipantRow({ room, channelId, p, look, draggable, board, joinBoard,
       data-user={p.user}
       data-speaking={speaking || undefined}
       data-priority={priority || undefined}
+      data-local-muted={localMuted || undefined}
       data-connection={status === "reconnecting" ? "reconnecting" : undefined}
       draggable={draggable || undefined}
       onDragStart={(e) => {
@@ -264,6 +265,7 @@ function ParticipantRow({ room, channelId, p, look, draggable, board, joinBoard,
       {status === "poor" && <ConnectionGlyph status={status} />}
       {board && <WhiteboardRowBadge />}
       <ParticipantFlags p={p} size={13} />
+      {localMuted && <LocalMuteMark address={p.user} name={name} size={13} />}
       <MenuButton menu={menu} label={t("voice.participant_menu", { name })} className="min-h-7 min-w-7 opacity-0 focus:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100" testId="voice-participant-menu-button" />
       {overlay}
     </li>

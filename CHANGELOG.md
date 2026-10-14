@@ -28,6 +28,11 @@ First public release of the web client and the desktop apps.
 
 ### Added
 
+- **Mute for you** (#124): a participant's menu (the row in the channel list, the stage tile) offers "Mute for you",
+  which silences their voice and their stream's audio on this device only, remembered until the page is reloaded;
+  nobody else is told. A muted person carries a crossed speaker on their tile and in the member list (the marker is
+  the one-click undo, the tooltip says "Muted for you"), they are never shown speaking, and the stage header counts
+  "Muted for you: n" so a forgotten mute is noticed.
 - **Forwarding reports to the reported user's home node** (protocol MODERATION.md §1.6, `reports.v2`): node admins
   forward a report about a user of another node from Admin → Reports after a confirmation that says what is shared
   (never the reporter's address); forwarded reports show where they went, and reports other nodes forwarded show

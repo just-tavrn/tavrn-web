@@ -101,6 +101,26 @@ describe("memberMenu", () => {
     expect(ids(plain)).not.toContain("disconnect");
   });
 
+  it("offers 'mute for you' (and 'unmute for you' while muted) next to the volume for others in the own call (issue #124)", () => {
+    const voice = { channelId: "v1", serverMuted: false, channels: [], inMyCall: true, volume: 100 };
+    const a = { ...memberActions(), localMute: vi.fn() };
+    const entries = memberMenu(ctx({ voice }), a, t);
+    const order = ids(entries);
+    expect(order.indexOf("local-mute")).toBe(order.indexOf("volume") + 1);
+    const item = findEntry(entries, "local-mute");
+    expect(item).toMatchObject({ label: "menu.member.local_mute", checked: false, keepOpen: true });
+    if (item?.kind === "item") item.onSelect?.();
+    expect(a.localMute).toHaveBeenCalledWith(true);
+    const muted = findEntry(memberMenu(ctx({ voice: { ...voice, localMuted: true } }), a, t), "local-mute");
+    expect(muted).toMatchObject({ label: "menu.member.local_unmute", checked: true });
+    if (muted?.kind === "item") muted.onSelect?.();
+    expect(a.localMute).toHaveBeenLastCalledWith(false);
+    // Not outside the own call, never on oneself, and not without the action.
+    expect(ids(memberMenu(ctx({ voice: { ...voice, inMyCall: false } }), a, t))).not.toContain("local-mute");
+    expect(ids(memberMenu(ctx({ self: true, voice }), a, t))).not.toContain("local-mute");
+    expect(ids(memberMenu(ctx({ voice }), memberActions(), t))).not.toContain("local-mute");
+  });
+
   it("adds the stream volume next to the voice volume while the member streams (issue #20)", () => {
     const voice = { channelId: "v1", serverMuted: false, channels: [], inMyCall: true, volume: 100, streaming: true, streamVolume: 60 };
     const a = { ...memberActions(), streamVolume: (v: number): MenuEntry => ({ kind: "custom", id: "stream-volume", render: () => String(v) }) };
@@ -152,6 +172,14 @@ describe("voice participant menus (design note 4.13 item 3)", () => {
     expect(ids(voiceParticipantMenu({ ...base, self: true, perms: ALL_PERMISSIONS }, actions(), t))).toEqual(["copy-address", "copy-id"]);
     // No other voice channel: no move submenu.
     expect(ids(voiceParticipantMenu({ ...base, perms: Permission.MOVE_MEMBERS, channels: [] }, actions(), t))).not.toContain("move");
+  });
+
+  it("the reduced menu offers 'mute for you' next to the volume too (issue #124)", () => {
+    const a = { ...actions(), localMute: vi.fn() };
+    expect(ids(voiceParticipantMenu(base, a, t))).toEqual(["volume", "local-mute", "copy-address", "copy-id"]);
+    expect(findEntry(voiceParticipantMenu({ ...base, localMuted: true }, a, t), "local-mute")).toMatchObject({ label: "menu.member.local_unmute", checked: true });
+    expect(ids(voiceParticipantMenu({ ...base, inMyCall: false }, a, t))).toEqual(["copy-address", "copy-id"]);
+    expect(ids(voiceParticipantMenu({ ...base, self: true }, a, t))).toEqual(["copy-address", "copy-id"]);
   });
 
   it("the reduced menu also offers the stream volume while the participant streams (issue #20)", () => {

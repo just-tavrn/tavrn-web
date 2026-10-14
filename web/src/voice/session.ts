@@ -54,6 +54,7 @@ import { cameraOptions, phoneCameras, resolutionSize, useVoiceSettings, type Voi
 import { withEntitlementCaps } from "./entitlementCaps";
 import { IDLE, SpeakingBatcher, isWatched, useSoundOverlays, useVoice, useWatchedStreams, type ParticipantMedia, type Quality, type VoiceTarget } from "./store";
 import { participantVolumes, type Volumes } from "./volume";
+import { isLocallyMuted, useLocalMute } from "./localMute";
 import { ANALYSER_SIZE, SPEAKING_POLL_MS, SpeakingDetector, analysersAvailable, combineLevels, localLevel, rmsDb } from "./speaking";
 import { PriorityTracker, claimsPriority, duckGain, rampTo, verifyPriority } from "./priority";
 import { SOUND_TOPIC, SignalLimiter, encodeSoundSignal, parseClipEmoji, parseSoundSignal } from "./soundSignal";
@@ -369,10 +370,12 @@ const applied = new Map<string, Volumes>();
 /**
  * Playback volumes of a remote participant (`volume.ts`, issue #20): the voice volume on the microphone, the
  * stream volume on the screen share audio, both times the output volume; deafen silences the voice, and the
- * stream too unless it is watched (and "stream audio while deafened" is on).
+ * stream too unless it is watched (and "stream audio while deafened" is on). A person muted for this user
+ * (`localMute.ts`, issue #124) gets zero on both.
  */
 function applyVolume(p: RemoteParticipant, deafened = useVoice.getState().deafened) {
-  const v = participantVolumes(settings(), splitIdentity(p.identity).address, { deafened, watched: isWatched(useWatchedStreams.getState(), p.identity) });
+  const address = splitIdentity(p.identity).address;
+  const v = participantVolumes(settings(), address, { deafened, watched: isWatched(useWatchedStreams.getState(), p.identity), localMuted: isLocallyMuted(useLocalMute.getState(), address) });
   p.setVolume(v.microphone, Track.Source.Microphone);
   p.setVolume(v.stream, Track.Source.ScreenShareAudio);
   applied.set(p.identity, v);
@@ -544,6 +547,10 @@ function follow(s: Session) {
     // A stream tile appearing or going away changes what is audible while deafened.
     useWatchedStreams.subscribe(() => {
       if (current === s && useVoice.getState().deafened) applyVolumes(s);
+    }),
+    // "Mute for you" (issue #124) is applied like a volume.
+    useLocalMute.subscribe(() => {
+      if (current === s) applyVolumes(s);
     }),
   );
 }

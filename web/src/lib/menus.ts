@@ -31,7 +31,7 @@ export interface MemberMenuContext {
     roles: { id: string; name: string; position: number; is_everyone: boolean; color?: string | null }[];
   };
   /** The voice channel the target is in (this room), with the other voice channels. */
-  voice?: { channelId: string; serverMuted: boolean; channels: { id: string; name: string }[]; inMyCall: boolean; volume: number; streaming?: boolean; streamVolume?: number };
+  voice?: { channelId: string; serverMuted: boolean; channels: { id: string; name: string }[]; inMyCall: boolean; volume: number; streaming?: boolean; streamVolume?: number; localMuted?: boolean };
   friend: boolean;
   friendPending: boolean;
   /** A call can start from here; otherwise the item is disabled and points to the direct message, where calls start. */
@@ -62,6 +62,8 @@ export interface MemberMenuActions {
   volume: (percent: number) => MenuEntry;
   /** The stream volume slider (issue #20), shown while the target streams. */
   streamVolume?: (percent: number) => MenuEntry;
+  /** Mute or unmute the person for this user only (`voice/localMute.ts`, issue #124). */
+  localMute?: (muted: boolean) => void;
   block: () => void;
   /** Copy the user id (voice participant menus only; the member list keeps "copy address"). */
   copyId?: () => void;
@@ -105,6 +107,7 @@ export function memberMenu(c: MemberMenuContext, a: MemberMenuActions, t: T): Me
     a.copyId && menuItem("copy-id", t("menu.copy_id"), a.copyId, { icon: "#" }),
     voice && voice.inMyCall && !c.self && separator("sep-volume"),
     voice && voice.inMyCall && !c.self && a.volume(voice.volume),
+    voice && voice.inMyCall && !c.self && a.localMute && localMuteItem(!!voice.localMuted, a.localMute, t),
     voice && voice.inMyCall && !c.self && voice.streaming && a.streamVolume?.(voice.streamVolume ?? 100),
     separator("sep-roles"),
     roleItems.length > 0 && submenu("roles", t("menu.member.roles"), roleItems, { icon: "🏷", ...(c.self || ranked ? {} : { disabled: true, reason: hierarchyReason }) }),
@@ -167,6 +170,11 @@ export function inviteToRoomEntry(rooms: readonly InviteRoomCandidate[], target:
   );
 }
 
+/** "Mute for you" / "Unmute for you": a check item that stays open, like the server mute (issue #124). */
+function localMuteItem(muted: boolean, act: (muted: boolean) => void, t: T): MenuEntry {
+  return menuItem("local-mute", t(muted ? "menu.member.local_unmute" : "menu.member.local_mute"), () => act(!muted), { icon: "🔇", checked: muted, keepOpen: true });
+}
+
 // ---- Voice participants without a loaded member ---------------------------------------------
 
 export interface VoiceParticipantMenuContext {
@@ -180,6 +188,8 @@ export interface VoiceParticipantMenuContext {
   /** The participant streams (stream volume, issue #20). */
   streaming?: boolean;
   streamVolume?: number;
+  /** Muted for this user (`voice/localMute.ts`, issue #124). */
+  localMuted?: boolean;
   /** The room's other voice channels. */
   channels: { id: string; name: string }[];
 }
@@ -187,6 +197,7 @@ export interface VoiceParticipantMenuContext {
 export interface VoiceParticipantMenuActions {
   volume: (percent: number) => MenuEntry;
   streamVolume?: (percent: number) => MenuEntry;
+  localMute?: (muted: boolean) => void;
   serverMute: (muted: boolean) => void;
   disconnect: () => void;
   moveTo: (channelId: string) => void;
@@ -203,6 +214,7 @@ export function voiceParticipantMenu(c: VoiceParticipantMenuContext, a: VoicePar
   const mod = (bit: bigint) => !c.self && hasPermission(c.perms, bit);
   return normalizeMenu([
     c.inMyCall && !c.self && a.volume(c.volume),
+    c.inMyCall && !c.self && a.localMute && localMuteItem(!!c.localMuted, a.localMute, t),
     c.inMyCall && !c.self && c.streaming && a.streamVolume?.(c.streamVolume ?? 100),
     separator("sep-voice"),
     mod(Permission.MUTE_MEMBERS) && menuItem("server-mute", c.serverMuted ? t("menu.member.server_unmute") : t("menu.member.server_mute"), () => a.serverMute(!c.serverMuted), { icon: "🎙", keepOpen: true }),

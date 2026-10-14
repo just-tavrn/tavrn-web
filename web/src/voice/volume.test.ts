@@ -43,6 +43,15 @@ describe("playback volumes: voice and stream audio apart (issue #20)", () => {
     expect(playbackVolumes({ ...base, watched: false }).stream).toBe(1);
   });
 
+  it("a local mute silences the voice and the stream audio of that person, whatever the volumes (issue #124)", () => {
+    expect(playbackVolumes({ ...base, localMuted: true })).toEqual({ microphone: 0, stream: 0 });
+    expect(playbackVolumes({ ...base, localMuted: true, voice: 200, stream: 200, output: 200, watched: true })).toEqual({ microphone: 0, stream: 0 });
+    expect(playbackVolumes({ ...base, localMuted: false })).toEqual({ microphone: 1, stream: 1 });
+    const s: VoiceSettings = { ...DEFAULT_SETTINGS, userVolumes: { "a@n": 150 } };
+    expect(participantVolumes(s, "a@n", { deafened: false, watched: true, localMuted: true })).toEqual({ microphone: 0, stream: 0 });
+    expect(participantVolumes(s, "a@n", { deafened: false, watched: true })).toEqual({ microphone: 1.5, stream: 1 });
+  });
+
   it("reads the per-person voice and stream volumes and the output volume from the settings", () => {
     const s: VoiceSettings = { ...DEFAULT_SETTINGS, outputVolume: 50, userVolumes: { "a@n": 200 }, streamVolumes: { "a@n": 40 } };
     expect(participantVolumes(s, "a@n", { deafened: false, watched: false })).toEqual({ microphone: 1, stream: 0.2 });

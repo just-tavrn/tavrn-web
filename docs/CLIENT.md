@@ -756,6 +756,14 @@ the stream keeps playing". A stream that is not on screen (you opened a text cha
 while deafened. The switch "Streams stay audible while deafened" in the voice settings (on by default) turns this
 off, so that deafen silences everything.
 
+**Mute for you** (`web/src/voice/localMute.ts`) in a participant's menu (next to the volume, on the row in the
+channel list and on the stage tile) silences that person's voice and their stream's audio on this device only;
+nobody else is told and the node is not involved. It is kept in memory for the session, never in storage: a reload
+starts with everybody audible, so a forgotten mute cannot outlive the day. A person muted for you carries a crossed
+speaker on their tile and in the member list (amber; the tooltip says "Muted for you", a click on it or "Unmute for
+you" in the menu lifts it), they are never shown speaking (there is nothing to hear), and the stage header shows
+"Muted for you: n" while anybody in the call is muted this way.
+
 ### Calls in DMs and group DMs
 
 The call button in the conversation header rings the others (a banner with a soft synthesized ringtone on all their
