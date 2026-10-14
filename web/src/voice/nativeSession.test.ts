@@ -202,6 +202,27 @@ describe("the native engine's session", () => {
     expect(useVoice.getState().error).toBeTruthy();
   });
 
+  it("switching channels: the previous channel's leave does not hold the next join, a join back waits for it", async () => {
+    fakeShell();
+    await session.join(target, { canCreate: true });
+    let finish!: () => void;
+    h.api.voice.leave.mockImplementationOnce(() => new Promise<undefined>((r) => (finish = () => r(undefined))));
+    const other = { ...target, channelId: "c2" };
+    await session.join(other, { canCreate: true });
+    expect(useVoice.getState()).toMatchObject({ status: "connected", target: other });
+    expect(h.api.voice.leave).toHaveBeenCalledWith("r1", "c1");
+    // Back to c1 while its leave is still on the way: the join waits, or the late leave would end it.
+    let back = false;
+    const returning = session.join(target, { canCreate: true }).then(() => (back = true));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(back).toBe(false);
+    expect(h.api.voice.join).toHaveBeenCalledTimes(2);
+    finish();
+    await returning;
+    expect(h.api.voice.join).toHaveBeenCalledTimes(3);
+    expect(useVoice.getState().target).toEqual(target);
+  });
+
   it("camera, screen and soundboard do nothing in this engine", async () => {
     fakeShell();
     await session.join(target, { canCreate: true });

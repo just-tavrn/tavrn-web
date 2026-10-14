@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // The start of a voice session (joinFlow.ts): what runs in parallel, what waits for what, and what a failure gives back.
 import { describe, expect, it, vi } from "vitest";
-import { earlyPipeline, startJoin, type JoinFlowDeps } from "./joinFlow";
+import { BackgroundLeaves, earlyPipeline, startJoin, type JoinFlowDeps } from "./joinFlow";
 import type { JoinInfo } from "./sessionShared";
 
 const Q = "t.local/01J9ZK3G5M8Q2W4E6R8T0Y2V00";
@@ -207,5 +207,42 @@ describe("earlyPipeline", () => {
     await tick();
     await expect(early.take(false)).rejects.toThrow("denied");
     await expect(early.release()).resolves.toBeUndefined();
+  });
+});
+
+describe("BackgroundLeaves (switching channels)", () => {
+  it("does not hold the next join; a join of the same channel waits for its leave", async () => {
+    const leaves = new BackgroundLeaves(5_000);
+    const slow = deferred<void>();
+    leaves.start("a", () => slow.promise);
+    let otherDone = false;
+    await leaves.settled("b").then(() => (otherDone = true));
+    expect(otherDone).toBe(true);
+    let sameDone = false;
+    const same = leaves.settled("a").then(() => (sameDone = true));
+    await tick();
+    expect(sameDone).toBe(false);
+    slow.resolve();
+    await same;
+    expect(sameDone).toBe(true);
+  });
+
+  it("logs a failed leave and gives up after the bound", async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const leaves = new BackgroundLeaves(5_000);
+      leaves.start("a", () => Promise.reject(new Error("offline")));
+      await leaves.settled("a");
+      expect(warn).toHaveBeenCalledWith("voice: leaving the previous channel failed", expect.any(Error));
+      leaves.start("b", () => new Promise(() => undefined));
+      const waited = leaves.settled("b");
+      await vi.advanceTimersByTimeAsync(5_000);
+      await waited;
+      expect(warn).toHaveBeenLastCalledWith(expect.stringContaining("took longer than 5000 ms"));
+    } finally {
+      warn.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });

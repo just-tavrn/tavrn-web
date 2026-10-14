@@ -155,3 +155,42 @@ export function earlyPipeline<P extends { close(): Promise<void> }>(create: (mus
     },
   };
 }
+
+/** How long a background leave of the previous channel may take before it is given up (logged). */
+export const LEAVE_BOUND_MS = 5_000;
+
+/**
+ * The node's leave of the previous channel when switching channels (VOICE.md §3): it runs in the background while the
+ * next channel is joined, instead of before it. The node already ends the earlier participation of this user when
+ * the new join arrives (one voice session per user), so the leave only tidies up. Bounded and logged; a join of the
+ * same channel waits for its leave, which would otherwise end the new participation.
+ */
+export class BackgroundLeaves {
+  private readonly byKey = new Map<string, Promise<void>>();
+
+  constructor(private readonly boundMs = LEAVE_BOUND_MS) {}
+
+  start(key: string, leave: () => Promise<unknown>): void {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const bound = new Promise<void>((resolve) => {
+      timer = setTimeout(() => {
+        console.warn(`voice: leaving the previous channel took longer than ${this.boundMs} ms, not waiting any longer`);
+        resolve();
+      }, this.boundMs);
+    });
+    const done = leave().then(
+      () => undefined,
+      (e: unknown) => console.warn("voice: leaving the previous channel failed", e),
+    );
+    const p: Promise<void> = Promise.race([done, bound]).finally(() => {
+      clearTimeout(timer);
+      if (this.byKey.get(key) === p) this.byKey.delete(key);
+    });
+    this.byKey.set(key, p);
+  }
+
+  /** Resolves once no leave of `key` is on its way any more. */
+  async settled(key: string): Promise<void> {
+    await this.byKey.get(key);
+  }
+}

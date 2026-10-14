@@ -14,7 +14,7 @@
  * cryptor of the own track is active (`e2ee_failed` otherwise) and has no unencrypted path.
  */
 import { cleanupBeforeVoice, loadPending } from "../lib/leafCleanup";
-import { startJoin } from "./joinFlow";
+import { BackgroundLeaves, startJoin } from "./joinFlow";
 import { apiFor } from "../stores/nodes";
 import { getMls, useMlsUi } from "../stores/mls";
 import { qualify, splitIdentity, type MlsManager } from "@tavrn/e2ee";
@@ -395,7 +395,9 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
 export function join(target: VoiceTarget, opts: { canCreate: boolean; start?: boolean }): Promise<void> {
   const run = async () => {
     if (current && sameTarget(current.target, target)) return;
-    if (current) await leave();
+    // Switching channels: the node's leave of the previous one runs in the background (BackgroundLeaves).
+    if (current) await leaveForSwitch(current);
+    await backgroundLeaves.settled(targetKey(target));
     try {
       await connect(target, opts.canCreate, { start: opts.start });
     } catch (e) {
@@ -407,6 +409,17 @@ export function join(target: VoiceTarget, opts: { canCreate: boolean; start?: bo
   const next = (pending ?? Promise.resolve()).then(run, run);
   pending = next.catch(() => undefined);
   return next;
+}
+
+/** Leaves of earlier channels on their way to the node while the next one is joined. */
+const backgroundLeaves = new BackgroundLeaves();
+const targetKey = (t: VoiceTarget) => `${t.call ? "call" : "channel"}:${t.domain}/${t.roomId}/${t.channelId}`;
+
+/** Ends the session on this device at once; the node learns it in the background (the next join does not wait). */
+async function leaveForSwitch(s: Session) {
+  await cleanup(s);
+  cue("leave", true);
+  backgroundLeaves.start(targetKey(s.target), () => s.ep.leave());
 }
 
 export async function leave(): Promise<void> {

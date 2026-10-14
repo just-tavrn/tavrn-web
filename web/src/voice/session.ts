@@ -23,7 +23,7 @@
 import { platform } from "../platform";
 import { displayMediaAudio, type ScreenAudio } from "./screenAudio";
 import { cleanupBeforeVoice, loadPending } from "../lib/leafCleanup";
-import { earlyPipeline, startJoin, type EarlyPipeline, type Releasable } from "./joinFlow";
+import { BackgroundLeaves, earlyPipeline, startJoin, type EarlyPipeline, type Releasable } from "./joinFlow";
 import {
   ConnectionQuality,
   DisconnectReason,
@@ -768,7 +768,7 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
   });
   const { info } = flow;
   const music = isMusic(info.limits.audio_bitrate_kbps);
-  musicGuess.set(musicKey(target), music);
+  musicGuess.set(targetKey(target), music);
   let pipeline: MicPipeline | null = null;
   let room: Room | null = null;
   const audio = media.audio;
@@ -901,7 +901,6 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
 
 /** The music mode of the last join per channel: the early pipeline's guess (`earlyPipeline`). */
 const musicGuess = new Map<string, boolean>();
-const musicKey = (t: VoiceTarget) => `${t.call ? "call" : "channel"}:${t.domain}/${t.channelId}`;
 
 /** What a session needs besides the MLS and the node, started at the click (`joinFlow.ts`). */
 interface Media extends Releasable {
@@ -911,7 +910,7 @@ interface Media extends Releasable {
 }
 
 function startMedia(target: VoiceTarget): Media {
-  const pipeline = earlyPipeline((music) => MicPipeline.create(settings(), onLevel, { music }), musicGuess.get(musicKey(target)) ?? false);
+  const pipeline = earlyPipeline((music) => MicPipeline.create(settings(), onLevel, { music }), musicGuess.get(targetKey(target)) ?? false);
   const audio = newAudioContext();
   const worker = new E2EEWorker();
   let released = false;
@@ -952,7 +951,9 @@ function isE2ESupportedSafe(): boolean {
 export function join(target: VoiceTarget, opts: { canCreate: boolean; start?: boolean }): Promise<void> {
   const run = async () => {
     if (current && sameTarget(current.target, target)) return;
-    if (current) await leave();
+    // Switching channels: the node's leave of the previous one runs in the background (BackgroundLeaves).
+    if (current) await leaveForSwitch(current);
+    await backgroundLeaves.settled(targetKey(target));
     try {
       await connect(target, opts.canCreate, { start: opts.start });
     } catch (e) {
@@ -965,6 +966,17 @@ export function join(target: VoiceTarget, opts: { canCreate: boolean; start?: bo
   const next = (pending ?? Promise.resolve()).then(run, run);
   pending = next.catch(() => undefined);
   return next;
+}
+
+/** Leaves of earlier channels on their way to the node while the next one is joined. */
+const backgroundLeaves = new BackgroundLeaves();
+const targetKey = (t: VoiceTarget) => `${t.call ? "call" : "channel"}:${t.domain}/${t.roomId}/${t.channelId}`;
+
+/** Ends the session on this device at once; the node learns it in the background (the next join does not wait). */
+async function leaveForSwitch(s: Session) {
+  await cleanup(s);
+  cue("leave", true);
+  backgroundLeaves.start(targetKey(s.target), () => s.ep.leave());
 }
 
 /** Leaves the call (LiveKit and the node); also cancels a running rejoin. */
