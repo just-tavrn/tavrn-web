@@ -53,7 +53,8 @@ export function PollView({ poll, raw, m, own, canManage }: { poll: Poll; raw: Re
   const mineStale = !mine && !!me && !!checked?.some((c) => c.user === me && !c.check.ok && c.check.reason === "stale");
   const show = pollVisibility(poll, { closed }, !!mine);
   const canVote = !!env?.canVote && !!env.me && !closed;
-  const mayClose = !!env && !closed && (own || canManage || env.canManage);
+  // Only a poll with a close time can be closed early (the node moves it earlier, never from none, §7g).
+  const mayClose = !!env && !!closesAt && !closed && (own || canManage || env.canManage);
   const [busy, setBusy] = useState(false);
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
