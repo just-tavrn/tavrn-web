@@ -131,7 +131,7 @@ export function PresenceMenu() {
           <div role="separator" className="my-1 h-px bg-line" />
           <button type="button" role="menuitem" tabIndex={-1} onClick={() => { setOpen(false); setDialog("custom"); }} className="flex min-h-10 w-full items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-bg-3" data-testid="presence-custom">
             <span aria-hidden="true">💬</span>
-            <span className="min-w-0 flex-1 truncate">{custom ? [custom.emoji, custom.text].filter(Boolean).join(" ") : t("presence.custom")}</span>
+            <span className="emoji-font min-w-0 flex-1 truncate">{custom ? [custom.emoji, custom.text].filter(Boolean).join(" ") : t("presence.custom")}</span>
           </button>
           <button type="button" role="menuitem" tabIndex={-1} onClick={() => { setOpen(false); setDialog("activity"); }} className="flex min-h-10 w-full items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-bg-3" data-testid="presence-activity">
             <span aria-hidden="true">🎮</span>

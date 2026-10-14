@@ -125,6 +125,10 @@ First public release of the web client and the desktop apps.
   on Windows 11 24H2/25H2 with the February 2026 update or newer). Before, the badge followed the node's flag alone
   and a missing entry could not be added afterwards.
 
+- Country flag emojis render as flags on Windows, where the system's emoji font shows regional-indicator pairs as
+  letters ("DE"): the client detects the missing glyphs and registers a bundled flag-only font (Twemoji flags,
+  CC-BY-4.0, see NOTICE) for messages, reactions, the emoji picker, status lines and the composer; every other
+  emoji keeps the platform's font (#118).
 - Member lists mark verified contacts with a small shield icon (named "verified", with the tooltip) instead of the
   text chip that cut names off; long names still truncate with an ellipsis. The member drawer is 280 px wide on
   phones and tablets in landscape (portrait keeps 240 px) (#121).

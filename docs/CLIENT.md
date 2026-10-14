@@ -310,7 +310,12 @@ reveal".
 **Emoji sizes**: Unicode emojis in message text are rendered at 1.25× the text size, aligned to the baseline without
 changing the line height; a message that consists of one to three emojis (Unicode or custom, nothing else) shows them
 at twice the text size; reaction chips show an 18 px glyph next to the count at the chip's usual height. Symbols that
-render as text by default (©, ↔) stay text.
+render as text by default (©, ↔) stay text. **Country flags** on platforms whose emoji font has no flag glyphs
+(Windows shows "DE" for 🇩🇪): at start the client draws a smiley and a flag on a canvas; when the smiley renders as a
+colour glyph but the flag does not, it registers a bundled flag-only font (`lib/flagEmoji.ts`, the Twemoji country
+flags of `country-flag-emoji-polyfill`, limited to the regional indicators and tag characters) and marks the document
+(`<html data-flag-font>`), which puts that font first for messages, reactions, the emoji picker, status lines and the
+composer; every other emoji keeps the platform's font. The font is served with the client, never from a CDN.
 
 **The composer** has the emoji picker, a GIF picker on nodes with a GIF provider (in encrypted messages the client
 itself accepts only the providers' media hosts), uploads by button, drag and drop or paste ("Uploads and downloads"),

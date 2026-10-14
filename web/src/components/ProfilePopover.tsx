@@ -118,7 +118,7 @@ export function ProfileView({ profile, node, onDone, large = false }: { profile:
         <p className="truncate text-xs text-fg-2" data-testid="profile-address">
           {profile.address}
         </p>
-        <p className="mt-1 text-xs text-fg-1" data-testid="profile-status" data-status={status}>
+        <p className="emoji-font mt-1 text-xs text-fg-1" data-testid="profile-status" data-status={status}>
           {t(`presence.${status}`)}
           {line ? ` · ${line}` : ""}
         </p>

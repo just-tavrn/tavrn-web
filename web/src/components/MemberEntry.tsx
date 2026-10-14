@@ -24,7 +24,7 @@ export function MemberEntry({ user, name, color }: { user: User; name: string; c
           {name}
         </span>
         {line && (
-          <span className="block truncate text-[11px] text-fg-2" data-testid="member-status-line">
+          <span className="emoji-font block truncate text-[11px] text-fg-2" data-testid="member-status-line">
             {activity ? <ActivityLine activity={activity} label={line} /> : line}
           </span>
         )}

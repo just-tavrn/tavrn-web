@@ -557,7 +557,7 @@ export function Composer({
             }
           }}
           style={growth.height ? { height: growth.height } : undefined}
-          className={`composer-text ${growth.expanded ? "" : "max-h-40"} min-h-10 flex-1 resize-none bg-transparent px-1 py-2.5 text-sm leading-5 text-fg-0 outline-none placeholder:text-fg-2 disabled:opacity-50`}
+          className={`composer-text emoji-font ${growth.expanded ? "" : "max-h-40"} min-h-10 flex-1 resize-none bg-transparent px-1 py-2.5 text-sm leading-5 text-fg-0 outline-none placeholder:text-fg-2 disabled:opacity-50`}
         />
         {!disabled && (
           <button type="button" aria-label={t("composer.spoiler")} title={t("composer.spoiler_hint")} onClick={spoiler} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-fg-2 hover:bg-bg-3 hover:text-fg-0" data-testid="composer-spoiler">
