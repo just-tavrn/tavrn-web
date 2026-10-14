@@ -187,8 +187,8 @@ test.describe("Voice UX round", () => {
   test("Talking while muted: a soft cue, the pulsing microphone and a notice; nothing is sent; the setting turns it off (#125, #123)", async ({ browser, request }) => {
     test.setTimeout(scaled(240_000));
     const s = await setup(request);
-    // Alice with the defaults (the hint on, cues on); Bob only listens.
-    const alice = await voiceUser(browser, "uxtma");
+    // Alice with the hint on (stored: it is off by default on Android, #147) and cues on; Bob only listens.
+    const alice = await voiceUser(browser, "uxtma", undefined, { mutedTalkHint: true });
     const bob = await voiceUser(browser, "uxtmb", undefined, { cuesOff: true });
     for (const u of [alice, bob]) await joinRoom(request, u, s.code);
     for (const u of [alice, bob]) await joinFromSidebar(u.page, s.roomId);
@@ -234,7 +234,8 @@ test.describe("Voice UX round", () => {
     const hint = alice.page.getByTestId("muted-talk-hint");
     await expect(hint).toBeChecked();
     await hint.uncheck();
-    expect(await alice.page.evaluate(() => JSON.parse(localStorage.getItem("tavrn.voice.settings") ?? "{}").mutedTalkHint)).toBe(false);
+    // Stored as false where the default is on; on Android off is the default, which is not stored (#147).
+    expect((await alice.page.evaluate(() => JSON.parse(localStorage.getItem("tavrn.voice.settings") ?? "{}").mutedTalkHint)) ?? false).toBe(false);
     // Back in the channel through the voice bar (still connected), a mute releases the capture again and no hint comes.
     await openNavIfMobile(alice.page);
     await alice.page.getByTestId("voice-bar").getByTitle("Sprachkanal öffnen").click();
