@@ -55,8 +55,13 @@ const slotRow = (poll: Locator, slot: string) => poll.locator(`[data-testid="pol
 
 /** A screenshot of `poll` for the owner's review (test-results/pollsux/<project>-<name>.png). */
 async function shot(poll: Locator, name: string) {
+  // A tall window, so the whole poll fits into the message list (the bars above it would cover its top).
+  const page = poll.page();
+  const size = page.viewportSize()!;
+  await page.setViewportSize({ width: size.width, height: 2200 });
   await poll.scrollIntoViewIfNeeded();
   await poll.screenshot({ path: `test-results/pollsux/${test.info().project.name}-${name}.png`, animations: "disabled" });
+  await page.setViewportSize(size);
 }
 
 /** `YYYY-MM-DD` of the 10th and 11th of next month (always in the future, never today). */
@@ -299,7 +304,7 @@ test.describe("Date poll results", () => {
     await expect(view.getByTestId("poll-voters")).toHaveText("3 Stimmen", { timeout: scaled(20_000) });
     // Not voted: the form, grouped by day (six groups), 44 px answers.
     await expect(view).toHaveAttribute("data-view", "form");
-    await expect(view.getByTestId("poll-slots").getByRole("group", { includeHidden: false }).filter({ has: view.getByTestId("poll-slot") })).toHaveCount(6);
+    await expect(view.getByTestId("poll-day-group")).toHaveCount(6);
     const answer = (await slotRow(view, "s5").locator("label", { hasText: "Ja" }).boundingBox())!;
     expect(answer.height).toBeGreaterThanOrEqual(44);
     await shot(view, "date-form");

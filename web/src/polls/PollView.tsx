@@ -398,7 +398,7 @@ function DateBody(props: BodyProps<DatePoll, Record<string, Answer>>) {
         <>
           <div className="space-y-2" data-testid="poll-slots">
             {days.map((d) => (
-              <div key={d.day} role="group" aria-label={d.label}>
+              <div key={d.day} role="group" aria-label={d.label} data-testid="poll-day-group">
                 <p aria-hidden="true" className="mb-1 text-xs font-semibold uppercase tracking-wide text-fg-1">
                   {d.label}
                 </p>

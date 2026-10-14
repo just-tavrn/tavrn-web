@@ -145,13 +145,13 @@ export function DateResults({ poll, tally, mine, show, texts, label, children }:
                           setFocus([r, c]);
                           setOpen(open === slotId ? null : slotId);
                         }}
-                        className={`flex h-12 w-full min-w-[5rem] flex-col justify-between gap-1 rounded-md border px-1.5 py-1 text-left hover:bg-bg-3 aria-expanded:bg-bg-3 ${isBest ? "border-accent bg-accent-soft" : "border-line"} ${open === slotId ? "ring-1 ring-accent" : ""}`}
+                        className={`flex h-12 w-full min-w-[5.75rem] flex-col justify-between gap-1 rounded-md border px-1.5 py-1 text-left hover:bg-bg-3 aria-expanded:bg-bg-3 ${isBest ? "border-accent bg-accent-soft" : "border-line"} ${open === slotId ? "ring-1 ring-accent" : ""}`}
                         data-testid="poll-cell"
                         data-slot={slotId}
                         data-best={isBest || undefined}
                         data-mine={own}
                       >
-                        <span aria-hidden="true" className="flex w-full items-center gap-1 tabular-nums text-fg-0">
+                        <span aria-hidden="true" className="flex w-full items-center gap-1 whitespace-nowrap tabular-nums text-fg-0">
                           {isBest && <span className="text-accent">★</span>}
                           {show.results && (
                             <>
