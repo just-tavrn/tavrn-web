@@ -31,6 +31,14 @@ async function voiceRow(page: Page) {
   return page.getByRole("link", { name: "Sprachkanal Sprache" });
 }
 
+/** Closes the phone's navigation drawer again (it covers the stage header while open). */
+async function closeNavIfMobile(page: Page) {
+  const drawer = page.getByTestId("nav-drawer");
+  // The backdrop's centre lies under the drawer itself, so a tap there is intercepted: the click event is enough.
+  if ((await drawer.getAttribute("data-open")) === "true") await page.getByRole("button", { name: "Drawer schließen" }).dispatchEvent("click");
+  await expect(drawer).not.toHaveAttribute("data-open", "true");
+}
+
 test.describe("Voice session timer and channel status", () => {
   test("timer for the joiner and a late viewer, tooltip, status edit with the bit only", async ({ browser, request }) => {
     test.setTimeout(scaled(240_000));
@@ -63,6 +71,7 @@ test.describe("Voice session timer and channel status", () => {
     await expect(clock(member.page)).toHaveText(CLOCK, { timeout: scaled(30_000) });
     const row = await voiceRow(member.page);
     await expect(row).toHaveAttribute("title", /^Läuft seit \d\d:\d\d:\d\d$/);
+    await closeNavIfMobile(member.page);
 
     // The owner (every bit) sets the status in place: Escape throws a draft away, Enter saves.
     await owner.page.getByRole("button", { name: "Kanalstatus bearbeiten" }).click();
@@ -82,6 +91,7 @@ test.describe("Voice session timer and channel status", () => {
     // channel.update brings it to the member: under the name and in the tooltip, still without a pencil.
     await expect(member.page.getByTestId("voice-status")).toHaveText("Raid um neun", { timeout: scaled(20_000) });
     await expect(await voiceRow(member.page)).toHaveAttribute("title", /^Raid um neun\nLäuft seit \d\d:\d\d:\d\d$/);
+    await closeNavIfMobile(member.page);
     await expect(member.page.getByTestId("voice-status-edit")).toHaveCount(0);
 
     // A role with voice_status alone (bit 38) lets the member edit it; the owner sees the change.
