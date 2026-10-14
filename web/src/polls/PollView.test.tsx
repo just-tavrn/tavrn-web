@@ -221,8 +221,9 @@ describe("PollView", () => {
     const [mine, other] = screen.getAllByTestId("poll").sort((a, b) => (a.closest("[data-message-id]")!.getAttribute("data-message-id")! === "01POLL" ? -1 : 1) - (b.closest("[data-message-id]")!.getAttribute("data-message-id")! === "01POLL" ? -1 : 1));
     await waitFor(() => expect(within(mine!).getAllByTestId("poll-count")).toHaveLength(2));
     expect(within(mine!).queryByTestId("poll-results-hidden")).toBeNull();
+    // The second poll loads its votes independently: wait for its notice before asserting the absence of counts.
+    await waitFor(() => expect(within(other!).getByTestId("poll-results-hidden")).toBeInTheDocument());
     expect(within(other!).queryByTestId("poll-count")).toBeNull();
-    expect(within(other!).getByTestId("poll-results-hidden")).toBeInTheDocument();
   });
 
   it("date polls: yes / maybe / no per slot with text and icon, the best slot and the grid of answers", async () => {
