@@ -12,8 +12,9 @@
  *
  * Per conversation one sealed manifest lists the archived message ids in order with their record sizes and thread
  * (the paging and the cap work on it); one sealed record per message holds the message as the node sent it, its
- * decrypted content (null for plaintext messages) and a fingerprint (edit time, epoch, device) that tells whether the
- * content still belongs to the message.
+ * decrypted content (null for plaintext messages) and a fingerprint (author, device, epoch, edit time and a hash of
+ * the ciphertext) that tells whether the content still belongs to the message the node serves now. A node can serve a
+ * message id again with another author or device: the archived content is then never handed out for it.
  */
 import { open, seal, tokenKey, type Decrypted, type SearchBackend, type SearchKeys } from "@tavrn/e2ee";
 import type { Message } from "@tavrn/sdk";
@@ -40,9 +41,16 @@ export interface ArchiveItem {
 /** A page request as in `lib/messagePages.ts`. */
 export type ArchivePageParam = { before?: string; after?: string; around?: string } | undefined;
 
-/** Ties archived content to the message version it was decrypted from. */
-export function fingerprint(m: Pick<Message, "edited_at" | "epoch" | "device_id">): string {
-  return `${m.edited_at ?? ""}|${m.epoch ?? ""}|${m.device_id ?? ""}`;
+/**
+ * Ties archived content to the message it was decrypted from: the author, the sending device, the epoch, the edit and
+ * the SHA-256 of the ciphertext. Entries of the earlier format (edit, epoch and device only) never match: they are
+ * decrypted again and replaced.
+ */
+export async function fingerprint(m: Pick<Message, "author" | "device_id" | "epoch" | "edited_at" | "content">): Promise<string> {
+  const content = new TextEncoder().encode(typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? null));
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", content));
+  const hash = Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
+  return `v2|${JSON.stringify([m.author ?? "", m.device_id ?? "", m.epoch ?? "", m.edited_at ?? ""])}|${hash}`;
 }
 
 const MANIFEST_OVERHEAD = 12 + 16 + '{"e":[]}'.length;
@@ -144,7 +152,7 @@ export class HistoryArchive {
       const writes: { key: string; value: Uint8Array | null }[] = [];
       for (const { message, decrypted } of kept) {
         const key = await this.docKey(c, message.id);
-        const value = await seal(this.keys, `history\u0000${key}`, { m: message, d: message.encrypted ? decrypted : null, f: fingerprint(message) } satisfies ArchivedMessage);
+        const value = await seal(this.keys, `history\u0000${key}`, { m: message, d: message.encrypted ? decrypted : null, f: await fingerprint(message) } satisfies ArchivedMessage);
         writes.push({ key, value });
         const entry: Entry = [message.id, value.byteLength, message.thread_id ?? null];
         const at = index.get(message.id);
@@ -227,7 +235,8 @@ export class HistoryArchive {
     );
     for (const m of wanted) {
       const r = records.get(m.id);
-      if (r?.d?.ok && r.f === fingerprint(m)) out.set(m.id, r.d);
+      // The same author and device as the archived copy, and the same fingerprint (never another sender's text).
+      if (r?.d?.ok && r.m?.id === m.id && r.m.author === m.author && r.m.device_id === m.device_id && r.f === (await fingerprint(m))) out.set(m.id, r.d);
     }
     return out;
   }

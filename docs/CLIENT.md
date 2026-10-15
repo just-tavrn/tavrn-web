@@ -609,8 +609,9 @@ names of the last 90 days.
 conversation's whole history here instead: the background sync pages it back to the start, the search index keeps all
 of it, and the messages with their decrypted content stay in an encrypted local archive (IndexedDB `tavrn-history`,
 sealed with keys derived from this device's local storage key, so it locks with the device and reveals no ids or text;
-`web/src/history/`). The message list then uses the archived content instead of decrypting again and reads from the
-archive while the node cannot be reached. Each conversation may take up to the space set under Settings → Privacy &
+`web/src/history/`). The message list then uses the archived content instead of decrypting again (only for the same
+message: the same author, sending device, epoch, edit and ciphertext; a message the node serves differently is
+decrypted again) and reads from the archive while the node cannot be reached. Each conversation may take up to the space set under Settings → Privacy &
 safety → Local search index (default 50 MB; the oldest messages go first); the menu entry shows what it takes, the
 settings the total. Turning the setting off, clearing the index or signing out (which wipes the device) deletes the
 archive.
