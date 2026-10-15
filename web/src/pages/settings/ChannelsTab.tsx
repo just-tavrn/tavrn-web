@@ -12,6 +12,8 @@ import { Button, Field, Input } from "../../components/ui";
 import { ConfirmDialog, OverrideTriState, Section, Select, TriStateRow } from "./common";
 import { effectiveUploads, inheritedUpload, overrideUploadState, setOverrideUpload, type UploadOverrideInput, type UploadSubject } from "../../lib/uploadPolicy";
 import { categoryName, channelName } from "../../lib/names";
+import { overrideHintInput } from "../../lib/overrideHint";
+import { roomMembersQuery } from "../../lib/queries";
 import { LockMark, accessMarkKey } from "../../components/Badges";
 import { GroupOffIcon } from "../../components/icons";
 import { channelPrivacy } from "../../lib/channelPermissions";
@@ -319,19 +321,13 @@ function OverridesEditor({ target, room, onChanged }: { target: OverrideTarget; 
   const [confirmReset, setConfirmReset] = useState(false);
   const categoryId = target.type === "channel" ? target.channel.category_id : null;
   const category = room.categories.find((c) => c.id === categoryId);
-  // What a neutral bit keeps: the roles and, in a channel, its category's overrides.
+  // What a neutral bit keeps: the roles and, in a channel, its category's overrides, then @everyone (and a member's
+  // roles) in this layer. A member's roles come from the member list; until it is loaded the hint leaves them out.
   const categoryOverrides = target.type === "category" ? null : room.overrides.filter((o) => o.target_type === "category" && o.target_id === categoryId);
-  const inherited = (bit: bigint) =>
-    inheritedOverrideValue(
-      {
-        everyone_role_id: everyone?.id ?? "",
-        everyone_permissions: everyone?.permissions ?? "0",
-        roles: room.roles.filter((r) => !r.is_everyone).map((r) => [r.id, r.permissions] as [string, string]),
-        subject: subjectType === "member" ? { type: "member", id: subjectId, roles: [] } : { type: "role", id: subjectId },
-        category_overrides: categoryOverrides?.map((o) => ({ subject_type: o.subject_type as "role" | "member", subject_id: o.subject_id, allow: o.allow, deny: o.deny })) ?? null,
-      },
-      bit,
-    );
+  const members = useQuery({ ...roomMembersQuery(api, room.id), enabled: subjectType === "member" });
+  const memberRoles = subjectType === "member" ? (members.data?.find((m) => m.user.id === subjectId)?.roles ?? []) : [];
+  const hintInput = overrideHintInput(room, { type: target.type, id: targetId }, subjectType === "member" ? { type: "member", id: subjectId, roles: memberRoles } : { type: "role", id: subjectId });
+  const inherited = (bit: bigint) => inheritedOverrideValue(hintInput, bit);
   const pick = (value: string) => {
     setSubject(value);
     const [ty, id] = value.split(":");

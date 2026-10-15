@@ -51,6 +51,47 @@ describe("ChannelsTab: layered overrides", () => {
     expect(JSON.parse(String(put!.init.body))).toMatchObject({ target_type: "category", target_id: "team", subject_type: "role", subject_id: "everyone", allow: "0", deny: (Permission.SEND_MESSAGES | Permission.VIEW_CHANNEL).toString() });
   });
 
+  const moderator = { id: "mod", room_id: "r1", name: "Moderator", color: null, position: 1, permissions: "0", hoist: false, mentionable: false, is_everyone: false };
+
+  it("a neutral role in the category editor inherits the category's own @everyone deny", async () => {
+    // The owner's case: the category hides itself from @everyone, Moderator stays neutral and cannot see it either.
+    const hidden = {
+      ...room,
+      roles: [...room.roles, moderator],
+      overrides: [{ id: "o1", target_type: "category", target_id: "team", subject_type: "role", subject_id: "everyone", allow: "0", deny: Permission.VIEW_CHANNEL.toString() }],
+    } as unknown as RoomDetail;
+    mockFetch({});
+    renderWithProviders(<ChannelsTab room={hidden} />, { route: "/rooms/r1/settings/channels" });
+    const u = userEvent.setup();
+    await u.click(await screen.findByRole("button", { name: "Berechtigungen in der Kategorie Team" }));
+    const editor = screen.getByTestId("category-editor");
+    await u.selectOptions(within(editor).getByRole("combobox", { name: "Rolle" }), "Moderator");
+    expect(within(editor).getByTestId("inherited-VIEW_CHANNEL")).toHaveTextContent("Geerbt: von @everyone hier verboten");
+    expect(within(editor).getByTestId("inherited-VIEW_CHANNEL")).toHaveAttribute("data-source", "everyone");
+    expect(within(editor).getByTestId("inherited-SEND_MESSAGES")).toHaveTextContent("Geerbt: von den Rollen erlaubt");
+    // @everyone's own override is the one being edited: its neutral bits come from the roles.
+    await u.selectOptions(within(editor).getByRole("combobox", { name: "Rolle" }), "@everyone");
+    expect(within(editor).getByTestId("inherited-VIEW_CHANNEL")).toHaveTextContent("Geerbt: von den Rollen erlaubt");
+  });
+
+  it("a neutral role in the channel editor inherits the channel's own @everyone override over the category's", async () => {
+    const layered = {
+      ...room,
+      roles: [...room.roles, moderator],
+      overrides: [
+        { id: "o1", target_type: "category", target_id: "team", subject_type: "role", subject_id: "everyone", allow: "0", deny: Permission.SEND_MESSAGES.toString() },
+        { id: "o2", target_type: "channel", target_id: "c1", subject_type: "role", subject_id: "everyone", allow: Permission.SEND_MESSAGES.toString(), deny: Permission.VIEW_CHANNEL.toString() },
+      ],
+    } as unknown as RoomDetail;
+    mockFetch({});
+    renderWithProviders(<ChannelsTab room={layered} />, { route: "/rooms/r1/settings/channels" });
+    const u = userEvent.setup();
+    const editor = await screen.findByTestId("channel-editor");
+    await u.selectOptions(within(editor).getByRole("combobox", { name: "Rolle" }), "Moderator");
+    expect(within(editor).getByTestId("inherited-VIEW_CHANNEL")).toHaveTextContent("Geerbt: von @everyone hier verboten");
+    expect(within(editor).getByTestId("inherited-SEND_MESSAGES")).toHaveTextContent("Geerbt: von @everyone hier erlaubt");
+  });
+
   it("\"Reset to category\" asks first, then removes the channel's own overrides", async () => {
     const calls = mockFetch({ "/rooms/r1/overrides": { body: [] } });
     renderWithProviders(<ChannelsTab room={room} />, { route: "/rooms/r1/settings/channels" });

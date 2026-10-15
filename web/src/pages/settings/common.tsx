@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useId, useState, type ReactNode } from "react";
-import { CHANNEL_SCOPED_GROUPS, PERMISSION_LABELS, Permission, hasPermission, type PermissionName } from "@tavrn/sdk";
+import { CHANNEL_SCOPED_GROUPS, PERMISSION_LABELS, Permission, hasPermission, type InheritedSource, type PermissionName } from "@tavrn/sdk";
 import { useT } from "../../i18n";
 import { describeError } from "../../stores/toasts";
 import { Button, Dialog, ErrorText, Input } from "../../components/ui";
@@ -94,13 +94,13 @@ export function overrideStateOf(allow: bigint, deny: bigint, bit: bigint): Overr
 }
 
 /** What a neutral override leaves a bit at, and which layer decides it (`inheritedOverrideValue` of the SDK). */
-export type Inherited = { allowed: boolean; source: "role" | "category" };
+export type Inherited = { allowed: boolean; source: InheritedSource };
 
 /**
  * Three-way choice per permission (allow / neutral / deny) for overrides, listing only the channel-scoped bits in the
  * groups of `CHANNEL_SCOPED_GROUPS` (layered overrides, tavrn-protocol permissions.md). `restricted` bits cannot be
- * allowed (`@everyone`). `inherited` gives the value a neutral bit keeps from the layers below; it is shown in grey
- * under the label and is the accessible description of the bit's radio group and buttons.
+ * allowed (`@everyone`). `inherited` gives the value a neutral bit keeps from the layers below and, inside the edited
+ * layer, from its `@everyone` override and a member's role overrides; it is shown in grey under the label and is the accessible description of the bit's radio group and buttons.
  */
 export function OverrideTriState({ allow, deny, onChange, restricted = 0n, inherited }: { allow: bigint; deny: bigint; onChange: (allow: bigint, deny: bigint) => void; restricted?: bigint; inherited?: (bit: bigint) => Inherited }) {
   const t = useT();
