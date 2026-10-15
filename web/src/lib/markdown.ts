@@ -57,6 +57,12 @@ const cache = new Map<string, string>();
 /** The result after the emoji and mention pass (rows remount while scrolling a virtualized list). */
 const finalCache = new Map<string, string>();
 
+/** Sign-out: the rendered messages of the account (decrypted text among them) leave memory. */
+export function forgetRendered(): void {
+  cache.clear();
+  finalCache.clear();
+}
+
 function lruGet(m: Map<string, string>, key: string): string | undefined {
   const hit = m.get(key);
   if (hit !== undefined) {
