@@ -619,12 +619,15 @@ browser (`web/src/files/`): breadcrumbs, list and grid views, sorting, uploads b
 progress, folders, rename, move (dialog or dragging, with a non-drag equivalent), delete, download, media in the
 viewer, the context menu and keyboard navigation. Uploads follow the room's file types ("File types" below).
 
-On a node that keeps no files of files channels itself (`TAVRN_FILES_INTERNAL=off`, FILES.md §5; `files_internal:
-false` in `GET /node`), a channel without an external store reports its store as `none`: instead of "Upload" and "New
-folder" the toolbar shows "Choose a store first", a link to the channel's storage settings for members who may
-configure it (*Manage channels* and *Manage files*) and a plain note for everybody else, and the empty folder explains
-why. The storage settings start on WebDAV and offer "This node" disabled with the reason; once a store is saved the
-upload button appears.
+Where the node keeps no files of a room's files channels itself (`TAVRN_FILES_INTERNAL=off`, FILES.md §5;
+`files_internal: false` in `GET /node`, or the room's entitlement `files_channels.internal` set to 0), a channel
+without an external store reports its store as `none`: instead of "Upload" and "New folder" the toolbar shows "Choose
+a store first", a link to the channel's storage settings for members who may configure it (*Manage channels* and
+*Manage files*) and a plain note for everybody else, and the empty folder explains why. The storage settings start on
+WebDAV and offer "This node" only where the room may use it: `internal_allowed` of the channel's files usage, the
+room's `files_channels.internal` (a plan of the room owner can allow the node's storage on a node whose default is
+off); older nodes without the field use `internal_allowed` of `GET …/files/backend`, their node default. Elsewhere
+the storage settings name the reason; once a store is saved the upload button appears.
 
 The storage settings of an external store have "Limit on the store (GB)": how much the channel may keep there (empty
 or 0 = no limit, a comma or a point as decimal separator; anything else blocks saving with the reason). It is sent as

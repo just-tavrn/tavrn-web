@@ -21,7 +21,8 @@ const BYTE_KEYS = new Set(["upload.max_bytes", "storage.max_bytes_per_room", "fi
 
 /** A limit value for humans: sizes for byte keys, "unlimited" for 0 where 0 means unlimited. */
 export function formatLimit(key: string, value: number, t: ReturnType<typeof useT>, rule?: string): string {
-  if (rule === "flag" || key === "files_channels.enabled") return value ? t("common.yes") : t("common.no");
+  // Switches: `flag` (highest wins) and `setting` (a set value wins over the node default, files_channels.internal).
+  if (rule === "flag" || rule === "setting" || key === "files_channels.enabled" || key === "files_channels.internal") return value ? t("common.yes") : t("common.no");
   if (value === 0) return key === "attachments.retention_days" ? t("entitlements.keep_forever") : t("entitlements.unlimited");
   if (BYTE_KEYS.has(key)) return formatSize(value);
   return String(value);

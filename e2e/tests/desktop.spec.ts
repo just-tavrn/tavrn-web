@@ -75,8 +75,11 @@ async function asDesktopApp(page: Page, node: string | null = null, updates = fa
             case "close_connect":
               sessionStorage.setItem("e2e.desktop.connect.closed", "1");
               return null;
-            case "open_external":
+            case "open_external": {
+              const opened = JSON.parse(sessionStorage.getItem("e2e.desktop.external") ?? "[]") as string[];
+              sessionStorage.setItem("e2e.desktop.external", JSON.stringify([...opened, String(args.url)]));
               return null;
+            }
             case "listen_hotkeys":
               w.__e2eHotkey = (action: string, pressed: boolean) => args.onEvent?.onmessage({ action, pressed });
               return null;
@@ -186,6 +189,24 @@ test.describe("Desktop app (simulated shell)", () => {
     await expect(page.getByTestId("node-picker-warning")).toBeVisible();
     await page.getByRole("link", { name: "Abbrechen" }).click();
     await expect(page).toHaveURL(/\/settings\/app$/);
+  });
+
+  test("Ctrl-click and middle click on internal links navigate in place: no tab, no system browser", async ({ page, request }) => {
+    const account = await registerViaApi(request, "ctrl");
+    await asDesktopApp(page, NODE);
+    await loginAs(page, account);
+    await page.goto("/settings/app");
+    await expect(page.getByTestId("app-version")).toBeVisible();
+    const popups: string[] = [];
+    page.context().on("page", (p) => popups.push(p.url()));
+    await page.getByRole("link", { name: "Knoten wechseln" }).click({ modifiers: ["ControlOrMeta"] });
+    await expect(page).toHaveURL(/\/node$/);
+    await page.getByRole("link", { name: "Abbrechen" }).click({ button: "middle" });
+    await expect(page).toHaveURL(/\/settings\/app$/);
+    await page.getByRole("link", { name: "Knoten wechseln" }).click({ modifiers: ["Shift"] });
+    await expect(page).toHaveURL(/\/node$/);
+    expect(popups).toEqual([]);
+    expect(await page.evaluate(() => sessionStorage.getItem("e2e.desktop.external"))).toBeNull();
   });
 
   test("address first: the picker finds the node of the account and the login continues with the username", async ({ page, request }) => {

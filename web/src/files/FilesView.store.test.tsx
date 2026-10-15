@@ -33,7 +33,7 @@ describe("files channel without a store", () => {
     expect(screen.queryByTestId("files-upload-button")).toBeNull();
     expect(screen.queryByTestId("files-new-folder")).toBeNull();
     expect(screen.queryByTestId("files-banner-external")).toBeNull();
-    expect(await screen.findByTestId("files-empty")).toHaveTextContent("Dieser Knoten speichert selbst keine Dateien von Dateichannels");
+    expect(await screen.findByTestId("files-empty")).toHaveTextContent("Dieser Knoten speichert selbst keine Dateien der Dateichannels dieses Raums");
   });
 
   it("explains it to members who cannot configure the store", async () => {

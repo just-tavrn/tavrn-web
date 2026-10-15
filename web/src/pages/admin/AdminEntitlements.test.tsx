@@ -34,6 +34,8 @@ describe("entitlement helpers", () => {
     expect(formatLimit("attachments.retention_days", 0, t)).toBe("für immer");
     expect(formatLimit("upload.max_bytes", 104857600, t)).toBe("100.0 MB");
     expect(formatLimit("files_channels.enabled", 1, t, "flag")).toBe("Ja");
+    expect(formatLimit("files_channels.internal", 0, t, "setting")).toBe("Nein");
+    expect(formatLimit("files_channels.internal", 1, t)).toBe("Ja");
     expect(formatLimit("rooms.max_owned", 7, t)).toBe("7");
   });
 
