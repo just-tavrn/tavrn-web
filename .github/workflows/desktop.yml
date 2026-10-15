@@ -225,16 +225,18 @@ jobs:
       # xdotool, gnome-keyring, livekit-server, Rust); the self-hosted job installs nothing.
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         if: ${{ runner.environment == 'github-hosted' }}
+      # No Actions cache for a release (built from the tag on ubuntu-latest): nothing a cache holds reaches a release.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         if: ${{ runner.environment == 'github-hosted' }}
         with:
           node-version: 24
-          cache: pnpm
+          cache: ${{ !inputs.release-tag && 'pnpm' || '' }}
+          package-manager-cache: false
       - name: Rust toolchain
         if: ${{ runner.environment == 'github-hosted' }}
         run: rustup toolchain install stable --profile minimal --component clippy,rustfmt && rustup default stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        if: ${{ runner.environment == 'github-hosted' }}
+        if: ${{ runner.environment == 'github-hosted' && !inputs.release-tag }}
         with:
           workspaces: |
             apps/desktop-electron/native/keywatch -> target
@@ -498,13 +500,16 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.release-tag || github.ref }}
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      # No Actions cache for a release: nothing a cache holds reaches a release (by hand: the cache of main's runs).
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          cache: pnpm
+          cache: ${{ !inputs.release-tag && 'pnpm' || '' }}
+          package-manager-cache: false
       - name: Rust toolchain
         run: rustup toolchain install stable --profile minimal && rustup default stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: ${{ !inputs.release-tag }}
         with:
           workspaces: apps/desktop/src-tauri -> target
       - run: pnpm install --frozen-lockfile
@@ -571,13 +576,16 @@ jobs:
             git config --global --add url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "git@github.com:just-tavrn/"
           fi
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      # No Actions cache for a release: nothing a cache holds reaches a release (by hand: the cache of main's runs).
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          cache: pnpm
+          cache: ${{ !inputs.release-tag && 'pnpm' || '' }}
+          package-manager-cache: false
       - name: Rust toolchain with both macOS targets (the universal build)
         run: rustup toolchain install stable --profile minimal && rustup default stable && rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: ${{ !inputs.release-tag }}
         with:
           workspaces: apps/desktop/src-tauri -> target
       - run: pnpm install --frozen-lockfile
@@ -635,13 +643,16 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.release-tag || github.ref }}
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      # No Actions cache for a release: nothing a cache holds reaches a release (by hand: the cache of main's runs).
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          cache: pnpm
+          cache: ${{ !inputs.release-tag && 'pnpm' || '' }}
+          package-manager-cache: false
       - name: Rust toolchain
         run: rustup toolchain install stable --profile minimal && rustup default stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: ${{ !inputs.release-tag }}
         with:
           workspaces: apps/desktop-electron/native/keywatch -> target
       - run: pnpm install --frozen-lockfile
@@ -705,10 +716,12 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.release-tag || github.ref }}
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      # No Actions cache for a release: nothing a cache holds reaches a release (by hand: the cache of main's runs).
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          cache: pnpm
+          cache: ${{ !inputs.release-tag && 'pnpm' || '' }}
+          package-manager-cache: false
       - name: Rust toolchain with the Android target
         run: rustup toolchain install stable --profile minimal && rustup default stable && rustup target add aarch64-linux-android
       - name: Android NDK (pinned) and Java 21
