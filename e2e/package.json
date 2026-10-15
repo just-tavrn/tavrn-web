@@ -13,13 +13,13 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
-    "@playwright/test": "^1.56.0",
+    "@playwright/test": "^1.64.0",
     "@tavrn/bot": "github:just-tavrn/tavrn-js#c26485d2102ef8d19ba83e512f209cf48e02beb9&path:bot",
     "@tavrn/crypto": "github:just-tavrn/tavrn-crypto#19ac87b4b42b13ec07e0eec5f8c17a2b47f70f37&path:pkg",
     "@tavrn/e2ee": "github:just-tavrn/tavrn-js#c26485d2102ef8d19ba83e512f209cf48e02beb9&path:e2ee",
     "@tavrn/sdk": "github:just-tavrn/tavrn-js#c26485d2102ef8d19ba83e512f209cf48e02beb9&path:sdk",
     "@types/libsodium-wrappers": "^0.8.2",
-    "@types/node": "^26.6.4",
+    "@types/node": "^26.6.5",
     "libsodium-wrappers": "^0.8.4",
     "typescript": "^5.9.3",
     "vite-node": "^6.0.0"
