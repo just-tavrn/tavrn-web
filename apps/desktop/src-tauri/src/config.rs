@@ -55,10 +55,10 @@ pub fn load(path: &Path) -> Config {
     config.web = config.web.filter(|_| config.node.is_some()).and_then(|w| node_url::validate(&w).ok());
     config.domain = config.domain.filter(|d| config.node.is_some() && valid_identity_domain(d));
     // A web origin not bound to the node (stored by an older version) is dropped: the node's own origin is used.
-    if let (Some(node), Some(web)) = (config.node.as_deref(), config.web.as_deref()) {
-        if !node_url::web_bound(node, web, config.domain.as_deref()) {
-            config.web = None;
-        }
+    if let (Some(node), Some(web)) = (config.node.as_deref(), config.web.as_deref())
+        && !node_url::web_bound(node, web, config.domain.as_deref())
+    {
+        config.web = None;
     }
     config.update_channel = config.update_channel.filter(|c| crate::updater::Channel::parse(c).is_some());
     config
