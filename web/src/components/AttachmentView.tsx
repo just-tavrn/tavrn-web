@@ -75,14 +75,37 @@ type NodeApi = ReturnType<typeof useNode>["api"];
 export const ATTACHMENT_CACHE_BYTES = 192 * 1024 * 1024;
 const cache = new AttachmentCache({ budget: ATTACHMENT_CACHE_BYTES, maxEntries: 400 });
 
-const cacheKey = (a: ViewAttachment) => (a.load ? `file:${a.id}` : a.encrypted ? `${a.id}|${a.encrypted.sha256}|${a.encrypted.key}` : a.id);
+/**
+ * Which node an attachment comes from, for the cache key: the client of each node is one object for the session
+ * (`apiFor`), so each gets a number. Ids are chosen by nodes (and by senders in encrypted files channels), so an id
+ * alone never identifies the bytes of another node.
+ */
+const nodeTags = new WeakMap<object, number>();
+let nextTag = 0;
+function nodeTag(api: NodeApi): number {
+  let tag = nodeTags.get(api as object);
+  if (tag === undefined) {
+    tag = ++nextTag;
+    nodeTags.set(api as object, tag);
+  }
+  return tag;
+}
+
+/**
+ * The cache key: the node, the id and what the bytes are checked against (the signed hash of a plaintext attachment,
+ * the hash and key of an encrypted one), so a cached copy is used only where the same check passed.
+ */
+const cacheKey = (api: NodeApi, a: ViewAttachment) => {
+  const node = nodeTag(api);
+  return a.load ? `file|${node}|${a.id}` : a.encrypted ? `enc|${node}|${a.id}|${a.encrypted.sha256}|${a.encrypted.key}` : `plain|${node}|${a.id}|${a.sha256 ?? ""}`;
+};
 
 /**
  * The content of an attachment (downloaded with the token, decrypted when encrypted) as a blob of a safe type, cached
  * per blob: the preview, the player and the download share one download.
  */
 export function loadAttachment(api: NodeApi, a: ViewAttachment): Promise<Blob> {
-  return cache.blob(cacheKey(a), a.size, () => fetchAttachment(api, a));
+  return cache.blob(cacheKey(api, a), a.size, () => fetchAttachment(api, a));
 }
 
 function fetchAttachment(api: NodeApi, a: ViewAttachment): Promise<Blob> {
@@ -110,7 +133,7 @@ export function useAttachmentUrl(a: ViewAttachment, enabled: boolean): { url: st
   const [state, setState] = useState<{ url: string | null; failed: boolean; tampered?: boolean }>({ url: null, failed: false });
   // Blobs live on the node of the conversation.
   const { api } = useNode();
-  const key = cacheKey(a);
+  const key = cacheKey(api, a);
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
