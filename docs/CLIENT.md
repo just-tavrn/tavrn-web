@@ -443,6 +443,50 @@ not be verified", votes after the close time not at all; plaintext votes without
 count and are listed as "n unverified". A member who cannot decrypt an encrypted poll with a close time (it is older
 than their history) sees "Poll from before you joined" with the number of votes.
 
+### Message components
+
+Applications (bots) can put **buttons** and **select menus** under their messages and open small **forms** (modals)
+(protocol APPLICATIONS.md §5.10, `components.v1`). The client draws all of it with its own controls and colours: an
+application chooses the words, an emoji (a Unicode emoji or one of the room's custom emojis) and one of five styles
+(*primary* in the accent colour, *secondary* neutral, *success* green, *danger* red, *link* neutral with ↗), never
+markup, colours, fonts or images. The controls sit below the text and the embeds, inside the message: rows wrap onto
+further lines on narrow screens, long labels end with "…" and show the full text as a tooltip, a select menu takes
+the row's width (up to a limit on wide screens), and the whole area has a fixed maximum height and scrolls inside
+instead of growing out of the message. Only messages of an application's bot show components; the same field on a
+message of a person or a webhook is ignored (in encrypted conversations the node cannot refuse it, so the client
+does), and a set of components that breaks one of the protocol's rules is not shown at all while the text stays.
+
+- **Buttons** answer at once. While the application works on it the pressed button shows a spinner and the other
+  controls of the message wait; the answer is one of: a new message in the conversation; a reply marked **"Only you
+  can see this"** directly under the message (dropped on reload, closed with ×); "<application> is thinking …" under
+  the message until the application follows up (at most 15 minutes); a short error from the application under the
+  message (at most 200 characters, only for you); the message itself changing (marked "(edited)"); or a form.
+- **Select menus** open a list below the button (it grows the message instead of covering others). With one choice
+  the choice is sent at once; with several the list shows how many are chosen and the allowed range, options beyond
+  the maximum are unavailable, and **Confirm** sends them. Options can have an emoji and a description.
+- **Link buttons** never reach the node. A click first shows the full address and its host ("Open external link?");
+  **Open link** opens it in the browser.
+- **Forms** open as a dialog with the application's name and the BOT badge: one to five labelled text fields (one
+  line or several), prefilled where the application says so, with a character counter. Required fields and the
+  minimum and maximum lengths are checked before anything is sent, with the error at the field; **Send** is
+  disabled while the form is on its way. A form that expired (15 minutes) or was sent already says so in the dialog;
+  Escape, Cancel or a click outside closes it, after asking once you typed something.
+- **Unavailable controls** stay visible but disabled, with the reason under them: an application may disable a
+  control itself; without the permission *Use buttons and menus of apps* (`use_components`, a channel permission
+  that room managers can deny per channel like any other; `@everyone` has it by default, DMs always) nothing can be
+  used; components of messages older than the node's limit (30 days by default) report **"These controls have
+  expired"** after the first try, and those of an application that was removed from the room say it is gone.
+- **Answers** that the application stores name who used it ("bob used Raid Bot") with a jump to the message whose
+  control was used.
+- **Keyboard**: every control is reached with Tab in reading order (disabled ones too, announced as unavailable) and
+  has the focus ring; Enter or Space presses a button or opens a select menu, whose list takes the focus: arrow keys,
+  Home and End move, Enter or Space chooses, Escape closes it and returns to the menu button. Forms keep Tab inside
+  the dialog and close with Escape. Pending (`aria-busy`), chosen (`aria-selected`, a check mark) and disabled
+  (`aria-disabled`) states are not shown by colour alone; animations follow the reduced-motion setting.
+- **Encrypted conversations**: what you click, choose or type is encrypted for the conversation's members like the
+  arguments of a command (`component.values`, `modal.values`); the node sees only which control of which message
+  was used, never the values.
+
 ### Media and image previews
 
 Images open a viewer (zoom, drag, swipe or arrow keys between the images of a message, download icon, open original);

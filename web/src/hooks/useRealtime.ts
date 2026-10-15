@@ -321,8 +321,9 @@ export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: 
     socket.on<{ id?: string }>("channel.create", (d) => useHiddenChannels.getState().created(d.id)),
     socket.on<{ room_id: string }>("emoji.update", (d) => void queryClient.invalidateQueries({ queryKey: ["emojis", d.room_id] })),
     // An ephemeral reply for this user, from another of its connections' commands or a follow-up (§5.7).
-    socket.on<EphemeralReply>("interaction.reply", (r) =>
-      useInteractions.getState().add({ interactionId: r.interaction_id, conversationId: r.conversation_id, kind: "ephemeral", application: r.application, content: r.content, epoch: r.epoch, deviceId: r.device_id }),
+    // Answers to a message component name its message (APPLICATIONS.md §5.10): the reply is shown under it.
+    socket.on<EphemeralReply & { message_id?: string | null }>("interaction.reply", (r) =>
+      useInteractions.getState().add({ interactionId: r.interaction_id, conversationId: r.conversation_id, messageId: r.message_id ?? null, kind: "ephemeral", application: r.application, content: r.content, epoch: r.epoch, deviceId: r.device_id }),
     ),
     // ---- Profiles and presence (design note 4.9)
     socket.on<Presence>("presence.update", (p) => onPresence(p)),

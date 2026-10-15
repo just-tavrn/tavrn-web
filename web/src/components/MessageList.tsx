@@ -32,6 +32,8 @@ import { useAuthorAvatar } from "./AuthorProfiles";
 import { LinkPreviews } from "./LinkPreviews";
 import { webOrigin } from "../platform";
 import { PollView, UnreadablePoll } from "../polls/PollView";
+import { ComponentInteractionLine, ComponentNotices, MessageComponents } from "../messageComponents/MessageComponents";
+import { authorKind, componentsOf } from "../messageComponents/model";
 
 /** How an author is shown: nickname or display name, role colour. */
 export interface AuthorLook {
@@ -666,6 +668,10 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
     return () => el.removeEventListener("error", onError, true);
   }, [html, unavailable]);
   const onToggleReaction = useCallback((emoji: string, active: boolean) => onReact?.(m, emoji, active), [onReact, m]);
+  // Buttons and selects (APPLICATIONS.md §5.10): only on `text` messages of an application's bot device.
+  const kind = authorKind(m, bot);
+  const fromBot = kind === "bot";
+  const componentRows = useMemo(() => (c.kind === "text" && !c.action ? componentsOf(c.raw ?? m.content, kind) : null), [c, kind, m.content]);
   // Webhook messages carry the name the node set (the per-message `username` or the webhook's name); sealed ones
   // carry the per-message `username` inside the box (APPLICATIONS.md §6.1a).
   // A deleted account (design note 4.14): "Deleted user", no avatar, profile, domain or badges.
@@ -836,13 +842,16 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
           )}
         </div>
       )}
-      {m.interaction && (
+      {m.interaction && (m.interaction.command ? (
         // The answer to an application command (APPLICATIONS.md §5.7): who used which command.
         <div className="mb-0.5 ml-12 flex min-w-0 items-center gap-1 text-xs text-fg-2" data-testid="message-interaction" data-command={m.interaction.command}>
           <span aria-hidden="true">↱</span>
           <span className="min-w-0 truncate">{t("interactions.used", { user: localName(m.interaction.user), command: m.interaction.command })}</span>
         </div>
-      )}
+      ) : (
+        // The answer to a component or a modal (§5.10.3): who used the application, with the way to its message.
+        <ComponentInteractionLine interaction={m.interaction} app={name} />
+      ))}
       <div className="flex gap-3">
         <div className="w-9 shrink-0 pt-0.5">
           {!grouped &&
@@ -934,6 +943,8 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
           )}
           {c.kind === "text" && c.gif?.url && <GifView gif={{ url: c.gif.url, width: c.gif.width, height: c.gif.height }} author={m.author} own={own} inRoom={!!roomId} />}
           {c.kind === "text" && !editing && <LinkPreviews body={c.body} content={c.raw ?? m.content} />}
+          {componentRows && !editing && <MessageComponents m={m} rows={componentRows} />}
+          {fromBot && <ComponentNotices m={m} />}
           {c.kind === "cipher" && <p className="text-sm italic text-fg-2">{t("messages.encrypted")}</p>}
           {c.kind === "poll" && <PollView poll={c.poll} raw={c.raw} m={m} own={own} canManage={canManage} />}
           {c.kind === "poll_unreadable" && <UnreadablePoll m={m} />}

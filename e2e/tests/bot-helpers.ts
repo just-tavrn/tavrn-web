@@ -9,11 +9,11 @@ import { scaled } from "./timeouts";
 const E2E = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /**
- * Starts the example bot (fixtures/echo-bot.ts on the installed @tavrn/bot runtime) against the e2e node with the
- * given app token, its key file and state in `dir`, and waits for its `ready` line.
+ * Starts a bot of fixtures/ on the installed @tavrn/bot runtime (default: the example bot, fixtures/echo-bot.ts) against
+ * the e2e node with the given app token, its key file and state in `dir`, and waits for its `ready` line.
  */
-export async function startExampleBot(app: { secret: string; botUsername: string }, dir: string): Promise<ChildProcess> {
-  const child = spawn(join(E2E, "node_modules", ".bin", "vite-node"), ["fixtures/echo-bot.ts"], {
+export async function startExampleBot(app: { secret: string; botUsername: string }, dir: string, fixture = "fixtures/echo-bot.ts"): Promise<ChildProcess> {
+  const child = spawn(join(E2E, "node_modules", ".bin", "vite-node"), [fixture], {
     cwd: E2E,
     stdio: ["ignore", "pipe", "pipe"],
     env: {

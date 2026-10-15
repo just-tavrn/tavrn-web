@@ -7,28 +7,41 @@ import { useInteractions, type InteractionNotice } from "../stores/interactions"
 import { BotBadge } from "./Badges";
 
 /**
- * The invoker's view of application commands besides messages (tavrn-protocol/APPLICATIONS.md §5.7): "… is thinking"
- * while an interaction is deferred, ephemeral replies marked "only you can see this", and error notices. In
- * encrypted conversations ephemeral replies are ciphertext of the bot's device and are decrypted here.
+ * The invoker's view of application commands and message components besides messages (tavrn-protocol/APPLICATIONS.md
+ * §5.7, §5.10): "… is thinking" while an interaction is deferred, ephemeral replies marked "only you can see this",
+ * and error notices. In encrypted conversations ephemeral replies are ciphertext of the bot's device and are
+ * decrypted here.
  */
 export function InteractionNotices({ conversationId, qualified, encrypted, mls }: { conversationId: string; qualified: string; encrypted: boolean; mls: MlsManager | null }) {
-  const t = useT();
   const all = useInteractions((s) => s.notices);
-  const notices = useMemo(() => all.filter((n) => n.conversationId === conversationId), [all, conversationId]);
+  // Notices that belong to a message (its components, APPLICATIONS.md §5.10) are shown under that message.
+  const notices = useMemo(() => all.filter((n) => n.conversationId === conversationId && !n.messageId), [all, conversationId]);
   useEffect(() => {
     const timer = window.setInterval(() => useInteractions.getState().prune(), 30_000);
     return () => window.clearInterval(timer);
   }, []);
+  return <NoticeList notices={notices} qualified={qualified} encrypted={encrypted} mls={mls} className="mx-4 mb-1" testId="interaction-notices" />;
+}
+
+/** The notices of the interactions started from one message's components, shown under it. */
+export function MessageNotices({ conversationId, messageId, qualified, encrypted, mls }: { conversationId: string; messageId: string; qualified: string; encrypted: boolean; mls: MlsManager | null }) {
+  const all = useInteractions((s) => s.notices);
+  const notices = useMemo(() => all.filter((n) => n.conversationId === conversationId && n.messageId === messageId), [all, conversationId, messageId]);
+  return <NoticeList notices={notices} qualified={qualified} encrypted={encrypted} mls={mls} className="mt-1" testId="message-notices" />;
+}
+
+function NoticeList({ notices, qualified, encrypted, mls, className, testId }: { notices: InteractionNotice[]; qualified: string; encrypted: boolean; mls: MlsManager | null; className: string; testId: string }) {
+  const t = useT();
   if (notices.length === 0) return null;
   return (
-    <ul className="mx-4 mb-1 space-y-1" data-testid="interaction-notices" aria-live="polite">
+    <ul className={`${className} space-y-1`} data-testid={testId} aria-live="polite">
       {notices.map((n) => (
         <li key={n.key} className="rounded-md border border-line bg-bg-1 px-3 py-2 text-sm">
           {n.kind === "thinking" ? (
-            <p className="flex items-center gap-2 text-fg-1" data-testid="interaction-thinking" data-interaction={n.interactionId}>
+            <p className="flex min-w-0 flex-wrap items-center gap-2 text-fg-1" data-testid="interaction-thinking" data-interaction={n.interactionId}>
               <span className="font-medium">{n.application.name}</span>
               <BotBadge />
-              <span className="animate-pulse text-fg-2">{t("interactions.thinking", { name: n.application.name })}</span>
+              <span className="animate-pulse text-fg-2 motion-reduce:animate-none">{t("interactions.thinking", { name: n.application.name })}</span>
             </p>
           ) : (
             <Notice notice={n} qualified={qualified} encrypted={encrypted} mls={mls} label={t("interactions.only_you")} close={t("common.close")} />
@@ -60,13 +73,13 @@ function Notice({ notice: n, qualified, encrypted, mls, label, close }: { notice
       <div className="mb-0.5 flex items-center gap-2 text-xs text-fg-2">
         <span className="font-medium text-fg-1">{n.application.name}</span>
         <BotBadge />
-        <span className="flex-1">{n.kind === "error" ? t("interactions.error") : label}</span>
+        <span className="flex-1">{n.kind === "error" ? t(n.messageId ? "interactions.component_error" : "interactions.error") : label}</span>
         <button type="button" onClick={() => useInteractions.getState().dismiss(n.key)} aria-label={close} className="min-h-6 min-w-6 rounded text-fg-2 hover:bg-bg-3 hover:text-fg-0" data-testid="interaction-dismiss">
           ×
         </button>
       </div>
       {n.kind === "error" ? (
-        <p className="text-danger">{body}</p>
+        <p className="break-words text-danger">{body}</p>
       ) : html ? (
         // Rendered through the message Markdown sanitizer.
         <div className="markdown break-words text-fg-0" data-testid="interaction-body" dangerouslySetInnerHTML={{ __html: html }} />
