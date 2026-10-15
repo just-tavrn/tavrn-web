@@ -16,7 +16,7 @@ import { MessageAttachments, fromEncrypted, fromPlain } from "./AttachmentView";
 import { ContextMenu, MenuButton, useContextMenu } from "./ContextMenu";
 import { messageMenu } from "../lib/menus";
 import { mentionsMe } from "../lib/mentions";
-import { markMentions, mentionTokens, parseMentionTokens, serializeMentionTokens } from "../lib/mentionBadges";
+import { mentionTokens, parseMentionTokens, serializeMentionTokens } from "../lib/mentionBadges";
 import { copyText } from "./ContextMenu";
 import { useToasts } from "../stores/toasts";
 import { useAccessibility } from "../stores/accessibility";
@@ -644,7 +644,7 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
   const mdVersion = useSyncExternalStore(subscribeMarkdown, markdownVersion);
   const botLabel = t("badge.bot");
   const html = useMemo(
-    () => (body ? markMentions(renderMarkdown(body, emojiUrls, resolve), parseMentionTokens(mentions ?? ""), botLabel) : ""),
+    () => (body ? renderMarkdown(body, emojiUrls, resolve, mentions ? { tokens: parseMentionTokens(mentions), key: mentions, botLabel } : undefined) : ""),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [body, emojiUrls, resolve, mdVersion, mentions, botLabel],
   );

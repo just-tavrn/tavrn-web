@@ -78,33 +78,37 @@ const inCode = (el: Element) => el.localName === "code" || el.localName === "pre
  */
 export function markMentions(html: string, tokens: readonly MentionToken[], botLabel: string): string {
   if (!tokens.length || !html.includes("@")) return html;
+  return editHtml(html, (root) => markMentionsIn(root, tokens, botLabel));
+}
+
+/** {@link markMentions} on an already parsed fragment (one pass together with the markdown's emoji pass). */
+export function markMentionsIn(root: DocumentFragment, tokens: readonly MentionToken[], botLabel: string): void {
+  if (!tokens.length) return;
   const kinds = new Map(tokens.map((t) => [t.token.toLowerCase(), t.kind]));
   const mention = new RegExp(`(^|[^\\w@])@(${tokens.map((t) => escapeRe(t.token)).join("|")})(?![\\w@.-]*[\\w])`, "gi");
-  return editHtml(html, (root) =>
-    replaceInText(
-      root,
-      mention,
-      (m, doc) => {
-        const kind = kinds.get(m[2]!.toLowerCase());
-        if (!kind) return null;
-        const span = doc.createElement("span");
-        span.className = "mention";
-        span.setAttribute("data-testid", "mention");
-        span.setAttribute("data-mention", kind);
-        if (kind === "bot") span.setAttribute("data-bot", "true");
-        span.textContent = `@${m[2]}`;
-        const nodes: Node[] = [...(m[1] ? [doc.createTextNode(m[1])] : []), span];
-        if (kind === "bot") {
-          const badge = doc.createElement("span");
-          badge.className = "bot-mention-badge";
-          badge.setAttribute("data-testid", "bot-badge");
-          badge.textContent = botLabel;
-          nodes.push(badge);
-        }
-        return nodes;
-      },
-      inCode,
-    ),
+  replaceInText(
+    root,
+    mention,
+    (m, doc) => {
+      const kind = kinds.get(m[2]!.toLowerCase());
+      if (!kind) return null;
+      const span = doc.createElement("span");
+      span.className = "mention";
+      span.setAttribute("data-testid", "mention");
+      span.setAttribute("data-mention", kind);
+      if (kind === "bot") span.setAttribute("data-bot", "true");
+      span.textContent = `@${m[2]}`;
+      const nodes: Node[] = [...(m[1] ? [doc.createTextNode(m[1])] : []), span];
+      if (kind === "bot") {
+        const badge = doc.createElement("span");
+        badge.className = "bot-mention-badge";
+        badge.setAttribute("data-testid", "bot-badge");
+        badge.textContent = botLabel;
+        nodes.push(badge);
+      }
+      return nodes;
+    },
+    inCode,
   );
 }
 
