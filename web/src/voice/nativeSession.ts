@@ -27,7 +27,7 @@ import { VoiceError, voiceErrorMessage } from "./errors";
 import { channelKey, participantsOf, useVoicePresence } from "./presence";
 import { useVoiceSettings, type VoiceSettings } from "./settings";
 import { withEntitlementCaps } from "./entitlementCaps";
-import { IDLE, SpeakingBatcher, useVoice, type ParticipantMedia, type VoiceTarget } from "./store";
+import { IDLE, SpeakingBatcher, keepMedia, useVoice, type ParticipantMedia, type VoiceTarget } from "./store";
 import { participantVolumes } from "./volume";
 import { isLocallyMuted, useLocalMute } from "./localMute";
 import { SPEAKING_POLL_MS, SpeakingDetector, combineLevels, localLevel } from "./speaking";
@@ -131,7 +131,9 @@ function onParticipants(s: Session, list: NativeParticipant[]) {
   const added = [...remotes].some((id) => !s.remotes.has(id));
   for (const id of s.remotes) if (!remotes.has(id)) s.detector.forget(id);
   s.remotes = remotes;
-  set({ media });
+  // Unchanged participants keep their objects (no re-render of their tiles); nothing changed: no update at all.
+  const kept = keepMedia(useVoice.getState().media, media);
+  if (kept !== useVoice.getState().media) set({ media: kept });
   if (added) applyVolumes(s);
 }
 

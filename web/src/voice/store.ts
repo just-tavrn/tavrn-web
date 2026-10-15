@@ -36,6 +36,28 @@ export interface ParticipantMedia {
   screenAudio?: boolean;
 }
 
+const sameMedia = (a: ParticipantMedia, b: ParticipantMedia) =>
+  a.camera === b.camera && a.screen === b.screen && !!a.screenVideo === !!b.screenVideo && a.micMuted === b.micMuted && !!a.screenAudio === !!b.screenAudio;
+
+/**
+ * `next` with the objects of `prev` kept for every participant whose media did not change, and `prev` itself when
+ * nothing changed at all: the engines rebuild the media on every track or participant event, and the stage's tiles
+ * should re-render only on a real change.
+ */
+export function keepMedia(prev: Record<string, ParticipantMedia>, next: Record<string, ParticipantMedia>): Record<string, ParticipantMedia> {
+  let changed = Object.keys(prev).length !== Object.keys(next).length;
+  const out: Record<string, ParticipantMedia> = {};
+  for (const [id, m] of Object.entries(next)) {
+    const old = prev[id];
+    if (old && sameMedia(old, m)) out[id] = old;
+    else {
+      out[id] = m;
+      changed = true;
+    }
+  }
+  return changed ? out : prev;
+}
+
 export interface VoiceState {
   status: VoiceStatus;
   target: VoiceTarget | null;

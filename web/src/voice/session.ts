@@ -56,7 +56,7 @@ import { VoiceError, voiceErrorMessage } from "./errors";
 import { channelKey, participantsOf, useVoicePresence } from "./presence";
 import { cameraOptions, phoneCameras, resolutionSize, useVoiceSettings, type VoiceSettings } from "./settings";
 import { withEntitlementCaps } from "./entitlementCaps";
-import { IDLE, SpeakingBatcher, isWatched, useSoundOverlays, useVoice, useWatchedStreams, type ParticipantMedia, type Quality, type VoiceTarget } from "./store";
+import { IDLE, SpeakingBatcher, isWatched, keepMedia, useSoundOverlays, useVoice, useWatchedStreams, type ParticipantMedia, type Quality, type VoiceTarget } from "./store";
 import { participantVolumes, type Volumes } from "./volume";
 import { isLocallyMuted, useLocalMute } from "./localMute";
 import { ANALYSER_SIZE, SPEAKING_POLL_MS, SpeakingDetector, analysersAvailable, combineLevels, localLevel, rmsDb } from "./speaking";
@@ -400,9 +400,14 @@ function refreshMedia(s: Session) {
   const local = media[localId]!;
   // A stream that ended is forgotten: the next share of that person is joined anew.
   s.streams.prune((id) => !!media[id]?.screen);
-  const focus = useVoice.getState().focus;
+  const state = useVoice.getState();
   const focusable = (id: string) => !!media[id]?.screen && (id === localId || s.streams.isJoined(id));
-  set({ media, camera: local.camera, screen: local.screen, focus: focus && focusable(focus) ? focus : null });
+  const focus = state.focus && focusable(state.focus) ? state.focus : null;
+  // Called on every track and participant event: unchanged participants keep their objects, and an event that
+  // changed nothing writes nothing (the stage, the bar and the call view re-render on real changes only).
+  const kept = keepMedia(state.media, media);
+  if (kept === state.media && state.camera === local.camera && state.screen === local.screen && state.focus === focus) return;
+  set({ media: kept, camera: local.camera, screen: local.screen, focus });
 }
 
 /** The volumes last applied per identity (development test hooks). */
