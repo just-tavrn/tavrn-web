@@ -58,9 +58,15 @@ async function waitForUnlock(): Promise<void> {
   for (let i = 0; i < 40 && !cryptoStore.isUnlocked(); i++) await new Promise((r) => setTimeout(r, 250));
 }
 
-/** Asks the index itself: right after a start its state may not be in {@link useLocalSearch} yet. */
-async function keptInIndex(q: string): Promise<boolean> {
-  if (useLocalSearch.getState().coverage[q]?.complete) return true;
+/**
+ * The setting from {@link useLocalSearch} (refreshed after the index opens and after every flush and change of the
+ * setting). Only right after a start, before that state is loaded, the index itself is asked: its `coverage` writes
+ * the pending index buffer first, which the message list would otherwise do on every change of its messages.
+ */
+export async function keptInIndex(q: string): Promise<boolean> {
+  const state = useLocalSearch.getState();
+  if (state.coverage[q]?.complete) return true;
+  if (state.stats) return false;
   const idx = await localIndex();
   if (!idx) return false;
   const [cov] = await idx.coverage(q).catch(() => []);
