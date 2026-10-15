@@ -699,7 +699,7 @@ export function ConversationView(p: ConversationViewProps) {
       {gate.warning}
       <VerificationNotice addresses={broken} blocking={verificationBlock} />
       {messages.isError && <p className="p-4 text-sm text-danger">{describeError(messages.error)}</p>}
-      <AuthorProfiles messages={loaded}>
+      <AuthorProfiles messages={loaded} members={p.roomMembers}>
       <PollContext.Provider value={pollEnv}>
       <ComponentsContext.Provider value={componentsEnv}>
       <MessageList
