@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TavrnApiError, type NotificationSettings } from "@tavrn/sdk";
-import { DEFAULT_SETTINGS, FOREVER, decide, effectiveMode, muteUntil, normalizeSettings, roomBadgeLevel, setChannelSetting, setRoomSetting, useNotifications } from "./notifications";
+import { DEFAULT_SETTINGS, FOREVER, decide, effectiveMode, muteUntil, normalizeSettings, roomBadgeLevel, setChannelSetting, setNotificationSaveFailed, setRoomSetting, useNotifications } from "./notifications";
 
 const me = { id: "u1", address: "me@x" };
 const settings = (over: Partial<NotificationSettings> = {}): NotificationSettings => ({ ...DEFAULT_SETTINGS, ...over, global: { ...DEFAULT_SETTINGS.global, ...over.global } });
@@ -129,5 +129,64 @@ describe("roomBadgeLevel", () => {
     expect(roomBadgeLevel(settings({ rooms: { r1: { mode: "nothing" } } }), "r1", now)).toBe("muted");
     expect(roomBadgeLevel(settings({ rooms: { r1: { mode: "all", muted_until: FOREVER } } }), "r1", now)).toBe("muted");
     expect(roomBadgeLevel(settings({ rooms: { r1: { mode: "all", muted_until: "2026-10-10T11:00:00Z" } } }), "r1", now)).toBe("all");
+  });
+});
+
+describe("settings across devices", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useNotifications.getState().reset();
+  });
+
+  it("a change from another device (notifications.update) is kept when this device saves its own", async () => {
+    vi.useFakeTimers();
+    try {
+      const remote = { get: vi.fn(async () => settings()), put: vi.fn(async (s: NotificationSettings) => s) };
+      await useNotifications.getState().load(remote, "me@x");
+      // Another device muted r2; this one changes c1 right after.
+      useNotifications.getState().applyRemote(settings({ rooms: { r2: { muted_until: FOREVER } } }));
+      expect(useNotifications.getState().settings.rooms.r2).toEqual({ muted_until: FOREVER });
+      setChannelSetting("c1", { mode: "nothing" });
+      await vi.advanceTimersByTimeAsync(500);
+      expect(remote.put).toHaveBeenCalledTimes(1);
+      expect(remote.put.mock.calls[0]![0]).toMatchObject({ rooms: { r2: { muted_until: FOREVER } }, channels: { c1: { mode: "nothing" } } });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("an event while a local change waits keeps the local change on top", async () => {
+    vi.useFakeTimers();
+    try {
+      const remote = { get: vi.fn(async () => settings()), put: vi.fn(async (s: NotificationSettings) => s) };
+      await useNotifications.getState().load(remote, "me@x");
+      setRoomSetting("r1", { mode: "all" });
+      useNotifications.getState().applyRemote(settings({ global: { mode: "nothing", sound: true, browser: false } }));
+      expect(useNotifications.getState().settings).toMatchObject({ global: { mode: "nothing" }, rooms: { r1: { mode: "all" } } });
+      await vi.advanceTimersByTimeAsync(500);
+      expect(remote.put.mock.calls[0]![0]).toMatchObject({ global: { mode: "nothing" }, rooms: { r1: { mode: "all" } } });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a failed save is told and the shown settings are the node's again", async () => {
+    vi.useFakeTimers();
+    const failed = vi.fn();
+    setNotificationSaveFailed(failed);
+    try {
+      const unavailable = new TavrnApiError({ type: "about:blank", title: "Unavailable", status: 503, detail: "", code: "server.unavailable" });
+      const remote = { get: vi.fn(async () => settings()), put: vi.fn(async () => Promise.reject(unavailable)) };
+      await useNotifications.getState().load(remote, "me@x");
+      setRoomSetting("r1", { muted_until: FOREVER });
+      expect(useNotifications.getState().settings.rooms.r1).toBeDefined();
+      await vi.advanceTimersByTimeAsync(500);
+      expect(failed).toHaveBeenCalledWith(unavailable);
+      expect(useNotifications.getState().settings.rooms.r1).toBeUndefined();
+      expect(useNotifications.getState().source).toBe("server");
+    } finally {
+      setNotificationSaveFailed(null);
+      vi.useRealTimers();
+    }
   });
 });

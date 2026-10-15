@@ -6,22 +6,19 @@
 // results grid, keyboard, the phone layout). axe-core checks the composer, the vote form and the results; the phone
 // project checks the calendar's and the grid's layout. Screenshots for review: test-results/pollsux/.
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { pollHash, pollVoteContent, type Poll } from "@tavrn/e2ee";
-import { NODE, createRoomViaApi, loginAs, openNavIfMobile, openRoomInvite, registerViaApi, registerViaUi } from "./helpers";
+import { NODE, createRoomViaApi, loginAs, openNavIfMobile, openRoomInvite, registerViaApi, registerViaUi, newPage, closePages } from "./helpers";
 import { expectInsideViewport, joinRoom } from "./menu-helpers";
 import { scaled } from "./timeouts";
+
+test.afterEach(closePages);
 
 /** No WCAG 2.2 AA violation inside `selector`. */
 async function axe(page: Page, selector: string) {
   await page.waitForTimeout(300);
   const result = await new AxeBuilder({ page }).include(selector).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22a", "wcag22aa"]).analyze();
   expect(result.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
-}
-
-async function newPage(browser: Browser): Promise<Page> {
-  const context = await browser.newContext({ ...test.info().project.use });
-  return context.newPage();
 }
 
 async function createRoomInUi(page: Page, name: string): Promise<string> {
@@ -147,8 +144,8 @@ test.describe("Polls", () => {
     await expect(option(poll, "o2").getByTestId("poll-count")).toHaveText("0 · 0 %");
 
     // The author closes the poll early: nobody can vote any more.
-    page.on("dialog", (d) => void d.accept());
     await poll.getByTestId("poll-close-now").click();
+    await page.getByTestId("confirm-ok").click();
     await expect(poll.getByTestId("poll-closed")).toBeVisible();
     await expect(bobPoll.getByTestId("poll-closed")).toBeVisible({ timeout: scaled(20_000) });
     await expect(bobPoll.getByTestId("poll-vote")).toHaveCount(0);
@@ -250,8 +247,8 @@ test.describe("Polls", () => {
     await expect(cell(poll, "s2")).toHaveAccessibleName(/1 ja, 0 vielleicht, 1 nein/, { timeout: scaled(20_000) });
 
     // Closed early: the client takes no votes, and the node refuses retracting (and voting) afterwards.
-    page.on("dialog", (d) => void d.accept());
     await poll.getByTestId("poll-close-now").click();
+    await page.getByTestId("confirm-ok").click();
     await expect(bobPoll.getByTestId("poll-closed")).toBeVisible({ timeout: scaled(20_000) });
     await expect(bobPoll.getByTestId("poll-retract")).toHaveCount(0);
     await expect(bobPoll.getByTestId("poll-change")).toHaveCount(0);

@@ -104,7 +104,13 @@ Nodes with `age.v1` (PROTOCOL.md §5e) ask every account for its date of birth.
 
 The web client is a client of several nodes at once. Rooms of other nodes appear in the room rail under their domain
 (`/n/<domain>/rooms/…`); the client opens a federated session there with a token of the home node, renews it on its
-own and keeps one WebSocket per node. The conversation index on the home node lists every room and conversation on any
+own and keeps one WebSocket per node. A node's socket changes only that node's rooms, channels, conversations and
+messages in the client: the client remembers which node listed each room and conversation (the room and conversation
+lists of every node) and ignores events naming ids another node listed, the home node's above all; a message in a
+conversation no list names yet is shown once the sending node lists it. The home node's socket ignores only rooms
+another node's room list names and its own does not; what another node's room details or DM list claim never
+silences a channel of the home node (`web/src/lib/nodeScope.ts`,
+`web/src/hooks/socketScope.ts`). The conversation index on the home node lists every room and conversation on any
 node, so a new device brings them all back after signing in. The login page offers "Sign in with an account of
 another node": with the address `alice@home.example` the client finds the home node and signs in there directly
 (password and TOTP or a recovery code) or through the home node's own web client (the connect flow with PKCE, needed
@@ -549,7 +555,12 @@ device unlocked with the recovery key reads the history. Verified contacts carry
 of a message and in conversation headers, and a small shield icon (named "verified", with a tooltip) in member lists,
 where names keep the width. The pinned keys, the verified contacts and the account's own
 devices travel with them as an encrypted trust record (ENCRYPTION.md §7): after signing out and in again (a new
-device) a contact whose key changed meanwhile still shows "Security key changed", and verifications stay.
+device) a contact whose key changed meanwhile still shows "Security key changed", and verifications stay. A message
+whose sender's devices could not be looked up for the moment (the sender's node did not answer, a rate limit) shows
+"Not checked yet, trying again" and is decrypted again every 30 seconds until the lookup works. When the stored key
+pins or verified contacts decrypt but cannot be read, the session manager does not start over with empty ones (that
+would trust every changed key again): encrypted conversations show "Stored encryption data could not be read" instead
+of the locked notice, and the data stays stored.
 
 **Unknown devices** (ENCRYPTION.md §4.6). Every encrypted write path checks the roster first: messages and their edits,
 thread titles and renames, forum posts, file and folder records of files channels and whiteboard scenes. Conversations,
@@ -604,8 +615,9 @@ names of the last 90 days.
 conversation's whole history here instead: the background sync pages it back to the start, the search index keeps all
 of it, and the messages with their decrypted content stay in an encrypted local archive (IndexedDB `tavrn-history`,
 sealed with keys derived from this device's local storage key, so it locks with the device and reveals no ids or text;
-`web/src/history/`). The message list then uses the archived content instead of decrypting again and reads from the
-archive while the node cannot be reached. Each conversation may take up to the space set under Settings → Privacy &
+`web/src/history/`). The message list then uses the archived content instead of decrypting again (only for the same
+message: the same author, sending device, epoch, edit and ciphertext; a message the node serves differently is
+decrypted again) and reads from the archive while the node cannot be reached. Each conversation may take up to the space set under Settings → Privacy &
 safety → Local search index (default 50 MB; the oldest messages go first); the menu entry shows what it takes, the
 settings the total. Turning the setting off, clearing the index or signing out (which wipes the device) deletes the
 archive.
@@ -1083,6 +1095,10 @@ the same shortcut), once connected:
 - the selected candidate pair: local and remote candidate type (`host`, `srflx`, `relay`), UDP or TCP and the
   round-trip time.
 
+The desktop app's native voice engine records the same MLS and node stages, then `shell_join_start` and
+`shell_join_done` (the shell's own LiveKit join, which also publishes the microphone) instead of the browser's
+LiveKit stages and peer connections.
+
 Reading it: slow MLS stages (`ensure_joined`, `cleanup`, `self_update`) point at the node or the network to it (each
 is one or two requests); a slow `/rtc` open or `lk_signal_connected` at the reverse proxy in front of the media server;
 a long ICE phase, a `relay` pair or TCP instead of UDP at blocked UDP ports (the connection test above tells which
@@ -1094,7 +1110,9 @@ profile.
 Roles with "show separately in the member list" get their own section there; the role list in the room settings is
 reordered by drag and drop (or the arrows). `@everyone` can never get management permissions; the editor greys them
 out. Moderation items against someone whose highest role is not below yours stay greyed out with the reason. Each
-role also carries its allowed file types ("File types" above).
+role also carries its allowed file types ("File types" above). When another admin changes the role you are editing,
+an untouched editor shows the new version; with edits in progress your edits stay and a notice says the role changed
+elsewhere, with **Load their version** (saving keeps yours).
 
 **Channel permissions are layered**
 ([permissions.md](https://github.com/just-tavrn/tavrn-protocol/blob/main/permissions.md) "Evaluation"): roles give
@@ -1166,7 +1184,13 @@ Mentions and DMs show a toast with a jump link, a soft sound and an entry behind
 unless set to nothing), the sound (with a preview), lists the rooms and channels with their own settings (set from
 their context menus) with a Reset each, and has **Desktop notifications when tavrn is in the background**: the
 browser shows them then (the permission is asked only after that click; encrypted messages never appear in the notification
-text). The settings are stored on the home node and fall back to this browser on nodes that do not offer them.
+text). The settings are stored on the home node and fall back to this browser on nodes that do not offer them. A
+change on another device or tab arrives at once (`notifications.update`) and is kept when this device saves its own
+change (the client saves its changes on top of the node's settings); a save the node refuses shows an error toast and
+the settings show the node's again. A burst of messages in one conversation shows one toast with the newest message
+(a mention keeps its own); at most five toasts show at once. A ban by a room or node on another node
+(`ban.notify`) and a friend request or invitation that could not be delivered to another node
+(`federation.undeliverable`) show a warning toast.
 
 **Push notifications on this device** turns on web push for this browser or installed app (PROTOCOL.md §6d): the
 client registers a service worker (`public/sw.js`, push and notification clicks only: it caches nothing and there is
@@ -1345,9 +1369,11 @@ of a window ("Sign in on \<node>'s page"). What is different in the client:
 
 The web client ships English and German. It takes the language saved on this device, else the first of the browser's
 languages it knows, else English; Settings → Language changes it. To add a language, copy `web/src/i18n/en.json` to
-`web/src/i18n/<code>.json`, translate the values and register the file in `web/src/i18n/index.ts`. A unit test checks
-that every language has exactly the keys of English, and that the texts write "tavrn" in lowercase, name no
-authenticator app and contain no roadmap wording.
+`web/src/i18n/<code>.json`, translate the values and register the file in `web/src/i18n/index.ts` (with a loader:
+English is part of the bundle as the fallback, every other language is a chunk of its own that loads before the first
+render and when the user switches to it). A unit test checks that every language has exactly the keys of English, and
+that the texts write "tavrn" in lowercase, name no authenticator app and contain no roadmap wording. Dates and times
+follow the chosen language, not the browser's (`formatDate` in `web/src/lib/format.ts`).
 
 The language also decides the language of the home node's e-mails (address confirmation, password reset, account,
 legal and app token mails): the client sends it as `locale` (`PATCH /users/me`) when the app starts and the node has

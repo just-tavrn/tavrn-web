@@ -27,6 +27,44 @@ export type SaveFile = (file: SaveFileRequest) => Promise<SaveFileOutcome>;
 /** The desktop app streams a file to its shell in pieces of this size: a large file never sits twice in memory. */
 export const SAVE_CHUNK_BYTES = 4 * 1024 * 1024;
 
+/** A shell's save commands: the dialog, the chunks, the end (moves the file into place) and the abort. */
+export interface ChunkedSave {
+  begin(name: string, mime: string, size: number): Promise<{ status: "ready"; id: string } | { status: "cancelled" }>;
+  chunk(id: string, bytes: Uint8Array): Promise<unknown>;
+  /** The saved file (`name`: the name the shell gave it, when it chose another). */
+  end(id: string): Promise<{ path?: string; folder?: string; name?: string }>;
+  abort(id: string): Promise<unknown>;
+  /** "Show in folder" of a finished save (shells without folders have none). */
+  reveal?(id: string): Promise<void>;
+  /** Bytes per chunk (default {@link SAVE_CHUNK_BYTES}). */
+  chunkBytes?: number;
+}
+
+/**
+ * Saving through a shell (`tauriFiles.ts`, `electronFiles.ts`, the Android app's `tauriAndroid.ts`): the dialog, then
+ * the content streamed in chunks (a large file never sits twice in memory), then the end; any failure aborts the save
+ * (the shell removes its temporary file) and is rethrown.
+ */
+export function chunkedSaveFile(t: ChunkedSave): SaveFile {
+  const size = t.chunkBytes ?? SAVE_CHUNK_BYTES;
+  return async (file) => {
+    const blob = asBlob(file);
+    const mime = file.mime || blob.type || "application/octet-stream";
+    const begin = await t.begin(file.name, mime, blob.size);
+    if (begin.status !== "ready") return { status: "cancelled" };
+    const { id } = begin;
+    try {
+      for (let offset = 0; offset < blob.size; offset += size) await t.chunk(id, new Uint8Array(await blob.slice(offset, offset + size).arrayBuffer()));
+      const saved = await t.end(id);
+      const reveal = t.reveal;
+      return { status: "saved", name: saved.name || file.name, path: saved.path ?? "", folder: saved.folder ?? "", ...(reveal ? { reveal: () => reveal(id) } : {}) };
+    } catch (e) {
+      await Promise.resolve(t.abort(id)).catch(() => {});
+      throw e;
+    }
+  };
+}
+
 /** The content as a blob of the wanted type. */
 export function asBlob({ data, mime }: SaveFileRequest): Blob {
   if (data instanceof Blob) return mime && mime !== data.type ? data.slice(0, data.size, mime) : data;

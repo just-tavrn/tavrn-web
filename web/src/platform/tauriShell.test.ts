@@ -14,7 +14,8 @@ function shell(handlers: Record<string, (args: Record<string, unknown>) => unkno
   mockWindows("main");
   mockIPC((cmd, args) => {
     const a = (args ?? {}) as Record<string, unknown>;
-    calls.push({ cmd, args: a });
+    // Secrets are recorded as sent: the client wipes its number arrays once a call is done (`keyBytes.ts`).
+    calls.push({ cmd, args: Array.isArray(a.secret) ? { ...a, secret: [...(a.secret as number[])] } : a });
     if (cmd === "shell_events") {
       state.channel = a.onEvent as Channel<unknown>;
       return null;
@@ -33,8 +34,12 @@ describe("keystore", () => {
   it("passes 32-byte keys to the shell and back as bytes", async () => {
     const stored = new Map<string, number[]>();
     const { calls } = shell({
-      keychain_set: (a) => void stored.set(a.account as string, a.secret as number[]),
-      keychain_get: (a) => stored.get(a.account as string) ?? null,
+      keychain_set: (a) => void stored.set(a.account as string, [...(a.secret as number[])]),
+      // A fresh array per answer, like the IPC (the client wipes the one it got).
+      keychain_get: (a) => {
+        const v = stored.get(a.account as string);
+        return v ? [...v] : null;
+      },
       keychain_delete: (a) => void stored.delete(a.account as string),
       keychain_status: () => ({ backend: "secret-service", available: true }),
     });

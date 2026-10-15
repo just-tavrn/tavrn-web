@@ -24,7 +24,14 @@ export class TavrnKeyProvider extends ExternalE2EEKeyProvider {
   async setEpochKey(key: Uint8Array, epoch: number): Promise<boolean> {
     if (key.length !== 32) throw new RangeError("voice frame keys are 32 bytes");
     if (!this.ring.needs(epoch)) return false;
-    const material = await createKeyMaterialFromBuffer(key.slice().buffer);
+    // WebCrypto copies the key bytes on import: the copy made for it is wiped right after.
+    const copy = key.slice();
+    let material: CryptoKey;
+    try {
+      material = await createKeyMaterialFromBuffer(copy.buffer);
+    } finally {
+      copy.fill(0);
+    }
     if (!this.ring.needs(epoch)) return false;
     this.ring.mark(epoch);
     this.onSetEncryptionKey(material, undefined, voiceKeyIndex(epoch));

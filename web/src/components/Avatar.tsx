@@ -13,10 +13,7 @@ import { DOT_CLASS, useStatus, type PresenceStatus } from "../stores/presence";
 import { useAuth } from "../stores/auth";
 import { useT } from "../i18n";
 import { useNode } from "./NodeScope";
-
-function reducedMotion(): boolean {
-  return typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-}
+import { reducedMotion } from "../lib/emojis";
 
 /**
  * `active` while the pointer (mouse or pen, not touch) is over the element or its closest interactive
@@ -77,8 +74,9 @@ export interface MediaAvatarProps {
 export function MediaAvatar({ name, still, animated, size = 32, shape = "circle", speaking = false, presence, testId }: MediaAvatarProps) {
   const t = useT();
   const { ref, active } = useHoverActive<HTMLSpanElement>(!!animated);
-  const [failed, setFailed] = useState(false);
-  const animate = !!animated && (active || speaking) && !reducedMotion();
+  // The URLs that failed to load: a changed avatar shows again, a failed animation falls back to the still.
+  const [failed, setFailed] = useState<readonly string[]>([]);
+  const animate = !!animated && !failed.includes(animated) && (active || speaking) && !reducedMotion();
   const radius = shape === "circle" ? "rounded-full" : "rounded-[30%]";
   const dot = Math.max(8, Math.round(size * 0.3));
   const src = animate ? animated : still;
@@ -93,8 +91,8 @@ export function MediaAvatar({ name, still, animated, size = 32, shape = "circle"
       data-has-animation={animated ? "true" : "false"}
       data-speaking={speaking ? "true" : undefined}
     >
-      {src && !failed ? (
-        <img src={src} alt="" draggable={false} decoding="async" className={`h-full w-full ${radius} bg-bg-3 object-cover`} onError={() => setFailed(true)} data-testid="avatar-image" />
+      {src && !failed.includes(src) ? (
+        <img src={src} alt="" draggable={false} decoding="async" className={`h-full w-full ${radius} bg-bg-3 object-cover`} onError={() => setFailed((f) => (f.includes(src) ? f : [...f.slice(-3), src]))} data-testid="avatar-image" />
       ) : (
         <span className={`inline-flex h-full w-full items-center justify-center ${radius} font-semibold text-white`} style={{ background: avatarBackground(name), fontSize: size * 0.38 }}>
           {initials(name)}

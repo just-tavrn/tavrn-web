@@ -3,7 +3,7 @@
 import { useRolePreview } from "./rolePreview";
 import { create } from "zustand";
 import { api, quietApi } from "../lib/api";
-import { beginSignOut, useAuth } from "./auth";
+import { beginSignOut, onAccountChange, useAuth } from "./auth";
 import { ensureDevice, localDeviceLost, localStatus, syncIdentity, wipeLocal, type E2eeContext } from "../crypto/e2ee";
 import { cryptoStore, type CryptoStatus } from "../crypto/store";
 import { useAuthFlow } from "./authFlow";
@@ -15,6 +15,8 @@ import { wipeLocalIndex } from "../search/local";
 import { usePush } from "./push";
 import { forgetAttachments } from "../components/AttachmentView";
 import { forgetThumbnails } from "../files/e2ee";
+import { forgetRendered } from "../lib/markdown";
+import { useInteractions } from "./interactions";
 
 interface E2eeState {
   /** null until checked. */
@@ -97,6 +99,24 @@ export async function e2eeContext(): Promise<E2eeContext> {
   }
   return { api, username: user.username, address: user.address, deviceId: id };
 }
+
+/**
+ * Whatever the account had unlocked in this tab leaves memory when the account ends here, however it ends: the
+ * explicit sign-out, a session the node refused (revoked on another device, an expired refresh), another tab signing
+ * out or in with another account. The key store is locked (signing in again needs the recovery key or a passkey when
+ * the account asks for it every time), the session manager goes, decrypted attachments, thumbnails and rendered
+ * messages are forgotten. The local data on disk stays unless the sign-out was explicit ({@link signOut}).
+ */
+export function forgetUnlocked(): void {
+  resetMls();
+  forgetAttachments();
+  forgetThumbnails();
+  forgetRendered();
+  useInteractions.setState({ notices: [] });
+  cryptoStore.lock();
+  useE2ee.setState({ status: null, deviceLost: false });
+}
+onAccountChange(forgetUnlocked);
 
 /**
  * Explicit sign-out: end the sessions on the home node and every other node, delete local crypto data,

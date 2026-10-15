@@ -16,6 +16,7 @@ import { channelName } from "../../lib/names";
 import { channelPermissions, useRoomMembers } from "../../pages/ChannelPage";
 import { getMls, useMlsUi } from "../../stores/mls";
 import { qualify, splitIdentity, type GhostViolation } from "@tavrn/e2ee";
+import { devCount } from "../devCounters";
 import { participantsOf, screensOf, sessionStartOf, useVoicePresence } from "../presence";
 import { publisherStreams, screenOwner } from "../streams";
 import { phoneCameras, useVoiceSettings } from "../settings";
@@ -204,6 +205,7 @@ function useGhosts(q: string, members: string[] | null, active: boolean, online:
  * and a bottom control bar.
  */
 export function VoiceStage({ room, channel }: { room: RoomDetail; channel: Channel }) {
+  devCount("voice.stage");
   const t = useT();
   const { domain, me } = useNode();
   const status = useVoice((s) => (s.target?.domain === domain && s.target.channelId === channel.id ? s.status : "idle"));

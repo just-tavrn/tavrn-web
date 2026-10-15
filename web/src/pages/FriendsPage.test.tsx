@@ -61,6 +61,37 @@ describe("FriendsPage", () => {
     expect(JSON.parse(String(block!.init.body))).toEqual({ user: "botty@t.local", reason: "nervt" });
   });
 
+  it("sends one request on a double click and asks in the app before removing a friend", async () => {
+    useAuth.setState({ token: "t", user: { ...user("u0", "me"), email: null, email_verified: false, has_identity_key: true } });
+    let release!: () => void;
+    const slow = new Promise<void>((r) => (release = r));
+    const calls: string[] = [];
+    globalThis.fetch = (async (url: string, init: RequestInit = {}) => {
+      calls.push(`${init.method ?? "GET"} ${url}`);
+      if (url.endsWith("/accept")) await slow;
+      if (url.includes("/users/me/friends/") && init.method === "DELETE") return new Response(null, { status: 204 });
+      if (url.endsWith("/accept")) return Response.json({ user: user("u1", "anna"), since: "" });
+      if (url.endsWith("/users/me/friends")) return Response.json({ friends: [{ user: user("u2", "ben"), since: "" }], incoming: [{ id: "r1", direction: "incoming", user: user("u1", "anna"), created_at: "", message: null }], outgoing: [], blocked: [] });
+      return Response.json([]);
+    }) as typeof fetch;
+    renderWithProviders(<FriendsPage />);
+    const accept = within(await screen.findByTestId("friends-incoming")).getByRole("button", { name: "Annehmen" });
+    fireEvent.click(accept);
+    fireEvent.click(accept);
+    await act(async () => release());
+    expect(calls.filter((c) => c.endsWith("/accept"))).toHaveLength(1);
+
+    const u = userEvent.setup();
+    const removed = () => calls.filter((c) => c.startsWith("DELETE") && c.includes("/users/me/friends/ben"));
+    await u.click(within(screen.getByTestId("friends-list")).getByRole("button", { name: "Entfernen" }));
+    expect(screen.getByTestId("confirm-text")).toHaveTextContent("ben@t.local aus deinen Freunden entfernen?");
+    await u.click(screen.getByTestId("confirm-cancel"));
+    expect(removed()).toHaveLength(0);
+    await u.click(within(screen.getByTestId("friends-list")).getByRole("button", { name: "Entfernen" }));
+    await u.click(screen.getByTestId("confirm-ok"));
+    await waitFor(() => expect(removed()).toHaveLength(1));
+  });
+
   describe("friends in voice", () => {
     const vp = (username: string): VoiceParticipant => ({ user: `${username}@t.local`, user_id: `id-${username}`, device_id: "D", identity: `${username}@t.local/D`, muted: false, deafened: false, streaming: false, camera: false, server_muted: false, joined_at: "", connection: "connected" });
     const online = (username: string): Presence => ({ user: `${username}@t.local`, user_id: `id-${username}`, status: "online", custom_status: null, activity: null });

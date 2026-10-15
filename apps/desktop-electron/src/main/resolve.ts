@@ -19,7 +19,7 @@
 import { resolveSrv } from "node:dns/promises";
 import { request as httpsRequest } from "node:https";
 import { getCACertificates, rootCertificates } from "node:tls";
-import { DEV_HOSTS, validDomain } from "./node_url.ts";
+import { DEV_HOSTS, validDomain, webBound } from "./node_url.ts";
 
 /** SRV targets tried at most. */
 export const MAX_SRV_TARGETS = 3;
@@ -133,7 +133,10 @@ export function validateDocument(body: Uint8Array, domain: string, dev: boolean)
   if (!ws) return null;
   const web = d.web === undefined ? api : endpoint(d.web, "https", "http", dev);
   if (!web) return null;
-  return { domain: named, api: trimSlash(api.href), ws: trimSlash(ws.href), web: web.origin, source: "well_known" };
+  // The web client's origin anchors the sign-in window and native passkeys: one not bound to the node (another site's
+  // origin) is replaced by the API's origin, as a document without `web` (node_url.ts webBound).
+  const bound = webBound(api.origin, web.origin, named) ? web.origin : api.origin;
+  return { domain: named, api: trimSlash(api.href), ws: trimSlash(ws.href), web: bound, source: "well_known" };
 }
 
 const failure = (code: Failure["code"], step: Step, domain: string): Failure => ({ code, step, domain });

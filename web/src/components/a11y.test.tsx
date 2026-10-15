@@ -2,7 +2,7 @@
 // Accessibility behaviour of shared widgets (design note 4.14 item 4, docs/ACCESSIBILITY.md).
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { describe, expect, it } from "vitest";
 import type { Message } from "@tavrn/sdk";
 import { Dialog, ErrorText, Field, Input } from "./ui";
@@ -11,6 +11,8 @@ import { useAccessibility } from "../stores/accessibility";
 import { tabListKeyDown } from "../lib/a11y";
 import { ComponentsContext } from "../messageComponents/context";
 import { ComponentModal } from "../messageComponents/ComponentModal";
+import { ConfirmHost, confirmDialog } from "./Confirm";
+import { useDismiss } from "../lib/dismiss";
 
 function DialogHarness() {
   const [open, setOpen] = useState(false);
@@ -68,6 +70,62 @@ describe("accessibility of shared widgets", () => {
     expect(screen.getByRole("button", { name: "inner 2" })).toHaveFocus();
     await user.tab();
     expect(screen.getByRole("button", { name: "inner 1" })).toHaveFocus();
+  });
+
+  it("the in-app confirmation is a labelled modal dialog: Cancel has the focus, Escape cancels, the opener gets the focus back", async () => {
+    const user = userEvent.setup();
+    let answer: boolean | null = null;
+    render(
+      <>
+        <button type="button" onClick={() => void confirmDialog({ title: "Nachricht löschen", text: "Nachricht endgültig löschen?", confirmLabel: "Löschen", danger: true }).then((a) => (answer = a))}>
+          delete
+        </button>
+        <ConfirmHost />
+      </>,
+    );
+    const opener = screen.getByRole("button", { name: "delete" });
+    await user.click(opener);
+    const dialog = screen.getByRole("dialog", { name: "Nachricht löschen" });
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    expect(screen.getByRole("button", { name: "Abbrechen" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Löschen" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(answer).toBe(false);
+    expect(opener).toHaveFocus();
+  });
+
+  it("a menu or popover closes with Escape and gives the focus back to its button (useDismiss)", async () => {
+    const user = userEvent.setup();
+    function MenuButton() {
+      const [open, setOpen] = useState(false);
+      const trigger = useRef<HTMLButtonElement>(null);
+      const panel = useRef<HTMLDivElement>(null);
+      useDismiss(open, () => setOpen(false), { inside: [panel, trigger], returnFocus: trigger });
+      return (
+        <>
+          <button ref={trigger} type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(true)}>
+            menu
+          </button>
+          {open && (
+            <div ref={panel} role="menu" aria-label="Menü">
+              <button type="button" role="menuitem" autoFocus>
+                eins
+              </button>
+            </div>
+          )}
+        </>
+      );
+    }
+    render(<MenuButton />);
+    const trigger = screen.getByRole("button", { name: "menu" });
+    await user.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("menuitem", { name: "eins" })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(trigger).toHaveFocus();
   });
 
   it("a field is described by its hint and, while shown, by the form error", () => {

@@ -7,9 +7,10 @@
  * when the shell reports `android`; nothing here runs in a browser or on the desktop.
  */
 import { invoke, type InvokeArgs, type InvokeOptions } from "@tauri-apps/api/core";
-import { asBlob, type SaveFile } from "./files";
+import { chunkedSaveFile, type SaveFile } from "./files";
+import { withKeyNumbers } from "./keyBytes";
 import type { ShellEvents } from "./shellEvents";
-import { updateFailure } from "./updateErrors";
+import { updaterOf } from "./shellGlue";
 import { notificationOpens, trayActions } from "./tauriShell";
 import { nativePasskeys } from "./tauriPasskeys";
 import { createAndroidUnlock } from "./unlock";
@@ -102,24 +103,14 @@ function base64(bytes: Uint8Array): string {
 }
 
 export function createAndroidSaveFile(call: ShellCall = invoke): SaveFile {
-  return async (file) => {
-    const blob = asBlob(file);
-    const mime = file.mime || blob.type || "application/octet-stream";
-    const begin = (await call("android_save_begin", { name: file.name, mime, size: blob.size })) as { status: "ready"; id: string } | { status: "cancelled" };
-    if (begin.status !== "ready") return { status: "cancelled" };
-    const { id } = begin;
-    try {
-      for (let offset = 0; offset < blob.size; offset += ANDROID_SAVE_CHUNK_BYTES) {
-        const bytes = new Uint8Array(await blob.slice(offset, offset + ANDROID_SAVE_CHUNK_BYTES).arrayBuffer());
-        await call("android_save_chunk", { id, data: base64(bytes) });
-      }
-      const saved = (await call("android_save_end", { id })) as { name: string };
-      return { status: "saved", name: saved.name || file.name, path: "", folder: "" };
-    } catch (e) {
-      await call("android_save_abort", { id }).catch(() => {});
-      throw e;
-    }
-  };
+  // Android's documents provider names no folder: no "show in folder"; the provider may rename the file.
+  return chunkedSaveFile({
+    begin: async (name, mime, size) => (await call("android_save_begin", { name, mime, size })) as { status: "ready"; id: string } | { status: "cancelled" },
+    chunk: (id, bytes) => call("android_save_chunk", { id, data: base64(bytes) }),
+    end: async (id) => (await call("android_save_end", { id })) as { name: string },
+    abort: (id) => call("android_save_abort", { id }),
+    chunkBytes: ANDROID_SAVE_CHUNK_BYTES,
+  });
 }
 
 const STOP_REASONS: readonly AndroidScreenStopReason[] = ["stopped", "notification", "revoked", "failed"];
@@ -134,12 +125,14 @@ export function androidScreenShare(events: ShellEvents, sdk: number, call: Shell
     // AudioPlaybackCapture: Android 10 and newer.
     audio: sdk >= 29,
     start: async (a) => {
-      await call("android_screen_share_start", {
-        share: { url: a.url, token: a.token, key: Array.from(a.key), epoch: a.epoch, max_side: a.maxSide, fps: a.fps, max_bitrate: a.maxBitrate, audio: a.audio, title: a.notice.title, text: a.notice.text, stop: a.notice.stop },
-      });
+      await withKeyNumbers(a.key, (key) =>
+        call("android_screen_share_start", {
+          share: { url: a.url, token: a.token, key, epoch: a.epoch, max_side: a.maxSide, fps: a.fps, max_bitrate: a.maxBitrate, audio: a.audio, title: a.notice.title, text: a.notice.text, stop: a.notice.stop },
+        }),
+      );
     },
     setKey: async (key, epoch) => {
-      await call("android_screen_share_key", { key: Array.from(key), epoch });
+      await withKeyNumbers(key, (numbers) => call("android_screen_share_key", { key: numbers, epoch }));
     },
     stop: async () => {
       await call("android_screen_share_stop");
@@ -229,18 +222,13 @@ export function androidMembers(events: ShellEvents, initial: AndroidStatus): And
 
   // Tauri's updater has no Android support: the shell reads the release list, the browser downloads the APK and
   // Android installs it over the app (the same signing key).
-  const updater: AppUpdater = {
-    check: async () => {
-      const found = await invoke<Release | null>("android_check_update").catch(updateFailure);
-      if (!found) return null;
-      return { version: found.version, notes: found.notes, install: () => invoke<void>("open_external", { url: found.url }) };
-    },
+  const updater: AppUpdater = updaterOf<Release>({
+    check: () => invoke<Release | null>("android_check_update"),
+    install: (found) => invoke<void>("open_external", { url: found.url }),
     // The same setting as the desktop's (`get_update_channel`, `set_update_channel`): beta offers pre-releases too.
-    channel: {
-      get: () => invoke<"stable" | "beta">("get_update_channel").catch(updateFailure),
-      set: (channel) => invoke<void>("set_update_channel", { channel }).catch(updateFailure),
-    },
-  };
+    getChannel: () => invoke<"stable" | "beta">("get_update_channel"),
+    setChannel: (channel) => invoke<void>("set_update_channel", { channel }),
+  });
 
   return { saveFile: createAndroidSaveFile(), updater, android, notifications, tray, unlock: createAndroidUnlock(), ...(initial.passkeys ? { passkeys: nativePasskeys() } : {}) };
 }

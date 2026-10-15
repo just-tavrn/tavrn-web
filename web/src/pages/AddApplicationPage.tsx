@@ -21,6 +21,7 @@ import { BotBadge } from "../components/Badges";
 import { Button, ErrorText } from "../components/ui";
 import { usePermissionLabel } from "./settings/common";
 import { useT } from "../i18n";
+import { roomsQuery } from "../lib/queries";
 
 const ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/i;
 
@@ -65,8 +66,8 @@ function useManageableRooms(): { options: RoomOption[]; loading: boolean } {
   const home = homeDomain() ?? "";
   const domains = useNodes((s) => Object.keys(s.sessions).filter((d) => d !== home).sort().join(","));
   const remote = domains ? domains.split(",") : [];
-  const homeRooms = useQuery({ queryKey: ["rooms"], queryFn: () => api.rooms.list(), staleTime: 30_000 });
-  const remoteRooms = useQueries({ queries: remote.map((d) => ({ queryKey: ["rooms", d], queryFn: () => apiFor(d).rooms.list(), staleTime: 30_000, retry: 1 })) });
+  const homeRooms = useQuery(roomsQuery(null));
+  const remoteRooms = useQueries({ queries: remote.map((d) => roomsQuery(d)) });
   const rooms = [
     ...(homeRooms.data ?? []).map((r) => ({ node: null as string | null, domain: home, id: r.id })),
     ...remoteRooms.flatMap((q, i) => (q.data ?? []).map((r) => ({ node: remote[i]! as string | null, domain: remote[i]!, id: r.id }))),

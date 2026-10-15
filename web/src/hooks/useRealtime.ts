@@ -2,11 +2,11 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
-import { TavrnSocket, type Conversation, type EphemeralReply, type FriendRequest, type Member, type Message, type PendingInvite, type Presence, type RoomDetail, type SocketStatus, type User } from "@tavrn/sdk";
+import { TavrnSocket, type Conversation, type EphemeralReply, type FriendRequest, type Member, type Message, type PendingInvite, type Presence, type SocketStatus, type User } from "@tavrn/sdk";
 import { create } from "zustand";
 import { refreshHome, wsUrl } from "../lib/api";
 import { cleanupConversation, cleanupOwnLeaves } from "../lib/leafCleanup";
-import { useAuth } from "../stores/auth";
+import { useAuth, useSessionKey } from "../stores/auth";
 import { useToasts } from "../stores/toasts";
 import { t } from "../i18n";
 import { useTyping } from "../stores/typing";
@@ -24,14 +24,15 @@ import { mapMessages, prependMessage, type MessagePages } from "../lib/messagePa
 import { mergeMessageUpdate, type MessageUpdateEvent } from "../lib/reactionEvents";
 import { threadHandlers, threadMessage } from "../threads/realtime";
 import { useUnread } from "../stores/unread";
-import { apiFor, homeDomain, refreshNode, useNodes } from "../stores/nodes";
+import { apiFor, homeDomain, isHome, refreshNode, useNodes } from "../stores/nodes";
 import { loadFollowedThreads } from "../threads/loadFollowed";
 import { unindexConversation, unindexMessages } from "../search/local";
 import { isRealDeletion, useHiddenChannels } from "../lib/hiddenChannels";
 import { usePresence } from "../stores/presence";
 import { useNotifications } from "../stores/notifications";
 import { isAttentive } from "./useMarkRead";
-import { loadRoomDetails, notifyMessage } from "../lib/notify";
+import { loadRoomDetails, locate, notifyMessage } from "../lib/notify";
+import { applyUserUpdate, isEventUser } from "../lib/userUpdate";
 import { historyPending, historyReceive } from "../crypto/history";
 import { historyDecidedEvent, historyRequestEvent } from "../history/restore";
 import { registerFilesChannel, useHistoryKeys } from "../files/registry";
@@ -41,6 +42,11 @@ import { rememberDeleted } from "../moderation/deletedIds";
 import { viaOf } from "../components/ViaNode";
 import { pollHandlers } from "../polls/votes";
 import { roomEventHandlers } from "./roomEvents";
+import { roomOfChannel } from "../lib/roomCache";
+import { formatDate } from "../lib/format";
+import { scopeSocket } from "./socketScope";
+import { browserWebSocket } from "../lib/browserWebSocket";
+import { conversationsQuery, roomsQuery } from "../lib/queries";
 
 /**
  * May this user commit removals of departed members in a conversation (`mls.remove_needed`)? DMs and group DMs:
@@ -48,9 +54,8 @@ import { roomEventHandlers } from "./roomEvents";
  * user's own other leaves every member may remove (ENCRYPTION.md §4.7).
  */
 export function mayManageConversation(queryClient: QueryClient, conversationId: string): boolean {
-  for (const [, room] of queryClient.getQueriesData<RoomDetail>({ queryKey: ["room"] })) {
-    if (room?.channels?.some((c) => c.id === conversationId)) return mayManageRoom(room);
-  }
+  const owner = roomOfChannel(queryClient, conversationId);
+  if (owner) return mayManageRoom(owner.room);
   // The conversation lists of every node (["conversations"] and ["conversations", domain]).
   return queryClient.getQueriesData<Conversation[]>({ queryKey: ["conversations"] }).some(([, list]) => !!list?.some((c) => c.id === conversationId));
 }
@@ -60,28 +65,20 @@ export function mayManageConversation(queryClient: QueryClient, conversationId: 
  * cached room and member list; null when unknown and for DMs and group DMs (there every member may).
  */
 export function conversationManagers(queryClient: QueryClient, conversationId: string): string[] | null {
-  for (const [, room] of queryClient.getQueriesData<RoomDetail>({ queryKey: ["room"] })) {
-    if (room?.channels?.some((c) => c.id === conversationId)) return roomManagers(room, queryClient.getQueryData<Member[]>(["members", room.id]));
-  }
-  return null;
+  const owner = roomOfChannel(queryClient, conversationId);
+  return owner ? roomManagers(owner.room, queryClient.getQueryData<Member[]>(["members", owner.room.id])) : null;
 }
 
 /** The history policy of a channel whose room is cached (ENCRYPTION.md §7b); null if unknown. */
 function channelHistoryPolicy(queryClient: QueryClient, conversationId: string) {
-  for (const [, room] of queryClient.getQueriesData<RoomDetail>({ queryKey: ["room"] })) {
-    const channel = room?.channels?.find((c) => c.id === conversationId);
-    if (channel) return channel.encrypted ? parseHistoryPolicy(channel.history_for_new_members) : null;
-  }
-  return null;
+  const channel = roomOfChannel(queryClient, conversationId)?.channel;
+  return channel?.encrypted ? parseHistoryPolicy(channel.history_for_new_members) : null;
 }
 
 /** Registers an encrypted files channel found in the cached rooms for the history key checks; returns the cleanup. */
 function registerKnownFilesChannel(queryClient: QueryClient, qualified: string, conversationId: string): () => void {
-  for (const [, room] of queryClient.getQueriesData<RoomDetail>({ queryKey: ["room"] })) {
-    const channel = room?.channels?.find((c) => c.id === conversationId);
-    if (channel?.kind === "files" && channel.encrypted) return registerFilesChannel(qualified, room!.id);
-  }
-  return () => undefined;
+  const owner = roomOfChannel(queryClient, conversationId);
+  return owner?.channel.kind === "files" && owner.channel.encrypted ? registerFilesChannel(qualified, owner.room.id) : () => undefined;
 }
 
 /** `identity.changed` of another user (of any node): re-check the key on the user's home node (notice, §3.3). */
@@ -150,8 +147,12 @@ export function mlsHandlers(socket: TavrnSocket, queryClient: QueryClient, domai
   ];
 }
 
-/** DM and group DM events of any node's socket (PROTOCOL.md §8a). */
-function conversationHandlers(socket: TavrnSocket, queryClient: QueryClient, navigate: (to: string, opts?: { replace?: boolean }) => void): Array<() => void> {
+/**
+ * DM and group DM events of any node's socket (PROTOCOL.md §8a), within that node's scope (hooks/socketScope.ts):
+ * `node` is the socket's node, null for the home node.
+ */
+export function conversationHandlers(socket: TavrnSocket, queryClient: QueryClient, navigate: (to: string, opts?: { replace?: boolean }) => void, node: string | null = null): Array<() => void> {
+  socket = scopeSocket(socket, queryClient, node);
   return [
     ...["conversation.create", "conversation.update"].map((type) =>
       socket.on<{ conversation: Conversation }>(type, (d) => {
@@ -194,6 +195,20 @@ export async function onInvite(invite: PendingInvite, queryClient: QueryClient) 
   useToasts.getState().push({ kind: "info", title: t(invite.kind === "room" ? "invites.toast_room" : "invites.toast_conversation", { name, inviter: invite.inviter }), detail: via ? `${invite.node} · ${t("invites.via", { node: via })}` : invite.node });
 }
 
+/**
+ * A new message in a cached DM or group DM: its `last_message_id` in the node's list (`["conversations"]` home,
+ * `["conversations", node]` another node) moves it to the top of the merged list, without refetching any list.
+ */
+export function patchConversationActivity(queryClient: QueryClient, node: string | null, m: Pick<Message, "conversation_id" | "id">) {
+  queryClient.setQueryData<Conversation[]>(node ? ["conversations", node] : ["conversations"], (list) => {
+    if (!Array.isArray(list)) return undefined;
+    const at = list.findIndex((c) => c.id === m.conversation_id);
+    const c = at >= 0 ? list[at]! : null;
+    if (!c || (c.last_message_id && c.last_message_id >= m.id)) return undefined;
+    return list.map((x, i) => (i === at ? { ...x, last_message_id: m.id } : x));
+  });
+}
+
 interface RealtimeState {
   status: SocketStatus;
   socket: TavrnSocket | null;
@@ -217,6 +232,8 @@ interface PurgeData {
  * nodes. `me` is the user as that node knows it (user ids are node-local).
  */
 export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: () => { id: string; address: string } | null, node: string | null = null): Array<() => void> {
+  // A node's events change only that node's rooms and conversations (the keys are shared by every node).
+  socket = scopeSocket(socket, queryClient, node);
   /** Updates the loaded pages of a conversation if it is open (closed ones have no cache entry). */
   const updatePages = (conversationId: string, fn: (d: MessagePages<Message> | undefined) => MessagePages<Message> | undefined) => {
     // The channel's pages and those of its open threads (PROTOCOL.md §7e).
@@ -232,17 +249,21 @@ export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: 
     socket.on<Message>("message.create", (m) => {
       const self = me();
       // Thread messages (PROTOCOL.md §7e): the open thread's pages; counted and notified only for followers.
+      const loadRooms = () => loadRoomDetails(queryClient, node, m.conversation_id);
       if (m.thread_id) {
-        if (threadMessage(m, queryClient, self) && self) void notifyMessage(m, { queryClient, node, me: self, loadRooms: () => loadRoomDetails(queryClient, node) }).catch(() => undefined);
+        if (threadMessage(m, queryClient, self) && self) void notifyMessage(m, { queryClient, node, me: self, loadRooms }).catch(() => undefined);
         return;
       }
       // Unread counts: not for the conversation the user is looking at right now.
       if (self) useUnread.getState().message(m, self, useMlsUi.getState().open === m.conversation_id && isAttentive());
-      // Notifications (design note 4.11): toast, sound, notification center, browser notification.
-      if (self) void notifyMessage(m, { queryClient, node, me: self, loadRooms: () => loadRoomDetails(queryClient, node) }).catch(() => undefined);
-      // DMs and group DMs: refresh the list (order by last activity) unless it is a known room channel.
-      const inRoom = queryClient.getQueriesData<RoomDetail>({ queryKey: ["room"] }).some(([, r]) => r?.channels?.some((c) => c.id === m.conversation_id));
-      if (!inRoom) void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      // One lookup of the room or DM for everything below.
+      const located = locate(queryClient, m.conversation_id);
+      // A known DM or group DM moves up in its node's list (order by last activity): patched, nothing is fetched.
+      if (located.conversation) patchConversationActivity(queryClient, node, m);
+      // Notifications (design note 4.11): toast, sound, notification center, browser notification. An unknown
+      // conversation is looked up there (the room on that node, else that node's conversation list).
+      if (self) void notifyMessage(m, { queryClient, node, me: self, loadRooms, located }).catch(() => undefined);
+      else if (!located.room && !located.conversation) void queryClient.invalidateQueries({ queryKey: node ? ["conversations", node] : ["conversations"], exact: true });
       // Only the open conversation has loaded pages (lazy history); nothing is fetched for others.
       updatePages(m.conversation_id, (d) => prependMessage(d, m));
       // The answer to a deferred command ends "… is thinking" (APPLICATIONS.md §5.7).
@@ -309,13 +330,12 @@ export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: 
     socket.on<Parameters<typeof historyDecidedEvent>[0]>("history.request_decided", (d) => historyDecidedEvent(d, node, queryClient, me()?.address)),
     // The room detail and the room list follow the room's metadata events (patched from their payloads, roomEvents.ts).
     ...roomEventHandlers(socket, queryClient, me),
+    // The member list follows member.* from the payloads (roomEvents.ts); a kick or ban of the viewer is announced.
     socket.on<{ room_id: string; user_id: string; kicked?: boolean; banned?: boolean }>("member.leave", (d) => {
-      void queryClient.invalidateQueries({ queryKey: ["members", d.room_id] });
       if (d.user_id === me()?.id && (d.kicked || d.banned)) {
         useToasts.getState().push({ kind: "warning", title: t(d.banned ? "notice.banned" : "notice.kicked") });
       }
     }),
-    ...["member.join", "member.update"].map((type) => socket.on<{ room_id: string }>(type, (d) => void queryClient.invalidateQueries({ queryKey: ["members", d.room_id] }))),
     // `hidden: true`: the user lost access (PROTOCOL.md §6), the channel itself still exists.
     socket.on<{ id?: string; hidden?: boolean }>("channel.delete", (d) => {
       useHiddenChannels.getState().deleted(d);
@@ -329,13 +349,12 @@ export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: 
       useInteractions.getState().add({ interactionId: r.interaction_id, conversationId: r.conversation_id, messageId: r.message_id ?? null, kind: "ephemeral", application: r.application, content: r.content, epoch: r.epoch, deviceId: r.device_id }),
     ),
     // ---- Profiles and presence (design note 4.9)
-    socket.on<Presence>("presence.update", (p) => onPresence(p)),
+    socket.on<Presence>("presence.update", (p) => onPresence(p, node)),
+    // The cached lists showing the user are patched from the payload (lib/userUpdate.ts).
     socket.on<{ user: User }>("user.update", (d) => {
-      for (const key of ["members", "friends", "conversations", "conversation", "profile", "blocks", "requests"]) void queryClient.invalidateQueries({ queryKey: [key] });
-      if (d.user.address === useAuth.getState().user?.address && d.user.id === useAuth.getState().user?.id) {
-        const current = useAuth.getState().user;
-        if (current) useAuth.getState().setUser({ ...current, ...d.user });
-      }
+      if (!isEventUser(d?.user)) return;
+      applyUserUpdate(queryClient, d.user, node);
+      if (node === null) applyOwnProfile(d.user);
     }),
     socket.on<{ request: { conversation: Conversation } }>("conversation.request", () => {
       void queryClient.invalidateQueries({ queryKey: ["requests"] });
@@ -344,26 +363,46 @@ export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: 
     // An app token of one of my applications expires soon (APPLICATIONS.md §2.2).
     socket.on<{ application_id: string; token_id: string; expires_at: string; days: number }>("application.token_expiring", (d) => {
       void queryClient.invalidateQueries({ queryKey: ["applications"] });
-      useToasts.getState().push({ kind: "warning", title: t("apps.token_expiring", { days: String(d.days) }), detail: new Date(d.expires_at).toLocaleString() });
+      useToasts.getState().push({ kind: "warning", title: t("apps.token_expiring", { days: String(d.days) }), detail: formatDate(d.expires_at, "medium") });
     }),
   ];
 }
 
-/** A `presence.update`: others go to the store, the own one (unfiltered view) updates `mine`. */
-function onPresence(p: Presence) {
+/**
+ * A `presence.update`: others go to the store, the own one (unfiltered view) updates `mine`. The own presence is the
+ * home node's to say: another node's socket (`node` set) never changes it.
+ */
+export function onPresence(p: Presence, node: string | null = null) {
   const store = usePresence.getState();
   const me = useAuth.getState().user?.address;
   if (p.user === me) {
-    if (store.mine) store.setMine({ ...store.mine, effective: p.status, custom_status: p.custom_status, activity: p.activity });
+    if (node === null && store.mine) store.setMine({ ...store.mine, effective: p.status, custom_status: p.custom_status, activity: p.activity });
     return;
   }
   store.apply(p);
 }
 
+/** Fields of the own profile a `user.update` may change: name and avatar (PROTOCOL.md §6), nothing else. */
+const OWN_PROFILE_FIELDS = ["display_name", "avatar", "avatar_still", "avatar_blob_id"] as const;
+
+/**
+ * The home node's `user.update` of the signed-in account (another device changed the name or avatar): only the display
+ * fields are taken over; the account's id, address, domain, username and flags never come from an event. Only the home
+ * socket calls this; other nodes' copies of the user are node-local and never merged into the account.
+ */
+export function applyOwnProfile(user: User) {
+  const current = useAuth.getState().user;
+  if (!current || user.address !== current.address || user.id !== current.id) return;
+  const patch: Partial<User> = {};
+  for (const key of OWN_PROFILE_FIELDS) if (key in user) (patch as Record<string, unknown>)[key] = user[key];
+  if (OWN_PROFILE_FIELDS.every((k) => patch[k] === undefined || patch[k] === current[k])) return;
+  useAuth.getState().setUser({ ...current, ...patch });
+}
+
 /** Connects the WebSocket while a token is present and keeps the query cache up to date. */
 export function useRealtime() {
   // One socket per signed-in account and device; refreshed tokens do not reconnect (the socket refreshes itself).
-  const session = useAuth((s) => (s.token && s.user ? `${s.user.address}/${s.deviceId ?? ""}` : null));
+  const session = useSessionKey();
   const queryClient = useQueryClient();
   // `useNavigate` changes with every route change: read it through a ref, so the socket stays connected.
   const navigateNow = useNavigate();
@@ -376,6 +415,7 @@ export function useRealtime() {
     if (!session) return;
     const socket = new TavrnSocket({
       url: wsUrl(),
+      WebSocketImpl: browserWebSocket(),
       getToken: () => useAuth.getState().token,
       capabilities: ["content.v1", "reactions", "e2ee.mls1", "commands.v1"],
       onStatus: (status) => {
@@ -421,7 +461,8 @@ export function useRealtime() {
       socket.on("friend.remove", () => void queryClient.invalidateQueries({ queryKey: ["friends"] })),
       // ---- A statement of reasons about the user's content (design note 4.14 item 1)
       socket.on<{ case_id: string }>("legal.statement", (d) => notifyStatement(d.case_id, queryClient)),
-      ...conversationHandlers(socket, queryClient, navigate),
+      ...conversationHandlers(socket, queryClient, navigate, null),
+      ...accountNoticeHandlers(socket, queryClient),
     ];
 
     /**
@@ -475,6 +516,33 @@ export function useRealtime() {
   }, [session, queryClient, navigate]);
 }
 
+/**
+ * Events of the home node's socket about the account (PROTOCOL.md §6): notification settings changed on another
+ * device or tab (§6c), a ban by another room or node (information only), and a friend request or invitation the
+ * node could not deliver to another node (FEDERATION.md §5.3).
+ */
+export function accountNoticeHandlers(socket: TavrnSocket, queryClient: QueryClient): Array<() => void> {
+  return [
+    socket.on<{ settings?: unknown }>("notifications.update", (d) => {
+      if (d && typeof d.settings === "object" && d.settings) useNotifications.getState().applyRemote(d.settings);
+    }),
+    socket.on<{ room?: { node?: string; id?: string; name?: string }; scope?: string }>("ban.notify", (d) => {
+      const node = typeof d?.room?.node === "string" ? d.room.node : "";
+      if (!node) return;
+      const name = typeof d.room?.name === "string" ? d.room.name : "";
+      const title = d.scope === "node" ? t("notice.banned_node", { node }) : name ? t("notice.banned_room", { room: name, node }) : t("notice.banned");
+      useToasts.getState().push({ kind: "warning", title });
+      void queryClient.invalidateQueries({ queryKey: isHome(node) ? ["rooms"] : ["rooms", node] });
+    }),
+    socket.on<{ type?: string; to?: string }>("federation.undeliverable", (d) => {
+      const to = typeof d?.to === "string" ? d.to : "";
+      const friend = d?.type === "friend.request";
+      useToasts.getState().push({ kind: "warning", title: t(friend ? "notice.undeliverable_friend" : "notice.undeliverable_invite", { to }), detail: t("notice.undeliverable_hint") });
+      void queryClient.invalidateQueries({ queryKey: friend ? ["friends"] : ["pending-invites"] });
+    }),
+  ];
+}
+
 /** A statement of reasons or a decision on a notice about the user's content: notification entry and refresh. */
 export function notifyStatement(caseId: string, queryClient: QueryClient) {
   void queryClient.invalidateQueries({ queryKey: ["my-legal-notices"] });
@@ -484,7 +552,8 @@ export function notifyStatement(caseId: string, queryClient: QueryClient) {
 /**
  * One socket per other node with a federated session: room, message, conversation and MLS events of
  * that node keep the same caches and groups current (`mls.*` of conversations hosted there arrive on
- * this socket, FEDERATION.md §3.6). A refused token (`4001`) renews the federated session.
+ * this socket, FEDERATION.md §3.6). A refused token (`4001`) renews the federated session. A session added or dropped
+ * opens or closes only that node's socket; the others stay connected.
  */
 export function useNodeRealtime() {
   const queryClient = useQueryClient();
@@ -493,62 +562,91 @@ export function useNodeRealtime() {
   navigateRef.current = navigateNow;
   const navigate = useCallback((to: string, opts?: { replace?: boolean }) => navigateRef.current(to, opts), []);
   const domains = useNodes((s) => Object.keys(s.sessions).sort().join(","));
+  const open = useRef(new Map<string, NodeSocket>());
 
   useEffect(() => {
-    const list = domains ? domains.split(",") : [];
-    const opened: Array<{ socket: TavrnSocket; offs: Array<() => void> }> = [];
-    const sockets: Record<string, TavrnSocket> = {};
-    for (const domain of list) {
-      const session = useNodes.getState().sessions[domain];
-      if (!session) continue;
-      const socket = new TavrnSocket({
-        url: session.ws,
-        getToken: () => useNodes.getState().sessions[domain]?.token ?? null,
-        capabilities: ["content.v1", "reactions", "e2ee.mls1", "commands.v1"],
-        onStatus: (status) => {
-          // Connected (again): DMs started on that node wait there as Welcomes (§6.1); own leaves to remove.
-          if (status === "ready") {
-            void queryClient.invalidateQueries({ queryKey: ["my-voice", domain] });
-            void loadFollowedThreads({ key: domain, client: apiFor(domain), queryClient });
-            void getMls()
-              .then(async (m) => {
-                await m?.processWelcomes(domain);
-                await cleanupOwnLeaves(domain);
-              })
-              .catch(() => undefined);
-          }
-        },
-        onResync: () => {
-          void queryClient.invalidateQueries({ queryKey: ["rooms", domain] });
-          void queryClient.invalidateQueries({ queryKey: ["conversations", domain] });
-          void queryClient.invalidateQueries({ queryKey: ["my-voice", domain] });
-        },
-        // A refused token renews the federated session (refresh, else a new federated login).
-        refreshToken: () => refreshNode(domain),
-      });
-      const offs = [
-        ...roomHandlers(socket, queryClient, () => useNodes.getState().sessions[domain]?.user ?? null, domain),
-        ...mlsHandlers(socket, queryClient, () => domain),
-        ...conversationHandlers(socket, queryClient, navigate),
-        // Key changes of users this node knows (room co-members); our own is handled by the home socket.
-        socket.on<{ user: string }>("identity.changed", (d) => {
-          if (d.user !== useAuth.getState().user?.address) void contactIdentityChanged(d.user, queryClient);
-        }),
-        socket.on<{ user: string }>("identity.rotated", (d) => {
-          if (d.user !== useAuth.getState().user?.address) void contactIdentityChanged(d.user, queryClient);
-        }),
-      ];
-      socket.connect();
-      sockets[domain] = socket;
-      opened.push({ socket, offs });
+    const wanted = new Set(domains ? domains.split(",") : []);
+    const current = open.current;
+    for (const [domain, entry] of current) {
+      if (wanted.has(domain)) continue;
+      closeNodeSocket(entry);
+      current.delete(domain);
     }
-    useNodeSockets.setState({ sockets });
+    for (const domain of wanted) {
+      if (current.has(domain)) continue;
+      const entry = openNodeSocket(domain, queryClient, navigate);
+      if (entry) current.set(domain, entry);
+    }
+    useNodeSockets.setState({ sockets: Object.fromEntries([...current].map(([d, e]) => [d, e.socket])) });
+  }, [domains, queryClient, navigate]);
+
+  // Unmount (sign-out leaves the layout): every node socket closes.
+  useEffect(() => {
+    const current = open.current;
     return () => {
-      for (const { socket, offs } of opened) {
-        offs.forEach((off) => off());
-        socket.close();
-      }
+      for (const entry of current.values()) closeNodeSocket(entry);
+      current.clear();
       useNodeSockets.setState({ sockets: {} });
     };
-  }, [domains, queryClient, navigate]);
+  }, []);
+}
+
+interface NodeSocket {
+  socket: TavrnSocket;
+  offs: Array<() => void>;
+}
+
+function closeNodeSocket({ socket, offs }: NodeSocket) {
+  offs.forEach((off) => off());
+  socket.close();
+}
+
+/** The socket of one node with a federated session and its handlers; null without a session. */
+function openNodeSocket(domain: string, queryClient: QueryClient, navigate: (to: string, opts?: { replace?: boolean }) => void): NodeSocket | null {
+  const session = useNodes.getState().sessions[domain];
+  if (!session) return null;
+  const socket = new TavrnSocket({
+    url: session.ws,
+    WebSocketImpl: browserWebSocket(),
+    getToken: () => useNodes.getState().sessions[domain]?.token ?? null,
+    capabilities: ["content.v1", "reactions", "e2ee.mls1", "commands.v1"],
+    onStatus: (status) => {
+      // Connected (again): DMs started on that node wait there as Welcomes (§6.1); own leaves to remove.
+      if (status === "ready") {
+        void queryClient.invalidateQueries({ queryKey: ["my-voice", domain] });
+        void loadFollowedThreads({ key: domain, client: apiFor(domain), queryClient });
+        void getMls()
+          .then(async (m) => {
+            await m?.processWelcomes(domain);
+            await cleanupOwnLeaves(domain);
+          })
+          .catch(() => undefined);
+      }
+    },
+    onResync: () => {
+      void queryClient.invalidateQueries({ queryKey: ["rooms", domain] });
+      void queryClient.invalidateQueries({ queryKey: ["conversations", domain] });
+      void queryClient.invalidateQueries({ queryKey: ["my-voice", domain] });
+    },
+    // A refused token renews the federated session (refresh, else a new federated login).
+    refreshToken: () => refreshNode(domain),
+  });
+  // The home node's lists tell its ids apart from this node's (lib/nodeScope.ts); this node's DM list names its DMs.
+  void queryClient.prefetchQuery(roomsQuery(null));
+  void queryClient.prefetchQuery(conversationsQuery(null));
+  void queryClient.prefetchQuery(conversationsQuery(domain));
+  const offs = [
+    ...roomHandlers(socket, queryClient, () => useNodes.getState().sessions[domain]?.user ?? null, domain),
+    ...mlsHandlers(socket, queryClient, () => domain),
+    ...conversationHandlers(socket, queryClient, navigate, domain),
+    // Key changes of users this node knows (room co-members); our own is handled by the home socket.
+    socket.on<{ user: string }>("identity.changed", (d) => {
+      if (d.user !== useAuth.getState().user?.address) void contactIdentityChanged(d.user, queryClient);
+    }),
+    socket.on<{ user: string }>("identity.rotated", (d) => {
+      if (d.user !== useAuth.getState().user?.address) void contactIdentityChanged(d.user, queryClient);
+    }),
+  ];
+  socket.connect();
+  return { socket, offs };
 }

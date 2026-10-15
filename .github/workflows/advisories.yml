@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# RustSec advisories of the desktop shells' Rust crates (`cargo-deny check advisories`, each crate's deny.toml) through
+# the organization's reusable rust-advisories.yml: daily and when a Cargo.lock or deny.toml changes. desktop.yml checks
+# bans, licenses and sources in its builds; an advisory published today concerns every branch at once, so it is
+# checked here and a scheduled failure opens the issue "RustSec advisories" instead of failing unrelated builds.
+# Gated by CI_ENABLED (docs/GITHUB.md). `just desktop-check` and `just electron-native-check` run the full check.
+name: Advisories
+
+on:
+  schedule:
+    - cron: "53 5 * * *"
+  pull_request:
+    paths:
+      - "apps/**/Cargo.lock"
+      - "apps/**/deny.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  advisories:
+    if: ${{ vars.CI_ENABLED == 'true' }}
+    uses: just-tavrn/.github/.github/workflows/rust-advisories.yml@main
+    with:
+      manifests: |
+        apps/desktop/src-tauri
+        apps/desktop-electron/native/keywatch
+        apps/desktop-electron/native/passkeys
+      submodules: "false"
+    secrets:
+      READ_TOKEN: ${{ secrets.TAVRN_READ_PAT }}

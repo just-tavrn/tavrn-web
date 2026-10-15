@@ -2,6 +2,7 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { api } from "./api";
 import { apiFor, homeDomain, useNodes } from "../stores/nodes";
+import { roomsQuery } from "./queries";
 
 /**
  * Soundboard clips beyond the current room (design note 4.13): the own personal clips (home node) and the clips of
@@ -23,8 +24,8 @@ export function useExternalSounds(currentRoomId: string, enabled: boolean): { pe
   const home = homeDomain() ?? "";
   const domains = useNodes((s) => Object.keys(s.sessions).filter((d) => d !== home).sort().join(","));
   const remote = domains ? domains.split(",") : [];
-  const homeRooms = useQuery({ queryKey: ["rooms"], queryFn: () => api.rooms.list(), enabled, staleTime: 60_000 });
-  const remoteRooms = useQueries({ queries: remote.map((d) => ({ queryKey: ["rooms", d], queryFn: () => apiFor(d).rooms.list(), enabled, staleTime: 60_000 })) });
+  const homeRooms = useQuery({ ...roomsQuery(null), enabled });
+  const remoteRooms = useQueries({ queries: remote.map((d) => ({ ...roomsQuery(d), enabled })) });
   const rooms = [
     ...(homeRooms.data ?? []).map((r) => ({ id: r.id, name: r.name, node: home })),
     ...remoteRooms.flatMap((q, i) => (q.data ?? []).map((r) => ({ id: r.id, name: r.name, node: remote[i]! }))),

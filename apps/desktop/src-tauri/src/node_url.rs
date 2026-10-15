@@ -53,6 +53,32 @@ pub fn validate(input: &str) -> Result<String, NodeUrlError> {
     Ok(url.origin().ascii_serialization())
 }
 
+fn host_of(origin: &str) -> Option<String> {
+    Url::parse(origin).ok()?.host_str().filter(|h| !h.is_empty()).map(str::to_ascii_lowercase)
+}
+
+/// `host` is `parent` or one of its subdomains (whole labels).
+fn within(host: &str, parent: &str) -> bool {
+    host == parent || host.strip_suffix(parent).is_some_and(|rest| rest.ends_with('.'))
+}
+
+/// May the web origin a node's document names (`web`) stand for that node? It anchors the sign-in window and the
+/// origin of native passkey ceremonies, so a node must not name another site's origin: `web` is bound when its host is
+/// the node's host or a subdomain of it, or the identity domain or a subdomain of it while the node itself is on that
+/// domain or a subdomain of it (delegation within one domain: `api.tavrn.example` with `app.tavrn.example`). A
+/// development node's client may be on either name of this computer. Origins as [`validate`] returns them.
+pub fn web_bound(node: &str, web: &str, domain: Option<&str>) -> bool {
+    let (Some(node), Some(web)) = (host_of(node), host_of(web)) else { return false };
+    if DEV_HOSTS.contains(&node.as_str()) && DEV_HOSTS.contains(&web.as_str()) {
+        return true;
+    }
+    if within(&web, &node) {
+        return true;
+    }
+    let Some(domain) = domain.map(str::to_ascii_lowercase) else { return false };
+    domain.contains('.') && within(&node, &domain) && within(&web, &domain)
+}
+
 /// Longest account address accepted (local part, `@`, domain with an optional port).
 pub const MAX_ACCOUNT: usize = 320;
 
@@ -76,56 +102,49 @@ pub fn valid_account(account: &str) -> bool {
 mod tests {
     use super::*;
 
-    #[test]
-    fn accepts_https_origins_and_normalizes_them() {
-        assert_eq!(validate("https://tavrn.example"), Ok("https://tavrn.example".into()));
-        assert_eq!(validate("  https://Tavrn.Example/  "), Ok("https://tavrn.example".into()));
-        assert_eq!(validate("https://chat.tavrn.example:8443/"), Ok("https://chat.tavrn.example:8443".into()));
-        assert_eq!(validate("https://tavrn.example:443"), Ok("https://tavrn.example".into()));
-        assert_eq!(validate("https://bücher.example"), Ok("https://xn--bcher-kva.example".into()));
+    #[derive(serde::Deserialize)]
+    struct Vectors {
+        accept: Vec<(String, String)>,
+        refuse: Vec<(String, String)>,
+        domains: Domains,
+        web_binding: Vec<(String, String, Option<String>, bool)>,
     }
 
+    #[derive(serde::Deserialize)]
+    struct Domains {
+        valid: Vec<String>,
+        invalid: Vec<String>,
+    }
+
+    /// The cases both shells test against (apps/shared-vectors/node_url.json, also read by the Electron shell's
+    /// `node_url.test.ts`): https origins (normalized), plain http only for a development node on this computer, no
+    /// credentials, paths, queries or fragments, nothing else; node domains without IP literals and ports.
     #[test]
-    fn plain_http_only_for_a_development_node_on_this_computer() {
-        assert_eq!(validate("http://localhost:8080"), Ok("http://localhost:8080".into()));
-        assert_eq!(validate("http://127.0.0.1:8300/"), Ok("http://127.0.0.1:8300".into()));
-        for bad in ["http://evil", "http://tavrn.example", "http://192.168.1.2", "http://localhost.evil.example", "http://127.0.0.2"] {
-            assert_eq!(validate(bad), Err(NodeUrlError::Insecure), "{bad}");
+    fn the_shared_vectors_of_both_shells() {
+        let v: Vectors = serde_json::from_str(include_str!("../../../shared-vectors/node_url.json")).unwrap_or_else(|e| unreachable!("vectors: {e}"));
+        assert!(!v.accept.is_empty() && !v.refuse.is_empty());
+        for (input, normalized) in &v.accept {
+            assert_eq!(validate(input).as_deref(), Ok(normalized.as_str()), "{input}");
+        }
+        for (input, code) in &v.refuse {
+            assert_eq!(validate(input).map_err(NodeUrlError::code), Err(code.as_str()), "{input}");
+        }
+        for d in &v.domains.valid {
+            assert!(crate::resolve::valid_domain(d), "{d}");
+        }
+        for d in &v.domains.invalid {
+            assert!(!crate::resolve::valid_domain(d), "{d}");
         }
     }
 
+    /// The web origin a node names is bound to the node (apps/shared-vectors/node_url.json `web_binding`, also read by
+    /// the Electron shell and the client): never another site's origin, which would anchor passkeys for that site.
     #[test]
-    fn refuses_credentials() {
-        assert_eq!(validate("https://user:pw@tavrn.example"), Err(NodeUrlError::Credentials));
-        assert_eq!(validate("https://user@tavrn.example"), Err(NodeUrlError::Credentials));
-        assert_eq!(validate("https://:pw@tavrn.example"), Err(NodeUrlError::Credentials));
-    }
-
-    #[test]
-    fn refuses_paths_queries_and_fragments() {
-        for bad in
-            ["https://tavrn.example/app", "https://tavrn.example/?x=1", "https://tavrn.example/?", "https://tavrn.example/#top", "https://tavrn.example//"]
-        {
-            assert_eq!(validate(bad), Err(NodeUrlError::Path), "{bad}");
-        }
-    }
-
-    #[test]
-    fn refuses_other_schemes_and_garbage() {
-        let long = format!("https://{}.example", "a".repeat(300));
-        for bad in [
-            "",
-            "   ",
-            "tavrn.example",
-            "ftp://tavrn.example",
-            "javascript:alert(1)",
-            "file:///etc/passwd",
-            "tauri://localhost",
-            "https://",
-            "https://exa mple.org",
-            long.as_str(),
-        ] {
-            assert_eq!(validate(bad), Err(NodeUrlError::Invalid), "{bad}");
+    fn a_web_origin_is_bound_to_its_node() {
+        let v: Vectors = serde_json::from_str(include_str!("../../../shared-vectors/node_url.json")).unwrap_or_else(|e| unreachable!("vectors: {e}"));
+        assert!(v.web_binding.iter().any(|c| c.3) && v.web_binding.iter().any(|c| !c.3));
+        for (node, web, domain, bound) in &v.web_binding {
+            assert_eq!(web_bound(node, web, domain.as_deref()), *bound, "{node} {web} {domain:?}");
         }
     }
 

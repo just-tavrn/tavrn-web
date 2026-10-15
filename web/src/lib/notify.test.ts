@@ -2,7 +2,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import type { Conversation, Message, RoomDetail } from "@tavrn/sdk";
-import { notifyMessage, plainPreview } from "./notify";
+import { loadRoomDetails, locate, notifyMessage, plainPreview, resetRoomLookups } from "./notify";
+import { mockFetch } from "../test/render";
 import { DEFAULT_SETTINGS, useNotifications } from "../stores/notifications";
 import { useToasts } from "../stores/toasts";
 import { useMlsUi } from "../stores/mls";
@@ -66,5 +67,50 @@ describe("notifyMessage", () => {
     await notifyMessage(message({ conversation_id: "nowhere" }), { queryClient: client(), node: null, me, loadRooms });
     expect(loadRooms).toHaveBeenCalledTimes(1);
     expect(useToasts.getState().toasts).toHaveLength(0);
+  });
+});
+
+describe("loadRoomDetails (rooms not opened yet)", () => {
+  const rooms = Array.from({ length: 60 }, (_, i) => ({ id: `R${String(i).padStart(2, "0")}`, name: `Room ${i}` }));
+  function setupFetch() {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const calls = mockFetch({
+      "/rooms/": (_init, url) => {
+        const id = url.split("/rooms/")[1]!.split(/[/?]/)[0]!;
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        queueMicrotask(() => inFlight--);
+        return { body: { id, name: id, channels: [{ id: `C-${id}`, name: "general", kind: "text" }], read_states: [], roles: [], categories: [], overrides: [], my_roles: [] } };
+      },
+      "/rooms": { body: rooms },
+    });
+    return { calls, gets: () => calls.filter((c) => /\/rooms\/R\d+/.test(c.url)).length, lists: () => calls.filter((c) => /\/rooms(\?|$)/.test(c.url)).length, maxInFlight: () => maxInFlight };
+  }
+  beforeEach(() => resetRoomLookups());
+
+  it("finds the room of a channel beyond the first 50, once, and stops there", async () => {
+    const f = setupFetch();
+    const qc = new QueryClient();
+    await loadRoomDetails(qc, null, "C-R55");
+    expect(locate(qc, "C-R55").room?.id).toBe("R55");
+    expect(f.lists()).toBe(1);
+    // Four at a time until found: R00..R55 plus at most the three in flight.
+    expect(f.gets()).toBeGreaterThanOrEqual(56);
+    expect(f.gets()).toBeLessThanOrEqual(59);
+    const before = f.calls.length;
+    // The next message of that channel needs no request at all.
+    await loadRoomDetails(qc, null, "C-R55");
+    expect(f.calls.length).toBe(before);
+  });
+
+  it("a conversation in no room is not looked up again for a minute; lookups of one node queue", async () => {
+    const f = setupFetch();
+    const qc = new QueryClient();
+    await Promise.all([loadRoomDetails(qc, null, "DM-1"), loadRoomDetails(qc, null, "DM-1"), loadRoomDetails(qc, null, "DM-1")]);
+    expect(f.gets()).toBe(60);
+    expect(f.lists()).toBe(1);
+    await loadRoomDetails(qc, null, "DM-1");
+    expect(f.gets()).toBe(60);
   });
 });

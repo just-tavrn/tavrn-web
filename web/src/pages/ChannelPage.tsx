@@ -2,8 +2,9 @@
 import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Navigate, useNavigate, useParams } from "react-router";
-import { Permission, hasPermission, isBotKind, type Member, type Message, type RoomDetail, type TavrnApi } from "@tavrn/sdk";
+import { Permission, hasPermission, isBotKind, type Message, type RoomDetail } from "@tavrn/sdk";
 import { channelPermissions } from "../lib/channelPermissions";
+import { nodeInfoQuery, roomMembersQuery } from "../lib/queries";
 import { useT } from "../i18n";
 import { useNode } from "../components/NodeScope";
 import { describeError } from "../stores/toasts";
@@ -31,22 +32,14 @@ import { useRoomPreview } from "../stores/rolePreview";
 // Files channels (design note 4.13 item 9): the file browser, loaded on demand.
 const FilesView = lazy(() => import("../files/FilesView"));
 
-/** All members of a room (paged through), shared by the member list and the ghost check. */
+/** All members of a room (paged through), shared by the member list and the ghost check (lib/queries.ts). */
 export function useRoomMembers(roomId: string) {
   const { api } = useNode();
-  return useQuery({ queryKey: ["members", roomId], queryFn: () => fetchRoomMembers(api, roomId), enabled: !!roomId });
+  return useQuery(roomMembersQuery(api, roomId));
 }
 
-/** Every member of a room (pages of 500), the data of `useRoomMembers`. */
-export async function fetchRoomMembers(api: TavrnApi, roomId: string): Promise<Member[]> {
-  const all: Member[] = [];
-  for (let page = 0; page < 20; page++) {
-    const batch = await api.members.list(roomId, { limit: 500, after: all.at(-1)?.user.id });
-    all.push(...batch);
-    if (batch.length < 500) break;
-  }
-  return all;
-}
+/** Every member of a room (pages of 500), the data of `useRoomMembers` (re-exported for the existing imports). */
+export { fetchRoomMembers } from "../lib/queries";
 
 /** Permissions of the signed-in user in a channel (lib/channelPermissions.ts; re-exported for the existing imports). */
 export { channelPermissions } from "../lib/channelPermissions";
@@ -70,7 +63,7 @@ export function ChannelPage() {
   // The user as the room's node knows it (user ids are node-local).
   const { api, me: user, domain, roomPath, home } = useNode();
   // Nodes announcing `threads.client_ids` keep the client's thread id: encrypted titles are then bound to it.
-  const nodeInfo = useQuery({ queryKey: home ? ["node"] : ["node", domain], queryFn: () => api.node.info(), staleTime: 10 * 60_000 });
+  const nodeInfo = useQuery(nodeInfoQuery(home ? null : domain, api));
   const clientIds = !!nodeInfo.data?.capabilities?.includes("threads.client_ids");
   const originDomain = useOriginDomain();
   // The node domain is the identity domain from its discovery document, never the page host (design note 4.2c).
@@ -154,7 +147,7 @@ export function ChannelPage() {
     canPin: hasPermission(perms, Permission.PIN_MESSAGES),
     noPermissionReason: t("messages.no_permission"),
     members: memberAddresses,
-    refreshMembers: async () => (await queryClient.fetchQuery({ queryKey: ["members", roomId], queryFn: () => fetchRoomMembers(api, roomId), staleTime: 0 })).map((m) => m.user.address),
+    refreshMembers: async () => (await queryClient.fetchQuery({ ...roomMembersQuery(api, roomId), staleTime: 0 })).map((m) => m.user.address),
     mayManage,
     bots,
     roomId,

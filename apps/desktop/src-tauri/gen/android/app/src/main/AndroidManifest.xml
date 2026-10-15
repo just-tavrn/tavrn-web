@@ -84,6 +84,14 @@
             </intent-filter>
         </activity>
 
+        <!-- Taps on the app's notifications (Notifier.openApp): not exported, so no other app can hand the client a path. -->
+        <activity
+            android:name=".NotificationTrampoline"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.NoDisplay" />
+
         <service
             android:name=".VoiceService"
             android:exported="false"

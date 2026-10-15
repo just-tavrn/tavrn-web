@@ -8,6 +8,7 @@
 import { Permission, hasPermission } from "@tavrn/sdk";
 import { menuItem, normalizeMenu, separator, submenu, type MenuEntry } from "../components/ContextMenu";
 import type { NotificationMode } from "@tavrn/sdk";
+import { formatDate } from "./format";
 
 type T = (key: string, params?: Record<string, string | number>) => string;
 
@@ -339,7 +340,7 @@ export function notifyEntries(prefix: string, c: NotifyMenuState, a: NotifyMenuA
 }
 
 function mutedHint(until: string, t: T): string {
-  return Date.parse(until) > Date.now() + 365 * 86_400_000 ? t("menu.duration.forever") : new Date(until).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return Date.parse(until) > Date.now() + 365 * 86_400_000 ? t("menu.duration.forever") : formatDate(until, "time");
 }
 
 // ---- Channels -------------------------------------------------------------------------------

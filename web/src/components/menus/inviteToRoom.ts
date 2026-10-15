@@ -7,11 +7,11 @@
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { parsePermissions, type Member } from "@tavrn/sdk";
 import { t } from "../../i18n";
-import { api } from "../../lib/api";
 import type { InviteRoomCandidate } from "../../lib/menus";
 import { apiFor, homeDomain, useNodes } from "../../stores/nodes";
 import { toastError, useToasts } from "../../stores/toasts";
 import { useUnread } from "../../stores/unread";
+import { roomsQuery } from "../../lib/queries";
 
 /** At most this many rooms per node get their detail loaded for the menu (like the notification preload). */
 const MAX_ROOMS_PER_NODE = 50;
@@ -23,8 +23,8 @@ export function useInviteRooms(enabled: boolean): InviteRoomCandidate[] {
   const domains = useNodes((s) => Object.keys(s.sessions).filter((d) => d !== home).sort().join(","));
   // Nothing is observed while the menu is closed (one hook per member row).
   const remote = enabled && domains ? domains.split(",") : [];
-  const homeRooms = useQuery({ queryKey: ["rooms"], queryFn: () => api.rooms.list(), enabled, staleTime: 30_000 });
-  const remoteRooms = useQueries({ queries: remote.map((d) => ({ queryKey: ["rooms", d], queryFn: () => apiFor(d).rooms.list(), enabled, staleTime: 30_000, retry: 1 })) });
+  const homeRooms = useQuery({ ...roomsQuery(null), enabled });
+  const remoteRooms = useQueries({ queries: remote.map((d) => ({ ...roomsQuery(d), enabled })) });
   const rooms = !enabled ? [] : [
     ...(homeRooms.data ?? []).slice(0, MAX_ROOMS_PER_NODE).map((r) => ({ id: r.id, name: r.name, node: null as string | null })),
     ...remoteRooms.flatMap((q, i) => (q.data ?? []).slice(0, MAX_ROOMS_PER_NODE).map((r) => ({ id: r.id, name: r.name, node: remote[i]! as string | null }))),

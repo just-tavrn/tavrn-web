@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
-import { NODE, createRoomViaApi, inviteCode, loginAs, openNavIfMobile, registerViaApi } from "./helpers";
+import { expect, test, type APIRequestContext } from "@playwright/test";
+import { NODE, createRoomViaApi, inviteCode, loginAs, openNavIfMobile, registerViaApi, message } from "./helpers";
 import { scaled } from "./timeouts";
 
 // Lazy history and unread counts (design note 4.4): badges from the node's counts, live updates, read
@@ -14,10 +14,6 @@ async function api(request: APIRequestContext, method: "post" | "put", path: str
 
 async function say(request: APIRequestContext, token: string, roomId: string, channelId: string, body: string, extra: Record<string, unknown> = {}) {
   return api(request, "post", `/rooms/${roomId}/channels/${channelId}/messages`, token, { content: { type: "text", body }, ...extra });
-}
-
-function message(page: Page, text: string) {
-  return page.getByTestId("message").filter({ hasText: text });
 }
 
 test.describe("History and unread", () => {

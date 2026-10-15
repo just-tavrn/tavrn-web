@@ -7,8 +7,10 @@
  * every {@link FOLLOWED_REFRESH_MS}. `thread.read` and `message.create` keep the state current afterwards.
  */
 import type { QueryClient } from "@tanstack/react-query";
-import { TavrnApiError, type FollowedThreads } from "@tavrn/sdk";
+import { TavrnApiError, type FollowedThreads, type Room } from "@tavrn/sdk";
 import { useThreads } from "./store";
+import { roomsQuery } from "../lib/queries";
+import { isHome } from "../stores/nodes";
 
 /** Pause between two rooms. */
 export const FOLLOWED_GAP_MS = 200;
@@ -39,7 +41,8 @@ export function loadFollowedThreads({ key, client, queryClient, sleep = wait, no
   const known = loads.get(key);
   if (known && now() - known.at < FOLLOWED_REFRESH_MS) return known.done;
   const done = (async () => {
-    const rooms = await client.rooms.list().catch(() => []);
+    // The shared room list (fetched once at start and on reconnects, lib/queries.ts).
+    const rooms = await queryClient.fetchQuery({ ...roomsQuery(isHome(key) ? null : key), queryFn: () => client.rooms.list() as Promise<Room[]> }).catch(() => [] as Room[]);
     for (const [i, room] of rooms.slice(0, FOLLOWED_ROOMS_MAX).entries()) {
       if (i > 0) await sleep(FOLLOWED_GAP_MS);
       let list: FollowedThreads;

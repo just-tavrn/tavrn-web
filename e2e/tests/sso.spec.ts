@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
-import { ADULT_DOB, NODE, adminAccount, completeDateOfBirth, confirmRecoveryKey, confirmWithPassword, createRoomViaApi, enrollTotp, loginAs, nextTotpCode, registerViaApi, tokenOf, uniqueName } from "./helpers";
+import { ADULT_DOB, NODE, adminAccount, completeDateOfBirth, confirmRecoveryKey, confirmWithPassword, createRoomViaApi, enrollTotp, loginAs, nextTotpCode, registerViaApi, tokenOf, uniqueName, withFileLock } from "./helpers";
 import { createRole, openMembers } from "./menu-helpers";
 import { logoutViaUi, openNavIfMobile } from "./helpers";
 import { scaled } from "./timeouts";
@@ -33,34 +33,15 @@ async function firstSsoLogin(page: Page, username: string, groups: string[] = []
   await page.getByTestId("sso-button").click();
   await signInAtProvider(page, username, groups);
   // No second factor: straight to the encryption setup (APPLICATIONS.md §8.4).
-  await expect(page.getByTestId("encryption-title")).toHaveText("Dein Wiederherstellungsschlüssel", { timeout: 20_000 });
+  await expect(page.getByTestId("encryption-title")).toHaveText("Dein Wiederherstellungsschlüssel", { timeout: scaled(20_000) });
   await expect(page.getByTestId("encryption-account")).toHaveText(`${username}@localhost`);
   // A provisioned account adds its date of birth first (PROTOCOL.md §5e).
   await completeDateOfBirth(page);
 }
 
 /** Serializes work on node-wide state (the group map, the break-glass account) across parallel workers. */
-async function withLock<T>(name: string, fn: () => Promise<T>): Promise<T> {
-  const lock = resolve(DATA, `e2e/${name}.lock`);
-  mkdirSync(dirname(lock), { recursive: true });
-  for (;;) {
-    try {
-      mkdirSync(lock);
-      break;
-    } catch {
-      try {
-        if (Date.now() - statSync(lock).mtimeMs > 120_000) rmSync(lock, { recursive: true, force: true });
-      } catch {
-        /* vanished meanwhile */
-      }
-      await new Promise((r) => setTimeout(r, 250));
-    }
-  }
-  try {
-    return await fn();
-  } finally {
-    rmSync(lock, { recursive: true, force: true });
-  }
+function withLock<T>(name: string, fn: () => Promise<T>): Promise<T> {
+  return withFileLock(resolve(DATA, `e2e/${name}.lock`), fn);
 }
 
 test.describe("Single Sign-on (APPLICATIONS.md §8)", () => {
@@ -118,7 +99,7 @@ test.describe("Single Sign-on (APPLICATIONS.md §8)", () => {
     await page2.goto(`${WEB}/login`);
     await page2.getByTestId("sso-button").click();
     await signInAtProvider(page2, username);
-    await expect(page2.getByTestId("encryption-title")).toHaveText("Verschlüsselte Nachrichten entsperren", { timeout: 20_000 });
+    await expect(page2.getByTestId("encryption-title")).toHaveText("Verschlüsselte Nachrichten entsperren", { timeout: scaled(20_000) });
     await page2.getByTestId("recovery-key-input").fill(words);
     await page2.getByRole("button", { name: "Entsperren", exact: true }).click();
     await expect(page2.getByTestId("app-shell")).toBeVisible();
@@ -152,7 +133,7 @@ test.describe("Single Sign-on (APPLICATIONS.md §8)", () => {
     await other.goto(`${WEB}/login`);
     await other.getByTestId("sso-button").click();
     await signInAtProvider(other, idpName);
-    await expect(other.getByTestId("encryption-account")).toHaveText(`${account.username}@localhost`, { timeout: 20_000 });
+    await expect(other.getByTestId("encryption-account")).toHaveText(`${account.username}@localhost`, { timeout: scaled(20_000) });
     await context.close();
 
     // Unlinking is allowed after a confirmation: the account keeps its password and second factor.
@@ -240,7 +221,7 @@ test.describe("TAVRN_OIDC_ONLY", () => {
       await page.getByLabel("6-stelliger Code", { exact: true }).fill(await nextTotpCode(admin));
       await page.getByRole("button", { name: "Bestätigen", exact: true }).click();
       writeFileSync(CACHE, JSON.stringify(admin));
-      await expect(page.getByTestId("encryption-account")).toHaveText("ssoadmin@localhost", { timeout: 20_000 });
+      await expect(page.getByTestId("encryption-account")).toHaveText("ssoadmin@localhost", { timeout: scaled(20_000) });
     });
 
     // Everybody else signs in through the provider.

@@ -110,10 +110,12 @@ class ShellPlugin(private val activity: Activity) : Plugin(activity) {
     Shell.visible = false
   }
 
-  /** App links and `tavrn://` links (checked again in Rust), and taps on notifications. */
+  /**
+   * App links and `tavrn://` links (checked again in Rust). A path in the intent is never followed: this activity is
+   * exported, so any app could send one; taps on notifications arrive through the non-exported [NotificationTrampoline].
+   */
   private fun handleIntent(intent: Intent?) {
     if (intent == null) return
-    intent.getStringExtra(Notifier.EXTRA_PATH)?.let { Shell.emit(Shell.event("open").put("path", it)) }
     intent.removeExtra(Notifier.EXTRA_PATH)
     val link = Links.of(intent.action, intent.data?.toString())
     if (link != null) {

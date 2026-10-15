@@ -11,9 +11,11 @@ import type { NoticeAction, NoticeDetail } from "@tavrn/sdk";
 import { api } from "../../lib/api";
 import { intlLocale, useT } from "../../i18n";
 import { describeError, toastError, useToasts } from "../../stores/toasts";
+import { useAction } from "../../hooks/useAction";
 import { Button, ErrorText, Field, Input } from "../../components/ui";
 import { Section, Select, Textarea } from "../settings/common";
 import { downloadJson } from "../settings/AccountDataSections";
+import { nodeInfoQuery } from "../../lib/queries";
 
 const STATES = ["received", "in_review", "actioned", "rejected", "counter_notice"] as const;
 type ActionKind = "remove_content" | "disable_account" | "reject" | "forward" | "set_state";
@@ -27,38 +29,27 @@ function Detail({ caseId, onBack }: { caseId: string; onBack: () => void }) {
   const [statement, setStatement] = useState("");
   const [nextState, setNextState] = useState<string>("in_review");
   const [decisionReason, setDecisionReason] = useState("");
-  const [busy, setBusy] = useState(false);
   const date = (s?: string | null) => (s ? new Date(s).toLocaleString(intlLocale()) : "—");
-  const refresh = () => Promise.all([queryClient.invalidateQueries({ queryKey: ["admin", "notice", caseId] }), queryClient.invalidateQueries({ queryKey: ["admin", "notices"] })]);
+  const { run: act, busy } = useAction({ refresh: () => Promise.all([queryClient.invalidateQueries({ queryKey: ["admin", "notice", caseId] }), queryClient.invalidateQueries({ queryKey: ["admin", "notices"] })]) });
   if (detail.isPending) return <p className="text-sm text-fg-2">{t("common.loading")}</p>;
   if (detail.isError) return <ErrorText>{describeError(detail.error)}</ErrorText>;
   const d: NoticeDetail = detail.data;
   const remote = d.locations.some((l) => !l.local && l.node);
-  const run = async () => {
+  const run = () => {
     const body: NoticeAction = { action, reason, statement };
     if (action === "set_state") body.state = nextState;
-    setBusy(true);
-    try {
+    return act(async () => {
       const r = await api.legal.act(caseId, body);
       useToasts.getState().push({ kind: "info", title: t("admin.notices.done", { state: t(`legal.state.${r.notice.state}`) }), detail: r.skipped.length ? r.skipped.join("; ") : undefined });
       setReason("");
       setStatement("");
-      await refresh();
-    } catch (e) {
-      toastError(e);
-    } finally {
-      setBusy(false);
-    }
+    });
   };
-  const decide = async (decision: "restore" | "uphold") => {
-    try {
+  const decide = (decision: "restore" | "uphold") =>
+    act(async () => {
       await api.legal.decideCounter(caseId, { decision, reason: decisionReason });
       setDecisionReason("");
-      await refresh();
-    } catch (e) {
-      toastError(e);
-    }
-  };
+    });
   const openCounter = d.counter_notices.find((c) => !c.decision);
   return (
     <div className="space-y-4" data-testid="notice-detail">
@@ -193,10 +184,10 @@ function Detail({ caseId, onBack }: { caseId: string; onBack: () => void }) {
             <div className="space-y-2">
               <Input value={decisionReason} onChange={(e) => setDecisionReason(e.target.value)} placeholder={t("admin.notices.reason")} aria-label={t("admin.notices.reason")} />
               <div className="flex flex-wrap gap-2">
-                <Button onClick={() => void decide("restore")} disabled={!decisionReason.trim()}>
+                <Button onClick={() => void decide("restore")} disabled={busy || !decisionReason.trim()}>
                   {t("admin.notices.decision.restore")}
                 </Button>
-                <Button variant="danger" onClick={() => void decide("uphold")} disabled={!decisionReason.trim()}>
+                <Button variant="danger" onClick={() => void decide("uphold")} disabled={busy || !decisionReason.trim()}>
                   {t("admin.notices.decision.uphold")}
                 </Button>
               </div>
@@ -224,7 +215,7 @@ export function NoticesTab() {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const list = useQuery({ queryKey: ["admin", "notices", state, q], queryFn: () => api.legal.notices({ state: state || undefined, q: q || undefined, limit: 100 }) });
-  const node = useQuery({ queryKey: ["node"], queryFn: () => api.node.info(), staleTime: 10 * 60_000 });
+  const node = useQuery(nodeInfoQuery(null));
   if (open) return <Detail caseId={open} onBack={() => setOpen(null)} />;
   return (
     <Section title={t("admin.notices.title")} description={t(node.data?.legal?.notices?.enabled ? "admin.notices.hint" : "admin.notices.hint_off")}>

@@ -6,13 +6,15 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "react-router";
 import type { Attachment, Member, Message, RoomDetail } from "@tavrn/sdk";
-import { useTyping } from "../stores/typing";
+import { TypingIndicator } from "./TypingIndicator";
 import { useNodeSockets, useRealtimeState } from "../hooks/useRealtime";
 import { useNode } from "./NodeScope";
 import { useT } from "../i18n";
 import { describeError, toastError, useToasts } from "../stores/toasts";
+import { confirmDialog } from "./Confirm";
+import { previewText } from "../lib/messagePreview";
 import { EmojiContext, useEmojiUrlMap, useRoomEmojis, type EmojiContextValue } from "../lib/emojis";
-import { Permission, hasPermission } from "@tavrn/sdk";
+import { Permission, declaredCategory, hasPermission } from "@tavrn/sdk";
 import { useMlsUi } from "../stores/mls";
 import { useMarkRead } from "../hooks/useMarkRead";
 import { MESSAGE_QUERY_OPTIONS, PAGE, fetchPage, flatten, isDetached, mapMessages, messagesKey, newerParam, olderParam, prependMessage, trimPages, type MessagePages, type PageParam } from "../lib/messagePages";
@@ -38,7 +40,7 @@ import { appDefinitions, mergePalette } from "../commands/merge";
 import type { ArgValue, CommandDefinition } from "../commands/types";
 import { InteractionNotices } from "./InteractionNotices";
 import { fuzzyFilter } from "../commands/fuzzy";
-import { classifyFile, declaredCategory } from "../lib/uploads";
+import { classifyFile } from "../lib/uploads";
 import { UnencryptedBanner } from "./UnencryptedBanner";
 import { E2eeStatusLine, LockedNotice } from "./E2eeNotices";
 import { VerificationNotice } from "./Verification";
@@ -136,7 +138,6 @@ export function ConversationView(p: ConversationViewProps) {
   const homeSocket = useRealtimeState((s) => s.socket);
   const nodeSocket = useNodeSockets((s) => s.sockets[domain]);
   const socket = home ? homeSocket : nodeSocket;
-  const typing = useTyping((s) => s.byChannel[conversationId]);
   const node = useQuery({ queryKey: home ? ["well-known"] : ["well-known", domain], queryFn: () => api.node.wellKnown(), staleTime: 10 * 60_000 });
   const nodeInfo = useQuery({ queryKey: home ? ["node"] : ["node", domain], queryFn: () => api.node.info(), staleTime: 10 * 60_000 });
   const threadId = p.threadId;
@@ -339,7 +340,6 @@ export function ConversationView(p: ConversationViewProps) {
               ? e2ee.error ?? undefined
               : undefined;
 
-  const typingNames = Object.keys(typing ?? {}).filter((id) => id !== user?.id);
   // The effective limit of this user here (entitlements, design note 4.13); the node default until it loaded.
   const uploadLimit = uploadPolicy.data?.max_bytes ?? node.data?.policies.upload_max_bytes;
 
@@ -360,22 +360,33 @@ export function ConversationView(p: ConversationViewProps) {
     }
   };
 
-  const upload = async (file: File, onProgress: (f: number) => void): Promise<Attachment> => {
+  const upload = async (file: File, onProgress: (f: number) => void, signal: AbortSignal): Promise<Attachment> => {
     // Uploads go by XMLHttpRequest (progress), past the fetch guard: refused here while previewing.
     assertNotPreviewing();
-    if (!p.encrypted) {
-      const stored = await api.attachments.uploadToConversation(conversationId, file, file.name, onProgress);
-      uploads.current.set(stored.id, stored);
+    // Removed in the composer (or the conversation closed): the request is aborted (`request.aborted`), the upload's
+    // state goes at once and an answer that arrived just before is dropped. The node deletes uploads never sent.
+    const scoped = api.withSignal(signal);
+    const keep = (stored: Attachment, store: () => void) => {
+      signal.throwIfAborted();
+      store();
+      signal.addEventListener("abort", () => {
+        uploads.current.delete(stored.id);
+        uploadKeys.current.delete(stored.id);
+      });
       return stored;
+    };
+    if (!p.encrypted) {
+      const stored = await scoped.attachments.uploadToConversation(conversationId, file, file.name, onProgress);
+      return keep(stored, () => uploads.current.set(stored.id, stored));
     }
     // §6: encrypt locally, upload only ciphertext; name, type and key go into the encrypted content. The
     // category is declared (PROTOCOL.md §7a): the node cannot see the file.
     const category = declaredCategory(await classifyFile(file));
     const { blob, meta } = await encryptAttachment(file);
-    const stored = await api.attachments.uploadToConversation(conversationId, blob, "", onProgress, category);
+    signal.throwIfAborted();
+    const stored = await scoped.attachments.uploadToConversation(conversationId, blob, "", onProgress, category);
     if (stored.sha256 !== meta.sha256) throw new Error(t("attachment.upload_mismatch"));
-    uploadKeys.current.set(stored.id, { id: stored.id, ...meta });
-    return stored;
+    return keep(stored, () => uploadKeys.current.set(stored.id, { id: stored.id, ...meta }));
   };
 
   /**
@@ -459,7 +470,8 @@ export function ConversationView(p: ConversationViewProps) {
     try {
       assertNotPreviewing();
       const previous = m.encrypted ? (decrypted[m.id]?.ok ? (decrypted[m.id] as { content: Record<string, unknown> }).content : null) : (m.content as Record<string, unknown>);
-      if (!previous) return;
+      // Without the decrypted original there is nothing to edit: refused with a notice, the editor keeps the text.
+      if (!previous) throw new Error(t("messages.edit_not_decrypted"));
       const next = { ...previous, type: previous.type === "action" ? "action" : "text", body };
       // Edits are signed anew by the editing device (§10.3); the bound attachments stay.
       const signature = !p.encrypted && e2ee.mls
@@ -476,7 +488,7 @@ export function ConversationView(p: ConversationViewProps) {
     }
   };
   const remove = async (m: Message) => {
-    if (!confirm(t("messages.delete_confirm"))) return;
+    if (!(await confirmDialog({ title: t("messages.delete"), text: t("messages.delete_confirm"), confirmLabel: t("common.delete"), danger: true }))) return;
     try {
       await api.conversations.deleteMessage(conversationId, m.id);
       setPages((old) => mapMessages(old, (page) => page.filter((x) => x.id !== m.id)));
@@ -622,7 +634,7 @@ export function ConversationView(p: ConversationViewProps) {
             },
             openWhiteboard: () => navigate(`${location.pathname.replace(/\/+$/, "")}/whiteboard`),
             openPoll: (question) => setPollComposer({ kind: "choice", question }),
-            confirm: (text) => window.confirm(text),
+            confirm: (text) => confirmDialog({ text, danger: true }),
             info: (title) => useToasts.getState().push({ kind: "info", title }),
             showHelp: () => undefined,
           });
@@ -637,7 +649,7 @@ export function ConversationView(p: ConversationViewProps) {
       },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [registry, appCommands, p.permissions, p.roomId, p.room, p.roomMembers, hasVoice, conversationId, domain, user?.domain, location.pathname, pollsOffered]);
+  }, [registry, appCommands, p.permissions, p.roomId, p.room, p.roomMembers, hasVoice, conversationId, domain, user?.domain, location.pathname, pollsOffered, t]);
 
   const emojiContext = useMemo<EmojiContextValue>(() => ({ domain, roomId: p.roomId, externalAllowed, roomEmojis: emojiList }), [domain, p.roomId, externalAllowed, emojiList]);
 
@@ -651,8 +663,7 @@ export function ConversationView(p: ConversationViewProps) {
     if (plainInEncrypted(m, p.encrypted)) return t("messages.not_e2ee_short");
     const c = m.encrypted ? (pinDecrypted[m.id]?.ok ? (pinDecrypted[m.id] as { content: Record<string, unknown> }).content : null) : (m.content as Record<string, unknown> | null);
     if (m.encrypted && !c) return t("messages.encrypted_short");
-    if (c?.type === "poll" && typeof c.question === "string") return `📊 ${c.question}`;
-    return typeof c?.body === "string" ? c.body : t("channel.attachment");
+    return previewText(c, 200) ?? t("channel.attachment");
   };
 
   return (
@@ -701,7 +712,7 @@ export function ConversationView(p: ConversationViewProps) {
       {gate.warning}
       <VerificationNotice addresses={broken} blocking={verificationBlock} />
       {messages.isError && <p className="p-4 text-sm text-danger">{describeError(messages.error)}</p>}
-      <AuthorProfiles messages={loaded}>
+      <AuthorProfiles messages={loaded} members={p.roomMembers}>
       <PollContext.Provider value={pollEnv}>
       <ComponentsContext.Provider value={componentsEnv}>
       <MessageList
@@ -749,10 +760,7 @@ export function ConversationView(p: ConversationViewProps) {
         />
       )}
       <InteractionNotices conversationId={conversationId} qualified={q} encrypted={p.encrypted} mls={e2ee.mls} />
-      <div className="h-5 px-4 text-xs text-fg-2" aria-live="polite" data-testid="typing-indicator">
-        {typingNames.length === 1 && t("messages.typing_one")}
-        {typingNames.length > 1 && t("messages.typing_many", { count: typingNames.length })}
-      </div>
+      <TypingIndicator conversationId={conversationId} selfId={user?.id} />
       {p.readOnlyNote || p.composerNote ? (
         <p className="mx-4 mb-4 rounded-md border border-line bg-bg-1 px-3 py-2 text-sm text-fg-2" data-testid={p.readOnlyNote ? "read-only-note" : "composer-note"}>
           {p.readOnlyNote ?? p.composerNote}

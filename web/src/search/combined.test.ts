@@ -98,3 +98,37 @@ describe("combined search", () => {
     expect((await runSearch({ query: "x", filters: {}, rooms: [empty], local: [] }, null, {})).status.nodeFailed).toBe(0);
   });
 });
+
+describe("search latency", () => {
+  it("the node and the local index are searched at the same time", async () => {
+    vi.useFakeTimers();
+    try {
+      const wait = <T>(ms: number, v: T) => new Promise<T>((r) => setTimeout(() => r(v), ms));
+      const room: RoomRef = { node: "n", roomId: "R1", api: { search: { room: () => wait(300, nodeResponse([["N1", "2026-10-01T00:00:00Z"]])) } } as never };
+      const index = { search: () => wait(200, [] as LocalHit[]) } as unknown as SearchIndex;
+      let done = false;
+      const run = runSearch({ query: "x", filters: {}, rooms: [room], local: null }, index, {}).then((r) => ((done = true), r));
+      await vi.advanceTimersByTimeAsync(310);
+      expect(done).toBe(true);
+      expect((await run).rows.map((r) => r.messageId)).toEqual(["N1"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("node requests run in a pool: one slow room does not hold back the next ones", async () => {
+    vi.useFakeTimers();
+    try {
+      const started: string[] = [];
+      const room = (id: string, ms: number): RoomRef => ({ node: "n", roomId: id, api: { search: { room: () => (started.push(id), new Promise((r) => setTimeout(() => r(nodeResponse([])), ms))) } } as never });
+      const rooms = [room("slow", 1000), room("a", 10), room("b", 10), room("c", 10), room("d", 10), room("e", 10)];
+      const run = runSearch({ query: "x", filters: {}, rooms, local: [] }, null, {});
+      await vi.advanceTimersByTimeAsync(50);
+      expect(started).toEqual(["slow", "a", "b", "c", "d", "e"]);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect((await run).status.nodeRooms).toBe(6);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

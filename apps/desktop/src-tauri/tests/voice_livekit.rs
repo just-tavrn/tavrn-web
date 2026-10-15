@@ -124,7 +124,7 @@ async fn join(identity: &str, room: &str, key: [u8; 32], epoch: u64, tone: f32) 
     let args = JoinArgs {
         url: format!("ws://127.0.0.1:{PORT}"),
         token: token(identity, room),
-        key: key.to_vec(),
+        key: zeroize::Zeroizing::new(key.to_vec()),
         epoch,
         bitrate_kbps: 32,
         config: config(),

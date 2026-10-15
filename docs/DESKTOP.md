@@ -362,7 +362,13 @@ browser does on Windows (`src-tauri/src/passkey.rs`, the commands `passkey_creat
   `clientDataJSON` itself with the **web origin of the node the app is connected to** (the settings' `web`, else the
   node URL; never an origin from the page) and refuses a relying party id that this origin's host is not equal to or a
   subdomain of (`passkey.refused`). The node verifies the result as it verifies a browser's: no node setting is
-  needed for the Windows app.
+  needed for the Windows app. The settings keep a `web` origin only when it is **bound to the node**: on the node's
+  host or a subdomain of it, or on the identity domain or a subdomain of it while the node itself is on that domain
+  or a subdomain of it (`api.tavrn.example` with `app.tavrn.example`). Another site's origin named in a node's
+  document is replaced by the node's own origin (`resolve_node`), refused by `set_node` (`node_url.web_unbound`) and
+  dropped from a stored settings file; the cases are in `apps/shared-vectors/node_url.json` (`web_binding`), which
+  both shells and the client test. A node that delegates to a host outside its identity domain therefore serves its
+  sign-in page and passkeys from the node's own origin in the apps.
 - It answers with the credential as `PublicKeyCredential.toJSON()`; the PRF output (`prf.results.first`) travels
   apart, for the key store only, and never reaches the node.
 - `app_info` reports `passkeys: true` when webauthn.dll is there (it is loaded at the first use from System32, so the
@@ -398,9 +404,9 @@ over USB** itself, with the contract of the Windows app (`passkey_create`, `pass
 `passkeys.passkeyCreate`, `passkeys.passkeyGet`):
 
 - The client passes the node's options unchanged; the shell takes the **web origin of the node the app is connected
-  to** from its settings (`web`, else the node URL; never the page's), writes `clientDataJSON` with it as a browser
-  does and hands its SHA-256 to the key; a relying party id this origin's host is not equal to or a subdomain of is
-  refused (`passkey.refused`) before any key is asked. The node verifies the answer as a browser's; no node setting
+  to** from its settings (`web` when bound to the node as on Windows, else the node URL; never the page's), writes
+  `clientDataJSON` with it as a browser does and hands its SHA-256 to the key; a relying party id this origin's host
+  is not equal to or a subdomain of is refused (`passkey.refused`) before any key is asked. The node verifies the answer as a browser's; no node setting
   is needed. The answer is `PublicKeyCredential.toJSON()` (the attestation replaced by `none`, as browsers do when the
   node asks for none), the PRF output apart, for the key store only.
 - **CTAP2 over USB HID** through the native module `apps/desktop-electron/native/passkeys` (napi-rs, like the key
@@ -475,7 +481,8 @@ the identity domain as for invites). **Rules** (`src-tauri/src/deeplink.rs`, the
 in the client's `platform/deepLinks.ts`): `<node>` is a domain name with a dot (no port, no address, no `localhost`, so
 a link never points the app at this computer), codes and ids are base64url of at most 64 characters, `connect` takes
 exactly the 43-character session id and a 16 to 128 character state (the rules of the sign-in window's
-`open_connect`), no fragment, no other parameter, at most 512 bytes. Everything else is dropped by the shell.
+`open_connect`), no fragment, no other parameter, at most 512 bytes. Everything else is dropped by the shell. Both
+shells test these rules against the same cases, `apps/shared-vectors/deeplink.json`.
 
 **The client shows the target before it acts.** A link never navigates by itself: a dialog names what it opens ("An
 invite to a room on chat.example", "A channel of a room on chat.example") and shows the link; only **Open** goes there,
@@ -614,14 +621,16 @@ unencrypted (`voice.invalid_url` otherwise). The shell (`src-tauri/src/voice`):
   the input volume, then the gate (`gate.rs`, the same DSP as `web/src/voice/gate.ts`: threshold, 6 dB hysteresis,
   hold, 5 ms attack, 40 ms release) for voice activation, the noise gate and push-to-talk with its release delay.
   Opus with DTX and without RED, the channel's bitrate, as in the browser.
-- **Subscriptions**: the room connects without auto-subscription; microphones (and every other track) are subscribed
-  as they are published, screen shares never (`wants_subscription` in `engine.rs`). Screen shares are opt-in in tavrn
-  (a viewer receives a stream only after joining it, docs/CLIENT.md "Streams are joined"), and this engine has no video
+- **Subscriptions**: the room connects without auto-subscription; microphones (every remote audio track) are
+  subscribed as they are published, cameras and screen shares never (`wants_subscription` in `engine.rs`): this engine
+  plays no video, so a camera would only cost download bandwidth and decoding. Screen shares are opt-in in tavrn (a
+  viewer receives a stream only after joining it, docs/CLIENT.md "Streams are joined"), and this engine has no video
   to join one with; joining a stream in the client says so.
 - **Playback** (`mix.rs`): every subscribed remote audio track is decoded (and decrypted) by libwebrtc and mixed with
   the per-participant gain the client computes (`volume.ts`: per-user volume × output volume, 0 while deafened); the
   mix is also the echo canceller's reference. The loudest 10 ms RMS of each participant goes to the webview every
-  50 ms, where the browser engine's `SpeakingDetector` turns it into speaking rings.
+  50 ms while someone is audible (once more when all fell silent, nothing in silence), where the browser engine's
+  `SpeakingDetector` turns it into speaking rings.
 - **Push-to-talk** follows the system-wide hotkey directly (a tap of `hotkeys.rs`, so it also works while the window
   is in the background) and the webview's key and hold button.
 - **Devices** of its own (`voice_devices`; Settings → Voice & video and the quick menus list them, kept apart from the
@@ -745,7 +754,7 @@ others (layout, bridge, profile, packages) exist for this shell only.
 | `src/main/guard.ts` | the decisions of navigations, new windows, external links, permissions and the dev server URL (pure functions, unit-tested) |
 | `src/main/ipc.ts` | the registry of the bridge's IPC channels: sender check, argument checks, handlers |
 | `src/main/events.ts` | the shell's events for the client (one channel) |
-| `src/main/config.ts`, `node_url.ts` | the settings file and the node URL rules (the Tauri shell's `config.rs` and `node_url.rs`, with their test cases) |
+| `src/main/config.ts`, `node_url.ts` | the settings file and the node URL rules (the Tauri shell's `config.rs` and `node_url.rs`; both shells test the node URL rules against `apps/shared-vectors/node_url.json`) |
 | `src/main/shell.ts` | the `shell` namespace: settings, version, external links, node resolution, the sign-in window |
 | `src/main/resolve.ts` | address first: well-known, SRV, direct (the Tauri shell's `resolve.rs`, with its test cases) |
 | `src/main/connect.ts` | the sign-in window |
@@ -1269,9 +1278,9 @@ like `just e2e`.
 
 | Job | Runner | When | What |
 |---|---|---|---|
-| `Tauri shell (Linux checks)` | self-hosted `tavrn-heavy` (`ubuntu-latest` for forks, Dependabot and `dependabot/*` branches) | pushes to `main` that touch `apps/desktop`, `apps/desktop-electron`, `web`, the lockfile or the workspace; by hand (also for a pull request's branch); not for release tags | the Tauri shell's checks on Linux: cargo fmt, clippy, the tests of `src-tauri` and of the key listener crate, `cargo deny check` (licenses, advisories, bans, sources), the real Secret Service, the release scripts' tests; no bundles and no artifact (Linux ships the Electron shell; `just desktop-check` is the local equivalent) |
+| `Tauri shell (Linux checks)` | self-hosted `tavrn-heavy` (`ubuntu-latest` for forks, Dependabot and `dependabot/*` branches) | pushes to `main` that touch `apps/desktop`, `apps/desktop-electron`, `web`, the lockfile or the workspace (`ci.yml` calls the workflow with the `web/dist` its JavaScript job built); by hand (also for a pull request's branch); not for release tags | the Tauri shell's checks on Linux: cargo fmt, clippy, the tests of `src-tauri` and of the key listener crate, `cargo deny check bans licenses sources` (the advisories: `advisories.yml`, daily), the real Secret Service; no bundles and no artifact (Linux ships the Electron shell; `just desktop-check` is the local equivalent) |
 | `Desktop (Windows NSIS, cross-compiled)` | self-hosted `tavrn-heavy` | as above, never for forks, Dependabot or release tags | `tauri build --target x86_64-pc-windows-msvc --runner cargo-xwin --bundles nsis`; artifact `desktop-windows-nsis` (the current Tauri installer of `main` is always there) |
-| `Desktop (Linux, Electron)` | self-hosted `tavrn-heavy` (`ubuntu-latest` for forks, Dependabot and release tags) | as above; release tags | the Electron shell's checks, the key listener module, `.AppImage`, `.deb` and `latest-linux.yml` (uploaded with their sums before the specs run), every Playwright spec (the full smoke test against a copy of the AppImage); artifact `desktop-linux-electron` ([Builds and releases (Electron)](#builds-and-releases-electron)) |
+| `Desktop (Linux, Electron)` | self-hosted `tavrn-heavy` (`ubuntu-latest` for forks, Dependabot and release tags) | as above; release tags | the native modules' checks, the key listener module, `.AppImage`, `.deb` and `latest-linux.yml` (uploaded with their sums before the specs run), every Playwright spec (the full smoke test against a copy of the AppImage); artifact `desktop-linux-electron` ([Builds and releases (Electron)](#builds-and-releases-electron)) |
 | `Desktop (Windows)` | GitHub-hosted `windows-latest` | release tags; by hand with `windows: true` | the Tauri `.msi` and NSIS installers, built without any secret; artifact `desktop-windows` |
 | `Desktop (Windows, Electron fallback)` | GitHub-hosted `windows-latest` | release tags; by hand with `electron-windows: true` | the Electron shell's NSIS installer `tavrn-electron_<version>_x64-setup.exe`, its block map and `latest.yml` (the key listener module built with the MSVC toolchain of the runner); artifact `desktop-windows-electron` |
 | `Desktop (macOS, universal, unsigned)` | GitHub-hosted `macos-latest` | release tags; by hand with `macos: true` | the Tauri app as one universal build (Apple Silicon and Intel): `Tavrn_<version>_universal.dmg` and the updater's app archive `Tavrn_<version>_universal.app.tar.gz`, signed ad hoc only, built without any secret; artifact `desktop-macos`. `continue-on-error`: a failure never fails a release ([macOS](#macos)) |
@@ -1287,11 +1296,11 @@ All artifacts are kept for 7 days.
   publishing it, so it is never part of an artifact either).
 - **Pull requests** start no desktop build: they run the quick checks of `ci.yml` only. A pull request's branch is
   built by hand (`gh workflow run desktop.yml --ref <branch>`); changes to the workflow file alone start nothing either.
-- **Trusted events only:** a self-hosted runner executes the code it checks out, so the jobs keep the trust rule of the
-  organization's `rust-ci.yml`: code from forks, from Dependabot and from `dependabot/*` branches builds on
+- **Trusted events only:** a self-hosted runner executes the code it checks out, so the jobs take the trust rule of the
+  organization's `route.yml` (job `route`, skipped for a release tag): code from forks, from Dependabot and from `dependabot/*` branches builds on
   `ubuntu-latest` and skips the cross-compiled installer. A manual run executes the dispatched branch on the runner:
   dispatch only branches you reviewed. **Release builds are GitHub-hosted throughout** (`ubuntu-latest`,
-  `windows-latest`), and **the build jobs hold no secret**: a compromised dependency in a build (a crate's build script,
+  `windows-latest`) and restore no Actions cache, and **the build jobs hold no secret**: a compromised dependency in a build (a crate's build script,
   an npm package) never sees the updater key. Only `Release assets` holds it, in the environment `release` (tags `v*`,
   the owner's approval): it installs the Tauri CLI alone without lifecycle scripts, runs no build, no cargo and no
   cache, and signs the finished files (`apps/desktop/scripts/release-workflow.test.mjs` fails when another job names
@@ -1437,6 +1446,9 @@ rc build was a 404. The release workflow and the asset names are unchanged: the 
 its 503), `update.no_release` (the website's 404 `no_release`: the channel has no release of this app yet; also a
 release without this platform's build), `update.signature_invalid` (the update is not signed with the app's key) and
 `update.failed` (anything else). The shells log the underlying reason (`tavrn: the update check at <url> failed: …`).
+A check gives up after 30 s in both shells (`update.unreachable`), so a connection that never answers (a captive
+portal, a stalled proxy) does not leave Settings → App waiting; the Tauri shell allows an installer download 30 minutes
+(`updater::timeout_of`).
 
 **Development.** A development build of the Tauri shell takes another feed host from `TAVRN_UPDATE_BASE`, e.g.
 `http://127.0.0.1:18089/updates/desktop` for the website's container with its fake GitHub API (tavrn-website

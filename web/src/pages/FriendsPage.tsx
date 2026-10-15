@@ -6,6 +6,8 @@ import type { User } from "@tavrn/sdk";
 import { api } from "../lib/api";
 import { useT } from "../i18n";
 import { describeError, toastError } from "../stores/toasts";
+import { useAction } from "../hooks/useAction";
+import { confirmDialog } from "../components/Confirm";
 import { Button } from "../components/ui";
 import { UserLine, openDm, useFriends } from "./DirectMessages";
 import { FriendRequestForm } from "../components/FriendRequestForm";
@@ -23,15 +25,8 @@ export function FriendsPage() {
   const friends = useFriends();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["friends"] });
-  const act = async (fn: () => Promise<unknown>) => {
-    try {
-      await fn();
-      await refresh();
-    } catch (e) {
-      toastError(e);
-    }
-  };
+  // One action at a time (a double click sends one request); a failed refetch afterwards is only a warning.
+  const { run: act } = useAction({ refresh: () => queryClient.invalidateQueries({ queryKey: ["friends"] }) });
   const message = async (user: User) => {
     try {
       // An existing DM on any node (e.g. one the friend started on their home node), else a new one here.
@@ -69,11 +64,13 @@ export function FriendsPage() {
             </Button>
           ) }))} />
           <FriendSection title={t("friends.friends")} empty={t("friends.no_friends")} testId="friends-list" items={data.friends.map((f) => {
-            const remove = () => confirm(t("friends.remove_confirm", { address: f.user.address })) && void act(() => api.friends.remove(f.user.address));
+            const remove = async () => {
+              if (await confirmDialog({ text: t("friends.remove_confirm", { address: f.user.address }), confirmLabel: t("friends.remove"), danger: true })) await act(() => api.friends.remove(f.user.address));
+            };
             return { key: f.user.id, user: f.user, friend: { message: () => void message(f.user), remove, block: () => block(f.user) }, actions: (
             <>
               <Button onClick={() => void message(f.user)}>{t("friends.message")}</Button>
-              <Button variant="ghost" onClick={remove}>
+              <Button variant="ghost" onClick={() => void remove()}>
                 {t("friends.remove")}
               </Button>
               <Button variant="ghost" onClick={() => block(f.user)}>
@@ -94,7 +91,7 @@ export function FriendsPage() {
         onConfirm={(reason) => {
           const user = blocking;
           setBlocking(null);
-          if (user) void act(() => api.blocks.block(user.address, reason || null)).then(() => queryClient.invalidateQueries({ queryKey: ["blocks"] }));
+          if (user) void act(() => api.blocks.block(user.address, reason || null), { refresh: () => Promise.all([queryClient.invalidateQueries({ queryKey: ["friends"] }), queryClient.invalidateQueries({ queryKey: ["blocks"] })]) });
         }}
       />
     </div>

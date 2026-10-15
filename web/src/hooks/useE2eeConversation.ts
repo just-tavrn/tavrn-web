@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { archivedDecrypted } from "../history/local";
 import type { Message } from "@tavrn/sdk";
 import { useE2ee } from "../stores/e2ee";
-import { getMls, useMlsUi } from "../stores/mls";
+import { getMls, mlsOpenFailure, useMlsUi } from "../stores/mls";
 import type { Decrypted, GhostViolation, MlsManager, PlainStatus } from "@tavrn/e2ee";
 import { describeError } from "../stores/toasts";
 import { cleanupConversation } from "../lib/leafCleanup";
@@ -57,8 +57,9 @@ export function useE2eeConversation(opts: {
   // Acknowledging a changed security key lets its devices count (ENCRYPTION.md §3.3): add them and check again.
   const changedKey = useMlsUi((s) => Object.keys(s.changedKeys).sort().join(","));
   const [state, setState] = useState<Omit<E2eeConversation, "tick" | "rejoined">>({ phase: "joining", mls: null, waiting: [], ghosts: [], error: null });
-  const membersKey = opts.members ? [...opts.members].sort().join(",") : null;
-  const directKey = opts.direct ? [...opts.direct].sort().join(",") : "";
+  // The member lists change with their queries only: sorted once per list, not on every render (big rooms).
+  const membersKey = useMemo(() => (opts.members ? [...opts.members].sort().join(",") : null), [opts.members]);
+  const directKey = useMemo(() => (opts.direct ? [...opts.direct].sort().join(",") : ""), [opts.direct]);
   const { conversationId, encrypted, canCreate, mayManage } = opts;
   const noBots = !!opts.noBots;
   const members = opts.members;
@@ -85,7 +86,11 @@ export function useE2eeConversation(opts: {
     void (async () => {
       const mls = await getMls();
       if (cancelled) return;
-      if (!mls) return setState({ phase: "locked", mls: null, waiting: [], ghosts: [], error: null });
+      if (!mls) {
+        // An encryption error while opening the manager (stored encryption data unreadable) is not a locked device.
+        const failure = mlsOpenFailure();
+        return setState({ phase: failure ? "error" : "locked", mls: null, waiting: [], ghosts: [], error: failure ? describeError(failure) : null });
+      }
       try {
         const joined = await mls.ensureJoined(conversationId, { canCreate });
         if (cancelled) return;
@@ -128,69 +133,179 @@ export function useE2eeConversation(opts: {
   return { ...state, rejoined, tick };
 }
 
+/** One result per message object: reused while the message object is unchanged (realtime patches replace it). */
+interface Kept<T> {
+  message: Message;
+  value: T;
+  /** The group state (`tick`, session manager) a non-final result was found under: retried when it changes. */
+  gen: number;
+  /** When it was found: a non-final result is also retried on the next change after {@link RETRY_NON_FINAL_MS}. */
+  at: number;
+}
+
+/** A missing key or an unknown device may come from a passing failure: tried again at most this often. */
+export const RETRY_NON_FINAL_MS = 30_000;
+
 /**
- * Signature checks of the plaintext messages in `messages` (message id → status, FEDERATION.md §10.3).
- * System messages (no device) are skipped; without a session manager (locked device) nothing is checked.
+ * Keeps the results of an incremental per-message check across renders: only messages that are new, changed or
+ * non-final under a changed group state are handed to `run`. Unchanged results keep their identity, and the map
+ * keeps its identity when nothing changed, so memoized rows do not render again.
  */
-export function usePlainSignatures(conversationId: string, messages: Message[] | undefined, mls: MlsManager | null, tick: number): Record<string, PlainStatus> {
-  const [map, setMap] = useState<Record<string, PlainStatus>>({});
-  const plain = useMemo(() => (messages ?? []).filter((m) => !m.encrypted && !!m.device_id), [messages]);
-  const changedKeys = useMlsUi((s) => s.changedKeys);
+function useIncremental<T>(
+  conversationId: string,
+  messages: Message[],
+  ready: boolean,
+  genDeps: unknown[],
+  final: (v: T | null) => boolean,
+  run: (todo: Message[], isCancelled: () => boolean) => Promise<Map<string, T | null>>,
+): Record<string, T> {
+  const [map, setMap] = useState<Record<string, T>>({});
+  const cache = useRef<{ conversationId: string; kept: Map<string, Kept<T | null>>; gen: number; deps: unknown[] }>({ conversationId, kept: new Map(), gen: 0, deps: genDeps });
+  if (cache.current.conversationId !== conversationId) cache.current = { conversationId, kept: new Map(), gen: 0, deps: genDeps };
+  const c = cache.current;
+  if (genDeps.length !== c.deps.length || genDeps.some((d, i) => d !== c.deps[i])) {
+    c.gen++;
+    c.deps = genDeps;
+  }
+  const gen = c.gen;
   useEffect(() => {
-    if (!mls || plain.length === 0) return;
+    if (!ready || messages.length === 0) return;
     let cancelled = false;
-    void (async () => {
-      const next: Record<string, PlainStatus> = {};
-      for (const m of plain) {
-        try {
-          next[m.id] = await mls.verifyPlaintext(conversationId, m);
-        } catch {
-          next[m.id] = "unverifiable";
+    // Pages dropped from the window (older history trimmed) leave their results behind: forget them now and then.
+    if (c.kept.size > 2 * messages.length + 100) {
+      const present = new Set(messages.map((m) => m.id));
+      for (const id of c.kept.keys()) if (!present.has(id)) c.kept.delete(id);
+    }
+    const publish = () => {
+      setMap((prev) => {
+        const next: Record<string, T> = {};
+        let changed = false;
+        let count = 0;
+        for (const m of messages) {
+          const v = c.kept.get(m.id)?.value;
+          if (v === null || v === undefined) continue;
+          next[m.id] = v;
+          count++;
+          if (prev[m.id] !== v) changed = true;
         }
+        return changed || count !== Object.keys(prev).length ? next : prev;
+      });
+    };
+    // A replaced message object (edit, reaction, any envelope change) is checked again: the session manager caches
+    // by the exact input, so this costs a lookup, and the check covers every envelope field it binds.
+    const now = Date.now();
+    const todo = messages.filter((m) => {
+      const k = c.kept.get(m.id);
+      return !(k && k.message === m && (final(k.value) || (k.gen === gen && now - k.at < RETRY_NON_FINAL_MS)));
+    });
+    if (todo.length === 0) {
+      publish();
+      return;
+    }
+    void (async () => {
+      const results = await run(todo, () => cancelled).catch(() => new Map<string, T | null>());
+      // Results stay valid for their message object even when this run was superseded.
+      const at = Date.now();
+      for (const m of todo) {
+        if (!results.has(m.id)) continue;
+        const value = results.get(m.id) ?? null;
+        const old = c.kept.get(m.id);
+        c.kept.set(m.id, { message: m, value: old && sameResult(old.value, value) ? old.value : value, gen, at });
       }
-      if (!cancelled) setMap(next);
+      if (!cancelled) publish();
     })();
     return () => {
       cancelled = true;
     };
-  }, [conversationId, plain, mls, tick, changedKeys]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [c, messages, ready, gen]);
   return map;
+}
+
+/** Equal results keep the old object: the same status, or the same decrypted content read again (the archive). */
+function sameResult(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
+ * Signature checks of the plaintext messages in `messages` (message id → status, FEDERATION.md §10.3).
+ * System messages (no device) are skipped; without a session manager (locked device) nothing is checked.
+ * Incremental: a message is checked once per message object; `unverifiable` ones again when the group or an acknowledged
+ * key changes.
+ */
+export function usePlainSignatures(conversationId: string, messages: Message[] | undefined, mls: MlsManager | null, tick: number): Record<string, PlainStatus> {
+  const plain = useMemo(() => (messages ?? []).filter((m) => !m.encrypted && !!m.device_id), [messages]);
+  const changedKeys = useMlsUi((s) => s.changedKeys);
+  return useIncremental<PlainStatus>(
+    conversationId,
+    plain,
+    !!mls,
+    [mls, tick, changedKeys],
+    (v) => v !== null && v !== "unverifiable",
+    async (todo, isCancelled) => {
+      const out = new Map<string, PlainStatus | null>();
+      for (const m of todo) {
+        if (isCancelled() || !mls) break;
+        try {
+          out.set(m.id, await mls.verifyPlaintext(conversationId, m));
+        } catch {
+          out.set(m.id, "unverifiable");
+        }
+      }
+      return out;
+    },
+  );
 }
 
 /**
  * Decrypted content of the encrypted messages in `messages` (message id → result). Plaintext messages
- * are not included. Results live in memory only.
+ * are not included. Results live in memory only. Incremental: a message is decrypted (or read from the archive) once
+ * per message object; results without a key yet are tried again when the group changes, and results whose sender's
+ * devices could not be looked up for the moment (`retry`) also every {@link RETRY_NON_FINAL_MS} on their own.
  */
 export function useDecrypted(conversationId: string, messages: Message[] | undefined, mls: MlsManager | null, tick: number): Record<string, Decrypted> {
-  const [map, setMap] = useState<Record<string, Decrypted>>({});
   const encrypted = useMemo(() => (messages ?? []).filter((m) => m.encrypted), [messages]);
-  useEffect(() => {
-    if (encrypted.length === 0) return;
-    let cancelled = false;
-    void (async () => {
+  const [lookupRound, setLookupRound] = useState(0);
+  const decrypted = useIncremental<Decrypted>(
+    conversationId,
+    encrypted,
+    true,
+    [mls, tick, lookupRound],
+    (v) => v !== null && (v.ok || (v.reason !== "missing_key" && v.reason !== "locked" && v.reason !== "retry")),
+    async (todo, isCancelled) => {
       // "Keep the full history on this device" (#4): content this device archived is used as it is (also offline,
       // before the session manager is there); the rest is decrypted.
-      const archived = await archivedDecrypted(conversationId, encrypted);
-      if (!mls && archived.size === 0) return;
-      const next: Record<string, Decrypted> = {};
-      for (const m of encrypted) {
+      const archived = await archivedDecrypted(conversationId, todo);
+      const out = new Map<string, Decrypted | null>();
+      for (const m of todo) {
         const kept = archived.get(m.id);
         if (kept) {
-          next[m.id] = kept;
+          out.set(m.id, kept);
           continue;
         }
-        if (!mls) continue;
+        if (!mls) {
+          out.set(m.id, null);
+          continue;
+        }
+        if (isCancelled()) break;
         try {
-          next[m.id] = await mls.decrypt(conversationId, m);
+          out.set(m.id, await mls.decrypt(conversationId, m));
         } catch {
-          next[m.id] = { ok: false, reason: "invalid" };
+          out.set(m.id, { ok: false, reason: "invalid" });
         }
       }
-      if (!cancelled) setMap(next);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [conversationId, encrypted, mls, tick]);
-  return map;
+      return out;
+    },
+  );
+  // Nothing caches a `retry` (a device lookup that failed for the moment, e.g. the sender's node did not answer):
+  // a new round decrypts those messages again until the lookup works.
+  const lookupFailed = useMemo(() => Object.values(decrypted).some((d) => !d.ok && d.reason === "retry"), [decrypted]);
+  useEffect(() => {
+    if (!lookupFailed) return;
+    const timer = setTimeout(() => setLookupRound((r) => r + 1), RETRY_NON_FINAL_MS);
+    return () => clearTimeout(timer);
+  }, [lookupFailed, lookupRound]);
+  return decrypted;
 }

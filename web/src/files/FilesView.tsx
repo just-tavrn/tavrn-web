@@ -44,7 +44,7 @@ import {
   uploadEncrypted,
   type EncryptedContext,
 } from "./e2ee";
-import { useLocale, useT } from "../i18n";
+import { useT } from "../i18n";
 import { useNode } from "../components/NodeScope";
 import { useNodeSockets, useRealtimeState } from "../hooks/useRealtime";
 import { ContextMenu, menuItem, normalizeMenu, separator, type MenuEntry } from "../components/ContextMenu";
@@ -83,6 +83,7 @@ import {
   type SortKey,
   type SortState,
 } from "./model";
+import { formatDate } from "../lib/format";
 
 const MediaViewer = lazy(() => import("../components/MediaViewer"));
 
@@ -217,9 +218,7 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
     return r?.ok ? r.record : null;
   }, [records]);
   const lockState = encrypted ? filesLockState(e2ee.phase, records) : null;
-  // `t` is a new function on every render: the labels change with the language only.
-  const locale = useLocale((s) => s.locale);
-  const lockedLabels = useMemo(() => ({ file: t("files.locked_file"), folder: t("files.locked_folder") }), [locale]); // eslint-disable-line react-hooks/exhaustive-deps
+  const lockedLabels = useMemo(() => ({ file: t("files.locked_file"), folder: t("files.locked_folder") }), [t]);
   // Role preview: encrypted entries from before the window a new member with the roles would get are cut.
   const preview = useRoomPreview(room.id);
   const historyStart = preview ? previewHistoryStart(channel, channelPermissions(room, channel.id, ""), preview.joinedAt) : null;
@@ -277,9 +276,7 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
     return () => {
       stale = true;
     };
-    // `t` is left out on purpose (a new function per render).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [encrypted, wanted, listing.isSuccess, listing.hasNextPage, byId, api, room.id, channel.id, q]);
+  }, [encrypted, wanted, listing.isSuccess, listing.hasNextPage, byId, api, room.id, channel.id, q, t]);
   const decryptFolderNames = useCallback(
     async (list: Parameters<typeof decryptRecords>[2]) => {
       const out = new Map<string, string>();
@@ -306,6 +303,9 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
   // Role preview (docs/CLIENT.md): nothing is uploaded, moved or changed; the rights of the roles are listed instead.
   const rights = preview ? { can_manage: false, can_attach: false } : { can_manage: !!i?.can_manage, can_attach: !!i?.can_upload };
   const canUpload = !preview && !!i?.can_upload;
+  // Encrypted channels: no upload before the channel's group is ready on this device; a file chosen earlier would be
+  // refused and lost (tavrn-web#169). The status line above the list says why meanwhile.
+  const uploadReady = !encrypted || !!e2ee.mls;
   const selected = entries.filter((e) => selection.ids.has(e.id));
   const modifiable = (list: FileEntry[]) => list.length > 0 && list.every((e) => canModify(e, me?.id, rights));
 
@@ -665,22 +665,24 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
               <Button variant="ghost" className="min-h-8 px-2 text-xs" onClick={() => setDialog({ kind: "new-folder" })} data-testid="files-new-folder">
                 {t("files.new_folder")}
               </Button>
-              <Button className="min-h-8 px-2 text-xs" onClick={() => fileInput.current?.click()} data-testid="files-upload-button">
+              <Button className="min-h-8 px-2 text-xs" onClick={() => fileInput.current?.click()} disabled={!uploadReady} title={uploadReady ? undefined : t("files.e2ee_not_ready")} data-testid="files-upload-button">
                 {t("files.upload")}
               </Button>
-              <input
-                ref={fileInput}
-                type="file"
-                multiple
-                hidden
-                aria-label={t("files.upload")}
-                data-testid="files-upload-input"
-                onChange={(e) => {
-                  const files = [...(e.target.files ?? [])];
-                  e.target.value = "";
-                  if (files.length) void uploadFiles(files);
-                }}
-              />
+              {uploadReady && (
+                <input
+                  ref={fileInput}
+                  type="file"
+                  multiple
+                  hidden
+                  aria-label={t("files.upload")}
+                  data-testid="files-upload-input"
+                  onChange={(e) => {
+                    const files = [...(e.target.files ?? [])];
+                    e.target.value = "";
+                    if (files.length) void uploadFiles(files);
+                  }}
+                />
+              )}
             </>
           )}
           {storeMissing &&
@@ -991,7 +993,7 @@ function EntryRow(p: {
   const long = useRef<ReturnType<typeof setTimeout> | null>(null);
   const button = useRef<HTMLSpanElement>(null);
   const date = new Date(e.updated_at);
-  const when = Number.isNaN(date.getTime()) ? "" : date.toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
+  const when = Number.isNaN(date.getTime()) ? "" : formatDate(date, "short");
   const common = {
     id: `file-${e.id}`,
     role: "option",

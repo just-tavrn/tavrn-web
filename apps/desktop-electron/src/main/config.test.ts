@@ -58,6 +58,9 @@ test("a stored node that fails validation is dropped", (t) => {
   writeFileSync(path, '{"node": "https://tavrn.example", "web": "http://evil.example", "domain": "Not A Domain"}');
   const c = loadConfig(path);
   assert.deepEqual([c.web, c.domain], [null, null], "an invalid web origin or domain is dropped");
+  writeFileSync(path, '{"node": "https://tavrn-org.example", "web": "https://tavrn.org", "domain": "tavrn-org.example"}');
+  const unbound = loadConfig(path);
+  assert.deepEqual([unbound.web, unbound.domain], [null, "tavrn-org.example"], "a web origin not bound to the node is dropped");
   writeFileSync(path, '{"web": "https://web.tavrn.example", "domain": "tavrn.example"}');
   assert.deepEqual(loadConfig(path), empty, "nothing without a node");
 });
@@ -84,6 +87,9 @@ test("setNode keeps the web origin and the identity domain of a delegated node",
   assert.deepEqual([c.web, c.domain], ["https://web.tavrn.example", "tavrn.example"]);
   assert.throws(() => s.setNode("https://x.example", "http://evil.example"), { code: "node_url.insecure" });
   assert.throws(() => s.setNode("https://x.example", null, "not a domain"), { code: "node_url.domain" });
+  // Another site's origin (and a domain the node merely claims) never becomes the node's web client.
+  assert.throws(() => s.setNode("https://tavrn-org.example", "https://tavrn.org", "tavrn-org.example"), { code: "node_url.web_unbound" });
+  assert.throws(() => s.setNode("https://evil.example", "https://app.tavrn.org", "tavrn.org"), { code: "node_url.web_unbound" });
   assert.equal(loadConfig(s.path).domain, "tavrn.example", "refusals keep the old settings");
   // The node URL alone (the advanced picker) forgets the old node's details.
   s.setNode("https://other.example");

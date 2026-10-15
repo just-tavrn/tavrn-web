@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { channelName } from "../lib/names";
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type HTMLAttributes, type ReactNode } from "react";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { isBotKind, type Message, type User } from "@tavrn/sdk";
 import { ThreadIndicator } from "../threads/ThreadIndicator";
@@ -10,13 +10,14 @@ import { configureMarkdown, handleMarkdownClick, handleMarkdownKey, markdownVers
 import { useEmojiResolver } from "../lib/emojis";
 import { isGifUrl } from "../lib/gifs";
 import { GifView } from "./GifView";
-import { useLocale, useT } from "../i18n";
+import { useT } from "../i18n";
+import { previewText } from "../lib/messagePreview";
 import { Avatar } from "./ui";
 import { MessageAttachments, fromEncrypted, fromPlain } from "./AttachmentView";
 import { ContextMenu, MenuButton, useContextMenu } from "./ContextMenu";
 import { messageMenu } from "../lib/menus";
 import { mentionsMe } from "../lib/mentions";
-import { markMentions, mentionTokens, parseMentionTokens, serializeMentionTokens } from "../lib/mentionBadges";
+import { mentionTokens, parseMentionTokens, serializeMentionTokens } from "../lib/mentionBadges";
 import { copyText } from "./ContextMenu";
 import { useToasts } from "../stores/toasts";
 import { useAccessibility } from "../stores/accessibility";
@@ -176,6 +177,20 @@ export function MessageList({
   const onReact = useCallback((m: Message, emoji: string, active: boolean) => actionsRef.current.onReact?.(m, emoji, active), []);
   const onPin = useCallback((m: Message, pinned: boolean) => actionsRef.current.onPin?.(m, pinned), []);
   const onEdit = useCallback(async (m: Message, body: string) => actionsRef.current.onEdit?.(m, body), []);
+  // The mention tokens of a row (memoized row prop), once per message object while the bots, the reader and the
+  // role names stay the same: not rebuilt for every visible row on every list render.
+  const mentionsOf = useMemo(() => {
+    const cache = new WeakMap<Message, string>();
+    const opts = { bots, self: currentAddress, nodeDomain: currentAddress ? currentAddress.slice(currentAddress.lastIndexOf("@") + 1) : null, roles: mentionRoles };
+    return (m: Message) => {
+      let s = cache.get(m);
+      if (s === undefined) {
+        s = serializeMentionTokens(mentionTokens(m, opts));
+        cache.set(m, s);
+      }
+      return s;
+    };
+  }, [bots, currentAddress, mentionRoles]);
   const onDelete = useCallback((m: Message) => actionsRef.current.onDelete?.(m), []);
   const onReply = useCallback((m: Message) => actionsRef.current.onReply?.(m), []);
   const onReport = useCallback((m: Message) => actionsRef.current.onReport?.(m), []);
@@ -278,7 +293,8 @@ export function MessageList({
       const index = orderedRef.current.findIndex((m) => m.id === focus.id);
       if (index < 0) return;
       if (measurable) virtualizer.scrollToIndex(index, { align: "center" });
-      else listRef.current?.querySelector(`[data-message-id="${focus.id}"]`)?.scrollIntoView({ block: "center" });
+      // Found by comparison, not by a selector built from the id (it comes from the URL).
+      else [...(listRef.current?.querySelectorAll<HTMLElement>("[data-message-id]") ?? [])].find((el) => el.dataset.messageId === focus.id)?.scrollIntoView({ block: "center" });
     };
     scroll();
     // Rows above the target are measured (and decrypted) after the first scroll and move it: aim again a few times
@@ -418,7 +434,7 @@ export function MessageList({
                   replyDecrypted={m.reply_to_id ? decrypted[m.reply_to_id] : undefined}
                   conversationEncrypted={encrypted}
                   mentioned={mentionsMe(m, currentAddress) && m.author_id !== currentUserId}
-                  mentions={serializeMentionTokens(mentionTokens(m, { bots, self: currentAddress, nodeDomain: currentAddress ? currentAddress.slice(currentAddress.lastIndexOf("@") + 1) : null, roles: mentionRoles }))}
+                  mentions={mentionsOf(m)}
                 />
               </article>
             );
@@ -567,6 +583,28 @@ function KeyCheck({ address, at }: { address: string; at: string }) {
  * the avatar store ({@link AuthorProfiles}), so a profile change re-renders only these avatars, not the
  * rows. A button: it opens the profile card (the click is handled by `AuthorProfiles`).
  */
+/**
+ * The row of a system line: an icon, the avatar of whom it is about, the text with its time; the children (reactions,
+ * emoji picker, menu) follow the text.
+ */
+function SystemRow({ icon, who, at, text, rowProps, children }: { icon: string; who: { address: string; name: string }; at: string; text: ReactNode; rowProps: HTMLAttributes<HTMLDivElement> & { [data: `data-${string}`]: string | undefined }; children: ReactNode }) {
+  return (
+    <div className="group flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-2 py-1 text-sm text-fg-1 hover:bg-bg-3/60" {...rowProps}>
+      <span className="flex w-9 shrink-0 justify-center text-base" aria-hidden="true">
+        {icon}
+      </span>
+      <MessageAvatar address={who.address} name={who.name} small />
+      <span className="min-w-0 flex-1">
+        {text}
+        <time className="ml-2 text-xs text-fg-2" dateTime={at} title={formatFullTime(at)}>
+          {formatTime(at)}
+        </time>
+      </span>
+      {children}
+    </div>
+  );
+}
+
 function MessageAvatar({ address, name, small = false }: { address: string; name: string; small?: boolean }) {
   const t = useT();
   const avatar = useAuthorAvatar(address);
@@ -621,11 +659,7 @@ interface RowProps {
 
 /** The first line of a message for reply previews. */
 function snippet(m: Message, d: Decrypted | undefined): string | null {
-  const c = (m.encrypted ? (d?.ok ? d.content : null) : m.content) as AnyContent | null;
-  if (c?.type === "poll" && typeof (c as { question?: unknown }).question === "string") return `📊 ${String((c as { question: string }).question).slice(0, 99)}`;
-  if (!c || typeof c.body !== "string") return null;
-  const line = c.body.split("\n")[0]!.trim();
-  return line.length > 100 ? `${line.slice(0, 99)}…` : line;
+  return previewText(m.encrypted ? (d?.ok ? d.content : null) : m.content, 100);
 }
 
 /**
@@ -634,17 +668,15 @@ function snippet(m: Message, d: Decrypted | undefined): string | null {
  */
 const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, grouped, own, bot, author, replyAuthor, decrypted, signature, editing, setEditingId, canManage, canReact, canPin, roomId, customEmojis, emojiUrls, onReact, onPin, onEdit, onDelete, onReply, onReport, onThread, usersById, canStartThreads, onMarkUnread, replyTo, replyDecrypted, mentioned, mentions }: RowProps) {
   const t = useT();
-  const locale = useLocale((s) => s.locale);
   const [draft, setDraft] = useState("");
-  // `t` is a new function on every render; `locale` stands in for it.
-  const c = useMemo(() => contentOf(m, decrypted, signature, t, conversationEncrypted), [m, decrypted, signature, locale, conversationEncrypted]);
+  const c = useMemo(() => contentOf(m, decrypted, signature, t, conversationEncrypted), [m, decrypted, signature, t, conversationEncrypted]);
   const body = c.kind === "text" ? c.body : "";
   const resolve = useEmojiResolver();
   // highlight.js arriving re-renders rows with code blocks.
   const mdVersion = useSyncExternalStore(subscribeMarkdown, markdownVersion);
   const botLabel = t("badge.bot");
   const html = useMemo(
-    () => (body ? markMentions(renderMarkdown(body, emojiUrls, resolve), parseMentionTokens(mentions ?? ""), botLabel) : ""),
+    () => (body ? renderMarkdown(body, emojiUrls, resolve, mentions ? { tokens: parseMentionTokens(mentions), key: mentions, botLabel } : undefined) : ""),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [body, emojiUrls, resolve, mdVersion, mentions, botLabel],
   );
@@ -711,66 +743,23 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
       )
     : [];
 
-  if (c.kind === "member_event") {
-    return (
-      <div className="group flex items-center gap-3 rounded-md px-2 py-1 text-sm text-fg-1 hover:bg-bg-3/60" data-testid="member-event" data-event={c.event} data-message-id={m.id} {...menu.triggerProps}>
-        <span className="flex w-9 shrink-0 justify-center text-base" aria-hidden="true">
-          {c.event === "join" ? "→" : "←"}
-        </span>
-        <MessageAvatar address={c.user} name={c.name} small />
-        <span className="min-w-0 flex-1">
-          {t(c.event === "join" ? "members.joined_room" : "members.left_room", { name: c.name })}
-          <time className="ml-2 text-xs text-fg-2" dateTime={m.created_at} title={formatFullTime(m.created_at)}>
-            {formatTime(m.created_at)}
-          </time>
-        </span>
-        <ReactionBar reactions={m.reactions ?? []} canReact={canReact} roomId={roomId} customEmojis={customEmojis} onToggle={onToggleReaction} conversationId={m.conversation_id} messageId={m.id} usersById={usersById} />
-        {canReact && onReact && <EmojiPicker customEmojis={customEmojis} onPick={(e) => onReact(m, e, false)} />}
-        {menu.open && menu.anchor && <ContextMenu entries={menuEntries} anchor={menu.anchor} onClose={menu.close} label={t("menu.message.label")} testId="message-menu" />}
-      </div>
-    );
-  }
-
+  // System lines (member, key, history restore and bot events) share one row: icon, avatar, text and time, reactions.
+  const systemRow = (icon: string, who: { address: string; name: string }, data: { [data: `data-${string}`]: string | undefined }, text: ReactNode) => (
+    <SystemRow icon={icon} who={who} at={m.created_at} text={text} rowProps={{ ...data, "data-message-id": m.id, ...menu.triggerProps }}>
+      <ReactionBar reactions={m.reactions ?? []} canReact={canReact} roomId={roomId} customEmojis={customEmojis} onToggle={onToggleReaction} conversationId={m.conversation_id} messageId={m.id} usersById={usersById} />
+      {canReact && onReact && <EmojiPicker customEmojis={customEmojis} onPick={(e) => onReact(m, e, false)} />}
+      {menu.open && menu.anchor && <ContextMenu entries={menuEntries} anchor={menu.anchor} onClose={menu.close} label={t("menu.message.label")} testId="message-menu" />}
+    </SystemRow>
+  );
+  if (c.kind === "member_event") return systemRow(c.event === "join" ? "→" : "←", { address: c.user, name: c.name }, { "data-testid": "member-event", "data-event": c.event }, t(c.event === "join" ? "members.joined_room" : "members.left_room", { name: c.name }));
   if (c.kind === "key_event") {
-    return (
-      <div className="group flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-2 py-1 text-sm text-fg-1 hover:bg-bg-3/60" data-testid="key-event" data-rotated={c.rotated ? "true" : "false"} data-message-id={m.id} {...menu.triggerProps}>
-        <span className="flex w-9 shrink-0 justify-center text-base" aria-hidden="true">
-          🔑
-        </span>
-        <MessageAvatar address={c.user} name={c.name} small />
-        <span className="min-w-0 flex-1">
-          {t(c.rotated ? "members.key_rotated" : "members.key_changed", { name: c.name })} <KeyCheck address={c.user} at={m.created_at} />
-          <time className="ml-2 text-xs text-fg-2" dateTime={m.created_at} title={formatFullTime(m.created_at)}>
-            {formatTime(m.created_at)}
-          </time>
-        </span>
-        <ReactionBar reactions={m.reactions ?? []} canReact={canReact} roomId={roomId} customEmojis={customEmojis} onToggle={onToggleReaction} conversationId={m.conversation_id} messageId={m.id} usersById={usersById} />
-        {canReact && onReact && <EmojiPicker customEmojis={customEmojis} onPick={(e) => onReact(m, e, false)} />}
-        {menu.open && menu.anchor && <ContextMenu entries={menuEntries} anchor={menu.anchor} onClose={menu.close} label={t("menu.message.label")} testId="message-menu" />}
-      </div>
-    );
+    return systemRow("🔑", { address: c.user, name: c.name }, { "data-testid": "key-event", "data-rotated": c.rotated ? "true" : "false" }, (
+      <>
+        {t(c.rotated ? "members.key_rotated" : "members.key_changed", { name: c.name })} <KeyCheck address={c.user} at={m.created_at} />
+      </>
+    ));
   }
-
-  if (c.kind === "restore_event") {
-    return (
-      <div className="group flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-2 py-1 text-sm text-fg-1 hover:bg-bg-3/60" data-testid="restore-event" data-event={c.approved ? "restored" : "denied"} data-message-id={m.id} {...menu.triggerProps}>
-        <span className="flex w-9 shrink-0 justify-center text-base" aria-hidden="true">
-          {c.approved ? "🗝" : "⛔"}
-        </span>
-        <MessageAvatar address={c.user} name={c.name} small />
-        <span className="min-w-0 flex-1">
-          {t(c.approved ? "members.history_restored" : "members.history_restore_denied", { name: c.name, by: c.by })}
-          <time className="ml-2 text-xs text-fg-2" dateTime={m.created_at} title={formatFullTime(m.created_at)}>
-            {formatTime(m.created_at)}
-          </time>
-        </span>
-        <ReactionBar reactions={m.reactions ?? []} canReact={canReact} roomId={roomId} customEmojis={customEmojis} onToggle={onToggleReaction} conversationId={m.conversation_id} messageId={m.id} usersById={usersById} />
-        {canReact && onReact && <EmojiPicker customEmojis={customEmojis} onPick={(e) => onReact(m, e, false)} />}
-        {menu.open && menu.anchor && <ContextMenu entries={menuEntries} anchor={menu.anchor} onClose={menu.close} label={t("menu.message.label")} testId="message-menu" />}
-      </div>
-    );
-  }
-
+  if (c.kind === "restore_event") return systemRow(c.approved ? "🗝" : "⛔", { address: c.user, name: c.name }, { "data-testid": "restore-event", "data-event": c.approved ? "restored" : "denied" }, t(c.approved ? "members.history_restored" : "members.history_restore_denied", { name: c.name, by: c.by }));
   if (c.kind === "bot_event") {
     const reasonKey = `members.bot_reason.${c.reason}`;
     const reason = t(reasonKey) === reasonKey ? c.reason : t(reasonKey);
@@ -779,23 +768,11 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
         ? t("members.bot_added_by", { name: c.name, channel: c.channel, by: c.by })
         : t("members.bot_added", { name: c.name, channel: c.channel })
       : t("members.bot_removed", { name: c.name, channel: c.channel, reason });
-    return (
-      <div className="group flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-2 py-1 text-sm text-fg-1 hover:bg-bg-3/60" data-testid="bot-event" data-event={c.added ? "added" : "removed"} data-reason={c.added ? undefined : c.reason} data-message-id={m.id} {...menu.triggerProps}>
-        <span className="flex w-9 shrink-0 justify-center text-base" aria-hidden="true">
-          🤖
-        </span>
-        <MessageAvatar address={c.bot} name={c.name} small />
-        <span className="min-w-0 flex-1">
-          {text} <BotBadge />
-          <time className="ml-2 text-xs text-fg-2" dateTime={m.created_at} title={formatFullTime(m.created_at)}>
-            {formatTime(m.created_at)}
-          </time>
-        </span>
-        <ReactionBar reactions={m.reactions ?? []} canReact={canReact} roomId={roomId} customEmojis={customEmojis} onToggle={onToggleReaction} conversationId={m.conversation_id} messageId={m.id} usersById={usersById} />
-        {canReact && onReact && <EmojiPicker customEmojis={customEmojis} onPick={(e) => onReact(m, e, false)} />}
-        {menu.open && menu.anchor && <ContextMenu entries={menuEntries} anchor={menu.anchor} onClose={menu.close} label={t("menu.message.label")} testId="message-menu" />}
-      </div>
-    );
+    return systemRow("🤖", { address: c.bot, name: c.name }, { "data-testid": "bot-event", "data-event": c.added ? "added" : "removed", "data-reason": c.added ? undefined : c.reason }, (
+      <>
+        {text} <BotBadge />
+      </>
+    ));
   }
 
   if (c.kind === "call_event") {
@@ -866,7 +843,7 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
         <div className="min-w-0 flex-1">
           {!grouped && (
             <div className="flex items-baseline gap-2">
-              <span className={`font-semibold ${gone ? "italic text-fg-2" : "text-fg-0"}`} style={author?.color && !gone ? { color: author.color } : undefined} data-testid="message-author" data-deleted={gone || undefined}>
+              <span className={`font-semibold ${gone ? "italic text-fg-2" : "text-fg-0"}`} style={author?.color && !gone ? { color: author.color } : undefined} data-testid="message-author" data-author-name data-deleted={gone || undefined}>
                 {name}
               </span>
               {!gone && (
@@ -898,7 +875,12 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
                 e.preventDefault();
                 const next = draft.trim();
                 if (!next) return;
-                await onEdit?.(m, next);
+                try {
+                  await onEdit?.(m, next);
+                } catch {
+                  // Reported by the conversation (toast): the editor stays open with the new text.
+                  return;
+                }
                 setEditingId(null);
               }}
             >

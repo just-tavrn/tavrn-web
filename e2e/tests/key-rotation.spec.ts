@@ -3,24 +3,11 @@
 // with re-authentication, the user's second browser follows, a contact sees a soft notice instead of the warning;
 // an identity reset still gives the warning.
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { NODE, confirmWithPassword, loginViaUi, registerViaUi, tokenOf, type UiAccount } from "./helpers";
+import { NODE, confirmWithPassword, loginViaUi, registerViaUi, tokenOf, type UiAccount, send, newPage, message, closePages } from "./helpers";
 import { freshIdentityKey } from "./crypto-helpers";
 import { scaled } from "./timeouts";
 
-async function newPage(browser: Browser): Promise<Page> {
-  const context = await browser.newContext({ ...test.info().project.use });
-  return context.newPage();
-}
-
-async function send(page: Page, text: string) {
-  const box = page.getByLabel("Nachricht", { exact: true });
-  await expect(box).toBeEnabled({ timeout: 20_000 });
-  await box.fill(text);
-  await page.keyboard.press("Enter");
-  await expect(box).toHaveValue("");
-}
-
-const message = (page: Page, text: string) => page.getByTestId("message").filter({ hasText: text });
+test.afterEach(closePages);
 
 async function api(page: Page, method: "get" | "post", path: string, data?: unknown) {
   const resp = await page.request[method](`${NODE}/api/v1${path}`, { headers: { Authorization: `Bearer ${await tokenOf(page)}` }, data });
@@ -55,9 +42,9 @@ test.describe("Renewing the security key", () => {
     await page.goto(`/conversations/${conversation}`);
     await send(page, "Vor dem Erneuern");
     await bobPage.goto(`/conversations/${conversation}`);
-    await expect(message(bobPage, "Vor dem Erneuern")).toBeVisible({ timeout: 20_000 });
+    await expect(message(bobPage, "Vor dem Erneuern")).toBeVisible({ timeout: scaled(20_000) });
     await laptop.goto(`/conversations/${conversation}`);
-    await expect(message(laptop, "Vor dem Erneuern")).toBeVisible({ timeout: 20_000 });
+    await expect(message(laptop, "Vor dem Erneuern")).toBeVisible({ timeout: scaled(20_000) });
 
     // Alice rotates in the security settings; the page was loaded anew, so the node asks for a fresh confirmation.
     await page.goto("/settings/security");
@@ -69,29 +56,29 @@ test.describe("Renewing the security key", () => {
     await expect(dialog).toContainText("setze ihn stattdessen zurück");
     await dialog.getByTestId("identity-rotate-confirm").click();
     await confirmWithPassword(page, alice.password);
-    await expect(dialog).toHaveCount(0, { timeout: 20_000 });
+    await expect(dialog).toHaveCount(0, { timeout: scaled(20_000) });
     const keys = await api(page, "get", `/users/${alice.username}/keys`);
     expect(keys.identity_generation).toBe(1);
     expect(keys.continuity).toHaveLength(1);
 
     // Both browsers of Alice keep writing and reading, old and new messages.
     await page.goto(`/conversations/${conversation}`);
-    await expect(message(page, "Vor dem Erneuern")).toBeVisible({ timeout: 20_000 });
+    await expect(message(page, "Vor dem Erneuern")).toBeVisible({ timeout: scaled(20_000) });
     await send(page, "Nach dem Erneuern");
-    await expect(message(laptop, "Nach dem Erneuern")).toBeVisible({ timeout: 20_000 });
+    await expect(message(laptop, "Nach dem Erneuern")).toBeVisible({ timeout: scaled(20_000) });
     await expect(message(laptop, "Vor dem Erneuern")).toBeVisible();
     await send(laptop, "Vom zweiten Browser");
-    await expect(message(bobPage, "Vom zweiten Browser")).toBeVisible({ timeout: 20_000 });
+    await expect(message(bobPage, "Vom zweiten Browser")).toBeVisible({ timeout: scaled(20_000) });
     await expect(laptop.getByTestId("undecryptable")).toHaveCount(0);
 
     // Bob: the new key is pinned with a soft notice (message and DM header), no warning, sending stays possible.
     await expect(message(bobPage, "Nach dem Erneuern")).toBeVisible();
     const soft = bobPage.getByTestId("key-rotated-badge");
-    await expect(soft.first()).toBeVisible({ timeout: 20_000 });
+    await expect(soft.first()).toBeVisible({ timeout: scaled(20_000) });
     await expect(bobPage.getByTestId("key-changed-badge")).toHaveCount(0);
     await expect(bobPage.getByTestId("undecryptable")).toHaveCount(0);
     await send(bobPage, "Alles klar");
-    await expect(message(page, "Alles klar")).toBeVisible({ timeout: 20_000 });
+    await expect(message(page, "Alles klar")).toBeVisible({ timeout: scaled(20_000) });
     await soft.first().click();
     await expect(bobPage.getByTestId("key-rotated-badge")).toHaveCount(0);
 
@@ -101,7 +88,7 @@ test.describe("Renewing the security key", () => {
       data: { identity_public_key: await freshIdentityKey(), password: alice.password },
     });
     expect(reset.status()).toBe(204);
-    await expect(bobPage.getByTestId("key-changed-badge").first()).toBeVisible({ timeout: 20_000 });
+    await expect(bobPage.getByTestId("key-changed-badge").first()).toBeVisible({ timeout: scaled(20_000) });
     await expect(bobPage.getByTestId("key-rotated-badge")).toHaveCount(0);
     await bobPage.context().close();
     await laptop.context().close();

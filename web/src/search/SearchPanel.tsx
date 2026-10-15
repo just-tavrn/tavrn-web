@@ -17,6 +17,7 @@ import type { Conversation, Member, Room, RoomDetail } from "@tavrn/sdk";
 import { useT } from "../i18n";
 import { formatTime } from "../lib/format";
 import { channelName } from "../lib/names";
+import { roomsQuery } from "../lib/queries";
 import { conversationPath, roomPath, useNode } from "../components/NodeScope";
 import { apiFor, homeDomain, isHome, useNodes } from "../stores/nodes";
 import { localIndex, useLocalSearch } from "./local";
@@ -175,13 +176,9 @@ function SearchPanel(p: { conversationId: string; encrypted: boolean; roomId?: s
         // Everywhere: the rooms of every node with a session (home first), at most MAX_ROOMS; the local index whole.
         const home = homeDomain() ?? domain;
         const nodes = [home, ...Object.keys(sessions).filter((d) => !isHome(d))];
-        const all: { node: string; room: Room }[] = [];
-        for (const node of nodes) {
-          const list = await queryClient
-            .fetchQuery({ queryKey: isHome(node) ? ["rooms"] : ["rooms", node], queryFn: () => apiFor(isHome(node) ? null : node).rooms.list(), staleTime: 60_000 })
-            .catch(() => [] as Room[]);
-          for (const room of list) all.push({ node, room });
-        }
+        // The room lists of all nodes at once (shared query: cached lists cost nothing).
+        const lists = await Promise.all(nodes.map((node) => queryClient.fetchQuery(roomsQuery(isHome(node) ? null : node)).catch(() => [] as Room[])));
+        const all: { node: string; room: Room }[] = nodes.flatMap((node, i) => lists[i]!.map((room) => ({ node, room })));
         roomsSkipped = Math.max(0, all.length - MAX_ROOMS);
         rooms = all.slice(0, MAX_ROOMS).map(({ node, room }) => ({ node, roomId: room.id, api: apiFor(isHome(node) ? null : node) }));
         // Not synced yet: encrypted channels of rooms whose details are loaded and encrypted DMs of the loaded lists.

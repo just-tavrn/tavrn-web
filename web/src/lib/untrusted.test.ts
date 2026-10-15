@@ -1,12 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from "vitest";
-import { safeColor, safeLinkUrl, stripBidi } from "./untrusted";
+import { safeColor, safeLinkUrl, stripBidi, urlHost } from "./untrusted";
 
 describe("values from nodes are checked before use", () => {
   it("strips bidi embedding, override and isolate controls from names", () => {
     expect(stripBidi("invoice‮fdp.exe")).toBe("invoicefdp.exe");
     expect(stripBidi("⁦a⁧b⁨c⁩‪‫‬‭d")).toBe("abcd");
     expect(stripBidi("مرحبا Lena")).toBe("مرحبا Lena");
+  });
+
+  it("shows a link's host in full, an IDN in its xn-- form, a non-URL as it is", () => {
+    expect(urlHost("https://login.bank.example.evil.example/path")).toBe("login.bank.example.evil.example");
+    expect(urlHost("https://bücher.example:8443/x")).toBe("xn--bcher-kva.example:8443");
+    expect(urlHost("not a url")).toBe("not a url");
   });
 
   it("keeps only absolute http(s) and mailto link URLs", () => {

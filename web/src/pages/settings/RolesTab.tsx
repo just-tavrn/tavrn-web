@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router";
-import { EVERYONE_RESTRICTED, Permission, hasPermission, parsePermissions, type Role, type RoomDetail } from "@tavrn/sdk";
+import { EVERYONE_RESTRICTED, Permission, UPLOAD_CATEGORIES, hasPermission, parsePermissions, type Role, type RoomDetail } from "@tavrn/sdk";
 import { canManageRole, planRoleReorder, sortRoles, topPosition } from "../../lib/hierarchy";
 import { safeColor } from "../../lib/untrusted";
 import { useNode } from "../../components/NodeScope";
 import { useT } from "../../i18n";
 import { toastError, useToasts } from "../../stores/toasts";
+import { useAction } from "../../hooks/useAction";
 import { Button, Field, Input } from "../../components/ui";
 import { ConfirmDialog, PermissionCheckboxes, Section } from "./common";
-import { UPLOAD_CATEGORIES } from "../../lib/uploads";
 import { useRoomPreview } from "../../stores/rolePreview";
 import { ViewAsRole } from "./ViewAsRole";
 import { patchRoom, withRole, withoutRole, type RoomPatch } from "../../lib/roomCache";
@@ -174,37 +174,92 @@ export function RolesTab({ room }: { room: RoomDetail }) {
   );
 }
 
+/** The editable fields of a role. */
+interface RoleForm {
+  name: string;
+  color: string;
+  useColor: boolean;
+  position: number;
+  hoist: boolean;
+  mentionable: boolean;
+  perms: bigint;
+  uploads: string[] | null;
+}
+
+function formOf(role: Role): RoleForm {
+  return {
+    name: role.name,
+    color: role.color ?? "#33aea6",
+    useColor: !!role.color,
+    position: role.position,
+    hoist: role.hoist,
+    mentionable: role.mentionable,
+    perms: parsePermissions(role.permissions),
+    uploads: role.allowed_upload_categories ?? (role.is_everyone ? [...UPLOAD_CATEGORIES] : null),
+  };
+}
+
+/** Equal as far as the node stores it (the colour only counts while one is used). */
+function sameForm(a: RoleForm, b: RoleForm): boolean {
+  return a.name === b.name && a.useColor === b.useColor && (!a.useColor || a.color.toLowerCase() === b.color.toLowerCase()) && a.position === b.position && a.hoist === b.hoist && a.mentionable === b.mentionable && a.perms === b.perms && JSON.stringify(a.uploads) === JSON.stringify(b.uploads);
+}
+
+/**
+ * The form is derived from the role once. A newer version of the role (another admin, a realtime update) replaces an
+ * untouched form; while the user edits, their edits stay and a notice offers the newer version instead of overwriting
+ * a part of the form (which would save old and new fields mixed).
+ */
 function RoleEditor({ role, room, canManage, myPerms, onChanged, managedBy }: { role: Role; room: RoomDetail; canManage: boolean; myPerms: bigint; onChanged: (patch: RoomPatch) => void; managedBy: string | null }) {
   const { api } = useNode();
   const t = useT();
-  const [name, setName] = useState(role.name);
-  const [color, setColor] = useState(role.color ?? "#33aea6");
-  const [useColor, setUseColor] = useState(!!role.color);
-  const [position, setPosition] = useState(role.position);
-  const [hoist, setHoist] = useState(role.hoist);
-  const [mentionable, setMentionable] = useState(role.mentionable);
-  const [perms, setPerms] = useState(parsePermissions(role.permissions));
+  const [form, setForm] = useState(() => formOf(role));
+  /** The version the form started from. */
+  const [base, setBase] = useState(role);
+  /** The last role prop handled (adjusting state while rendering, without an effect). */
+  const [seen, setSeen] = useState(role);
+  if (role !== seen) {
+    setSeen(role);
+    const fresh = formOf(role);
+    if (sameForm(form, formOf(base)) || sameForm(form, fresh)) {
+      setForm(fresh);
+      setBase(role);
+    }
+  }
+  const changedElsewhere = !sameForm(formOf(base), formOf(role));
+  const set = (patch: Partial<RoleForm>) => setForm((f) => ({ ...f, ...patch }));
+  const { name, color, useColor, position, hoist, mentionable, perms, uploads } = form;
   const [confirmDelete, setConfirmDelete] = useState(false);
-  useEffect(() => setPerms(parsePermissions(role.permissions)), [role.permissions]);
-  const savedUploads = role.allowed_upload_categories ?? (role.is_everyone ? [...UPLOAD_CATEGORIES] : null);
-  const [uploads, setUploads] = useState<string[] | null>(savedUploads);
+  const { run, busy } = useAction();
   const roomDefault = room.roles.find((r) => r.is_everyone)?.allowed_upload_categories ?? [...UPLOAD_CATEGORIES];
 
-  const save = async (e: React.FormEvent) => {
+  const save = (e: React.FormEvent) => {
     e.preventDefault();
     // Only a changed setting is sent: the room overview edits @everyone's too.
-    const uploadsChanged = JSON.stringify(uploads) !== JSON.stringify(savedUploads);
+    const uploadsChanged = JSON.stringify(uploads) !== JSON.stringify(formOf(base).uploads);
     const extra = uploadsChanged ? { allowed_upload_categories: uploads } : {};
-    try {
-      onChanged(withRole(await api.roles.update(room.id, role.id, role.is_everyone ? { permissions: perms.toString(), ...extra } : { name, color: useColor ? color : null, position, hoist, mentionable, permissions: perms.toString(), ...extra })));
-      useToasts.getState().push({ kind: "info", title: t("roles.saved") });
-    } catch (err) {
-      toastError(err);
-    }
+    void run(() => api.roles.update(room.id, role.id, role.is_everyone ? { permissions: perms.toString(), ...extra } : { name, color: useColor ? color : null, position, hoist, mentionable, permissions: perms.toString(), ...extra }), {
+      done: t("roles.saved"),
+      refresh: (saved) => onChanged(withRole(saved)),
+    });
   };
 
   return (
     <form onSubmit={save} className="space-y-4" data-testid="role-editor">
+      {changedElsewhere && (
+        <div role="status" className="flex flex-wrap items-center gap-2 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-sm text-fg-0" data-testid="role-changed-elsewhere">
+          <span className="min-w-0 flex-1">{t("roles.changed_elsewhere")}</span>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setForm(formOf(role));
+              setBase(role);
+            }}
+            data-testid="role-changed-reload"
+          >
+            {t("roles.changed_reload")}
+          </Button>
+        </div>
+      )}
       <Section title={role.is_everyone ? t("roles.everyone") : t("roles.role", { name: role.name })} description={canManage ? undefined : t("roles.readonly")}>
         {managedBy && (
           <p className="rounded-md border border-line bg-bg-0 px-3 py-2 text-xs text-fg-1" data-testid="role-managed-by">
@@ -214,25 +269,25 @@ function RoleEditor({ role, room, canManage, myPerms, onChanged, managedBy }: { 
         {!role.is_everyone && (
           <>
             <Field label={t("common.name")}>
-              <Input value={name} onChange={(e) => setName(e.target.value)} disabled={!canManage} maxLength={100} required />
+              <Input value={name} onChange={(e) => set({ name: e.target.value })} disabled={!canManage} maxLength={100} required />
             </Field>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label={t("roles.position")} hint={t("roles.position_hint")}>
-                <Input type="number" min={1} max={10000} value={position} onChange={(e) => setPosition(Number(e.target.value))} disabled={!canManage} />
+                <Input type="number" min={1} max={10000} value={position} onChange={(e) => set({ position: Number(e.target.value) })} disabled={!canManage} />
               </Field>
               <Field label={t("roles.color")}>
                 <div className="flex items-center gap-2">
-                  <input type="checkbox" className="h-4 w-4" checked={useColor} onChange={(e) => setUseColor(e.target.checked)} disabled={!canManage} aria-label={t("roles.use_color")} />
-                  <input type="color" value={color} onChange={(e) => setColor(e.target.value)} disabled={!canManage || !useColor} aria-label={t("roles.color_value")} className="h-10 w-16 rounded border border-line bg-bg-0" />
+                  <input type="checkbox" className="h-4 w-4" checked={useColor} onChange={(e) => set({ useColor: e.target.checked })} disabled={!canManage} aria-label={t("roles.use_color")} />
+                  <input type="color" value={color} onChange={(e) => set({ color: e.target.value })} disabled={!canManage || !useColor} aria-label={t("roles.color_value")} className="h-10 w-16 rounded border border-line bg-bg-0" />
                 </div>
               </Field>
             </div>
             <div className="flex flex-wrap gap-4 text-sm">
               <label className="flex items-center gap-2">
-                <input type="checkbox" className="h-4 w-4" checked={hoist} onChange={(e) => setHoist(e.target.checked)} disabled={!canManage} /> {t("roles.hoist")}
+                <input type="checkbox" className="h-4 w-4" checked={hoist} onChange={(e) => set({ hoist: e.target.checked })} disabled={!canManage} /> {t("roles.hoist")}
               </label>
               <label className="flex items-center gap-2">
-                <input type="checkbox" className="h-4 w-4" checked={mentionable} onChange={(e) => setMentionable(e.target.checked)} disabled={!canManage} /> {t("roles.mentionable")}
+                <input type="checkbox" className="h-4 w-4" checked={mentionable} onChange={(e) => set({ mentionable: e.target.checked })} disabled={!canManage} /> {t("roles.mentionable")}
               </label>
             </div>
           </>
@@ -245,10 +300,10 @@ function RoleEditor({ role, room, canManage, myPerms, onChanged, managedBy }: { 
           </p>
         )}
         <fieldset disabled={!canManage}>
-          <PermissionCheckboxes value={perms} onChange={setPerms} limit={room.is_owner ? undefined : myPerms} idPrefix={`role-${role.id}`} restricted={role.is_everyone ? EVERYONE_RESTRICTED : 0n} />
+          <PermissionCheckboxes value={perms} onChange={(next) => set({ perms: next })} limit={room.is_owner ? undefined : myPerms} idPrefix={`role-${role.id}`} restricted={role.is_everyone ? EVERYONE_RESTRICTED : 0n} />
         </fieldset>
       </Section>
-      <RoleUploadCategories roomId={room.id} role={role} value={uploads} onChange={setUploads} roomDefault={roomDefault} disabled={!canManage} />
+      <RoleUploadCategories roomId={room.id} role={role} value={uploads} onChange={(next) => set({ uploads: next })} roomDefault={roomDefault} disabled={!canManage} />
       {canManage && (
         <div className="flex flex-wrap justify-end gap-2">
           {!role.is_everyone && (
@@ -256,7 +311,9 @@ function RoleEditor({ role, room, canManage, myPerms, onChanged, managedBy }: { 
               {t("roles.delete")}
             </Button>
           )}
-          <Button type="submit">{t("common.save")}</Button>
+          <Button type="submit" disabled={busy}>
+            {t("common.save")}
+          </Button>
         </div>
       )}
       <ConfirmDialog

@@ -4,14 +4,15 @@
  * changed objects, so the cached room detail is patched in place (lib/roomCache.ts) instead of refetched: an admin
  * action costs its own request and nothing more. The room is refetched (coalesced and debounced per room) only when
  * the viewer's own room permissions can change: changes of a role the viewer holds (or @everyone), the viewer's own
- * membership, the ownership. Channels
+ * membership, the ownership. The member list (`["members", roomId]`) and the room's member count follow
+ * `member.join` / `member.leave` / `member.update` from their payloads as well. Channels
  * and categories the viewer gains or loses through any change arrive as their own `channel.*` / `category.*` events
  * (the node's per-connection visibility). The room list follows `room.update`, `room.delete` and the viewer's own
  * joins and leaves; the command palettes follow the events that change permissions.
  */
 import type { QueryClient } from "@tanstack/react-query";
 import type { Category, Channel, Member, PermissionOverride, Role, Room, RoomDetail, TavrnSocket, User } from "@tavrn/sdk";
-import { patchRoom, roomRefetcher, withCategory, withChannel, withOverrides, withRole, withRoom, withoutCategory, withoutChannel, withoutRole } from "../lib/roomCache";
+import { cachedMembers, patchMembers, patchRoom, roomRefetcher, withCategory, withChannel, withJoined, withMember, withMemberCount, withOverrides, withRole, withRoom, withoutCategory, withoutChannel, withoutMember, withoutRole } from "../lib/roomCache";
 
 /** Debounce of the room refetch: a burst of changes (a role reorder, a bot's setup) costs one request. */
 export const ROOM_REFETCH_DELAY_MS = 250;
@@ -31,8 +32,10 @@ interface OverridesChanged {
 interface MembershipEvent {
   room_id: string;
   user_id?: string;
-  user?: Pick<User, "id">;
-  member?: Pick<Member, "user">;
+  /** `member.join`: the joined user. */
+  user?: User;
+  /** `member.update`: the member with its roles and room profile. */
+  member?: Member;
 }
 
 export function roomEventHandlers(socket: TavrnSocket, queryClient: QueryClient, me: () => { id: string } | null): Array<() => void> {
@@ -89,16 +92,38 @@ export function roomEventHandlers(socket: TavrnSocket, queryClient: QueryClient,
     }),
     socket.on<{ id: string }>("room.delete", rooms),
     socket.on<MembershipEvent>("member.update", (d) => {
+      if (d.member?.user) patchMembers(queryClient, d.room_id, withMember(d.member));
       if (own(d)) refetch.schedule(d.room_id);
       commands();
     }),
-    // The member count; the viewer's own joins and leaves (other devices, kicks, bans) change the room list.
-    ...["member.join", "member.leave"].map((type) =>
-      socket.on<MembershipEvent>(type, (d) => {
-        if (own(d)) rooms();
-        if (d.room_id) refetch.schedule(d.room_id);
-      }),
-    ),
+    // Another member's join or leave patches the member list and the member count. The viewer's own joins and leaves
+    // (other devices, kicks, bans) change the room list and the viewer's permissions: those refetch.
+    socket.on<MembershipEvent>("member.join", (d) => {
+      if (!d.room_id) return;
+      if (own(d)) {
+        if (d.user) patchMembers(queryClient, d.room_id, withJoined(d.user));
+        rooms();
+        refetch.schedule(d.room_id);
+        return;
+      }
+      if (!d.user) return refetch.schedule(d.room_id);
+      // A member already listed is no new member (a repeated event): the count stays.
+      const listed = !!cachedMembers(queryClient, d.room_id)?.some((m) => m.user.id === d.user!.id);
+      patchMembers(queryClient, d.room_id, withJoined(d.user));
+      if (!listed) patchRoom(queryClient, d.room_id, withMemberCount(1));
+    }),
+    socket.on<MembershipEvent>("member.leave", (d) => {
+      if (!d.room_id) return;
+      if (own(d)) {
+        rooms();
+        refetch.schedule(d.room_id);
+        return;
+      }
+      const list = cachedMembers(queryClient, d.room_id);
+      const listed = !list || list.some((m) => m.user.id === d.user_id);
+      patchMembers(queryClient, d.room_id, withoutMember(d.user_id!));
+      if (listed) patchRoom(queryClient, d.room_id, withMemberCount(-1));
+    }),
     socket.on("commands.update", commands),
     refetch.stop,
   ];

@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import type { Activity } from "@tavrn/sdk";
 import { useT } from "../i18n";
-import { useAuth } from "../stores/auth";
+import { useAuth, useSessionKey } from "../stores/auth";
 import { useNodes } from "../stores/nodes";
 import { CHOSEN_STATUSES, DOT_CLASS, activeCustom, usePresence, type PresenceStatus } from "../stores/presence";
 import { toastError } from "../stores/toasts";
@@ -19,6 +19,7 @@ import { pushActivity, pushPresence, setAutoIdle, syncPresence } from "../lib/pr
 import { useRealtimeState } from "../hooks/useRealtime";
 import { UserAvatar } from "./Avatar";
 import { useShell } from "./AppShell";
+import { useDismiss } from "../lib/dismiss";
 import { Button, Dialog, Field, Input } from "./ui";
 import { rovingKeyDown } from "../lib/a11y";
 import { WrenchIcon } from "./icons";
@@ -37,18 +38,21 @@ export function expiryTime(choice: (typeof EXPIRY)[number], now = new Date()): s
   return minutes ? new Date(now.getTime() + minutes * 60_000).toISOString() : null;
 }
 
-/** Sync on start, on new node sessions and on reconnect; automatic idle after the set timeout (default 10 minutes). */
-function usePresenceSync() {
-  const token = useAuth((s) => s.token);
+/**
+ * Sync on start, on new node sessions and on reconnect; automatic idle after the set timeout (default 10 minutes).
+ * Keyed on the session (account and device), so a token refresh neither syncs again nor restarts the idle detector.
+ */
+export function usePresenceSync() {
+  const session = useSessionKey();
   const idleMinutes = useIdleSettings((s) => s.minutes);
   const domains = useNodes((s) => Object.keys(s.sessions).sort().join(","));
   const status = useRealtimeState((s) => s.status);
   useEffect(() => {
-    if (!token || status !== "ready") return;
+    if (!session || status !== "ready") return;
     void syncPresence().catch(() => undefined);
-  }, [token, domains, status]);
+  }, [session, domains, status]);
   useEffect(() => {
-    if (!token) return;
+    if (!session) return;
     const timeoutMs = idleTimeoutMs(idleMinutes);
     // "Never": an automatic idle of the earlier setting ends right away.
     if (timeoutMs === null) {
@@ -57,7 +61,7 @@ function usePresenceSync() {
     }
     const detector = createIdleDetector({ timeoutMs, onIdle: () => void setAutoIdle(true), onActive: () => void setAutoIdle(false) });
     return () => detector.stop();
-  }, [token, idleMinutes]);
+  }, [session, idleMinutes]);
 }
 
 export function PresenceMenu() {
@@ -73,25 +77,11 @@ export function PresenceMenu() {
   const ref = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const effective = (mine?.effective ?? "online") as PresenceStatus;
+  // Escape closes the menu and gives the focus back to its button (WAI-ARIA menu button); so does a press outside.
+  useDismiss(open, () => setOpen(false), { inside: [ref], returnFocus: trigger });
+  // The first entry takes the focus; arrow keys move between the entries.
   useEffect(() => {
-    if (!open) return;
-    const close = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    // Escape closes the menu and gives the focus back to its button (WAI-ARIA menu button).
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      setOpen(false);
-      trigger.current?.focus();
-    };
-    // The first entry takes the focus; arrow keys move between the entries.
-    ref.current?.querySelector<HTMLElement>('[role^="menuitem"]')?.focus();
-    document.addEventListener("mousedown", close);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", close);
-      window.removeEventListener("keydown", onKey);
-    };
+    if (open) ref.current?.querySelector<HTMLElement>('[role^="menuitem"]')?.focus();
   }, [open]);
   if (!user) return null;
   const choose = async (status: (typeof CHOSEN_STATUSES)[number]) => {

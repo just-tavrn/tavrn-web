@@ -5,6 +5,7 @@
  * import: the native engine (`nativeSession.ts`) loads it without livekit-client.
  */
 import type { TavrnApi, VoiceJoin, VoiceParticipant, VoiceStatePatch } from "@tavrn/sdk";
+import type { MlsManager } from "@tavrn/e2ee";
 import { participantsOf, useVoicePresence } from "./presence";
 import type { Cue } from "./cues";
 import type { VoiceTarget } from "./store";
@@ -63,4 +64,40 @@ export function followOthers(target: VoiceTarget, key: string, self: () => strin
     for (const id of before.keys()) if (!after.has(id)) cue("leave", false);
     before = after;
   });
+}
+
+/**
+ * Catches the channel's group up when the node's epoch (from `voice.state`) is ahead of this device's: a commit
+ * event may still be on the way, the catch-up re-keys. One catch-up at a time: presence updates while one runs only
+ * ask for a check once it settled (each catch-up fetches the handshake log). Returns the unsubscriber.
+ */
+export function followEpoch(key: string, q: string, mls: Pick<MlsManager, "epoch" | "catchUp">): () => void {
+  let running = false;
+  let again = false;
+  let stopped = false;
+  const check = () => {
+    if (stopped) return;
+    const epoch = useVoicePresence.getState().epochs[key];
+    const local = mls.epoch(q);
+    if (epoch == null || local == null || epoch <= local) return;
+    if (running) {
+      again = true;
+      return;
+    }
+    running = true;
+    void mls
+      .catchUp(q)
+      .catch(() => undefined)
+      .finally(() => {
+        running = false;
+        if (!again) return;
+        again = false;
+        check();
+      });
+  };
+  const off = useVoicePresence.subscribe(check);
+  return () => {
+    stopped = true;
+    off();
+  };
 }

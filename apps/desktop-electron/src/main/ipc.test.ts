@@ -75,6 +75,24 @@ test("refusals come back as the Tauri shell's values: codes and objects", async 
   assert.deepEqual(await ipc.handlers.get("tavrn:shell.openExternal")?.(trusted, "file:///"), { ok: false, error: "link.refused" });
 });
 
+test("an unexpected error is logged with its cause; a refusal with a code is not", async (t) => {
+  const logged = t.mock.method(console, "error", () => undefined);
+  const ipc = fakeIpcMain();
+  const registry = new IpcRegistry(isTrusted);
+  registry.handle("shell", "setNode", check.args([check.string(300)]), () => {
+    throw new NodeUrlError("node_url.insecure");
+  });
+  registry.handle("shell", "openExternal", check.args([check.string(2048)]), () => {
+    throw new Error("EACCES: permission denied, open '/x'");
+  });
+  registry.install(ipc);
+  await ipc.handlers.get("tavrn:shell.setNode")?.(trusted, "http://evil");
+  assert.equal(logged.mock.callCount(), 0);
+  assert.deepEqual(await ipc.handlers.get("tavrn:shell.openExternal")?.(trusted, "https://x.example"), { ok: false, error: "EACCES: permission denied, open '/x'" });
+  assert.equal(logged.mock.callCount(), 1);
+  assert.match(String(logged.mock.calls[0]?.arguments[0]), /tavrn:shell\.openExternal failed/);
+});
+
 test("handlers exist only for methods of the bridge, once each", () => {
   const registry = new IpcRegistry(isTrusted);
   const none = check.args([]);

@@ -14,7 +14,6 @@ import { previewRoom } from "../lib/previewRoom";
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useState, type DragEvent, type KeyboardEvent, type TouchEvent } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { NavLink, useLocation, useNavigate } from "react-router";
-import { api } from "../lib/api";
 import { useAuth } from "../stores/auth";
 import { useT } from "../i18n";
 import { useShell } from "./AppShell";
@@ -67,6 +66,7 @@ import {
   type RailFolder,
   type RailState,
 } from "../stores/railFolders";
+import { roomsQuery } from "../lib/queries";
 
 interface RailRoomData {
   id: string;
@@ -511,7 +511,7 @@ function railElement(root: ParentNode, name: "railKey" | "folderButton", value: 
 export function RoomRail() {
   const t = useT();
   const queryClient = useQueryClient();
-  const rooms = useQuery({ queryKey: ["rooms"], queryFn: () => api.rooms.list() });
+  const rooms = useQuery(roomsQuery(null));
   const { closeNav } = useShell();
   const [open, setOpen] = useState(false);
   const [dialog, setDialog] = useState<FolderDialogState | null>(null);
@@ -541,7 +541,7 @@ export function RoomRail() {
   }
   indexed.delete(homeDomain);
   const domains = [...indexed.keys()].sort((a, b) => a.localeCompare(b));
-  const remote = useQueries({ queries: domains.map((d) => ({ queryKey: ["rooms", d], queryFn: () => apiFor(d).rooms.list(), enabled: !!sessions[d], retry: 1 })) });
+  const remote = useQueries({ queries: domains.map((d) => ({ ...roomsQuery(d), enabled: !!sessions[d] })) });
 
   const all = new Map<string, Resolved>();
   const homeKeys: string[] = [];

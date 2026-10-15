@@ -2,14 +2,14 @@
 import { AgeGateSection } from "../../components/age/AgeGateSection";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { EVERYONE_RESTRICTED, Permission, hasPermission, inheritedOverrideValue, parsePermissions, type Category, type Channel, type RoomDetail } from "@tavrn/sdk";
+import { EVERYONE_RESTRICTED, Permission, UPLOAD_CATEGORIES, hasPermission, inheritedOverrideValue, parsePermissions, type Category, type Channel, type RoomDetail } from "@tavrn/sdk";
 import { useSearchParams } from "react-router";
 import { useNode } from "../../components/NodeScope";
 import { useT } from "../../i18n";
 import { toastError, useToasts } from "../../stores/toasts";
+import { useAction } from "../../hooks/useAction";
 import { Button, Field, Input } from "../../components/ui";
 import { ConfirmDialog, OverrideTriState, Section, Select, TriStateRow } from "./common";
-import { UPLOAD_CATEGORIES } from "../../lib/uploads";
 import { effectiveUploads, inheritedUpload, overrideUploadState, setOverrideUpload, type UploadOverrideInput, type UploadSubject } from "../../lib/uploadPolicy";
 import { categoryName, channelName } from "../../lib/names";
 import { AccessMark, BotsAllowedIcon, LockMark, NoBotsIcon, accessMarkKey } from "../../components/Badges";
@@ -285,20 +285,11 @@ function ChannelEditor({ channel, room, canManage, onChanged }: { channel: Chann
 function NoBotsToggles({ channel, room, onChanged }: { channel: Channel; room: RoomDetail; onChanged: (patch?: RoomPatch) => Promise<void> }) {
   const { api } = useNode();
   const t = useT();
-  const [busy, setBusy] = useState(false);
+  const { run: act, busy } = useAction();
   const perms = parsePermissions(room.my_permissions);
   const allowed = hasPermission(perms, Permission.MANAGE_ROOM) && hasPermission(perms, Permission.MANAGE_CHANNELS);
   const category = room.categories.find((c) => c.id === channel.category_id);
-  const run = async (action: () => Promise<RoomPatch>) => {
-    setBusy(true);
-    try {
-      await onChanged(await action());
-    } catch (err) {
-      toastError(err);
-    } finally {
-      setBusy(false);
-    }
-  };
+  const run = (action: () => Promise<RoomPatch>) => act(action, { refresh: onChanged });
   return (
     <Section title={t("apps.no_bots.channel_title")} description={room.no_bots ? t("apps.no_bots.room_wide") : t("apps.no_bots.channel_hint")}>
       <label className="flex min-h-10 items-center gap-2 text-sm text-fg-1">

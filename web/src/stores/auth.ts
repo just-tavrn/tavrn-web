@@ -130,7 +130,8 @@ export interface AuthState extends Persisted {
   logout: () => void;
   /**
    * The home node refused the session (refused refresh token, socket closed for authentication): signs out, unless an
-   * explicit sign-out is running ({@link beginSignOut}), which signs out once the local data is gone.
+   * explicit sign-out is running ({@link beginSignOut}), which signs out once the local data is gone. Nothing happens
+   * when no account is signed in.
    */
   sessionRefused: () => void;
 }
@@ -183,9 +184,27 @@ export const useAuth = create<AuthState>((set, get) => ({
     accountEnded(previous);
   },
   sessionRefused: () => {
+    // Signed out already (a refresh refused after the sign-out finished): no account ends a second time, or the
+    // cleanup would empty the query cache under the login page's queries (web #167).
+    const { token, refresh, user } = get();
+    if (!token && !refresh && !user) return;
     if (explicitSignOuts === 0) get().logout();
   },
 }));
+
+/**
+ * The identity of the signed-in session: account and device, null when signed out. Unlike the access token it does
+ * not change with a token refresh (hourly, or another tab's rotation): effects that set up a signed-in session
+ * (index sync, push registration, notification settings, presence, the search sync) are keyed on it.
+ */
+export function sessionKey(s: Pick<AuthState, "token" | "user" | "deviceId">): string | null {
+  return s.token && s.user ? `${s.user.address}/${s.deviceId ?? ""}` : null;
+}
+
+/** {@link sessionKey} of the current session; re-renders only when the account or the device changes. */
+export function useSessionKey(): string | null {
+  return useAuth(sessionKey);
+}
 
 // Other tabs rotate tokens and sign in or out: follow them (PROTOCOL.md §5b), so no tab keeps presenting a refresh
 // token that another tab already rotated.

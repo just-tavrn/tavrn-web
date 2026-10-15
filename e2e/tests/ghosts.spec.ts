@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { NODE, createRoomViaApi, inviteCode, loginViaApi, loginViaUi, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, type UiAccount } from "./helpers";
+import { NODE, createRoomViaApi, inviteCode, loginViaApi, loginViaUi, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, type UiAccount, send, message } from "./helpers";
 import { FAKE_MEDIA, closeOpened, opened } from "./voice-helpers";
 import { scaled } from "./timeouts";
 
 // Ghost leaves and retired devices (ENCRYPTION.md §4.7, §5.2): a deleted device's leaf is removed by the user's next
 // device (also when it joins a voice channel), and the messages the deleted device wrote stay readable.
-
 
 async function newContextPage(browser: Browser, media = false): Promise<Page> {
   const context = await browser.newContext({ ...test.info().project.use, ...(media ? { permissions: ["microphone", "camera"] } : {}) });
@@ -24,15 +23,6 @@ async function secondDevice(browser: Browser, account: UiAccount, media = false)
   return page;
 }
 
-async function send(page: Page, text: string) {
-  const box = page.getByLabel("Nachricht", { exact: true });
-  await expect(box).toBeEnabled({ timeout: 15_000 });
-  await box.fill(text);
-  await page.keyboard.press("Enter");
-  await expect(box).toHaveValue("");
-}
-
-const message = (page: Page, text: string) => page.getByTestId("message").filter({ hasText: text });
 const deviceIdOf = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getItem("tavrn.auth") ?? "{}").deviceId as string);
 
 async function pending(page: Page, conversationId: string): Promise<string[]> {
@@ -78,7 +68,7 @@ test.describe("Ghost leaves in the voice channel", () => {
     const deviceA = await deviceIdOf(a);
     await a.goto(`/rooms/${room.id}/channels/${voiceId}`);
     await a.getByTestId("voice-join").click();
-    await expect(a.getByTestId("voice-stage")).toBeVisible({ timeout: 30_000 });
+    await expect(a.getByTestId("voice-stage")).toBeVisible({ timeout: scaled(30_000) });
     // Gone for good (the node drops the seat after the reconnect grace).
     await a.context().close();
 
@@ -90,9 +80,9 @@ test.describe("Ghost leaves in the voice channel", () => {
     // B joins the voice channel: the leaf goes before the voice key (no ghost warning), the roster no longer has it.
     await b.goto(`/rooms/${room.id}/channels/${voiceId}`);
     await b.getByTestId("voice-join").click();
-    await expect(b.getByTestId("voice-stage")).toBeVisible({ timeout: 30_000 });
+    await expect(b.getByTestId("voice-stage")).toBeVisible({ timeout: scaled(30_000) });
     await expect(b.getByTestId("voice-e2ee")).toBeVisible();
-    await expect.poll(() => pending(b, voiceId), { timeout: 20_000 }).toEqual([]);
+    await expect.poll(() => pending(b, voiceId), { timeout: scaled(20_000) }).toEqual([]);
     await expect(b.getByTestId("ghost-warning")).toHaveCount(0);
   });
 });
@@ -113,21 +103,21 @@ test.describe("Removed devices", () => {
 
     const b = await secondDevice(browser, alice);
     await b.goto(roomUrl);
-    await expect(message(b, "Geschrieben auf Gerät A")).toBeVisible({ timeout: 20_000 });
+    await expect(message(b, "Geschrieben auf Gerät A")).toBeVisible({ timeout: scaled(20_000) });
 
     await deleteDeviceInSettings(b, deviceA, alice.password);
     const keys = await (await b.request.get(`${NODE}/api/v1/users/${alice.username}/keys`)).json();
     expect(keys.retired.map((r: { device_id: string }) => r.device_id)).toEqual([deviceA]);
     await b.goto(roomUrl);
-    await expect(message(b, "Geschrieben auf Gerät A")).toBeVisible({ timeout: 20_000 });
+    await expect(message(b, "Geschrieben auf Gerät A")).toBeVisible({ timeout: scaled(20_000) });
     await expect(b.getByTestId("undecryptable")).toHaveCount(0);
     await expect(message(b, "Geschrieben auf Gerät A").getByTestId("retired-device")).toBeVisible();
     await b.reload();
-    await expect(message(b, "Geschrieben auf Gerät A")).toBeVisible({ timeout: 20_000 });
+    await expect(message(b, "Geschrieben auf Gerät A")).toBeVisible({ timeout: scaled(20_000) });
     await expect(b.getByTestId("undecryptable")).toHaveCount(0);
     // The deleted device's leaf left the group with the cleanup of B.
     const channelId = roomUrl.split("/channels/")[1]!;
-    await expect.poll(() => pending(b, channelId), { timeout: 20_000 }).toEqual([]);
+    await expect.poll(() => pending(b, channelId), { timeout: scaled(20_000) }).toEqual([]);
   });
 
   test("Device deleted while the other one was offline: it confirms the old device afterwards and keeps reading", async ({ browser, page, request }) => {
@@ -144,7 +134,7 @@ test.describe("Removed devices", () => {
     await expect(message(page, "Vor dem Löschen")).toBeVisible();
     const b = await secondDevice(browser, alice);
     await b.goto(roomUrl);
-    await expect(message(b, "Vor dem Löschen")).toBeVisible({ timeout: 20_000 });
+    await expect(message(b, "Vor dem Löschen")).toBeVisible({ timeout: scaled(20_000) });
 
     // B goes offline; a third session deletes A (with a fresh confirmation), as an older node did: no retired key.
     await b.context().setOffline(true);
@@ -160,10 +150,10 @@ test.describe("Removed devices", () => {
     // B comes back: it attests A again from A's leaf key before removing the leaf, and still reads A's message.
     await b.context().setOffline(false);
     await b.reload();
-    await expect(message(b, "Vor dem Löschen")).toBeVisible({ timeout: 30_000 });
+    await expect(message(b, "Vor dem Löschen")).toBeVisible({ timeout: scaled(30_000) });
     await expect(b.getByTestId("undecryptable")).toHaveCount(0);
-    await expect.poll(async () => (await (await request.get(`${NODE}/api/v1/users/${alice.username}/keys`)).json()).retired.map((r: { device_id: string }) => r.device_id), { timeout: 20_000 }).toEqual([deviceA]);
+    await expect.poll(async () => (await (await request.get(`${NODE}/api/v1/users/${alice.username}/keys`)).json()).retired.map((r: { device_id: string }) => r.device_id), { timeout: scaled(20_000) }).toEqual([deviceA]);
     const channelId = roomUrl.split("/channels/")[1]!;
-    await expect.poll(() => pending(b, channelId), { timeout: 20_000 }).toEqual([]);
+    await expect.poll(() => pending(b, channelId), { timeout: scaled(20_000) }).toEqual([]);
   });
 });

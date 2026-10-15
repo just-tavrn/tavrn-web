@@ -2,6 +2,7 @@
 import DOMPurify from "dompurify";
 import { marked, type Tokens } from "marked";
 import { editHtml, replaceInText } from "./domText";
+import { markMentionsIn, type MentionToken } from "./mentionBadges";
 
 /**
  * Markdown (subset) → safe HTML for messages. No raw HTML (`<` and `>` are escaped before parsing), links open
@@ -18,8 +19,8 @@ import { editHtml, replaceInText } from "./domText";
  * - **Unicode emojis** are wrapped in `span.emoji-text` (a little larger than the text); a paragraph of 1 … 3 emojis
  *   and nothing else is marked `emoji-only` and shown larger still (tavrn-web#117).
  *
- * The rendering of a text is cached (least recently used entries go first); emoji substitution happens after
- * the cache. Nothing edits the HTML string after sanitising: link attributes are set in a DOMPurify hook, emoji
+ * The rendering of a text is cached (least recently used entries go first), and so is the final result of the DOM
+ * pass after it (emojis and mentions), per emoji map, resolver and mention set. Nothing edits the HTML string after sanitising: link attributes are set in a DOMPurify hook, emoji
  * tokens, room emojis and mentions are applied to DOM text nodes ({@link editHtml}), so message text can never
  * leave an attribute value.
  */
@@ -53,6 +54,41 @@ purify.addHook("afterSanitizeAttributes", (node) => {
 /** Rendered (sanitized) HTML per source text; marked + DOMPurify are the expensive part of a message row. */
 export const MARKDOWN_CACHE_SIZE = 1000;
 const cache = new Map<string, string>();
+/** The result after the emoji and mention pass (rows remount while scrolling a virtualized list). */
+const finalCache = new Map<string, string>();
+
+/** Sign-out: the rendered messages of the account (decrypted text among them) leave memory. */
+export function forgetRendered(): void {
+  cache.clear();
+  finalCache.clear();
+}
+
+function lruGet(m: Map<string, string>, key: string): string | undefined {
+  const hit = m.get(key);
+  if (hit !== undefined) {
+    m.delete(key);
+    m.set(key, hit);
+  }
+  return hit;
+}
+
+function lruSet(m: Map<string, string>, key: string, value: string) {
+  m.set(key, value);
+  if (m.size > MARKDOWN_CACHE_SIZE) m.delete(m.keys().next().value as string);
+}
+
+/** Small numbers naming the identity of an emoji map or resolver (part of the final cache key). */
+const identities = new WeakMap<object, number>();
+let nextIdentity = 1;
+function identity(o: object | undefined): number {
+  if (!o) return 0;
+  let id = identities.get(o);
+  if (!id) {
+    id = nextIdentity++;
+    identities.set(o, id);
+  }
+  return id;
+}
 
 /** UI texts inside rendered messages (set by the views for the current locale). */
 export interface MarkdownLabels {
@@ -67,6 +103,7 @@ export function configureMarkdown(next: MarkdownLabels) {
   if (next.spoiler === labels.spoiler && next.copy === labels.copy && next.wrap === labels.wrap) return;
   labels = next;
   cache.clear();
+  finalCache.clear();
 }
 
 function escapeHtml(s: string): string {
@@ -146,6 +183,7 @@ export function loadHighlighter(): Promise<void> {
     .then((mod) => {
       highlighter = mod;
       for (const [key, html] of cache) if (html.includes('class="codeblock"')) cache.delete(key);
+      for (const [key, html] of finalCache) if (html.includes('class="codeblock"')) finalCache.delete(key);
       version++;
       for (const fn of listeners) fn();
     })
@@ -286,8 +324,8 @@ function emojiImage(doc: Document, url: string, name: string): HTMLImageElement 
  */
 const EMOJI_UNIT = "(?:\\p{RI}\\p{RI}|[0-9#*]\\uFE0F?\\u20E3|(?:\\p{Emoji_Presentation}|\\p{Extended_Pictographic}\\uFE0F)(?:\\p{Emoji_Modifier}|\\uFE0F|[\\u{E0020}-\\u{E007F}])*)";
 const EMOJI = new RegExp(`${EMOJI_UNIT}(?:\\u200D${EMOJI_UNIT})*`, "gu");
-/** Quick test whether `html` can contain an emoji at all (anything above the Latin blocks). */
-const MAY_HAVE_EMOJI = /[\u2000-\u3300\u{1F000}-\u{1FAFF}]/u;
+/** Whether `html` contains an emoji at all: the same pattern, not global (typographic punctuation does not count). */
+const HAS_EMOJI = new RegExp(EMOJI.source, "u");
 /** At most this many emojis (and nothing else) make an emoji-only message, shown larger. */
 export const EMOJI_ONLY_MAX = 3;
 
@@ -325,17 +363,32 @@ function hasRoomEmoji(html: string, emojiUrls: Record<string, string>): boolean 
   return false;
 }
 
+/** Mentions to mark in the same pass ({@link markMentionsIn}); `key` names the token set (the cache key). */
+export interface MarkdownMentions {
+  tokens: readonly MentionToken[];
+  key: string;
+  botLabel: string;
+}
+
+const NO_EMOJIS: Record<string, string> = {};
+
 /**
  * Markdown → safe HTML. `:name:` tokens become the room's emojis (URLs from `emojiUrls`), `<:name:ID@host>`
- * tokens images from `resolve` (without a resolver, or when it returns null, the name stays as text).
+ * tokens images from `resolve` (without a resolver, or when it returns null, the name stays as text); `mentions`
+ * are marked in the same DOM pass. Pass stable `emojiUrls` and `resolve` (memoized): their identity is part of the
+ * cache key of the final result.
  */
-export function renderMarkdown(src: string, emojiUrls: Record<string, string> = {}, resolve?: EmojiResolver): string {
+export function renderMarkdown(src: string, emojiUrls: Record<string, string> = NO_EMOJIS, resolve?: EmojiResolver, mentions?: MarkdownMentions): string {
   const html = sanitized(src);
+  const marks = !!mentions && mentions.tokens.length > 0 && html.includes("@");
+  const key = `${identity(emojiUrls)}|${identity(resolve)}|${marks ? `${mentions.botLabel}\u0001${mentions.key}` : ""}\u0001${src}`;
+  const hit = lruGet(finalCache, key);
+  if (hit !== undefined) return hit;
   const tokens = !!resolve && html.includes('class="emoji-token"');
   const room = hasRoomEmoji(html, emojiUrls);
-  const unicode = MAY_HAVE_EMOJI.test(html);
-  if (!tokens && !room && !unicode) return html;
-  return editHtml(html, (root) => {
+  const unicode = HAS_EMOJI.test(html);
+  if (!tokens && !room && !unicode && !marks) return html;
+  const out = editHtml(html, (root) => {
     if (tokens) {
       for (const span of root.querySelectorAll<HTMLElement>("span.emoji-token")) {
         const id = span.getAttribute("data-emoji-id") ?? "";
@@ -352,7 +405,11 @@ export function renderMarkdown(src: string, emojiUrls: Record<string, string> = 
     // Unicode emojis get a span (shown a little larger than the text, tavrn-web#117); then emoji-only paragraphs.
     if (unicode) replaceInText(root, EMOJI, (m, doc) => emojiSpan(doc, m[0]), skipCodeAndTokens);
     markEmojiOnly(root);
+    // Mentions last, as the separate pass did: on the text the emoji pass left.
+    if (marks) markMentionsIn(root, mentions.tokens, mentions.botLabel);
   });
+  lruSet(finalCache, key, out);
+  return out;
 }
 
 // ---------------------------------------------------------------- documents (legal pages)

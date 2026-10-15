@@ -12,7 +12,8 @@ import { useT } from "../i18n";
 import { useNode } from "../components/NodeScope";
 import { Button, ErrorText, Field, Input } from "../components/ui";
 import { Section, Select } from "../pages/settings/common";
-import { describeError, useToasts } from "../stores/toasts";
+import { describeError } from "../stores/toasts";
+import { useAction } from "../hooks/useAction";
 import { channelPermissions } from "../pages/ChannelPage";
 
 type Kind = "internal" | "webdav" | "s3";
@@ -93,9 +94,8 @@ export function StorageSection({ room, channel }: { room: RoomDetail; channel: C
   const usage = useQuery({ queryKey: ["files-usage", domain, channel.id], queryFn: () => api.files.usage(room.id, channel.id), enabled: allowed });
   const [form, setForm] = useState<Form | null>(null);
   const limitErrorId = useId();
-  const [error, setError] = useState<string | null>(null);
   const [tested, setTested] = useState<boolean | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { run: act, busy, error } = useAction({ errors: "inline" });
   useEffect(() => {
     if (backend.data) setForm(formOf(backend.data));
   }, [backend.data]);
@@ -111,20 +111,7 @@ export function StorageSection({ room, channel }: { room: RoomDetail; channel: C
   const external = form.kind !== "internal";
   const limitInvalid = external && parseLimit(form.limit) === null;
   const locked = b.has_files;
-  const run = async (action: () => Promise<unknown>, done?: string) => {
-    setBusy(true);
-    setError(null);
-    try {
-      await action();
-      if (done) useToasts.getState().push({ kind: "info", title: done });
-      return true;
-    } catch (e) {
-      setError(describeError(e));
-      return false;
-    } finally {
-      setBusy(false);
-    }
-  };
+  const run = (action: () => Promise<unknown>, done?: string) => act(action, { done });
   return (
     <Section title={t("files.storage")} description={t("files.storage_hint")}>
       <div className="space-y-3" data-testid="files-storage">

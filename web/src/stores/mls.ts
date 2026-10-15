@@ -66,6 +66,17 @@ export function withBackupKey<T>(fn: (key: Uint8Array) => T): T | null {
 let current: { key: string; manager: Promise<MlsManager | null> } | null = null;
 
 /**
+ * The encryption error (`E2eeError`) the last attempt to open the session manager failed with, e.g.
+ * `state_unreadable`: the stored key pins or verified contacts decrypt but cannot be read, and the manager refuses to
+ * start over with empty ones. Views show it (translated) instead of a locked device; null otherwise.
+ */
+let openFailure: unknown = null;
+
+export function mlsOpenFailure(): unknown {
+  return openFailure;
+}
+
+/**
  * Name of the Web Lock and the BroadcastChannel through which the tabs of this browser share the MLS state of an
  * account (`@tavrn/e2ee` tabs.ts): one tab owns and writes the state, the others forward their state-changing calls
  * to it. Per home node, account and device. The desktop app has one window, which always owns the state.
@@ -93,6 +104,7 @@ export function getMls(): Promise<MlsManager | null> {
       onEvent,
       tabs: { name: mlsTabName(homeBase() || location.origin, user.address, deviceId) },
     });
+    openFailure = null;
     if (!m) return null;
     eventSource = m;
     if (inboxChannels?.account === user.address) for (const [q, w] of inboxChannels.wanted) m.setInboxWanted(q, w);
@@ -108,8 +120,11 @@ export function getMls(): Promise<MlsManager | null> {
     // Uploads that a reload interrupted.
     if (m.hasPendingBackups()) void m.flushBackups().catch(() => undefined);
     return m;
-  })().catch(() => {
-    if (current?.key === key) current = null;
+  })().catch((e: unknown) => {
+    if (current?.key === key) {
+      current = null;
+      openFailure = (e as { name?: string } | null)?.name === "E2eeError" ? e : null;
+    }
     return null;
   });
   current = { key, manager };
@@ -162,6 +177,7 @@ export function resetMls(): void {
   current?.manager.then((m) => m?.dispose()).catch(() => undefined);
   current = null;
   eventSource = null;
+  openFailure = null;
   useMlsUi.setState({ changedKeys: {}, rotatedKeys: {}, rejoined: {}, epochs: {}, ghostAck: {}, open: null, verification: {} });
 }
 

@@ -16,7 +16,7 @@ const board = vi.hoisted(() => ({
   leave: vi.fn(),
   controller: { participants: new Map<string, unknown>(), elements: new Map<string, unknown>(), close: vi.fn(async () => undefined) },
 }));
-vi.mock("./store", () => ({ useWhiteboardSession: () => board, ownedBoards: () => [], loadDraft: async () => null }));
+vi.mock("./store", () => ({ useWhiteboardSession: () => board, useBoardContent: () => 0, ownedBoards: () => [], loadDraft: async () => null }));
 vi.mock("../components/NodeScope", () => ({ useNode: () => ({ domain: "n.test" }) }));
 vi.mock("../voice/index", () => ({ stopScreenShare: vi.fn(async () => undefined), toggleMute: vi.fn(), toggleDeafen: vi.fn(), leaveVoice: vi.fn() }));
 // The board itself (Excalidraw) is not part of these tests: the lazy tile renders its header extras only.
@@ -24,6 +24,7 @@ vi.mock("./WhiteboardStageTile", () => ({ default: ({ headerExtra }: { headerExt
 
 const { WhiteboardPlaceholder, WhiteboardLargeTile, WhiteboardIndicator } = await import("./WhiteboardStage");
 const { useBoardPreview } = await import("./stage");
+const { ConfirmHost } = await import("../components/Confirm");
 
 beforeEach(() => {
   board.session = { owner: "alice@n.test", device_id: "DA" };
@@ -103,11 +104,16 @@ describe("the Whiteboard is open bar", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("shows how many joined, toggles the preview and closes the board after asking", () => {
+  it("shows how many joined, toggles the preview and closes the board after asking", async () => {
     board.isOwner = true;
     board.joined = true;
     board.controller.participants.set("bob@n.test/DB", {});
-    render(<WhiteboardIndicator channelId="C" />);
+    render(
+      <>
+        <WhiteboardIndicator channelId="C" />
+        <ConfirmHost />
+      </>,
+    );
     const bar = screen.getByTestId("whiteboard-indicator");
     expect(bar).toHaveTextContent("Whiteboard ist geöffnet");
     expect(within(bar).getByTestId("whiteboard-joined-count")).toHaveTextContent("1 beigetreten");
@@ -118,12 +124,13 @@ describe("the Whiteboard is open bar", () => {
     expect(toggle).toHaveTextContent("Vorschau zeigen");
     act(() => fireEvent.click(toggle));
     expect(useBoardPreview.getState().shown).toBe(true);
-    // Close asks first; a no keeps the board.
-    const ask = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
-    fireEvent.click(within(bar).getByTestId("whiteboard-stop"));
+    // Close asks first (the app's dialog); a no keeps the board.
+    act(() => fireEvent.click(within(bar).getByTestId("whiteboard-stop")));
+    expect(screen.getByTestId("confirm-text")).toHaveTextContent("Das Whiteboard für alle schließen?");
+    await act(async () => fireEvent.click(screen.getByTestId("confirm-cancel")));
     expect(board.controller.close).not.toHaveBeenCalled();
-    fireEvent.click(within(bar).getByTestId("whiteboard-stop"));
-    expect(ask).toHaveBeenCalledWith("Das Whiteboard für alle schließen?");
+    act(() => fireEvent.click(within(bar).getByTestId("whiteboard-stop")));
+    await act(async () => fireEvent.click(screen.getByTestId("confirm-ok")));
     expect(board.controller.close).toHaveBeenCalledTimes(1);
   });
 });

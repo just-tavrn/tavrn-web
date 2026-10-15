@@ -2,25 +2,10 @@
 // Identity verification (FEDERATION.md §10): safety numbers, verified contacts, the block after a key
 // change in DMs, and device signatures on plaintext messages.
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { NODE, confirmRecoveryKey, createRoomViaApi, inviteCode, loginViaUi, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, type UiAccount } from "./helpers";
+import { NODE, confirmRecoveryKey, createRoomViaApi, inviteCode, loginViaUi, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, type UiAccount, send, newPage, message, closePages } from "./helpers";
 import { scaled } from "./timeouts";
 
-async function newPage(browser: Browser): Promise<Page> {
-  const context = await browser.newContext({ ...test.info().project.use });
-  return context.newPage();
-}
-
-async function send(page: Page, text: string) {
-  const box = page.getByLabel("Nachricht", { exact: true });
-  await expect(box).toBeEnabled({ timeout: 20_000 });
-  await box.fill(text);
-  await page.keyboard.press("Enter");
-  await expect(box).toHaveValue("");
-}
-
-function message(page: Page, text: string) {
-  return page.getByTestId("message").filter({ hasText: text });
-}
+test.afterEach(closePages);
 
 async function befriend(a: Page, b: Page, bUser: UiAccount) {
   const resp = await a.request.post(`${NODE}/api/v1/users/me/friends/requests`, { headers: { Authorization: `Bearer ${await tokenOf(a)}` }, data: { user: bUser.username } });
@@ -91,7 +76,7 @@ test.describe("Identity verification", () => {
 
     // Alice's DM with the verified contact is blocked until she decides.
     const notice = page.getByTestId("verification-notice");
-    await expect(notice).toBeVisible({ timeout: 20_000 });
+    await expect(notice).toBeVisible({ timeout: scaled(20_000) });
     await expect(notice).toHaveAttribute("data-blocking", "true");
     await expect(notice).toContainText(`${bob.address} hat einen neuen Sicherheitsschlüssel`);
     await expect(page.getByLabel("Nachricht", { exact: true })).toBeDisabled();
@@ -105,7 +90,7 @@ test.describe("Identity verification", () => {
     await bob2.goto("/");
     await openNavIfMobile(bob2);
     await bob2.getByTestId("dm-list").getByRole("link", { name: new RegExp(alice.username) }).click();
-    await expect(message(bob2, "Nach dem Schlüsselwechsel")).toBeVisible({ timeout: 20_000 });
+    await expect(message(bob2, "Nach dem Schlüsselwechsel")).toBeVisible({ timeout: scaled(20_000) });
     await bobPage.context().close();
     await bob2.context().close();
   });

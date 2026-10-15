@@ -15,9 +15,10 @@ import { useNode } from "../components/NodeScope";
 import { Button } from "../components/ui";
 import { EyeOffIcon } from "../components/icons";
 import { toastError } from "../stores/toasts";
+import { confirmDialog } from "../components/Confirm";
 import { ScreenOffIcon } from "../voice/ui/icons";
 import { FullscreenButton, FullscreenControls, exitFullscreen, fullscreenElement, useFullscreen } from "../voice/ui/fullscreen";
-import { useWhiteboardSession } from "./store";
+import { useBoardContent, useWhiteboardSession } from "./store";
 import { boardIsWide, boardTileState, openBoard, presenterIdentity, setBoardPreview, useBoardPreview } from "./stage";
 
 /** The stage's view of the channel's board: which tile it is (`stage.ts` `boardTileState`) and who presents it. */
@@ -81,9 +82,10 @@ export function WhiteboardLargeTile({ roomId, channelId, name, focused, onFocus,
   const t = useT();
   const { isOwner, leave, controller } = useWhiteboardSession(channelId);
   const fs = useFullscreen<HTMLDivElement>();
-  // Recomputed with every change of the board (`version`).
+  // Recomputed when the elements change (coalesced, `useBoardContent`).
+  const content = useBoardContent(controller);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const wide = useMemo(() => boardIsWide(controller.elements.values()), [controller, controller.version]);
+  const wide = useMemo(() => boardIsWide(controller.elements.values()), [controller, content]);
   const leaveBoard = () => {
     if (fs.ref.current && fullscreenElement() === fs.ref.current) void exitFullscreen();
     leave();
@@ -131,7 +133,7 @@ export function WhiteboardIndicator({ channelId }: { channelId: string }) {
   const [busy, setBusy] = useState(false);
   if (!session || !isOwner) return null;
   const close = async () => {
-    if (!confirm(t("whiteboard.close_confirm"))) return;
+    if (!(await confirmDialog({ title: t("whiteboard.close"), text: t("whiteboard.close_confirm"), confirmLabel: t("whiteboard.close"), danger: true }))) return;
     setBusy(true);
     try {
       await controller.close();
@@ -171,7 +173,7 @@ export function WhiteboardControl({ channelId, canOpen, className = "" }: { chan
     setBusy(true);
     try {
       if (isOwner) {
-        if (confirm(t("whiteboard.close_confirm"))) await controller.close();
+        if (await confirmDialog({ title: t("whiteboard.close"), text: t("whiteboard.close_confirm"), confirmLabel: t("whiteboard.close"), danger: true })) await controller.close();
       } else if (!othersBoard) {
         await openBoard(controller, { domain, conversationId: channelId });
       }

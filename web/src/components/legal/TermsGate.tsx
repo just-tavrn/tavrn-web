@@ -11,20 +11,20 @@ import { TavrnApiError } from "@tavrn/sdk";
 import { useLocation } from "react-router";
 import { api } from "../../lib/api";
 import { useT } from "../../i18n";
-import { useAuth } from "../../stores/auth";
+import { useAuth, useSessionKey } from "../../stores/auth";
 import { signOut } from "../../stores/e2ee";
 import { toastError } from "../../stores/toasts";
 import { Button, Dialog } from "../ui";
-import { LegalDocumentView } from "../../pages/legal/LegalPages";
+import { LegalDocumentView } from "../../pages/legal/LegalDocumentView";
 import { notifyStatement } from "../../hooks/useRealtime";
 
 const SEEN = "tavrn.legal.seen";
 
 /** Statements of reasons that arrived while the user was away become notification entries once (per device). */
-function useMissedStatements(token: string | null, address: string) {
+function useMissedStatements(session: string | null, address: string) {
   const queryClient = useQueryClient();
   useEffect(() => {
-    if (!token || !address) return;
+    if (!session || !address) return;
     let cancelled = false;
     void api.legal
       .myNotices()
@@ -48,7 +48,7 @@ function useMissedStatements(token: string | null, address: string) {
     return () => {
       cancelled = true;
     };
-  }, [token, address, queryClient]);
+  }, [session, address, queryClient]);
 }
 
 const DISMISSED = "tavrn.terms.dismissed";
@@ -84,17 +84,18 @@ const SETUP_PATHS = ["/login", "/encryption", "/sso/callback", "/connect"];
 
 export function TermsGate() {
   const t = useT();
-  const token = useAuth((s) => s.token);
+  const signedIn = useAuth((s) => !!s.token);
   const address = useAuth((s) => s.user?.address ?? "");
   const queryClient = useQueryClient();
   const { pathname } = useLocation();
   const [hidden, setHidden] = useState(false);
   const [busy, setBusy] = useState(false);
-  useMissedStatements(token, address);
+  // Once per session (account and device), not again with every token refresh.
+  useMissedStatements(useSessionKey(), address);
   const status = useQuery({
     queryKey: ["terms-status", address],
     queryFn: () => api.legal.termsStatus(),
-    enabled: !!token && !!address,
+    enabled: signedIn && !!address,
     refetchInterval: 5 * 60_000,
     // Older nodes have no route (404): nothing to accept.
     retry: (n, e) => !(e instanceof TavrnApiError && e.status === 404) && n < 2,

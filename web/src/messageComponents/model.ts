@@ -42,11 +42,3 @@ export function defaultValues(options: { value: string; default?: boolean | null
   return options.filter((o) => o.default).map((o) => o.value).slice(0, max);
 }
 
-/** The host of a link button's URL (shown before it opens). */
-export function linkHost(url: string): string {
-  try {
-    return new URL(url).host;
-  } catch {
-    return url;
-  }
-}

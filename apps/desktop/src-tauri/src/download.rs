@@ -21,8 +21,8 @@ use std::collections::{HashMap, VecDeque};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use tauri::ipc::{InvokeBody, Request};
@@ -133,6 +133,12 @@ pub fn unique_target(dir: &Path, name: &str) -> PathBuf {
     (1..).map(|n| dir.join(format!("{stem} ({n}){ext}"))).find(|p| !p.exists()).unwrap_or(first)
 }
 
+/// The cause of a failed write goes to stderr once, where the error code is chosen (the client only sees the code).
+fn write_failed(what: &str, e: &io::Error) -> DownloadError {
+    eprintln!("tavrn: a download could not be saved ({what}): {e}");
+    DownloadError::WriteFailed
+}
+
 /// One file being written: a temporary file next to the target, renamed into place when all announced bytes arrived.
 #[derive(Debug)]
 pub struct ChunkWriter {
@@ -171,20 +177,26 @@ impl ChunkWriter {
             return Err(DownloadError::TooLarge);
         }
         let file = self.file.as_mut().ok_or(DownloadError::WriteFailed)?;
-        file.write_all(bytes).map_err(|_| DownloadError::WriteFailed)?;
+        file.write_all(bytes).map_err(|e| write_failed("write", &e))?;
         self.written += len;
         Ok(())
     }
 
     /// Flushes the file to disk and renames it into place; returns the target.
     pub fn finish(mut self) -> Result<PathBuf, DownloadError> {
+        self.finish_in_place()
+    }
+
+    /// [`Self::finish`] through a shared handle: afterwards the writer is spent (dropping it keeps the file); after a
+    /// failure dropping it removes the temporary file.
+    fn finish_in_place(&mut self) -> Result<PathBuf, DownloadError> {
         if self.written != self.size {
             return Err(DownloadError::Incomplete);
         }
         let file = self.file.take().ok_or(DownloadError::WriteFailed)?;
-        file.sync_all().map_err(|_| DownloadError::WriteFailed)?;
+        file.sync_all().map_err(|e| write_failed("flush", &e))?;
         drop(file);
-        fs::rename(&self.temp, &self.target).map_err(|_| DownloadError::WriteFailed)?;
+        fs::rename(&self.temp, &self.target).map_err(|e| write_failed("rename", &e))?;
         Ok(std::mem::take(&mut self.target))
     }
 
@@ -202,12 +214,16 @@ impl Drop for ChunkWriter {
     }
 }
 
-/// The running and the recently finished saves.
+/// A running save; its own lock serializes its chunks (other saves never wait for it).
+type Writer = Arc<Mutex<ChunkWriter>>;
+
+/// The running and the recently finished saves. The registry's lock is held only to look a save up, never while a
+/// file is written or flushed: the I/O runs on the blocking pool (the commands below), under the save's own lock.
 #[derive(Default)]
 pub struct Downloads {
     test_dir: Option<PathBuf>,
     next_id: AtomicU64,
-    active: Mutex<HashMap<String, ChunkWriter>>,
+    active: Mutex<HashMap<String, Writer>>,
     saved: Mutex<VecDeque<(String, PathBuf)>>,
 }
 
@@ -239,8 +255,13 @@ impl Downloads {
         if active.len() >= MAX_ACTIVE {
             return Err(DownloadError::Busy);
         }
-        active.insert(id.to_string(), writer);
+        active.insert(id.to_string(), Arc::new(Mutex::new(writer)));
         Ok(())
+    }
+
+    /// The running save `id`.
+    fn writer(&self, id: &str) -> Result<Writer, DownloadError> {
+        self.active.lock().map_err(|_| DownloadError::WriteFailed)?.get(id).cloned().ok_or(DownloadError::Unknown)
     }
 
     /// Room for one more save (checked before the dialog opens).
@@ -248,15 +269,18 @@ impl Downloads {
         self.active.lock().is_ok_and(|a| a.len() < MAX_ACTIVE)
     }
 
+    /// Appends to the save `id` (blocking I/O: the command runs it on the blocking pool).
     pub fn chunk(&self, id: &str, bytes: &[u8]) -> Result<(), DownloadError> {
-        let mut active = self.active.lock().map_err(|_| DownloadError::WriteFailed)?;
-        active.get_mut(id).ok_or(DownloadError::Unknown)?.write(bytes)
+        let writer = self.writer(id)?;
+        let mut w = writer.lock().map_err(|_| DownloadError::WriteFailed)?;
+        w.write(bytes)
     }
 
-    /// Finishes the save (also when that fails, the save is over and its temporary file removed).
+    /// Finishes the save (also when that fails, the save is over and its temporary file removed). Blocking I/O
+    /// (`fsync`, rename): the command runs it on the blocking pool.
     pub fn end(&self, id: &str) -> Result<PathBuf, DownloadError> {
         let writer = self.active.lock().map_err(|_| DownloadError::WriteFailed)?.remove(id).ok_or(DownloadError::Unknown)?;
-        let path = writer.finish()?;
+        let path = writer.lock().map_err(|_| DownloadError::WriteFailed)?.finish_in_place()?;
         if let Ok(mut saved) = self.saved.lock() {
             if saved.len() >= MAX_SAVED {
                 saved.pop_front();
@@ -266,11 +290,9 @@ impl Downloads {
         Ok(path)
     }
 
+    /// Ends the save `id` without a file (the temporary file goes once no chunk of it is being written any more).
     pub fn abort(&self, id: &str) {
-        let writer = self.active.lock().ok().and_then(|mut a| a.remove(id));
-        if let Some(w) = writer {
-            w.abort();
-        }
+        drop(self.active.lock().ok().and_then(|mut a| a.remove(id)));
     }
 
     /// The file a finished save wrote.
@@ -324,25 +346,37 @@ pub async fn save_file_begin<R: Runtime>(app: AppHandle<R>, downloads: State<'_,
     let Some(target) = choose_target(&app, &downloads, &name).await? else {
         return Ok(Begin::Cancelled);
     };
-    let writer = ChunkWriter::begin(target, size).map_err(|_| DownloadError::WriteFailed)?;
+    let writer = ChunkWriter::begin(target, size).map_err(|e| write_failed("create", &e))?;
     let id = downloads.next_id();
     downloads.begin(&id, writer)?;
     Ok(Begin::Ready { id })
 }
 
-/// Appends the raw body to the save named by the `x-tavrn-save` header. Async: the write never blocks the main thread.
+/// Runs blocking file I/O of the saves on the blocking pool: neither the main thread nor the async workers (which also
+/// run the native voice engine's audio tasks) wait for a disk.
+async fn blocking<R: Runtime, T: Send + 'static>(
+    app: &AppHandle<R>,
+    f: impl FnOnce(&Downloads) -> Result<T, DownloadError> + Send + 'static,
+) -> Result<T, String> {
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || f(&app.state::<Downloads>())).await.map_err(|_| String::from(DownloadError::WriteFailed))?.map_err(Into::into)
+}
+
+/// Appends the raw body to the save named by the `x-tavrn-save` header (on the blocking pool, `blocking`).
 #[tauri::command]
-pub async fn save_file_chunk(request: Request<'_>, downloads: State<'_, Downloads>) -> Result<(), String> {
-    let id = request.headers().get(SAVE_HEADER).and_then(|v| v.to_str().ok()).ok_or(DownloadError::InvalidBody)?;
+pub async fn save_file_chunk<R: Runtime>(app: AppHandle<R>, request: Request<'_>) -> Result<(), String> {
+    let id = request.headers().get(SAVE_HEADER).and_then(|v| v.to_str().ok()).ok_or(DownloadError::InvalidBody)?.to_string();
     let InvokeBody::Raw(bytes) = request.body() else {
         return Err(DownloadError::InvalidBody.into());
     };
-    downloads.chunk(id, bytes).map_err(Into::into)
+    // The body is borrowed from the request; the blocking task needs its own copy (one memcpy per chunk).
+    let bytes = bytes.clone();
+    blocking(&app, move |d| d.chunk(&id, &bytes)).await
 }
 
 #[tauri::command]
-pub async fn save_file_end(downloads: State<'_, Downloads>, id: String) -> Result<Saved, String> {
-    downloads.end(&id).map(|p| saved(&p)).map_err(Into::into)
+pub async fn save_file_end<R: Runtime>(app: AppHandle<R>, id: String) -> Result<Saved, String> {
+    blocking(&app, move |d| d.end(&id).map(|p| saved(&p))).await
 }
 
 #[tauri::command]
@@ -540,6 +574,29 @@ mod tests {
         assert!(downloads.has_room());
         assert!(entries(&d).is_empty());
         assert_eq!(downloads.saved_path("0"), None);
+    }
+
+    #[test]
+    fn a_save_being_written_does_not_hold_the_others() {
+        let d = dir();
+        let downloads = Arc::new(Downloads::new(None));
+        ok(downloads.begin("1", ok(ChunkWriter::begin(d.join("slow.bin"), 1))));
+        ok(downloads.begin("2", ok(ChunkWriter::begin(d.join("fast.bin"), 1))));
+        // Save 1 is busy (a slow disk, a long flush): its own lock is held.
+        let slow = ok(downloads.writer("1"));
+        let busy = ok(slow.lock());
+        let (tx, rx) = std::sync::mpsc::channel();
+        let other = Arc::clone(&downloads);
+        std::thread::spawn(move || {
+            let r = other.chunk("2", b"x").and_then(|()| other.end("2"));
+            let _ = tx.send(r);
+        });
+        let done = rx.recv_timeout(std::time::Duration::from_secs(5));
+        assert!(matches!(done, Ok(Ok(_))), "save 2 finished while save 1 was busy: {done:?}");
+        drop(busy);
+        ok(downloads.chunk("1", b"y"));
+        ok(downloads.end("1"));
+        assert_eq!(entries(&d), ["fast.bin", "slow.bin"]);
     }
 
     #[test]

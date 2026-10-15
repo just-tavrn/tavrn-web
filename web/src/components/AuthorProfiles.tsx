@@ -2,7 +2,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { createStore, useStore, type StoreApi } from "zustand";
-import type { Message, Profile } from "@tavrn/sdk";
+import type { Message, Profile, User } from "@tavrn/sdk";
 import { ProfileCard } from "./ProfilePopover";
 import { useNode } from "./NodeScope";
 
@@ -51,16 +51,25 @@ export function AuthorAvatarProvider({ store, children }: { store: AuthorAvatarS
   return <AuthorAvatarContext.Provider value={store}>{children}</AuthorAvatarContext.Provider>;
 }
 
+/** A member as the member list of the conversation's node has it (the user's avatar paths). */
+export type AvatarMember = { user: Pick<User, "address" | "avatar" | "avatar_still"> };
+
+/** Module level, so the combined result keeps its identity while the query data does not change. */
+const profileData = (results: { data?: unknown }[]) => results.map((r) => r.data as Profile | undefined);
+
 /**
- * Loads the profiles of the authors of `messages` from the node of the current scope (the same queries
- * and cache as the profile card, so `user.update` refreshes them) and publishes their avatar URLs to the
- * rows below. Changes reach only the avatars of the changed author, never the whole list.
+ * Publishes the avatar URLs of the authors of `messages` to the rows below. Room members' avatars come from the
+ * member list the conversation already has (kept current by the member and user events); only authors that are not
+ * in it (departed members, DMs) are loaded as profiles from the node of the current scope (the same queries and cache
+ * as the profile card, so `user.update` refreshes them). Changes reach only the avatars of the changed author, never
+ * the whole list.
  */
-function useAuthorAvatarStore(messages: Message[]): AuthorAvatarStore {
+function useAuthorAvatarStore(messages: Message[], members: readonly AvatarMember[] | undefined): AuthorAvatarStore {
   const scoped = useNode();
   const [store] = useState(() => createAuthorAvatarStore());
-  // Distinct authors, as a stable key: a new message of a known author changes nothing here.
-  const key = useMemo(() => [...new Set(messages.map((m) => m.author))].sort().join("\n"), [messages]);
+  const known = useMemo(() => new Map((members ?? []).map((m) => [m.user.address, m.user])), [members]);
+  // Distinct authors without member data, as a stable key: a new message of a known author changes nothing here.
+  const key = useMemo(() => [...new Set(messages.map((m) => m.author))].filter((a) => !known.has(a)).sort().join("\n"), [messages, known]);
   const authors = useMemo(() => (key ? key.split("\n") : []), [key]);
   const avatars = useQueries({
     queries: authors.map((address) => ({
@@ -69,18 +78,21 @@ function useAuthorAvatarStore(messages: Message[]): AuthorAvatarStore {
       staleTime: 30_000,
       retry: false,
     })),
-    combine: (results) => results.map((r) => r.data as Profile | undefined),
+    combine: profileData,
   });
   useEffect(() => {
     const next: AvatarMap = {};
+    const put = (address: string, u: Pick<User, "avatar" | "avatar_still">) => {
+      const still = scoped.api.mediaUrl(u.avatar_still);
+      const full = scoped.api.mediaUrl(u.avatar);
+      next[address] = { still, animated: full && full !== still ? full : null };
+    };
+    for (const [address, u] of known) put(address, u);
     avatars.forEach((profile, i) => {
-      if (!profile) return;
-      const still = scoped.api.mediaUrl(profile.avatar_still);
-      const full = scoped.api.mediaUrl(profile.avatar);
-      next[authors[i]!] = { still, animated: full && full !== still ? full : null };
+      if (profile) put(authors[i]!, profile);
     });
     mergeAuthorAvatars(store, next);
-  }, [avatars, authors, scoped.api, store]);
+  }, [avatars, authors, known, scoped.api, store]);
   return store;
 }
 
@@ -90,8 +102,8 @@ function useAuthorAvatarStore(messages: Message[]): AuthorAvatarStore {
  * (`display: contents`, no layout of its own) finds the clicked message by its `data-message-id` and the
  * author by the avatar button or the name in the header.
  */
-export function AuthorProfiles({ messages, children }: { messages: Message[]; children: ReactNode }) {
-  const store = useAuthorAvatarStore(messages);
+export function AuthorProfiles({ messages, members, children }: { messages: Message[]; members?: readonly AvatarMember[]; children: ReactNode }) {
+  const store = useAuthorAvatarStore(messages, members);
   const [open, setOpen] = useState<{ address: string; anchor: DOMRect } | null>(null);
   const onClick = useCallback(
     (e: MouseEvent<HTMLDivElement>) => {
@@ -99,8 +111,9 @@ export function AuthorProfiles({ messages, children }: { messages: Message[]; ch
       const item = target.closest<HTMLElement>("[data-message-id]");
       if (!item) return;
       const avatar = target.closest<HTMLElement>('[data-testid="message-avatar"]');
-      const name = target.closest<HTMLElement>("span.font-semibold");
-      const isName = !!name && !!name.parentElement?.classList.contains("items-baseline");
+      // The name in the message header carries `data-author-name` (MessageList), independent of its styling.
+      const name = target.closest<HTMLElement>("[data-author-name]");
+      const isName = !!name && item.contains(name);
       if (!(avatar && item.contains(avatar)) && !isName) return;
       const m = messages.find((x) => x.id === item.dataset.messageId);
       if (!m) return;

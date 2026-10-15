@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { NODE, createRoomViaApi, loginAs, registerViaApi } from "./helpers";
 import { createRole, isTouch, joinRoom, openMembers, setRoles } from "./menu-helpers";
+
+/** The members drawer's layout width (CSS px), unaffected by its slide-in transform. */
+const drawerWidth = (page: Page) => page.getByTestId("members-drawer").evaluate((el) => (el as HTMLElement).offsetWidth);
 
 test.describe("Member list and roles (design note 4.11)", () => {
   test("Roles displayed separately form their own sections, offline members are at the bottom", async ({ page, request }) => {
@@ -39,11 +42,26 @@ test.describe("Member list and roles (design note 4.11)", () => {
     if (isTouch()) {
       await page.getByRole("button", { name: "Beta nach oben" }).click();
     } else {
-      await rows.nth(1).dragTo(rows.nth(0));
+      // The list's own drag events on the rows, not a pointer drag by coordinates: the page still lays out here (the
+      // banner of the account without encryption appears late and pushes the list down), and a mouse press that lands
+      // above the moved row starts no drag at all (tavrn-web#170).
+      const data = await page.evaluateHandle(() => new DataTransfer());
+      await rows.nth(1).dispatchEvent("dragstart", { dataTransfer: data });
+      await rows.nth(0).dispatchEvent("dragenter", { dataTransfer: data });
+      await rows.nth(0).dispatchEvent("dragover", { dataTransfer: data });
+      await rows.nth(0).dispatchEvent("drop", { dataTransfer: data });
+      await rows.nth(1).dispatchEvent("dragend", { dataTransfer: data });
     }
-    await expect(page.getByRole("status").filter({ hasText: "Rollenreihenfolge gespeichert" })).toBeVisible();
+    // The saved order, in the list and on the node (the confirmation toast is gone after a few seconds).
     await expect(rows.nth(0)).toHaveAttribute("data-role", "Beta");
     await expect(rows.nth(1)).toHaveAttribute("data-role", "Alpha");
+    await expect
+      .poll(async () => {
+        const detail = await (await request.get(`${NODE}/api/v1/rooms/${room.id}`, { headers: { Authorization: `Bearer ${owner.token}` } })).json();
+        const position = (name: string) => (detail.roles as { name: string; position: number }[]).find((r) => r.name === name)!.position;
+        return position("Beta") > position("Alpha");
+      })
+      .toBe(true);
 
     // @everyone: management bits are locked with an explanation, everyday bits stay editable.
     await page.getByTestId("role-list").getByRole("button", { name: "@everyone" }).click();
@@ -68,9 +86,12 @@ test.describe("Member list and roles (design note 4.11)", () => {
     await expect(row).toBeVisible();
     const box = await row.evaluate((el) => {
       const name = Array.from(el.querySelectorAll("span.truncate")).find((s) => s.textContent?.startsWith("Maximiliane"))!;
-      const drawer = el.closest("aside")!.getBoundingClientRect();
+      const aside = el.closest("aside")!;
+      const drawer = aside.getBoundingClientRect();
       const r = el.getBoundingClientRect();
-      return { truncated: name.scrollWidth > name.clientWidth, overflow: getComputedStyle(name).textOverflow, rowRight: r.right, drawerRight: drawer.right, drawerWidth: drawer.width };
+      // The drawer's width from the layout (its CSS width), not the rendered rectangle: the drawer slides in with a
+      // transform, and mid-transition the rectangle is a subpixel float (239.99996…, tavrn-web#121 run on 2026-10-15).
+      return { truncated: name.scrollWidth > name.clientWidth, overflow: getComputedStyle(name).textOverflow, rowRight: r.right, drawerRight: drawer.right, drawerWidth: (aside as HTMLElement).offsetWidth };
     });
     expect(box.truncated).toBe(true);
     expect(box.overflow).toBe("ellipsis");
@@ -80,10 +101,10 @@ test.describe("Member list and roles (design note 4.11)", () => {
       // Landscape phone and tablet sizes below the desktop grid: the drawer is 280 px, portrait keeps 240 px.
       await page.setViewportSize({ width: 915, height: 412 });
       await openMembers(page);
-      await expect.poll(async () => (await page.getByTestId("members-drawer").boundingBox())!.width).toBe(280);
+      await expect.poll(() => drawerWidth(page)).toBe(280);
       await page.setViewportSize({ width: 412, height: 915 });
       await openMembers(page);
-      await expect.poll(async () => (await page.getByTestId("members-drawer").boundingBox())!.width).toBe(240);
+      await expect.poll(() => drawerWidth(page)).toBe(240);
     } else {
       expect(box.drawerWidth).toBe(240);
     }

@@ -8,6 +8,8 @@
 //! updater only ever offers a higher version (semantic versions: 0.4.0 > 0.4.0-rc.4), so switching to stable from a
 //! pre-release waits for the next release instead of going back. Failures reach the client as one of four codes.
 
+use std::time::Duration;
+
 use serde::{Deserialize, Serialize};
 
 /// The value tauri.conf.json carries until the owner's public key replaces it.
@@ -31,6 +33,24 @@ pub const NO_RELEASE: &str = "update.no_release";
 pub const SIGNATURE_INVALID: &str = "update.signature_invalid";
 /// Anything else (logged with its reason).
 pub const FAILED: &str = "update.failed";
+
+/// What a request of the updater is for: its timeout ([`timeout_of`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Purpose {
+    /// Settings → App asks for the newest release: a stalled connection (a captive portal, a proxy that never answers)
+    /// must not leave it spinning.
+    Check,
+    /// The check again and the download of the installer (tens of megabytes on a slow line).
+    Install,
+}
+
+/// The timeout of the updater's requests (the plugin applies one timeout per request, the download included).
+pub fn timeout_of(purpose: Purpose) -> Duration {
+    match purpose {
+        Purpose::Check => Duration::from_secs(30),
+        Purpose::Install => Duration::from_secs(30 * 60),
+    }
+}
 
 /// The update channel: `stable` offers releases only, `beta` pre-releases too.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -138,6 +158,14 @@ pub fn configured(plugin_config: Option<&serde_json::Value>) -> bool {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn every_updater_request_has_a_timeout() {
+        // A check gives up like the Electron shell's (30 s); an installer download may take longer but not forever.
+        assert_eq!(timeout_of(Purpose::Check), Duration::from_secs(30));
+        assert!(timeout_of(Purpose::Install) > timeout_of(Purpose::Check));
+        assert!(timeout_of(Purpose::Install) <= Duration::from_secs(3600));
+    }
 
     /// A throwaway public key from `tauri signer generate` (its private key was never committed or used for releases).
     const SAMPLE: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJCQkEyNjMwMjRDNTZCMDcKUldRSGE4VWtNQ2E2SzJqdGNjcGR6NUFYTUlIUDVveHZYMlhDZWpyTGxhMVVLM0J5T2FRbVNiR3YK";

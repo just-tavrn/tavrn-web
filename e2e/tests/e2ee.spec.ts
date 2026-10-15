@@ -1,28 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-import { expect, test, type Browser, type Page } from "@playwright/test";
-import { NODE, createRoomViaApi, inviteCode, loginAs, loginViaUi, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, type UiAccount, openRoomInvite } from "./helpers";
+import { expect, test, type Page } from "@playwright/test";
+import { NODE, createRoomViaApi, inviteCode, loginAs, loginViaUi, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, type UiAccount, openRoomInvite, send, newPage, message, closePages } from "./helpers";
 import { createGroup, cryptoAccountViaApi, externalJoin, freshIdentityKey, resetAndReattest, sendEncrypted } from "./crypto-helpers";
 import { scaled } from "./timeouts";
+
+test.afterEach(closePages);
 
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
 
 /** A browser context of the same device type as the current project. */
-async function newPage(browser: Browser): Promise<Page> {
-  const context = await browser.newContext({ ...test.info().project.use });
-  return context.newPage();
-}
-
-async function send(page: Page, text: string) {
-  const box = page.getByLabel("Nachricht", { exact: true });
-  await expect(box).toBeEnabled({ timeout: 15_000 });
-  await box.fill(text);
-  await page.keyboard.press("Enter");
-  await expect(box).toHaveValue("");
-}
-
-function message(page: Page, text: string) {
-  return page.getByTestId("message").filter({ hasText: text });
-}
 
 async function createRoomInUi(page: Page, name: string): Promise<string> {
   await openNavIfMobile(page);
@@ -124,7 +110,7 @@ test.describe("End-to-end encryption", () => {
     await laptop.getByRole("button", { name: "Entsperren", exact: true }).click();
     await expect(laptop.getByTestId("app-shell")).toBeVisible();
     await laptop.goto(roomUrl);
-    await expect(message(laptop, "Vor Bobs Beitritt")).toBeVisible({ timeout: 20_000 });
+    await expect(message(laptop, "Vor Bobs Beitritt")).toBeVisible({ timeout: scaled(20_000) });
     await expect(message(laptop, "Hallo von Bob, bearbeitet")).toBeVisible();
     await expect(laptop.getByTestId("undecryptable")).toHaveCount(0);
     await send(laptop, "Vom Laptop");
@@ -191,7 +177,7 @@ test.describe("Direct messages and groups", () => {
     await closeDrawers(bobPage);
     // Typing indicator in a DM (only the members get it).
     const bobBox = bobPage.getByLabel("Nachricht", { exact: true });
-    await expect(bobBox).toBeEnabled({ timeout: 15_000 });
+    await expect(bobBox).toBeEnabled({ timeout: scaled(15_000) });
     await bobBox.fill("Hallo Al");
     await expect(page.getByTestId("typing-indicator")).toHaveText("Jemand schreibt…");
     await send(bobPage, "Hallo Alice, angekommen");
@@ -224,8 +210,8 @@ test.describe("Direct messages and groups", () => {
 
     // Carol leaves; the others go on without her.
     await openMembers(carolPage);
-    carolPage.once("dialog", (d) => d.accept());
     await carolPage.getByRole("button", { name: "Gruppe verlassen" }).click();
+    await carolPage.getByTestId("confirm-ok").click();
     await expect(carolPage).toHaveURL(/\/$/);
     await openNavIfMobile(carolPage);
     await expect(carolPage.getByTestId("dm-list")).not.toContainText("Kleeblatt");
@@ -337,8 +323,8 @@ test.describe("Trust and devices", () => {
     const badge = page.getByTestId("member-list").getByTestId("key-changed-badge");
     await expect(badge).toBeVisible();
     await expect(message(page, "Ich bin Bob").getByTestId("key-changed-badge")).toBeVisible();
-    page.once("dialog", (d) => d.accept());
     await badge.click();
+    await page.getByTestId("confirm-ok").click();
     await expect(page.getByTestId("key-changed-badge")).toHaveCount(0);
     await page.goto(roomUrl);
     await expect(page.getByTestId("key-changed-badge")).toHaveCount(0);
@@ -369,17 +355,17 @@ test.describe("Trust and devices", () => {
     await resetAndReattest(request, bob);
     await page.goto(roomUrl);
     const warning = page.getByTestId("ghost-warning");
-    await expect(warning).toContainText(`${bob.address}/${bob.deviceId}`, { timeout: 30_000 });
+    await expect(warning).toContainText(`${bob.address}/${bob.deviceId}`, { timeout: scaled(30_000) });
     await expect(warning).toContainText("Änderung noch nicht bestätigt");
     await expect(page.getByLabel("Nachricht", { exact: true })).toBeDisabled();
 
     // Acknowledging the changed key lets the device count: the warning goes, sending works.
     await openMembers(page);
     const badge = page.getByTestId("member-list").getByTestId("key-changed-badge");
-    page.once("dialog", (d) => d.accept());
     await badge.click();
+    await page.getByTestId("confirm-ok").click();
     await closeDrawers(page);
-    await expect(warning).toHaveCount(0, { timeout: 30_000 });
+    await expect(warning).toHaveCount(0, { timeout: scaled(30_000) });
     await send(page, "Willkommen zurück");
     await expect(message(page, "Willkommen zurück")).toBeVisible();
   });

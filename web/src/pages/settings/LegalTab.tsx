@@ -13,11 +13,12 @@ import { intlLocale, useT } from "../../i18n";
 import { describeError, useToasts } from "../../stores/toasts";
 import { Button, Dialog, ErrorText, Field, Input } from "../../components/ui";
 import { Section, Textarea } from "./common";
+import { nodeInfoQuery } from "../../lib/queries";
 
 export function LegalTab() {
   const t = useT();
   const pages = useQuery({ queryKey: ["legal", "pages", "home"], queryFn: () => api.legal.pages() });
-  const node = useQuery({ queryKey: ["node"], queryFn: () => api.node.info(), staleTime: 10 * 60_000 });
+  const node = useQuery(nodeInfoQuery(null));
   const terms = useQuery({ queryKey: ["terms-status", "tab"], queryFn: () => api.legal.termsStatus(), retry: false });
   const notices = useQuery({ queryKey: ["my-legal-notices"], queryFn: () => api.legal.myNotices(), retry: false });
   const [counter, setCounter] = useState<UploaderNotice | null>(null);

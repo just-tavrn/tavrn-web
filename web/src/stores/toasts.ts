@@ -12,6 +12,8 @@ export interface Toast {
   testId?: string;
   /** A button next to the text (e.g. "show in folder" after a download); a click runs it and closes the toast. */
   action?: { label: string; run: () => void };
+  /** Toasts with the same tag replace each other (notifications: one per conversation, the newest message). */
+  tag?: string;
 }
 
 interface ToastState {
@@ -20,28 +22,64 @@ interface ToastState {
   dismiss: (id: number) => void;
 }
 
-let counter = 0;
+/** Toasts shown at once; beyond that the oldest one goes (an informational one before warnings and errors). */
+export const MAX_TOASTS = 5;
 
-export const useToasts = create<ToastState>((set) => ({
+let counter = 0;
+const timers = new Map<number, ReturnType<typeof setTimeout>>();
+
+/** `list` without the toasts beyond the cap: the oldest informational one first, else the oldest. */
+function capped(list: Toast[]): Toast[] {
+  let out = list;
+  while (out.length > MAX_TOASTS) {
+    const drop = out.find((x) => x.kind === "info") ?? out[0]!;
+    out = out.filter((x) => x !== drop);
+  }
+  return out;
+}
+
+function forget(removed: Toast[]) {
+  for (const x of removed) {
+    clearTimeout(timers.get(x.id));
+    timers.delete(x.id);
+  }
+}
+
+export const useToasts = create<ToastState>((set, get) => ({
   toasts: [],
   push: (toast) => {
     const id = ++counter;
-    set((s) => ({ toasts: [...s.toasts, { ...toast, id }] }));
-    setTimeout(() => set((s) => ({ toasts: s.toasts.filter((x) => x.id !== id) })), toast.kind === "error" || toast.action ? 8000 : 5000);
+    const before = get().toasts;
+    const next = capped([...(toast.tag ? before.filter((x) => x.tag !== toast.tag) : before), { ...toast, id }]);
+    forget(before.filter((x) => !next.includes(x)));
+    set({ toasts: next });
+    timers.set(
+      id,
+      setTimeout(() => get().dismiss(id), toast.kind === "error" || toast.action ? 8000 : 5000),
+    );
   },
-  dismiss: (id) => set((s) => ({ toasts: s.toasts.filter((x) => x.id !== id) })),
+  dismiss: (id) => {
+    clearTimeout(timers.get(id));
+    timers.delete(id);
+    if (get().toasts.some((x) => x.id === id)) set((s) => ({ toasts: s.toasts.filter((x) => x.id !== id) }));
+  },
 }));
 
-/** Error of an API call as a toast: known codes translated, otherwise the server's description. */
+/**
+ * Error of an API call (or any caught error) as a toast: the same readable text as in forms ({@link describeError}:
+ * known codes, encryption, unlock and WebAuthn errors translated, otherwise the server's description), plus the
+ * request id when the node sent one.
+ */
 export function toastError(e: unknown, fallbackTitle?: string) {
-  const err = e as { problem?: { code?: string; title?: string; detail?: string; request_id?: string }; message?: string };
+  const err = e as { problem?: { code?: string; title?: string; request_id?: string } } | null;
   // Refused by the role preview's write guard (lib/previewGuard.ts), which has shown its own toast.
   if (err?.problem?.code === "roleview.read_only") return;
-  const title = fallbackTitle ?? err.problem?.title ?? t("common.error");
-  // Encryption refusals carry a code as their message: their readable text comes from describeError.
-  const named = (e as { name?: string } | null)?.name;
-  const detail = named === "MlsError" || named === "E2eeError" ? describeError(e) : errorMessage(err.problem?.code, err.problem?.detail || err.message);
-  useToasts.getState().push({ kind: "error", title, detail: err.problem?.request_id ? `${detail} (${t("common.request", { id: err.problem.request_id })})` : detail });
+  const title = fallbackTitle ?? err?.problem?.title ?? t("common.error");
+  const text = describeError(e);
+  // Without a detail of its own the problem's title is the text: shown once.
+  const detail = text === title ? undefined : text;
+  const id = err?.problem?.request_id;
+  useToasts.getState().push({ kind: "error", title, detail: id ? `${detail ? `${detail} ` : ""}(${t("common.request", { id })})` : detail });
 }
 
 /** Readable text for a caught error, e.g. in forms. */

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { TavrnApiError } from "@tavrn/sdk";
 import { MlsError } from "@tavrn/e2ee";
-import { describeError, toastError, useToasts } from "./toasts";
+import { MAX_TOASTS, describeError, toastError, useToasts } from "./toasts";
 import { E2eeError } from "../crypto/e2ee";
 
 describe("describeError", () => {
@@ -23,5 +23,61 @@ describe("toastError", () => {
     expect(shown.title).toBe("Nachricht konnte nicht gesendet werden");
     expect(shown.detail).not.toBe("ghost");
     expect(shown.detail).toBe(describeError(new MlsError("ghost")));
+  });
+});
+
+describe("toast stack", () => {
+  it("stays bounded: the oldest informational toast goes first, errors stay", () => {
+    useToasts.setState({ toasts: [] } as never);
+    toastError(new Error("kaputt"), "Fehler");
+    for (let i = 0; i < 20; i++) useToasts.getState().push({ kind: "info", title: `info ${i}` });
+    const shown = useToasts.getState().toasts;
+    expect(shown.length).toBe(MAX_TOASTS);
+    expect(shown[0]!.kind).toBe("error");
+    expect(shown.at(-1)!.title).toBe("info 19");
+  });
+
+  it("a toast with the tag of a shown one replaces it", () => {
+    useToasts.setState({ toasts: [] } as never);
+    for (let i = 0; i < 10; i++) useToasts.getState().push({ kind: "info", title: "Bob", detail: `message ${i}`, tag: "notify:dm1" });
+    useToasts.getState().push({ kind: "info", title: "Carol", tag: "notify:dm2" });
+    const shown = useToasts.getState().toasts;
+    expect(shown.map((x) => x.detail ?? x.title)).toEqual(["message 9", "Carol"]);
+  });
+
+  it("a replaced toast's timer does not dismiss its successor early", () => {
+    vi.useFakeTimers();
+    try {
+      useToasts.setState({ toasts: [] } as never);
+      useToasts.getState().push({ kind: "info", title: "1", tag: "t" });
+      vi.advanceTimersByTime(4000);
+      useToasts.getState().push({ kind: "info", title: "2", tag: "t" });
+      vi.advanceTimersByTime(4000);
+      expect(useToasts.getState().toasts.map((x) => x.title)).toEqual(["2"]);
+      vi.advanceTimersByTime(1500);
+      expect(useToasts.getState().toasts).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("toastError and describeError", () => {
+  it("toasts show the translated text of WebAuthn and unlock errors, as forms do", () => {
+    useToasts.setState({ toasts: [] } as never);
+    toastError(Object.assign(new Error("The operation either timed out or was not allowed."), { name: "NotAllowedError" }));
+    expect(useToasts.getState().toasts.at(-1)!.detail).toBe(describeError(new DOMException("x", "NotAllowedError")));
+    expect(useToasts.getState().toasts.at(-1)!.detail).toContain("abgebrochen");
+    toastError(Object.assign(new Error("biometric_failed"), { name: "UnlockError", code: "cancelled" }));
+    expect(useToasts.getState().toasts.at(-1)!.detail).not.toBe("biometric_failed");
+  });
+
+  it("keeps the request id and the server's text of unknown codes", () => {
+    useToasts.setState({ toasts: [] } as never);
+    toastError(new TavrnApiError({ type: "x", title: "Abgelehnt", status: 400, detail: "Server sagt nein", code: "unknown.code", request_id: "req-1" } as never));
+    const shown = useToasts.getState().toasts.at(-1)!;
+    expect(shown.title).toBe("Abgelehnt");
+    expect(shown.detail).toContain("Server sagt nein");
+    expect(shown.detail).toContain("req-1");
   });
 });

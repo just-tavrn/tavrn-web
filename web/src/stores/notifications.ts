@@ -5,6 +5,10 @@
  * home node (`/users/me/notification-settings`) and mirrored in local storage; nodes without the route
  * (404) keep them in local storage only. Also the notification center: recent mentions, DMs and calls.
  * The decision whether a message notifies is the pure {@link decide}.
+ *
+ * Local changes are kept as changes, not as a copy: a save applies them onto the settings the node has (the last
+ * answer, or a `notifications.update` from another device or tab), so a change made elsewhere is not overwritten.
+ * A failed save says so (a toast) and the shown settings go back to what the node has.
  */
 import { create } from "zustand";
 import { TavrnApiError, type NotificationMode, type NotificationSettings } from "@tavrn/sdk";
@@ -154,6 +158,8 @@ interface NotificationState {
   update: (fn: (s: NotificationSettings) => NotificationSettings) => void;
   /** Sends a pending save now (the page is being left). */
   flush: () => void;
+  /** `notifications.update` (another device or tab changed them): taken over, local changes not saved yet stay on top. */
+  applyRemote: (settings: unknown) => void;
   push: (entry: Omit<NotificationEntry, "id" | "read" | "at"> & { at?: string }) => void;
   markAllRead: () => void;
   remove: (id: string) => void;
@@ -185,6 +191,18 @@ let remoteRef: Remote | null = null;
 let accountRef = "";
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let counter = 0;
+/** The settings as the node has them (last load, answer or event). */
+let base: NotificationSettings = DEFAULT_SETTINGS;
+/** Local changes not confirmed by the node yet, in order. */
+let pending: Array<(s: NotificationSettings) => NotificationSettings> = [];
+/** Raises the toast of a failed save (set by the app: keeps the store free of the toast store). */
+let onSaveFailed: ((e: unknown) => void) | null = null;
+
+export function setNotificationSaveFailed(fn: ((e: unknown) => void) | null) {
+  onSaveFailed = fn;
+}
+
+const withPending = (s: NotificationSettings) => pending.reduce((acc, fn) => normalizeSettings(fn(acc)), s);
 
 /** Saves after a short pause (several toggles in a row cost one request). */
 const SAVE_DELAY_MS = 400;
@@ -201,8 +219,10 @@ export const useNotifications = create<NotificationState>((set, get) => ({
     set({ settings: local, entries });
     try {
       const served = normalizeSettings(await remote.get());
-      set({ settings: served, source: "server" });
-      writeLocal(`${SETTINGS_KEY}:${account}`, served);
+      base = served;
+      const settings = withPending(served);
+      set({ settings, source: "server" });
+      writeLocal(`${SETTINGS_KEY}:${account}`, settings);
     } catch (e) {
       // Nodes without the route keep the settings in this browser.
       set({ source: e instanceof TavrnApiError && (e.status === 404 || e.status === 405) ? "local" : get().source === "loading" ? "local" : get().source });
@@ -213,6 +233,7 @@ export const useNotifications = create<NotificationState>((set, get) => ({
     set({ settings });
     writeLocal(`${SETTINGS_KEY}:${accountRef}`, settings);
     if (get().source !== "server" || !remoteRef) return;
+    pending.push(fn);
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => get().flush(), SAVE_DELAY_MS);
   },
@@ -221,10 +242,41 @@ export const useNotifications = create<NotificationState>((set, get) => ({
     clearTimeout(saveTimer);
     saveTimer = null;
     const remote = remoteRef;
-    if (!remote) return;
-    remote.put(get().settings).catch((e: unknown) => {
-      if (e instanceof TavrnApiError && (e.status === 404 || e.status === 405)) set({ source: "local" });
-    });
+    if (!remote || !pending.length) return;
+    const sent = pending.length;
+    const account = accountRef;
+    remote
+      .put(withPending(base))
+      .then((answer) => {
+        if (remoteRef !== remote || accountRef !== account) return;
+        base = normalizeSettings(answer);
+        pending = pending.slice(sent);
+        const settings = withPending(base);
+        set({ settings });
+        writeLocal(`${SETTINGS_KEY}:${account}`, settings);
+      })
+      .catch((e: unknown) => {
+        if (remoteRef !== remote || accountRef !== account) return;
+        if (e instanceof TavrnApiError && (e.status === 404 || e.status === 405)) {
+          // The node has no route after all: the settings stay in this browser.
+          pending = [];
+          set({ source: "local" });
+          return;
+        }
+        // Not saved: the shown settings are the node's again (with later changes still waiting), and the user is told.
+        pending = pending.slice(sent);
+        const settings = withPending(base);
+        set({ settings });
+        writeLocal(`${SETTINGS_KEY}:${account}`, settings);
+        onSaveFailed?.(e);
+      });
+  },
+  applyRemote: (raw) => {
+    if (get().source !== "server") return;
+    base = normalizeSettings(raw);
+    const settings = withPending(base);
+    set({ settings });
+    writeLocal(`${SETTINGS_KEY}:${accountRef}`, settings);
   },
   push: (entry) => {
     const next: NotificationEntry = { ...entry, at: entry.at ?? new Date().toISOString(), id: `${Date.now().toString(36)}-${++counter}`, read: false };
@@ -251,6 +303,8 @@ export const useNotifications = create<NotificationState>((set, get) => ({
     saveTimer = null;
     remoteRef = null;
     accountRef = "";
+    base = DEFAULT_SETTINGS;
+    pending = [];
     set({ settings: DEFAULT_SETTINGS, source: "loading", entries: [] });
   },
 }));

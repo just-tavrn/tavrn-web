@@ -12,6 +12,7 @@ import { useT } from "../../i18n";
 import { toastError, useToasts } from "../../stores/toasts";
 import { Button, Field, Input } from "../../components/ui";
 import { Section } from "./common";
+import { nodeInfoQuery } from "../../lib/queries";
 
 /** The shorter non-zero of the room's and the node's value (0 = kept). */
 export function effectiveRetention(room: number | null | undefined, node: number): number {
@@ -27,7 +28,7 @@ export function MessageRetentionSection({ room }: { room: RoomDetail }) {
   const canManage = hasPermission(parsePermissions(room.my_permissions), Permission.MANAGE_ROOM);
   const [days, setDays] = useState(String(room.message_retention_days ?? 0));
   const [busy, setBusy] = useState(false);
-  const info = useQuery({ queryKey: home ? ["node"] : ["node", domain], queryFn: () => api.node.info(), staleTime: 10 * 60_000 });
+  const info = useQuery(nodeInfoQuery(home ? null : domain, api));
   const bound = info.data?.message_retention_days ?? 0;
   const effective = effectiveRetention(room.message_retention_days, bound);
   const save = async (e: React.FormEvent) => {

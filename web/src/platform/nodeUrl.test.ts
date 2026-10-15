@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from "vitest";
-import { checkNode, parseNodeUrl } from "./nodeUrl";
+import { checkNode, parseNodeUrl, webBoundToNode } from "./nodeUrl";
 import { mockFetch } from "../test/render";
+import shared from "../../../apps/shared-vectors/node_url.json";
+
+const vectors = shared as unknown as { web_binding: Array<[string, string, string | null, boolean]> };
 
 describe("parseNodeUrl", () => {
   it("accepts https origins and normalizes them", () => {
@@ -63,5 +66,22 @@ describe("checkNode", () => {
       throw new TypeError("Failed to fetch");
     }) as unknown as typeof fetch;
     await expect(checkNode("https://down.example")).resolves.toEqual({ ok: false, reason: "unreachable" });
+  });
+});
+
+describe("the web origin a node names", () => {
+  it("is bound to the node (the shells' shared vectors)", () => {
+    expect(vectors.web_binding.some((c) => c[3]) && vectors.web_binding.some((c) => !c[3])).toBe(true);
+    for (const [node, web, domain, bound] of vectors.web_binding) expect(webBoundToNode(node, web, domain), `${node} ${web} ${domain}`).toBe(bound);
+  });
+
+  it("checkNode keeps only a web origin bound to the node", async () => {
+    mockFetch({ "/.well-known/tavrn": { body: { domain: "tavrn-org.example", web: "https://tavrn.org" } } });
+    await expect(checkNode("https://tavrn-org.example")).resolves.toEqual({ ok: true, domain: "tavrn-org.example" });
+    // A domain the node merely claims does not bind another site's origin either.
+    mockFetch({ "/.well-known/tavrn": { body: { domain: "tavrn.org", web: "https://app.tavrn.org" } } });
+    await expect(checkNode("https://evil.example")).resolves.toEqual({ ok: true, domain: "tavrn.org" });
+    mockFetch({ "/.well-known/tavrn": { body: { domain: "tavrn.example", web: "https://app.tavrn.example" } } });
+    await expect(checkNode("https://api.tavrn.example")).resolves.toEqual({ ok: true, domain: "tavrn.example", web: "https://app.tavrn.example" });
   });
 });

@@ -1,15 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, type ComponentType } from "react";
 import { BrowserRouter, Route, Routes } from "react-router";
 import { LoginPage } from "./pages/LoginPage";
 import { AppLayout } from "./pages/AppLayout";
 import { HomePage } from "./pages/HomePage";
 import { ChannelPage, RoomIndexRedirect } from "./pages/ChannelPage";
 import { InvitePage } from "./pages/InvitePage";
-import { AddApplicationPage } from "./pages/AddApplicationPage";
-import { RoomSettingsPage } from "./pages/settings/RoomSettingsPage";
-import { UserSettingsPage } from "./pages/UserSettingsPage";
-import { AdminPage } from "./pages/AdminPage";
 import { ForgotPasswordPage, ResetPasswordPage } from "./pages/PasswordResetPages";
 import { VerifyEmailPage } from "./pages/VerifyEmailPage";
 import { EncryptionPage } from "./pages/EncryptionPage";
@@ -22,21 +18,36 @@ import { ProfilePage } from "./pages/ProfilePage";
 import { MessageRequestPage, MessageRequestsPage } from "./pages/MessageRequestsPage";
 import { ReauthDialog } from "./components/ReauthDialog";
 import { DownloadWarningDialog } from "./components/DownloadWarningDialog";
+import { ConfirmHost } from "./components/Confirm";
 import { TermsGate } from "./components/legal/TermsGate";
 import { DateOfBirthGate } from "./components/age/DateOfBirthGate";
-import { LegalDocumentPage, LegalIndexPage, NoticeFormPage, NoticeStatusPage } from "./pages/legal/LegalPages";
 import { NodePickerPage } from "./pages/NodePickerPage";
 import { AndroidShell } from "./components/AndroidShell";
 import { DeepLinkPrompt } from "./components/DeepLinkPrompt";
 import { platform } from "./platform";
 
-// The whiteboard page (and with it the Excalidraw canvas) is loaded only when a board is opened.
-const WhiteboardPage = lazy(() => import("./whiteboard/WhiteboardPage").then((m) => ({ default: m.WhiteboardPage })));
-const whiteboard = (
-  <Suspense fallback={null}>
-    <WhiteboardPage />
-  </Suspense>
-);
+/** A route loaded on first use (its own chunk), shown without a placeholder while the chunk arrives. */
+function lazyPage(load: () => Promise<ComponentType>) {
+  const Page = lazy(() => load().then((c) => ({ default: c })));
+  return (
+    <Suspense fallback={null}>
+      <Page />
+    </Suspense>
+  );
+}
+
+// Loaded only when opened: the whiteboard (and with it the Excalidraw canvas), and the rarely opened settings,
+// administration, application and legal pages, so they are not part of the startup bundle.
+const whiteboard = lazyPage(() => import("./whiteboard/WhiteboardPage").then((m) => m.WhiteboardPage));
+const roomSettings = lazyPage(() => import("./pages/settings/RoomSettingsPage").then((m) => m.RoomSettingsPage));
+const userSettings = lazyPage(() => import("./pages/UserSettingsPage").then((m) => m.UserSettingsPage));
+const admin = lazyPage(() => import("./pages/AdminPage").then((m) => m.AdminPage));
+const addApplication = lazyPage(() => import("./pages/AddApplicationPage").then((m) => m.AddApplicationPage));
+const legal = () => import("./pages/legal/LegalPages");
+const legalIndex = lazyPage(() => legal().then((m) => m.LegalIndexPage));
+const legalNotice = lazyPage(() => legal().then((m) => m.NoticeFormPage));
+const legalNoticeStatus = lazyPage(() => legal().then((m) => m.NoticeStatusPage));
+const legalDocument = lazyPage(() => legal().then((m) => m.LegalDocumentPage));
 
 export function App() {
   const desktop = platform().isDesktop;
@@ -67,17 +78,17 @@ export function App() {
         <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/invite/:code" element={<InvitePage />} />
         {/* Add links of applications (APPLICATIONS.md §4.1), also of other nodes. */}
-        <Route path="/add/:id" element={<AddApplicationPage />} />
-        <Route path="/add/:domain/:id" element={<AddApplicationPage />} />
+        <Route path="/add/:id" element={addApplication} />
+        <Route path="/add/:domain/:id" element={addApplication} />
         {/* Sign-in with an account of this node on another node's web client (FEDERATION.md §8). */}
         <Route path="/connect" element={<ConnectPage />} />
         <Route path="/connect/callback" element={<ConnectCallbackPage />} />
         <Route path="/sso/callback" element={<SsoCallbackPage />} />
         {/* Legal pages, the notice form and its status page (design note 4.14); public. */}
-        <Route path="/legal" element={<LegalIndexPage />} />
-        <Route path="/legal/notice" element={<NoticeFormPage />} />
-        <Route path="/legal/notice/:caseId" element={<NoticeStatusPage />} />
-        <Route path="/legal/:kind" element={<LegalDocumentPage />} />
+        <Route path="/legal" element={legalIndex} />
+        <Route path="/legal/notice" element={legalNotice} />
+        <Route path="/legal/notice/:caseId" element={legalNoticeStatus} />
+        <Route path="/legal/:kind" element={legalDocument} />
         <Route path="/" element={<AppLayout />}>
           <Route index element={<HomePage />} />
           <Route path="rooms/:roomId" element={<RoomIndexRedirect />} />
@@ -87,7 +98,7 @@ export function App() {
           </Route>
           {/* The whiteboard of a conversation, full screen (design note 4.10). */}
           <Route path="rooms/:roomId/channels/:channelId/whiteboard" element={whiteboard} />
-          <Route path="rooms/:roomId/settings/:tab?" element={<RoomSettingsPage />} />
+          <Route path="rooms/:roomId/settings/:tab?" element={roomSettings} />
           {/* Rooms of other nodes: ids are node-scoped (`<domain>/<ulid>`). */}
           <Route path="n/:node/rooms/:roomId" element={<RoomIndexRedirect />} />
           {/* The thread panel is part of the channel page (it stays mounted while threads open and close). */}
@@ -95,7 +106,7 @@ export function App() {
             <Route path="threads/:threadId" element={null} />
           </Route>
           <Route path="n/:node/rooms/:roomId/channels/:channelId/whiteboard" element={whiteboard} />
-          <Route path="n/:node/rooms/:roomId/settings/:tab?" element={<RoomSettingsPage />} />
+          <Route path="n/:node/rooms/:roomId/settings/:tab?" element={roomSettings} />
           <Route path="conversations/:conversationId" element={<ConversationPage />} />
           <Route path="conversations/:conversationId/whiteboard" element={whiteboard} />
           {/* DMs and group DMs hosted on another node (the initiator's home node, FEDERATION.md §6.1). */}
@@ -106,12 +117,13 @@ export function App() {
           <Route path="requests/:host/:requestId" element={<MessageRequestPage />} />
           <Route path="u/:address" element={<ProfilePage />} />
           <Route path="discover" element={<DiscoverPage />} />
-          <Route path="settings/:tab?" element={<UserSettingsPage />} />
-          <Route path="admin/:tab?" element={<AdminPage />} />
+          <Route path="settings/:tab?" element={userSettings} />
+          <Route path="admin/:tab?" element={admin} />
         </Route>
       </Routes>
       <ReauthDialog />
       <DownloadWarningDialog />
+      <ConfirmHost />
       <TermsGate />
       <DateOfBirthGate />
     </BrowserRouter>

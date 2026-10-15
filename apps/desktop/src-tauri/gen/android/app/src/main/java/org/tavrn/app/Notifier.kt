@@ -23,7 +23,7 @@ object Notifier {
   const val CHANNEL_CALLS = "calls"
   const val CHANNEL_VOICE = "voice"
   const val CHANNEL_CONNECTION = "connection"
-  /** The extra of a tap: the client's path to open. */
+  /** The extra of a tap (for [NotificationTrampoline] only): the client's path to open. */
   const val EXTRA_PATH = "org.tavrn.app.PATH"
 
   const val ID_VOICE = 1
@@ -44,11 +44,13 @@ object Notifier {
     ))
   }
 
-  /** Opens the app (and `path` in the client). */
+  /**
+   * Opens the app (and `path` in the client) through the non-exported [NotificationTrampoline]: the exported main
+   * activity takes no paths from intents, which any app could send it.
+   */
   fun openApp(context: Context, path: String?, requestCode: Int): PendingIntent {
-    val intent = Intent(context, MainActivity::class.java)
-      .setAction(Intent.ACTION_VIEW)
-      .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+    val intent = Intent(context, NotificationTrampoline::class.java)
+      .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     if (path != null) intent.putExtra(EXTRA_PATH, path)
     return PendingIntent.getActivity(context, requestCode, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
   }

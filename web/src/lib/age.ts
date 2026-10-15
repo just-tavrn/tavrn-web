@@ -10,8 +10,8 @@ import { useAuth } from "../stores/auth";
 
 /** `GET /users/me` of the home node (shared query key `["me"]`). */
 export function useMe() {
-  const token = useAuth((s) => s.token);
-  return useQuery({ queryKey: ["me"], queryFn: () => api.users.me(), enabled: !!token, staleTime: 60_000 });
+  const signedIn = useAuth((s) => !!s.token);
+  return useQuery({ queryKey: ["me"], queryFn: () => api.users.me(), enabled: signedIn, staleTime: 60_000 });
 }
 
 /** The own status: `undefined` while loading, `null` for nodes without `age.v1`. */

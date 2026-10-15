@@ -5,13 +5,16 @@ import { Permission, hasPermission, parsePermissions, type Member, type RoomDeta
 import { useNode } from "../../components/NodeScope";
 import { intlLocale, useT } from "../../i18n";
 import { useAuth } from "../../stores/auth";
-import { describeError, toastError, useToasts } from "../../stores/toasts";
+import { describeError } from "../../stores/toasts";
+import { useAction } from "../../hooks/useAction";
 import { Avatar, Button, Dialog, Field, Input } from "../../components/ui";
 import { Section } from "./common";
+import { roomMembersQuery } from "../../lib/queries";
 
+/** The room's complete member list, the same entry as the member list's (lib/queries.ts). */
 export function useMembers(roomId: string) {
   const { api } = useNode();
-  return useQuery({ queryKey: ["members", roomId], queryFn: () => api.members.list(roomId, { limit: 500 }) });
+  return useQuery(roomMembersQuery(api, roomId));
 }
 
 export function MembersTab({ room }: { room: RoomDetail }) {
@@ -62,19 +65,14 @@ function MemberDialog({ member, room, onClose }: { member: Member; room: RoomDet
   const [action, setAction] = useState<"kick" | "ban" | "timeout" | null>(null);
   const [reason, setReason] = useState("");
   const [minutes, setMinutes] = useState(10);
-  const refresh = async () => {
-    await queryClient.invalidateQueries({ queryKey: ["members", room.id] });
-    await queryClient.invalidateQueries({ queryKey: ["room", room.id] });
-  };
+  const mutation = useAction({
+    refresh: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["members", room.id] });
+      await queryClient.invalidateQueries({ queryKey: ["room", room.id] });
+    },
+  });
   const run = async (fn: () => Promise<unknown>, done: string) => {
-    try {
-      await fn();
-      await refresh();
-      useToasts.getState().push({ kind: "info", title: done });
-      onClose();
-    } catch (e) {
-      toastError(e);
-    }
+    if (await mutation.run(fn, { done })) onClose();
   };
   const canRoles = hasPermission(perms, Permission.MANAGE_ROLES);
   const canNick = isSelf ? hasPermission(perms, Permission.CHANGE_NICKNAME) : hasPermission(perms, Permission.MANAGE_NICKNAMES);
@@ -102,7 +100,7 @@ function MemberDialog({ member, room, onClose }: { member: Member; room: RoomDet
         </fieldset>
         <div className="flex flex-wrap justify-end gap-2">
           {(canRoles || canNick) && (
-            <Button onClick={() => void run(() => api.members.update(room.id, member.user.id, { ...(canNick ? { nickname: nickname.trim() || null } : {}), ...(canRoles ? { roles } : {}) }), t("member.saved"))}>
+            <Button disabled={mutation.busy} onClick={() => void run(() => api.members.update(room.id, member.user.id, { ...(canNick ? { nickname: nickname.trim() || null } : {}), ...(canRoles ? { roles } : {}) }), t("member.saved"))}>
               {t("common.save")}
             </Button>
           )}
@@ -145,6 +143,7 @@ function MemberDialog({ member, room, onClose }: { member: Member; room: RoomDet
               </Button>
               <Button
                 variant="danger"
+                disabled={mutation.busy}
                 onClick={() =>
                   void run(
                     () =>
@@ -174,26 +173,23 @@ export function BansTab({ room }: { room: RoomDetail }) {
   const bans = useQuery({ queryKey: ["bans", room.id], queryFn: () => api.members.bans(room.id) });
   const [subject, setSubject] = useState("");
   const [reason, setReason] = useState("");
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["bans", room.id] });
+  const { run, busy } = useAction({ refresh: () => queryClient.invalidateQueries({ queryKey: ["bans", room.id] }) });
   return (
     <Section title={t("bans.title")} description={t("bans.hint")}>
       <form
         className="flex flex-wrap gap-2"
-        onSubmit={async (e) => {
+        onSubmit={(e) => {
           e.preventDefault();
-          try {
+          void run(async () => {
             await api.members.ban(room.id, { subject, reason });
             setSubject("");
             setReason("");
-            await refresh();
-          } catch (err) {
-            toastError(err);
-          }
+          });
         }}
       >
         <Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder={t("bans.placeholder")} aria-label={t("bans.subject")} className="flex-1" required />
         <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t("bans.reason_placeholder")} aria-label={t("bans.reason")} className="flex-1" />
-        <Button type="submit" variant="danger">
+        <Button type="submit" variant="danger" disabled={busy}>
           {t("bans.ban")}
         </Button>
       </form>
@@ -204,7 +200,7 @@ export function BansTab({ room }: { room: RoomDetail }) {
             <span className="flex-1 truncate">
               {b.subject} {b.reason && <span className="text-fg-2">· {b.reason}</span>}
             </span>
-            <Button variant="ghost" onClick={async () => { try { await api.members.unban(room.id, b.subject); await refresh(); } catch (e) { toastError(e); } }}>
+            <Button variant="ghost" disabled={busy} onClick={() => void run(() => api.members.unban(room.id, b.subject))}>
               {t("bans.lift")}
             </Button>
           </li>

@@ -181,32 +181,51 @@ export function localStatus(scope: LocalRef[] | null, coverage: Record<string, C
   return { localSearched: searched, localComplete: complete, localNotSynced: notSynced };
 }
 
-async function inBatches<T, R>(items: T[], n: number, fn: (item: T) => Promise<R>): Promise<PromiseSettledResult<R>[]> {
-  const out: PromiseSettledResult<R>[] = [];
-  for (let i = 0; i < items.length; i += n) out.push(...(await Promise.allSettled(items.slice(i, i + n).map(fn))));
+/**
+ * `fn` over `items`, at most `n` at a time: a pool (the next request starts when any one finishes), not waves that
+ * wait for their slowest request. Results in the order of `items`.
+ */
+export async function pooled<T, R>(items: T[], n: number, fn: (item: T) => Promise<R>): Promise<PromiseSettledResult<R>[]> {
+  const out: PromiseSettledResult<R>[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      try {
+        out[i] = { status: "fulfilled", value: await fn(items[i]!) };
+      } catch (reason) {
+        out[i] = { status: "rejected", reason };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, worker));
   return out;
 }
 
-/** Runs both paths. `index` is null while the local index is locked or unavailable. */
+/** Runs both paths at the same time (the local search does not wait for the node). `index` is null while the local index is locked or unavailable. */
 export async function runSearch(req: SearchRequest, index: SearchIndex | null, coverage: Record<string, Coverage>): Promise<{ rows: SearchRow[]; status: SearchStatus }> {
   const { query, filters } = req;
   const nq = nodeQuery(query, filters);
-  // A type filter asks for files only: the node searches messages, not encrypted files.
-  const settled = filters.category ? [] : await inBatches(req.rooms, PARALLEL, async (r) => ({ room: r, resp: await r.api.search.room(r.roomId, nq) }));
-  const lists: SearchRow[][] = [];
-  let nodeChannels = 0;
-  let nodeFailed = 0;
-  for (const s of settled) {
-    if (s.status === "fulfilled") {
-      nodeChannels += s.value.resp.searched.channels;
-      lists.push(nodeRows(s.value.room.node, s.value.room.roomId, s.value.resp));
-    } else if (!(s.reason instanceof TavrnApiError && s.reason.code === "search.query_empty")) {
-      nodeFailed++;
+  const nodePart = async () => {
+    // A type filter asks for files only: the node searches messages, not encrypted files.
+    const settled = filters.category ? [] : await pooled(req.rooms, PARALLEL, async (r) => ({ room: r, resp: await r.api.search.room(r.roomId, nq) }));
+    const lists: SearchRow[][] = [];
+    let channels = 0;
+    let failed = 0;
+    for (const s of settled) {
+      if (s.status === "fulfilled") {
+        channels += s.value.resp.searched.channels;
+        lists.push(nodeRows(s.value.room.node, s.value.room.roomId, s.value.resp));
+      } else if (!(s.reason instanceof TavrnApiError && s.reason.code === "search.query_empty")) {
+        failed++;
+      }
     }
-  }
-  const after = filters.from ? Date.parse(`${filters.from}T00:00:00Z`) - 1 : undefined;
-  const before = filters.to ? Date.parse(`${filters.to}T00:00:00Z`) + DAY_MS : undefined;
-  if (index && (req.local === null || req.local.length > 0)) {
+    return { lists, channels, failed };
+  };
+  const localPart = async (): Promise<SearchRow[] | null> => {
+    if (!index || (req.local !== null && req.local.length === 0)) return null;
+    const after = filters.from ? Date.parse(`${filters.from}T00:00:00Z`) - 1 : undefined;
+    const before = filters.to ? Date.parse(`${filters.to}T00:00:00Z`) + DAY_MS : undefined;
     const conversations = req.local?.map((r) => qualify(r.node, r.conversationId));
     const channelFilter = filters.channel ? req.local?.filter((r) => r.conversationId === filters.channel).map((r) => qualify(r.node, r.conversationId)) : undefined;
     try {
@@ -221,19 +240,22 @@ export async function runSearch(req: SearchRequest, index: SearchIndex | null, c
       });
       // Local hits of conversations of the request carry the room (channels opened before the room was noted).
       const rooms = new Map((req.local ?? []).filter((r) => r.roomId).map((r) => [qualify(r.node, r.conversationId), r.roomId!]));
-      lists.push(localRows(hits.map((h) => (h.room || !rooms.has(h.conversation) ? h : { ...h, room: rooms.get(h.conversation)! }))));
+      return localRows(hits.map((h) => (h.room || !rooms.has(h.conversation) ? h : { ...h, room: rooms.get(h.conversation)! })));
     } catch {
       /* locked meanwhile: the status says so */
+      return null;
     }
-  }
+  };
+  const [node, localRowsFound] = await Promise.all([nodePart(), localPart()]);
+  const lists = localRowsFound ? [...node.lists, localRowsFound] : node.lists;
   const local = localStatus(req.local, coverage);
   return {
     rows: mergeRows(lists),
     status: {
-      nodeChannels,
-      nodeRooms: req.rooms.length - nodeFailed,
+      nodeChannels: node.channels,
+      nodeRooms: req.rooms.length - node.failed,
       roomsSkipped: req.roomsSkipped ?? 0,
-      nodeFailed,
+      nodeFailed: node.failed,
       ...local,
       windowDays: DEFAULT_WINDOW_DAYS,
       localLocked: !index,

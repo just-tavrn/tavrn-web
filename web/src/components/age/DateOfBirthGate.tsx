@@ -13,12 +13,13 @@ import { signOut } from "../../stores/e2ee";
 import { describeError } from "../../stores/toasts";
 import { Button, Dialog, ErrorText } from "../ui";
 import { DateOfBirthField, dateOfBirthError } from "./DateOfBirthField";
+import { nodeInfoQuery } from "../../lib/queries";
 
 export function DateOfBirthGate() {
   const t = useT();
   const me = useMe();
   const queryClient = useQueryClient();
-  const node = useQuery({ queryKey: ["node", "home"], queryFn: () => api.node.info(), enabled: me.data?.age_status?.tier === "unknown" });
+  const node = useQuery({ ...nodeInfoQuery(null), enabled: me.data?.age_status?.tier === "unknown" });
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [fieldError, setFieldError] = useState<string | null>(null);

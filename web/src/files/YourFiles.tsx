@@ -14,6 +14,7 @@ import { Button, Dialog } from "../components/ui";
 import { ConfirmDialog } from "../pages/settings/common";
 import { describeError, toastError, useToasts } from "../stores/toasts";
 import { formatBytes } from "./model";
+import { formatDate } from "../lib/format";
 
 /** Deletes entries one by one (404: gone already, e.g. inside a deleted folder); returns how many went. */
 export async function deleteOwn(del: (id: string) => Promise<unknown>, ids: readonly string[]): Promise<number> {
@@ -84,7 +85,7 @@ export function YourFilesPanel({ roomId, channelId, onChanged }: { roomId: strin
           </div>
           <ul className="divide-y divide-line rounded-md border border-line">
             {entries.map((e) => {
-              const when = new Date(e.created_at).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
+              const when = formatDate(e.created_at, "short");
               const label = t(e.kind === "folder" ? "files.your_folder_label" : "files.your_file_label", { date: when, size: formatBytes(e.size + (e.thumbnail_size ?? 0)) });
               return (
                 <li key={e.id} className="flex min-h-11 items-center gap-2 px-2 text-sm" data-testid="your-files-row" data-entry={e.id}>

@@ -8,7 +8,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { NodeUrlError, validIdentityDomain, validateNodeUrl } from "./node_url.ts";
+import { NodeUrlError, validIdentityDomain, validateNodeUrl, webBound } from "./node_url.ts";
 
 export const DIR_NAME = "tavrn-desktop";
 export const FILE_NAME = "settings.json";
@@ -89,7 +89,8 @@ export function loadConfig(path: string): Config {
   // The web origin and the domain belong to the node: without it they mean nothing.
   const web = node ? validOrNull(doc.web as string | null | undefined) : null;
   const domain = node && typeof doc.domain === "string" && validIdentityDomain(doc.domain) ? doc.domain : null;
-  const config: Config = { node, web, domain };
+  // A web origin not bound to the node (stored by an older version) is dropped: the node's own origin is used.
+  const config: Config = { node, web: node && web && webBound(node, web, domain) ? web : null, domain };
   if (typeof doc.close_to_tray === "boolean") config.close_to_tray = doc.close_to_tray;
   if (doc.update_channel === "stable" || doc.update_channel === "beta") config.update_channel = doc.update_channel;
   return config;
@@ -140,6 +141,8 @@ export class Settings {
     const webOrigin = web == null ? null : validateNodeUrl(web);
     const identity = domain == null ? null : domain.trim().toLowerCase();
     if (identity !== null && !validIdentityDomain(identity)) throw new NodeUrlError("node_url.domain");
+    // The web origin anchors the sign-in window and native passkeys: only one bound to the node.
+    if (webOrigin !== null && !webBound(node, webOrigin, identity)) throw new NodeUrlError("node_url.web_unbound");
     this.update((c) => ({ ...c, node, web: webOrigin, domain: identity }));
     return node;
   }

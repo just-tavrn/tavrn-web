@@ -9,6 +9,7 @@
 import type { WhiteboardSession } from "@tavrn/sdk";
 import { create } from "zustand";
 import { t } from "../i18n";
+import { confirmDialog } from "../components/Confirm";
 import { useVoice } from "../voice/store";
 import { stopScreenShare } from "../voice/index";
 import { rowStreamAction, type RowStreamAction } from "../voice/streams";
@@ -91,18 +92,18 @@ export function rowBoardAction(member: { identity: string; presenting: boolean }
 }
 
 /** Before a screen share: a board this device presents is closed (after confirmation). `false`: cancelled. */
-export async function beforeScreenShare(confirmFn: (message: string) => boolean = (m) => confirm(m)): Promise<boolean> {
+export async function beforeScreenShare(confirmFn: (message: string) => boolean | Promise<boolean> = (m) => confirmDialog({ text: m })): Promise<boolean> {
   const boards = ownedBoards();
   if (!presentationConflict("screen", { screen: useVoice.getState().screen, board: boards.length > 0 })) return true;
-  if (!confirmFn(t("whiteboard.stop_board_for_screen"))) return false;
+  if (!(await confirmFn(t("whiteboard.stop_board_for_screen")))) return false;
   for (const c of boards) await c.close();
   return true;
 }
 
 /** Before presenting a board: a running screen share is stopped (after confirmation). `false`: cancelled. */
-export async function beforeBoard(confirmFn: (message: string) => boolean = (m) => confirm(m)): Promise<boolean> {
+export async function beforeBoard(confirmFn: (message: string) => boolean | Promise<boolean> = (m) => confirmDialog({ text: m })): Promise<boolean> {
   if (!presentationConflict("board", { screen: useVoice.getState().screen, board: false })) return true;
-  if (!confirmFn(t("whiteboard.stop_screen_for_board"))) return false;
+  if (!(await confirmFn(t("whiteboard.stop_screen_for_board")))) return false;
   await stopScreenShare();
   return true;
 }

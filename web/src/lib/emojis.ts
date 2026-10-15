@@ -6,6 +6,7 @@ import { useNode } from "../components/NodeScope";
 import { api } from "./api";
 import { apiFor, homeDomain, useNodes } from "../stores/nodes";
 import type { EmojiResolver, EmojiToken } from "./markdown";
+import { roomsQuery } from "./queries";
 
 /**
  * Custom emojis (design note 4.13): room emojis, personal emojis on the home node and emojis of every other room
@@ -13,7 +14,8 @@ import type { EmojiResolver, EmojiToken } from "./markdown";
  * (`GET /api/v1/emojis/{id}/image`, `?still=1` for the first frame), so they need no token and are cached.
  */
 
-function reducedMotion(): boolean {
+/** `prefers-reduced-motion` right now. */
+export function reducedMotion(): boolean {
   return typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 }
 
@@ -129,8 +131,8 @@ export function useOtherEmojis(currentRoomId: string | undefined, enabled: boole
   const home = homeDomain() ?? "";
   const domains = useNodes((s) => Object.keys(s.sessions).filter((d) => d !== home).sort().join(","));
   const remote = domains ? domains.split(",") : [];
-  const homeRooms = useQuery({ queryKey: ["rooms"], queryFn: () => api.rooms.list(), enabled, staleTime: 60_000 });
-  const remoteRooms = useQueries({ queries: remote.map((d) => ({ queryKey: ["rooms", d], queryFn: () => apiFor(d).rooms.list(), enabled, staleTime: 60_000 })) });
+  const homeRooms = useQuery({ ...roomsQuery(null), enabled });
+  const remoteRooms = useQueries({ queries: remote.map((d) => ({ ...roomsQuery(d), enabled })) });
   const rooms: { id: string; name: string; node: string }[] = [
     ...(homeRooms.data ?? []).map((r) => ({ id: r.id, name: r.name, node: home })),
     ...remoteRooms.flatMap((q, i) => (q.data ?? []).map((r) => ({ id: r.id, name: r.name, node: remote[i]! }))),

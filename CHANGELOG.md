@@ -112,6 +112,13 @@ First public release of the web client and the desktop apps.
 
 ### Changed
 
+- **Faster message list**: decryption, signature checks and the device archive handle only new or changed messages
+  (unchanged rows no longer re-render), poll votes are checked once per vote, the typing line renders on its own,
+  the composer measures its height only while it can grow, rendered markdown (emojis and mentions in one pass) is
+  cached across scrolling, and message avatars of room members come from the member list instead of one profile
+  request per author. Settings, administration, add-application and legal pages load on first use (the startup
+  bundle is about 9 % smaller). Decrypted attachments are kept within a 192 MB budget: what no view shows is dropped
+  and its object URL revoked.
 - **Polls show the results after voting** (#156): once you voted a poll shows its results instead of the vote form;
   **Change vote** reopens the form with your vote filled in, **Keep** or **Save** return to the results and **Retract
   vote** stays in the form; closed polls show the results only. Date polls with many slots are compact: the form
@@ -214,6 +221,10 @@ First public release of the web client and the desktop apps.
 
 ### Fixed
 
+- **Message edits and uploads**: a refused edit keeps the editor open with the new text, an edit of a message that is
+  not decrypted on this device is refused with a notice; removing a pending upload (or leaving the conversation)
+  drops it and its key at once. A failed animated avatar falls back to the still, and a changed avatar shows again
+  after a load error.
 - **Reaction highlights of other people** (tavrn-node#83): a live reaction change no longer shows the reactor's own
   highlighted chips to every viewer for a moment; the client keeps its own flags from its requests and takes a change
   only when the event names you as the reactor (another tab or device).
@@ -306,6 +317,21 @@ First public release of the web client and the desktop apps.
 
 ### Security
 
+- Realtime events of a node change only that node's rooms, channels, conversations, messages and member lists in the
+  client's cache; ids another node lists are ignored, and notification lookups never cache another node's room under
+  a home room's id.
+- The desktop and Android apps use a node's announced web origin for the sign-in window and native passkeys only
+  when it is bound to the node (its host, the identity domain or a subdomain of them); another site's origin is
+  replaced by the node's own.
+- The attachment cache is keyed by node, id and the checked hash, so a cached copy never stands in for another
+  node's attachment or another hash.
+- A session ended by the node (revoked elsewhere, expired) locks the key store, drops the session manager and forgets
+  decrypted attachments and rendered messages, as an explicit sign-out does; signing in again needs the recovery key
+  or a passkey when the account asks for it every time.
+- Android: notification taps open their view through a private activity with an allow-list of the app's views; the
+  exported main activity no longer takes a path from other apps' intents.
+- The device's history archive hands out archived content only for the same author, device, epoch, edit and
+  ciphertext; entries of the earlier format are decrypted again.
 - Plaintext in end-to-end encrypted conversations is shown as "not end-to-end encrypted", never as the author's
   content (list, replies, notifications, push); a person's plaintext message without a device id is marked unverified.
 - Every encrypted write path (edits, thread titles, forum posts, file records, whiteboard scenes) shows the

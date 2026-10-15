@@ -269,16 +269,20 @@ export const usePush = create<PushState>((set, get) => ({
   },
 }));
 
-/** Deletes the registration on the node and the browser's subscription. */
+/**
+ * Deletes the registration on the node and the browser's subscription. The local record (the registration's id) goes
+ * only once the node confirmed (or no longer knows it): a failed call keeps it, so turning push off again can still
+ * delete the node's registration instead of leaving it sending pushes.
+ */
 async function unsubscribe(ctx: PushContext): Promise<void> {
   const record = readRecord(ctx.account);
-  writeRecord(ctx.account, null);
   if (record) {
     await ctx.api.push.unsubscribe(record.id).catch((e: unknown) => {
       // Already gone on the node (sign-out elsewhere, 410 of the push service): nothing to undo.
       if (!(e instanceof TavrnApiError && e.status === 404)) throw e;
     });
   }
+  writeRecord(ctx.account, null);
   const android = platform().android;
   if (android) return android.push.unregister();
   if (!pushSupported()) return;

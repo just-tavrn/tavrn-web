@@ -9,6 +9,7 @@ import { Button, Input } from "../../components/ui";
 import { Section } from "./common";
 import { DEFAULT_KBPS, MAX_KBPS, MIN_KBPS, clampCustom, isMusic, presetChoices, presetOf, trafficMbPerHour, type PresetId } from "../../voice/quality";
 import { withChannel, type RoomPatch } from "../../lib/roomCache";
+import { nodeInfoQuery } from "../../lib/queries";
 
 type Choice = PresetId | "custom";
 
@@ -20,7 +21,7 @@ type Choice = PresetId | "custom";
 export function VoiceQualitySection({ channel, room, canManage, onChanged }: { channel: Channel; room: RoomDetail; canManage: boolean; onChanged: (patch?: RoomPatch) => Promise<void> }) {
   const { api, home, domain } = useNode();
   const t = useT();
-  const nodeInfo = useQuery({ queryKey: home ? ["node"] : ["node", domain], queryFn: () => api.node.info(), staleTime: 10 * 60_000 });
+  const nodeInfo = useQuery(nodeInfoQuery(home ? null : domain, api));
   const cap = nodeInfo.data?.voice?.max_bitrate_kbps ?? null;
   const stored = channel.bitrate_kbps || DEFAULT_KBPS;
   const [choice, setChoice] = useState<Choice>(presetOf(stored));

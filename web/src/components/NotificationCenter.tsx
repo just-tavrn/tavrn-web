@@ -3,38 +3,29 @@
  * The notification center (design note 4.11): a bell with the number of unseen entries; its panel lists the
  * recent mentions, DMs and calls with a jump to the conversation. Opening the panel marks them seen.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router";
 import { intlLocale, useT } from "../i18n";
 import { useNotifications } from "../stores/notifications";
 import { rectOf, useFloating, type AnchorRect } from "../lib/position";
+import { useDismiss } from "../lib/dismiss";
 import { useShell } from "./AppShell";
 import { formatFullTime } from "../lib/format";
 import { BellIcon } from "./icons";
 
 const ICON = { mention: "@", dm: "✉", message: "#", call: "📞", legal: "§", report: "⚑", history: "🔑" } as const;
 
-function NotificationPanel({ anchor, onClose }: { anchor: AnchorRect; onClose: () => void }) {
+function NotificationPanel({ anchor, trigger, onClose }: { anchor: AnchorRect; trigger: RefObject<HTMLButtonElement | null>; onClose: () => void }) {
   const t = useT();
   const navigate = useNavigate();
   const { closeNav } = useShell();
   const entries = useNotifications((s) => s.entries);
   const ref = useRef<HTMLDivElement>(null);
   const style = useFloating(ref, anchor, { prefer: "bottom", gap: 6 }, [entries.length]);
-  useEffect(() => {
-    const outside = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node) && !(e.target as HTMLElement).closest?.("[data-notification-bell]")) onClose();
-    };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("pointerdown", outside, true);
-    window.addEventListener("keydown", onKey);
-    ref.current?.focus({ preventScroll: true });
-    return () => {
-      document.removeEventListener("pointerdown", outside, true);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
+  // The bell toggles the panel itself; Escape gives the focus back to it.
+  useDismiss(true, onClose, { inside: [ref, trigger], returnFocus: trigger });
+  useEffect(() => ref.current?.focus({ preventScroll: true }), []);
   const time = new Intl.DateTimeFormat(intlLocale(), { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
   return createPortal(
     <div ref={ref} role="dialog" aria-label={t("notify.center")} tabIndex={-1} className="z-[65] flex w-80 flex-col overflow-hidden rounded-lg border border-line bg-bg-1 shadow-xl outline-none" style={style} data-testid="notification-panel">
@@ -87,9 +78,11 @@ export function NotificationBell({ className = "inline-flex" }: { className?: st
   const t = useT();
   const unseen = useNotifications((s) => s.entries.filter((e) => !e.read).length);
   const [anchor, setAnchor] = useState<AnchorRect | null>(null);
+  const bell = useRef<HTMLButtonElement>(null);
   return (
     <>
       <button
+        ref={bell}
         type="button"
         data-notification-bell
         data-testid="notification-bell"
@@ -111,7 +104,7 @@ export function NotificationBell({ className = "inline-flex" }: { className?: st
           </span>
         )}
       </button>
-      {anchor && <NotificationPanel anchor={anchor} onClose={() => setAnchor(null)} />}
+      {anchor && <NotificationPanel anchor={anchor} trigger={bell} onClose={() => setAnchor(null)} />}
     </>
   );
 }

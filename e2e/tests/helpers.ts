@@ -1,11 +1,83 @@
 // SPDX-License-Identifier: Apache-2.0
 import { createHmac } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { expect, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { scaled } from "./timeouts.ts";
 
 export const NODE = `http://127.0.0.1:${process.env.E2E_NODE_PORT ?? "8080"}`;
+
+// ---- Pages, messages, locks (shared by the specs instead of a copy in each) ---------------------------------------
+
+/** Contexts opened with {@link newPage}; a spec that uses it closes them with `test.afterEach(closePages)`. */
+const pageContexts: BrowserContext[] = [];
+
+/** A page in a fresh browser context of the test's project (its own storage: another user or device). */
+export async function newPage(browser: Browser): Promise<Page> {
+  const context = await browser.newContext({ ...test.info().project.use });
+  pageContexts.push(context);
+  return context.newPage();
+}
+
+/** Closes the contexts {@link newPage} opened (each holds the node's sockets and, in calls, LiveKit ports). */
+export async function closePages(): Promise<void> {
+  for (const c of pageContexts.splice(0)) await c.close().catch(() => undefined);
+}
+
+/** Sends `text` from the open conversation's composer once it can send (keys and history loaded). */
+export async function send(page: Page, text: string): Promise<void> {
+  const box = page.getByLabel("Nachricht", { exact: true });
+  await expect(box).toBeEnabled({ timeout: scaled(20_000) });
+  await box.fill(text);
+  await page.keyboard.press("Enter");
+  await expect(box).toHaveValue("");
+}
+
+/** The message with `text` in the open conversation. */
+export const message = (page: Page, text: string) => page.getByTestId("message").filter({ hasText: text });
+
+/** How often a lock's holder marks it as alive. */
+const LOCK_HEARTBEAT_MS = 5_000;
+/**
+ * A lock nobody marked as alive for this long belongs to a worker that died (its holder refreshes it every
+ * {@link LOCK_HEARTBEAT_MS}, however long it holds it); scaled like every wait, so a slow runner never loses a lock.
+ */
+export const LOCK_STALE_MS = scaled(60_000);
+
+/**
+ * Runs `fn` while holding the lock directory `lock` (created next to the node's data): serializes a section across
+ * workers and projects. The holder keeps the lock fresh while it runs; a stale one (its holder died) is taken over.
+ */
+export async function withFileLock<T>(lock: string, fn: () => Promise<T>): Promise<T> {
+  mkdirSync(dirname(lock), { recursive: true });
+  for (;;) {
+    try {
+      mkdirSync(lock);
+      break;
+    } catch {
+      try {
+        if (Date.now() - statSync(lock).mtimeMs > LOCK_STALE_MS) rmSync(lock, { recursive: true, force: true });
+      } catch {
+        /* the lock vanished meanwhile */
+      }
+      await new Promise((r) => setTimeout(r, 200));
+    }
+  }
+  const heartbeat = setInterval(() => {
+    try {
+      const now = new Date();
+      utimesSync(lock, now, now);
+    } catch {
+      /* removed by the holder's finally */
+    }
+  }, LOCK_HEARTBEAT_MS);
+  try {
+    return await fn();
+  } finally {
+    clearInterval(heartbeat);
+    rmSync(lock, { recursive: true, force: true });
+  }
+}
 
 /**
  * The accessible name of a room in the rail: its name, then its counts and voice activity when there are any
@@ -261,27 +333,7 @@ const ADMIN_DIR = resolve(dirname(new URL(import.meta.url).pathname), "../../dat
 const ADMIN_CACHE = resolve(ADMIN_DIR, "e2eadmin.json");
 const ADMIN_LOCK = resolve(ADMIN_DIR, "e2eadmin.lock");
 
-async function withAdminLock<T>(fn: () => Promise<T>): Promise<T> {
-  mkdirSync(ADMIN_DIR, { recursive: true });
-  for (;;) {
-    try {
-      mkdirSync(ADMIN_LOCK);
-      break;
-    } catch {
-      try {
-        if (Date.now() - statSync(ADMIN_LOCK).mtimeMs > 90_000) rmSync(ADMIN_LOCK, { recursive: true, force: true });
-      } catch {
-        /* lock vanished meanwhile */
-      }
-      await new Promise((r) => setTimeout(r, 200));
-    }
-  }
-  try {
-    return await fn();
-  } finally {
-    rmSync(ADMIN_LOCK, { recursive: true, force: true });
-  }
-}
+const withAdminLock = <T>(fn: () => Promise<T>): Promise<T> => withFileLock(ADMIN_LOCK, fn);
 
 /** Node admin for tests: fixed username from TAVRN_ADMIN_USERS of the Playwright config. */
 export async function adminAccount(request: APIRequestContext): Promise<Account> {
@@ -462,6 +514,6 @@ export async function hidePrfAtRegistration(page: Page) {
 /** The re-authentication dialog, if the last confirmation expired (PROTOCOL.md §5c, five minutes): confirms with the password. */
 export async function confirmWithPasswordIfAsked(page: Page, password: string) {
   const reauth = page.getByTestId("reauth-dialog");
-  const asked = await reauth.waitFor({ state: "visible", timeout: 2_000 }).then(() => true, () => false);
+  const asked = await reauth.waitFor({ state: "visible", timeout: scaled(2_000) }).then(() => true, () => false);
   if (asked) await confirmWithPassword(page, password);
 }

@@ -24,7 +24,7 @@ import { platform } from "../platform";
 import { displayMediaAudio, type ScreenAudio } from "./screenAudio";
 import { cleanupBeforeVoice, loadPending } from "../lib/leafCleanup";
 import { holdGroupJoins } from "../crypto/groupJoins";
-import { BackgroundLeaves, earlyPipeline, startJoin, type EarlyPipeline, type Releasable } from "./joinFlow";
+import { earlyPipeline, startJoin, type EarlyPipeline, type Releasable } from "./joinFlow";
 import { vjMark } from "./joinTimings";
 import {
   ConnectionQuality,
@@ -56,7 +56,7 @@ import { VoiceError, voiceErrorMessage } from "./errors";
 import { channelKey, participantsOf, useVoicePresence } from "./presence";
 import { cameraOptions, phoneCameras, resolutionSize, useVoiceSettings, type VoiceSettings } from "./settings";
 import { withEntitlementCaps } from "./entitlementCaps";
-import { IDLE, SpeakingBatcher, isWatched, useSoundOverlays, useVoice, useWatchedStreams, type ParticipantMedia, type Quality, type VoiceTarget } from "./store";
+import { SpeakingBatcher, isWatched, keepMedia, useSoundOverlays, useVoice, useWatchedStreams, type ParticipantMedia, type Quality, type VoiceTarget } from "./store";
 import { participantVolumes, type Volumes } from "./volume";
 import { isLocallyMuted, useLocalMute } from "./localMute";
 import { ANALYSER_SIZE, SPEAKING_POLL_MS, SpeakingDetector, analysersAvailable, combineLevels, localLevel, rmsDb } from "./speaking";
@@ -64,7 +64,6 @@ import { PriorityTracker, claimsPriority, duckGain, rampTo, verifyPriority } fro
 import { SOUND_TOPIC, SignalLimiter, encodeSoundSignal, parseClipEmoji, parseSoundSignal } from "./soundSignal";
 import { throttledActivity } from "../lib/idle";
 import type { LevelReport } from "./audio";
-import { DEFAULT_GRACE_MS, RejoinSchedule } from "./reconnect";
 import { playCue, type Cue } from "./cues";
 import { setIcePolicy } from "./ice";
 import { hotkeyHeld } from "./hotkeys";
@@ -72,14 +71,13 @@ import { PttCues } from "./pttCues";
 import { CaptureRelease } from "./capture";
 import { MutedTalkDetector } from "./mutedTalk";
 import type { BackgroundHandle } from "./background";
-import { endpoints, followOthers as followOthersOf, type Endpoints, type JoinInfo } from "./sessionShared";
+import { endpoints, followEpoch, followOthers as followOthersOf, type Endpoints, type JoinInfo } from "./sessionShared";
+import { SessionLifecycle, reportState as report, targetKey, type Attempt, type ConnectOpts, type DisconnectKind } from "./sessionLifecycle";
 import { StreamSubscriptions, streamIdentity } from "./streams";
 import { NativeScreenShare, NoFrameKeyError } from "./nativeScreen";
 
 /** LiveKit must confirm encryption for this device within this time, else nothing is published. */
 const E2EE_CONFIRM_MS = 10_000;
-/** After a removal by a moderator, a `voice.move` may follow: wait this long before giving up. */
-const MOVE_GRACE_MS = 2_000;
 
 interface Session {
   id: number;
@@ -136,11 +134,6 @@ interface Tap {
   duck: GainNode;
 }
 
-let current: Session | null = null;
-/** The channel a moderator just removed this device from (a `voice.move` may follow, `followMove`). */
-let removed: { target: VoiceTarget; at: number } | null = null;
-let nextId = 1;
-let pending: Promise<void> | null = null;
 const batcher = new SpeakingBatcher(100);
 /** The gate's last report (own speaking ring, design note 4.13 item 3). */
 let lastReport: LevelReport = { level: Number.NEGATIVE_INFINITY, open: false };
@@ -154,7 +147,6 @@ const set = (patch: Partial<ReturnType<typeof useVoice.getState>>) => useVoice.s
 /** A notification sound (design note 4.9); `own` = about this user (plays while deafened too). */
 const cue = (c: Cue, own: boolean) => playCue(c, { own, deafened: useVoice.getState().deafened });
 const settings = () => useVoiceSettings.getState().settings;
-const sameTarget = (a: VoiceTarget | null, b: VoiceTarget) => !!a && a.domain === b.domain && a.roomId === b.roomId && a.channelId === b.channelId && !!a.call === !!b.call;
 
 function canPublish(room: Room, source: Track.Source): boolean {
   const p = room.localParticipant.permissions;
@@ -277,7 +269,7 @@ function analysing(s: Session): boolean {
 
 /** Writes the complete set of speakers: the own level from the gate, the others from analysers or LiveKit. */
 function emitSpeakers(s: Session, now = performance.now()) {
-  if (current !== s) return;
+  if (life.current !== s) return;
   const state = useVoice.getState();
   const own = localLevel(lastReport, state.muted || !state.canSpeak);
   const remote = analysing(s) ? s.detector!.levels(now) : s.lkSpeakers;
@@ -288,7 +280,7 @@ function emitSpeakers(s: Session, now = performance.now()) {
 function startSpeakingLoop(s: Session) {
   if (!s.detector) return;
   const timer = setInterval(() => {
-    if (current !== s) return;
+    if (life.current !== s) return;
     if (analysing(s)) {
       const now = performance.now();
       for (const t of s.taps.values()) {
@@ -308,7 +300,7 @@ function onLevel(r: LevelReport) {
   const state = useVoice.getState();
   const open = r.open && !state.muted;
   if (state.transmitting !== open) set({ transmitting: open });
-  const s = current;
+  const s = life.current;
   if (!s) return;
   if (open && state.canSpeak) talking();
   if (mutedTalkListens(state)) {
@@ -336,7 +328,7 @@ function mutedTalkHint(s: Session) {
   if (s.mutedTalkPulse) clearTimeout(s.mutedTalkPulse);
   s.mutedTalkPulse = setTimeout(() => {
     s.mutedTalkPulse = null;
-    if (current === s) set({ mutedTalk: false });
+    if (life.current === s) set({ mutedTalk: false });
   }, 2_500);
   if (s.mutedTalkSaid) return;
   s.mutedTalkSaid = true;
@@ -347,7 +339,7 @@ function mutedTalkHint(s: Session) {
 
 /** Ramps every remote track to its ducking gain and publishes who is a priority speaker. */
 function applyDucking(s: Session, active: ReadonlySet<string>) {
-  if (current !== s) return;
+  if (life.current !== s) return;
   const ctx = s.audio;
   if (ctx) for (const t of s.taps.values()) rampTo(t.duck.gain, duckGain(t.identity, active), ctx.currentTime);
   publishPriority(s);
@@ -361,7 +353,7 @@ function publishPriority(s: Session) {
 }
 
 function followPriorityClaim(s: Session, p: Participant) {
-  if (current !== s || p === s.room.localParticipant) return;
+  if (life.current !== s || p === s.room.localParticipant) return;
   void s.priority.update(p.identity, claimsPriority(p.attributes));
 }
 
@@ -393,16 +385,21 @@ function clearSoundOverlays() {
 }
 
 function refreshMedia(s: Session) {
-  if (current !== s) return;
+  if (life.current !== s) return;
   const media: Record<string, ParticipantMedia> = { [s.room.localParticipant.identity]: mediaOf(s.room.localParticipant, true) };
   for (const p of s.room.remoteParticipants.values()) media[p.identity] = mediaOf(p, false);
   const localId = s.room.localParticipant.identity;
   const local = media[localId]!;
   // A stream that ended is forgotten: the next share of that person is joined anew.
   s.streams.prune((id) => !!media[id]?.screen);
-  const focus = useVoice.getState().focus;
+  const state = useVoice.getState();
   const focusable = (id: string) => !!media[id]?.screen && (id === localId || s.streams.isJoined(id));
-  set({ media, camera: local.camera, screen: local.screen, focus: focus && focusable(focus) ? focus : null });
+  const focus = state.focus && focusable(state.focus) ? state.focus : null;
+  // Called on every track and participant event: unchanged participants keep their objects, and an event that
+  // changed nothing writes nothing (the stage, the bar and the call view re-render on real changes only).
+  const kept = keepMedia(state.media, media);
+  if (kept === state.media && state.camera === local.camera && state.screen === local.screen && state.focus === focus) return;
+  set({ media: kept, camera: local.camera, screen: local.screen, focus });
 }
 
 /** The volumes last applied per identity (development test hooks). */
@@ -426,18 +423,11 @@ function applyVolumes(s: Session) {
   for (const p of s.room.remoteParticipants.values()) applyVolume(p);
 }
 
-async function reportState(s: Session, patch: { muted?: boolean; deafened?: boolean; streaming?: boolean; camera?: boolean }) {
-  try {
-    await s.ep.updateState(patch);
-  } catch (e) {
-    // 409 voice.not_connected right after joining (the reservation expired) is harmless.
-    if ((e as { code?: string }).code !== "voice.not_connected") useToasts.getState().push({ kind: "warning", title: voiceErrorMessage(e) });
-  }
-}
+const reportState = (s: Session, patch: { muted?: boolean; deafened?: boolean; streaming?: boolean; camera?: boolean }) => report(s.ep, patch);
 
 /** Re-keys after an epoch change of the channel's group (ENCRYPTION.md §5a). */
 async function rekey(s: Session) {
-  if (current !== s) return;
+  if (life.current !== s) return;
   const vk = s.mls.voiceKey(s.q);
   if (!vk) return;
   try {
@@ -458,7 +448,7 @@ async function publishMic(s: Session) {
   // Never before the session's fresh key is the sending key (a permission change may call this while joining).
   await s.fresh;
   await keyCurrent(s);
-  if (current !== s) return;
+  if (life.current !== s) return;
   if (!canPublish(s.room, Track.Source.Microphone) || s.room.localParticipant.getTrackPublication(Track.Source.Microphone)) return;
   // Never publish before encryption is confirmed for this device (VOICE.md §6).
   if (!s.room.isE2EEEnabled || !s.room.localParticipant.isE2EEEnabled) throw new VoiceError("e2ee_failed");
@@ -501,7 +491,7 @@ function wire(s: Session) {
   room
     .on(RoomEvent.ActiveSpeakersChanged, (speakers: Participant[]) => {
       // Fallback of the analysers (and always for the own device: that ring follows the gate).
-      if (current !== s) return;
+      if (life.current !== s) return;
       s.lkSpeakers = Object.fromEntries(speakers.filter((p) => p !== room.localParticipant).map((p) => [p.identity, p.audioLevel]));
       if (!analysing(s)) emitSpeakers(s);
     })
@@ -510,28 +500,28 @@ function wire(s: Session) {
       // Signals of participants of this call, validated and limited per sender. (They are sent end-to-end
       // encrypted; livekit-client 2.22 reports decrypted packets with encryption type NONE, so the type
       // cannot be checked here. A signal only shows an emoji, nothing else.)
-      if (current !== s || !p || topic !== SOUND_TOPIC) return;
+      if (life.current !== s || !p || topic !== SOUND_TOPIC) return;
       if (!s.signals.allow(p.identity, Date.now())) return;
       const signal = parseSoundSignal(payload);
       if (signal) showSoundOverlay(p.identity, signal.emoji, signal.duration_ms);
     })
     .on(RoomEvent.ConnectionQualityChanged, (q: ConnectionQuality, p: Participant) => {
-      if (current !== s) return;
+      if (life.current !== s) return;
       const quality = qualityOf(q);
       if (p === room.localParticipant) set({ quality });
       if (useVoice.getState().qualities[p.identity] !== quality) useVoice.setState((st) => ({ qualities: { ...st.qualities, [p.identity]: quality } }));
     })
     .on(RoomEvent.Reconnecting, () => {
-      if (current !== s) return;
+      if (life.current !== s) return;
       set({ status: "reconnecting" });
       cue("connection_lost", true);
     })
     .on(RoomEvent.Reconnected, () => {
-      if (current !== s) return;
+      if (life.current !== s) return;
       set({ status: "connected" });
       cue("connection_restored", true);
     })
-    .on(RoomEvent.Disconnected, (reason?: DisconnectReason) => void onDisconnected(s, reason))
+    .on(RoomEvent.Disconnected, (reason?: DisconnectReason) => void life.onDisconnected(s, disconnectKind(reason)))
     .on(RoomEvent.ParticipantConnected, (p: RemoteParticipant) => {
       forgetQuality(p.identity);
       applyVolume(p);
@@ -557,7 +547,7 @@ function wire(s: Session) {
     })
     .on(RoomEvent.TrackPublished, (pub: RemoteTrackPublication, p: RemoteParticipant) => {
       // Microphones and cameras at once, screen shares only once joined (`streams.ts`).
-      if (current === s) s.streams.apply(p.identity, pub);
+      if (life.current === s) s.streams.apply(p.identity, pub);
       media();
     })
     .on(RoomEvent.TrackUnpublished, media)
@@ -567,8 +557,8 @@ function wire(s: Session) {
     .on(RoomEvent.LocalTrackUnpublished, (pub: LocalTrackPublication) => {
       media();
       // Stopped from the browser's own "stop sharing" bar.
-      if (pub.source === Track.Source.ScreenShare && current === s && !s.leaving) void reportState(s, { streaming: false });
-      if (pub.source === Track.Source.Camera && current === s && !s.leaving) void stopBackground(s);
+      if (pub.source === Track.Source.ScreenShare && life.current === s && !s.leaving) void reportState(s, { streaming: false });
+      if (pub.source === Track.Source.Camera && life.current === s && !s.leaving) void stopBackground(s);
     })
     .on(RoomEvent.ParticipantPermissionsChanged, (_prev, p: Participant) => {
       if (p === room.localParticipant) onPermissions(s);
@@ -578,7 +568,7 @@ function wire(s: Session) {
 
 /** Plays the cues for changes of the other participants of the call (from `voice.state`). */
 function followOthers(s: Session, key: string): () => void {
-  return followOthersOf(s.target, key, () => s.room.localParticipant.identity, () => current === s, cue);
+  return followOthersOf(s.target, key, () => s.room.localParticipant.identity, () => life.current === s, cue);
 }
 
 /** Follows changes of the MLS group, the node's epoch, the settings and push-to-talk. */
@@ -588,25 +578,21 @@ function follow(s: Session) {
     // Others joining, leaving, dropping or starting a stream/camera: notification sounds.
     followOthers(s, key),
     // The node's epoch is ahead (a commit event may still be on the way): catch up, which re-keys.
-    useVoicePresence.subscribe((now) => {
-      const epoch = now.epochs[key];
-      const local = s.mls.epoch(s.q);
-      if (epoch != null && local != null && epoch > local) void s.mls.catchUp(s.q).catch(() => undefined);
-    }),
+    followEpoch(key, s.q, s.mls),
     useVoiceSettings.subscribe((now, prev) => void applySettings(s, now.settings, prev.settings)),
     // A stream tile appearing or going away changes what is audible while deafened.
     useWatchedStreams.subscribe(() => {
-      if (current === s && useVoice.getState().deafened) applyVolumes(s);
+      if (life.current === s && useVoice.getState().deafened) applyVolumes(s);
     }),
     // "Mute for you" (issue #124) is applied like a volume.
     useLocalMute.subscribe(() => {
-      if (current === s) applyVolumes(s);
+      if (life.current === s) applyVolumes(s);
     }),
   );
 }
 
 async function applySettings(s: Session, next: VoiceSettings, prev: VoiceSettings) {
-  if (current !== s) return;
+  if (life.current !== s) return;
   try {
     await s.pipeline.apply(next);
     if (next.outputDeviceId !== prev.outputDeviceId) {
@@ -655,8 +641,8 @@ async function cleanup(s: Session) {
   s.capture.close();
   s.offs.forEach((off) => off());
   s.offs = [];
-  if (current === s) {
-    current = null;
+  if (life.current === s) {
+    life.current = null;
     batcher.clear();
     clearSoundOverlays();
     set({ streams: {} });
@@ -677,67 +663,24 @@ async function cleanup(s: Session) {
   if (import.meta.env.DEV) delete (window as { __tavrnVoice?: unknown }).__tavrnVoice;
 }
 
-const kept = () => ({ muted: useVoice.getState().muted, deafened: useVoice.getState().deafened });
-
-async function onDisconnected(s: Session, reason?: DisconnectReason) {
-  if (s.leaving) return;
-  const target = s.target;
-  const graceMs = (s.info.reconnect_grace_secs ?? DEFAULT_GRACE_MS / 1000) * 1000;
-  // The node removes a moved participant before it sends `voice.move`: remember the channel for a moment.
-  if (reason === DisconnectReason.PARTICIPANT_REMOVED && !target.call) removed = { target, at: Date.now() };
-  const before = nextId;
-  await cleanup(s);
-  // A move (or another join) took over while the old connection closed.
-  if (nextId !== before) return;
-  if (reason === DisconnectReason.PARTICIPANT_REMOVED && target.call) {
-    // The call ended (the node closes its room): nothing to rejoin.
-    set({ ...IDLE, ...kept() });
-    return;
+/** LiveKit's disconnect reasons in the lifecycle's terms. */
+function disconnectKind(reason?: DisconnectReason): DisconnectKind {
+  switch (reason) {
+    case DisconnectReason.PARTICIPANT_REMOVED:
+      return "participant_removed";
+    case DisconnectReason.ROOM_DELETED:
+      return "room_deleted";
+    case DisconnectReason.CLIENT_INITIATED:
+      return "client_initiated";
+    case DisconnectReason.DUPLICATE_IDENTITY:
+      return "duplicate_identity";
+    default:
+      return "other";
   }
-  if (reason === DisconnectReason.PARTICIPANT_REMOVED) {
-    set({ ...IDLE, ...kept() });
-    // A move arrives as `voice.move` right after the removal; another device of the same user took over
-    // (one voice session per user); otherwise a moderator disconnected us.
-    const id = nextId;
-    await new Promise((r) => setTimeout(r, MOVE_GRACE_MS));
-    if (nextId !== id || current) return;
-    const elsewhere = Object.values(useVoicePresence.getState().channels).some((list) => list.some((p) => p.identity !== s.room.localParticipant.identity && p.identity.startsWith(`${splitIdentity(s.room.localParticipant.identity).address}/`)));
-    useToasts.getState().push({ kind: "warning", title: t(elsewhere ? "voice.continued_elsewhere" : "voice.disconnected_by_moderator") });
-    return;
-  }
-  if (reason === DisconnectReason.ROOM_DELETED || reason === DisconnectReason.CLIENT_INITIATED || reason === DisconnectReason.DUPLICATE_IDENTITY) {
-    set({ ...IDLE, ...kept() });
-    return;
-  }
-  // The connection broke for good (network, LiveKit restart): rejoin with a fresh token for as long as the
-  // node keeps the seat (design note 4.5 item 7), keeping mute/deafen and the MLS epoch (no self update).
-  await rejoin(target, graceMs);
 }
 
-async function rejoin(target: VoiceTarget, graceMs: number) {
-  const schedule = new RejoinSchedule(Date.now(), graceMs);
-  set({ ...IDLE, ...kept(), status: "reconnecting", target });
-  cue("connection_lost", true);
-  for (let delay = schedule.next(Date.now()); delay !== null; delay = schedule.next(Date.now())) {
-    await new Promise((r) => setTimeout(r, delay));
-    // Cancelled (leave) or replaced by another join meanwhile.
-    if (current || useVoice.getState().target !== target || useVoice.getState().status !== "reconnecting") return;
-    try {
-      await connect(target, false, { rejoin: true });
-      return;
-    } catch {
-      if (useVoice.getState().target !== target) return;
-      set({ status: "reconnecting" });
-    }
-  }
-  if (useVoice.getState().target !== target) return;
-  set({ ...IDLE, ...kept(), error: t("voice.error.connection_lost") });
-  useToasts.getState().push({ kind: "warning", title: t("voice.error.connection_lost") });
-}
-
-async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?: boolean; start?: boolean } = {}) {
-  const id = nextId++;
-  set(opts.rejoin ? { target, error: null } : { status: "joining", target, error: null, e2eeBlocked: false });
+async function connect(attempt: Attempt, canCreate: boolean, opts: ConnectOpts) {
+  const { id, target } = attempt;
   // E2EE is mandatory: without insertable streams (or RTCRtpScriptTransform) there is no voice.
   if (!isE2ESupportedSafe()) throw new VoiceError("e2ee_unsupported");
   vjMark("connect_start", { rejoin: !!opts.rejoin });
@@ -745,9 +688,10 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
   const media = startMedia(target);
   const mls = await getMls().catch(() => null);
   vjMark("mls_ready");
-  if (!mls) {
+  if (!mls || attempt.cancelled) {
     await media.release();
-    throw new VoiceError("locked");
+    if (!mls) throw new VoiceError("locked");
+    attempt.check();
   }
   const q = qualify(target.domain, target.channelId);
   const api = apiFor(target.domain);
@@ -777,11 +721,15 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
   musicGuess.set(targetKey(target), music);
   let pipeline: MicPipeline | null = null;
   let room: Room | null = null;
+  let session: Session | null = null;
   const audio = media.audio;
   try {
+    // A leave while the node answered: nothing is opened, the seat goes back (below).
+    attempt.check();
     const s0 = settings();
     pipeline = await media.pipeline.take(music);
     vjMark("capture_ready");
+    attempt.check();
     // The key of the current epoch for what the others send meanwhile; the session's own (fresh) key follows with the
     // self update through the re-key subscription below, before anything is published (`publishMic`).
     const keyProvider = new TavrnKeyProvider();
@@ -847,14 +795,15 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
       streams: new StreamSubscriptions(
         () => room!.remoteParticipants.values(),
         (joined) => {
-          if (current === s) set({ streams: Object.fromEntries([...joined].map((id) => [id, true as const])) });
+          if (life.current === s) set({ streams: Object.fromEntries([...joined].map((id) => [id, true as const])) });
         },
       ),
       nativeScreen: null,
       fresh: flow.fresh,
     };
     s.nativeScreen = nativeScreenFor(s);
-    current = s;
+    session = s;
+    life.current = s;
     s.pipeline.onPtt = (open) => s.pttCues.mic(open);
     if (s.pttHeld) applyPtt(s);
     // Re-key on every epoch change of the group from now on; an epoch that changed since the key above was
@@ -872,6 +821,7 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
     vjMark("room_created");
     await room.setE2EEEnabled(true);
     vjMark("e2ee_enabled");
+    attempt.check();
     if (!room.localParticipant.isE2EEEnabled) throw new VoiceError("e2ee_failed");
     // Extra addresses of the media server (TAVRN_RTC_ADVERTISE_IPS, VOICE.md §10.2) for this call's connections.
     setIcePolicy({ aliases: info.ice_aliases ?? [] });
@@ -879,6 +829,7 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
     vjMark("lk_connect_start");
     await room.connect(info.url, info.token, { autoSubscribe: false });
     vjMark("lk_connect_done");
+    attempt.check();
     s.streams.applyAll();
     await confirmE2ee(room);
     vjMark("e2ee_confirmed");
@@ -886,14 +837,17 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
     await flow.fresh;
     await keyCurrent(s);
     vjMark("fresh_key_ready", { epoch: mls.epoch(q) });
-    if (current !== s) return;
+    attempt.check();
+    if (life.current !== s) return;
     await room.startAudio().catch(() => undefined);
     vjMark("start_audio_done");
+    attempt.check();
     const canSpeak = canPublish(room, Track.Source.Microphone);
     set({ status: "connected", identity: room.localParticipant.identity, limits: info.limits, canSpeak, serverMuted: !canSpeak, e2ee: true });
     vjMark("store_connected");
     if (canSpeak) await publishMic(s);
     vjMark("mic_published");
+    attempt.check();
     applyVolumes(s);
     refreshMedia(s);
     follow(s);
@@ -907,14 +861,15 @@ async function connect(target: VoiceTarget, canCreate: boolean, opts: { rejoin?:
     vjMark("state_reported");
     if (import.meta.env.DEV) exposeForTests(s);
   } catch (e) {
-    const s = current;
-    if (s && s.id === id) await cleanup(s);
-    else {
+    // The session closes once: a leave may have closed it already (cleanup closes the room and the pipeline).
+    if (session) {
+      if (!session.leaving) await cleanup(session);
+    } else {
       await room?.disconnect().catch(() => undefined);
       await pipeline?.close();
     }
     // The media (playback context, worker, an untaken pipeline) go back; a failed rejoin keeps the seat (the node
-    // holds it for the grace period), a failed join frees it.
+    // holds it for the grace period), a failed or cancelled join frees it.
     await flow.abandon();
     throw e;
   }
@@ -968,85 +923,33 @@ function isE2ESupportedSafe(): boolean {
 
 // ---------------------------------------------------------------- public API (via index.ts)
 
+const life = new SessionLifecycle<Session>({ label: "", connect, cleanup, identity: (s) => s.room.localParticipant.identity, mark: vjMark }, cue);
+
 /** Joins a voice channel (leaving the current one first: a device is in at most one channel). */
 export function join(target: VoiceTarget, opts: { canCreate: boolean; start?: boolean }): Promise<void> {
-  const run = async () => {
-    if (current && sameTarget(current.target, target)) return;
-    // Switching channels: the node's leave of the previous one runs in the background (BackgroundLeaves).
-    if (current) await leaveForSwitch(current);
-    await backgroundLeaves.settled(targetKey(target));
-    try {
-      await connect(target, opts.canCreate, { start: opts.start });
-    } catch (e) {
-      console.warn("voice: joining failed", e);
-      const blocked = e instanceof VoiceError && e.code === "e2ee_unsupported";
-      set({ ...IDLE, muted: useVoice.getState().muted, deafened: useVoice.getState().deafened, error: voiceErrorMessage(e), e2eeBlocked: blocked });
-      throw e;
-    }
-  };
-  const next = (pending ?? Promise.resolve()).then(run, run);
-  pending = next.catch(() => undefined);
-  return next;
+  return life.join(target, opts);
 }
 
-/** Leaves of earlier channels on their way to the node while the next one is joined. */
-const backgroundLeaves = new BackgroundLeaves();
-const targetKey = (t: VoiceTarget) => `${t.call ? "call" : "channel"}:${t.domain}/${t.roomId}/${t.channelId}`;
-
-/** Ends the session on this device at once; the node learns it in the background (the next join does not wait). */
-async function leaveForSwitch(s: Session) {
-  await cleanup(s);
-  cue("leave", true);
-  backgroundLeaves.start(targetKey(s.target), () => s.ep.leave());
-}
-
-/** Leaves the call (LiveKit and the node); also cancels a running rejoin. */
-export async function leave(): Promise<void> {
-  const s = current;
-  if (!s) {
-    const { target, status } = useVoice.getState();
-    set({ ...IDLE, ...kept() });
-    // Cancelled while rejoining: give up the seat the node keeps for us.
-    if (target && status === "reconnecting") await endpoints(apiFor(target.domain), target).leave().catch(() => undefined);
-    return;
-  }
-  vjMark("leave_start");
-  await cleanup(s);
-  cue("leave", true);
-  await s.ep.leave().catch(() => undefined);
-  vjMark("leave_done");
-  set({ ...IDLE, muted: useVoice.getState().muted, deafened: useVoice.getState().deafened });
+/** Leaves the call (LiveKit and the node); also cancels a join that is still running and a rejoin. */
+export function leave(): Promise<void> {
+  return life.leave();
 }
 
 /** `voice.move` of the room's node: rejoin in the target channel (other MLS group, other key). */
-export async function followMove(domain: string, data: { room_id: string; from_channel_id: string; channel_id: string }): Promise<void> {
-  // The current channel, or the one LiveKit just removed us from (the event may arrive after the removal).
-  const recent = removed && Date.now() - removed.at < MOVE_GRACE_MS ? removed.target : null;
-  const target = useVoice.getState().target ?? recent;
-  removed = null;
-  if (!target || target.call || target.domain !== domain || target.roomId !== data.room_id || target.channelId !== data.from_channel_id) return;
-  const s = current;
-  if (s) await cleanup(s);
-  await join({ domain, roomId: data.room_id, channelId: data.channel_id }, { canCreate: true }).catch(() => undefined);
+export function followMove(domain: string, data: { room_id: string; from_channel_id: string; channel_id: string }): Promise<void> {
+  return life.followMove(domain, data);
 }
 
 export async function setMuted(muted: boolean): Promise<void> {
-  const s = current;
-  const state = useVoice.getState();
-  if (!muted && state.serverMuted) {
-    useToasts.getState().push({ kind: "warning", title: t("errors.voice.server_muted") });
-    return;
-  }
-  // Unmuting while deafened also undeafens (as everywhere else).
-  const deafened = !muted && state.deafened ? false : state.deafened;
-  set(muted ? { muted, deafened, transmitting: false } : { muted, deafened, mutedTalk: false });
-  if (s) cue(muted ? "mute" : "unmute", true);
-  if (!s) return;
+  // The rules (refused while server-muted, unmuting while deafened also undeafens) are the lifecycle's.
+  const r = life.mute(muted);
+  const s = r?.s;
+  if (!r || !s) return;
   // The own ring goes dark at once (the paused gate reports nothing any more).
   emitSpeakers(s);
   if (!(await applyMute(s, muted))) return;
-  if (deafened !== state.deafened) applyVolumes(s);
-  await reportState(s, { muted, ...(deafened !== state.deafened ? { deafened } : {}) });
+  if (r.deafenChanged) applyVolumes(s);
+  await reportState(s, { muted, ...(r.deafenChanged ? { deafened: r.deafened } : {}) });
 }
 
 /**
@@ -1059,7 +962,7 @@ async function applyMute(s: Session, muted: boolean): Promise<boolean> {
     try {
       await s.capture.setMuted(false);
     } catch (e) {
-      if (current !== s) return false;
+      if (life.current !== s) return false;
       set({ muted: true, transmitting: false });
       useToasts.getState().push({ kind: "warning", title: voiceErrorMessage(e) });
       await reportState(s, { muted: true });
@@ -1087,16 +990,8 @@ async function applyMutedCapture(s: Session, muted: boolean): Promise<void> {
 }
 
 export async function setDeafened(deafened: boolean): Promise<void> {
-  const s = current;
-  const state = useVoice.getState();
-  // A deafened client also mutes itself (VOICE.md §5); undeafening restores the earlier mute state.
-  let muted = state.muted;
-  if (deafened) {
-    if (s) s.mutedBeforeDeafen = state.muted;
-    muted = true;
-  } else if (s) muted = s.mutedBeforeDeafen || state.serverMuted;
-  set({ deafened, muted });
-  if (s) cue(deafened ? "deafen" : "undeafen", true);
+  // A deafened client also mutes itself (VOICE.md §5); undeafening restores the earlier mute state (the lifecycle).
+  const { s, muted } = life.deafen(deafened);
   if (!s) return;
   emitSpeakers(s);
   applyVolumes(s);
@@ -1110,7 +1005,7 @@ export async function setDeafened(deafened: boolean): Promise<void> {
 const bitrate = (w: number, h: number, fps: number, factor: number) => Math.min(8_000_000, Math.round(w * h * fps * factor));
 
 export async function setCamera(on: boolean): Promise<void> {
-  const s = current;
+  const s = life.current;
   if (!s) return;
   if (on && !s.info.limits.camera.enabled) return;
   try {
@@ -1153,7 +1048,7 @@ export interface ScreenShareOptions {
  * whose screen publisher shares (the Android app, VOICE.md §4b) has its stream joined there.
  */
 export function joinStream(identity: string): void {
-  const s = current;
+  const s = life.current;
   if (!s || identity === s.room.localParticipant.identity) return;
   const target = streamIdentity(identity, (id) => !!useVoice.getState().media[id]?.screen);
   if (s.streams.join(target)) refreshMedia(s);
@@ -1170,7 +1065,7 @@ function nativeScreenFor(s: Session): NativeScreenShare | null {
     key: () => s.mls.voiceKey(s.q),
     notice: () => ({ title: t("voice.screen.notice_title"), text: t("voice.screen.notice_text"), stop: t("voice.screen.notice_stop") }),
     onState: (state, reason) => {
-      if (current !== s) return;
+      if (life.current !== s) return;
       const before = useVoice.getState().nativeScreen;
       set({ nativeScreen: state });
       if (state === "live" && before !== "live") cue("stream_on", true);
@@ -1194,7 +1089,7 @@ async function setNativeScreenShare(s: Session, native: NativeScreenShare, on: b
 
 /** Leaves the stream of `identity` again: nothing of it is received, its tile is a placeholder. */
 export function leaveStream(identity: string): void {
-  const s = current;
+  const s = life.current;
   if (!s) return;
   s.streams.leave(identity);
   if (useVoice.getState().focus === identity) set({ focus: null });
@@ -1202,7 +1097,7 @@ export function leaveStream(identity: string): void {
 }
 
 export async function setScreenShare(on: boolean, opts: ScreenShareOptions = { audio: "none", resolution: "1080p", fps: 30 }): Promise<void> {
-  const s = current;
+  const s = life.current;
   if (!s) return;
   const limit = s.info.limits.screenshare;
   if (on && !limit.enabled) return;
@@ -1246,7 +1141,7 @@ export type PlayableSound = Pick<Sound, "id"> & { node?: string; emoji?: string 
  * the public route of the node hosting the clip.
  */
 export async function playSound(sound: PlayableSound): Promise<void> {
-  const s = current;
+  const s = life.current;
   const state = useVoice.getState();
   if (!s || state.muted || !state.canSpeak) return;
   const host = sound.node && sound.node !== s.target.domain ? sound.node : undefined;
@@ -1271,7 +1166,7 @@ export async function playSound(sound: PlayableSound): Promise<void> {
     useToasts.getState().push({ kind: "warning", title: t("voice.soundboard.unavailable") });
     return;
   }
-  if (current !== s) return;
+  if (life.current !== s) return;
   signalSound(s, sound, buffer.duration * 1000, host);
   await s.pipeline.playClip(buffer, settings().outputVolume / 100);
 }
@@ -1296,7 +1191,7 @@ function signalSound(s: Session, sound: PlayableSound, durationMs: number, host?
  * channel (the node grants attribute updates only then); with push-to-talk it also opens the microphone.
  */
 export async function setPriority(on: boolean): Promise<void> {
-  const s = current;
+  const s = life.current;
   if (!s) return;
   const local = s.room.localParticipant;
   if (on && !local.permissions?.canUpdateMetadata) return;
@@ -1309,7 +1204,7 @@ export async function setPriority(on: boolean): Promise<void> {
     await local.setAttributes({ priority: on ? "1" : "" });
   } catch (e) {
     console.warn("voice: priority attribute not set", e);
-    if (on && current === s) {
+    if (on && life.current === s) {
       set({ prioritySelf: false });
       publishPriority(s);
       s.pttCues.priority(false);
@@ -1328,7 +1223,7 @@ function applyPtt(s: Session): void {
 
 /** Push-to-talk held or released (the hotkey, the hold button of phones). */
 export function pushToTalk(pressed: boolean): void {
-  const s = current;
+  const s = life.current;
   if (!s) return;
   s.pttHeld = pressed;
   applyPtt(s);
@@ -1336,7 +1231,7 @@ export function pushToTalk(pressed: boolean): void {
 
 /** Attaches a participant's camera or screen video to an element; returns the detach function. */
 export function attachVideo(identity: string, source: "camera" | "screen", el: HTMLVideoElement): () => void {
-  const s = current;
+  const s = life.current;
   if (!s) return () => undefined;
   const p: Participant | undefined = identity === s.room.localParticipant.identity ? s.room.localParticipant : s.room.getParticipantByIdentity(identity);
   const track = p?.getTrackPublication(source === "camera" ? Track.Source.Camera : Track.Source.ScreenShare)?.track;
@@ -1352,7 +1247,7 @@ export function attachVideo(identity: string, source: "camera" | "screen", el: H
 async function startBackground(s: Session) {
   await stopBackground(s);
   const conf = settings();
-  if (conf.background === "none" || current !== s) return;
+  if (conf.background === "none" || life.current !== s) return;
   const track = s.room.localParticipant.getTrackPublication(Track.Source.Camera)?.track;
   if (!(track instanceof LocalVideoTrack)) return;
   try {
@@ -1484,7 +1379,7 @@ function exposeForTests(s: Session) {
       s.leaving = true;
       await s.room.disconnect();
       s.leaving = false;
-      await onDisconnected(s, DisconnectReason.SIGNAL_CLOSE);
+      await life.onDisconnected(s, disconnectKind(DisconnectReason.SIGNAL_CLOSE));
     },
   };
   (window as { __tavrnVoice?: TestHooks }).__tavrnVoice = hooks;

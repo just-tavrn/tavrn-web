@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { App } from "./App";
 import "./styles.css";
-import { useLocale } from "./i18n";
+import { loadLocale, useLocale } from "./i18n";
 import { registerServiceWorker } from "./lib/push";
 import { initPlatform } from "./platform";
 import { startHotkeys } from "./voice/hotkeys";
@@ -23,8 +23,8 @@ const root = document.getElementById("root");
 if (!root) throw new Error("#root fehlt in index.html");
 
 // The platform first (browser, or the desktop app with the node the user picked): every API call depends on it.
-void initPlatform()
-  .catch((e: unknown) => console.error("platform detection failed", e))
+// The chosen language's messages load at the same time (English is in the bundle, the others are chunks of their own).
+void Promise.all([initPlatform().catch((e: unknown) => console.error("platform detection failed", e)), loadLocale(useLocale.getState().locale).catch(() => undefined)])
   .then(() => {
     // Web push only (no caching, no offline mode): the worker shows pushes of the home node while no tab is open.
     void registerServiceWorker();

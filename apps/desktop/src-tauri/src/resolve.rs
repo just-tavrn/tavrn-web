@@ -161,11 +161,16 @@ pub fn validate(body: &[u8], domain: &str, dev: bool) -> Option<Resolved> {
         Some(v) => endpoint(Some(v), &["https", "http"], dev)?,
         None => api.clone(),
     };
+    // The web client's origin anchors the sign-in window and native passkeys: one not bound to the node (another
+    // site's origin) is replaced by the API's origin, as a document without `web` (crate::node_url::web_bound).
+    let api_origin = api.origin().ascii_serialization();
+    let web = web.origin().ascii_serialization();
+    let web = if crate::node_url::web_bound(&api_origin, &web, Some(named)) { web } else { api_origin };
     Some(Resolved {
         domain: named.to_string(),
         api: api.as_str().trim_end_matches('/').to_string(),
         ws: ws.as_str().trim_end_matches('/').to_string(),
-        web: web.origin().ascii_serialization(),
+        web,
         source: Source::WellKnown,
     })
 }
@@ -472,6 +477,23 @@ mod tests {
             }
         );
         assert!(fake.srv_asked().is_empty(), "SRV only when the domain serves no document");
+    }
+
+    #[test]
+    fn a_web_origin_on_another_site_is_replaced_by_the_api_origin() {
+        let mut d = doc("home.example", "app.home.example");
+        d["web"] = serde_json::json!("https://tavrn.org");
+        let found = run("home.example", &Fake::default().answer(WK, 200, d)).unwrap_or_else(|e| unreachable!("{e:?}"));
+        assert_eq!(found.web, "https://app.home.example");
+        // Delegation to another domain: the web client only on the node's own host.
+        let mut d = doc("home.example", "hosting.example");
+        d["web"] = serde_json::json!("https://www.home.example");
+        let found = run("home.example", &Fake::default().answer(WK, 200, d)).unwrap_or_else(|e| unreachable!("{e:?}"));
+        assert_eq!(found.web, "https://hosting.example");
+        let mut d = doc("home.example", "api.home.example");
+        d["web"] = serde_json::json!("https://home.example");
+        let found = run("home.example", &Fake::default().answer(WK, 200, d)).unwrap_or_else(|e| unreachable!("{e:?}"));
+        assert_eq!(found.web, "https://home.example", "within the identity domain");
     }
 
     #[test]

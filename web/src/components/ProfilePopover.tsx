@@ -235,9 +235,10 @@ export function ProfileCard({ address, node, anchor, onClose }: { address: strin
 
 /**
  * A name or avatar that opens the profile card. `node` = the node that served `user` (default: the
- * current scope).
+ * current scope). `onOpen`: the parent shows the card itself, for lists that move their rows between parents (the
+ * member list's sections), where the card of a remounted trigger would close (tavrn-web#171).
  */
-export function ProfileTrigger({ user, node, children, className = "", testId }: { user: Pick<User, "address" | "display_name">; node?: string | null; children: ReactNode; className?: string; testId?: string }) {
+export function ProfileTrigger({ user, node, children, className = "", testId, onOpen }: { user: Pick<User, "address" | "display_name">; node?: string | null; children: ReactNode; className?: string; testId?: string; onOpen?: (anchor: AnchorRect) => void }) {
   const t = useT();
   const [anchor, setAnchor] = useState<AnchorRect | null>(null);
   const [open, setOpen] = useState(false);
@@ -251,7 +252,9 @@ export function ProfileTrigger({ user, node, children, className = "", testId }:
         data-address={user.address}
         onClick={(e) => {
           e.stopPropagation();
-          setAnchor((e.currentTarget as HTMLElement).getBoundingClientRect());
+          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          if (onOpen) return onOpen(rect);
+          setAnchor(rect);
           setOpen(true);
         }}
       >
