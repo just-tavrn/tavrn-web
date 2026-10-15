@@ -57,8 +57,9 @@ export function useE2eeConversation(opts: {
   // Acknowledging a changed security key lets its devices count (ENCRYPTION.md §3.3): add them and check again.
   const changedKey = useMlsUi((s) => Object.keys(s.changedKeys).sort().join(","));
   const [state, setState] = useState<Omit<E2eeConversation, "tick" | "rejoined">>({ phase: "joining", mls: null, waiting: [], ghosts: [], error: null });
-  const membersKey = opts.members ? [...opts.members].sort().join(",") : null;
-  const directKey = opts.direct ? [...opts.direct].sort().join(",") : "";
+  // The member lists change with their queries only: sorted once per list, not on every render (big rooms).
+  const membersKey = useMemo(() => (opts.members ? [...opts.members].sort().join(",") : null), [opts.members]);
+  const directKey = useMemo(() => (opts.direct ? [...opts.direct].sort().join(",") : ""), [opts.direct]);
   const { conversationId, encrypted, canCreate, mayManage } = opts;
   const noBots = !!opts.noBots;
   const members = opts.members;
