@@ -145,7 +145,7 @@ export function VoiceStatusLine({ roomId, channel, canEdit }: { roomId: string; 
   return (
     <div className="flex min-w-0 items-center gap-1">
       {status ? (
-        <p className="truncate text-xs text-fg-2" data-testid="voice-status" title={status}>
+        <p className="select-text truncate text-xs text-fg-2" data-testid="voice-status" title={status}>
           {status}
         </p>
       ) : (

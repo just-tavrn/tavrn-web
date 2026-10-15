@@ -122,6 +122,17 @@ First public release of the web client and the desktop apps.
 
 ### Changed
 
+- **Channel sidebar sizes** (#185): channel rows have 16 px medium text (was 14 px) with 20 px SVG kind icons (was 14 px
+  glyphs and emoji) of one shared size for every row kind (text, announcement, forum, files, voice, welcome, "Create
+  channel"), 8 px gap, 34 px rows on desktop (was 40 px) and 44 px touch targets; category labels 12 px (was 11 px);
+  the muted and bot markers are 16 px SVGs instead of small emoji; voice participants 14 px (was 13 px); the room
+  header's name, the home sidebar's links and the direct message rows (32 px avatars) follow (docs/CLIENT.md "UI
+  conventions").
+- **No text selection on the app chrome** (#186): pressing and dragging over the room rail, the sidebars, the member
+  list, the headers, the settings navigation, tab bars, voice controls, context menus and dialog titles no longer
+  paints a text selection (`user-select: none`, also in WebKit); messages, the channel topic, code, dialog bodies,
+  documents and fields stay selectable, and images in the chrome no longer drag a ghost image (docs/CLIENT.md "UI
+  conventions").
 - **Faster message list**: decryption, signature checks and the device archive handle only new or changed messages
   (unchanged rows no longer re-render), poll votes are checked once per vote, the typing line renders on its own,
   the composer measures its height only while it can grow, rendered markdown (emojis and mentions in one pass) is

@@ -48,14 +48,14 @@ export function AdminPage() {
   if (tab === "reports" && node.isSuccess && !reports) return <Navigate to="/admin/overview" replace />;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-4">
+      <header className="flex h-12 shrink-0 select-none items-center gap-2 border-b border-line px-4">
         <button type="button" onClick={() => navigate("/")} className="min-h-10 min-w-10 rounded-md text-fg-2 hover:bg-bg-3 hover:text-fg-0" aria-label={t("shell.home")}>
           ←
         </button>
         <h1 className="truncate text-sm font-semibold">{t("admin.title")}</h1>
       </header>
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <nav aria-label={t("settings.sections")} className="flex shrink-0 gap-1 overflow-x-auto border-b border-line p-2 md:w-48 md:flex-col md:border-b-0 md:border-r">
+        <nav aria-label={t("settings.sections")} className="flex shrink-0 select-none gap-1 overflow-x-auto border-b border-line p-2 md:w-48 md:flex-col md:border-b-0 md:border-r">
           {tabs.map((x) => (
             <NavLink key={x} to={`/admin/${x}`} data-testid={`admin-tab-${x}`} className={({ isActive }) => `whitespace-nowrap rounded-md px-3 py-2 text-sm ${isActive ? "bg-accent-soft text-fg-0" : "text-fg-1 hover:bg-bg-3/60 hover:text-fg-0"}`}>
               {t(TAB_LABEL[x] ?? `admin.tab.${x}`)}

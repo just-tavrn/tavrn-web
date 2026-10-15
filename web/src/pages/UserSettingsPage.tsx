@@ -33,14 +33,14 @@ export function UserSettingsPage() {
   if (!tabs().includes(tab as (typeof TABS)[number])) return <Navigate to="/settings/profile" replace />;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-4">
+      <header className="flex h-12 shrink-0 select-none items-center gap-2 border-b border-line px-4">
         <button type="button" onClick={() => navigate("/")} className="min-h-10 min-w-10 rounded-md text-fg-2 hover:bg-bg-3 hover:text-fg-0" aria-label={t("shell.home")}>
           ←
         </button>
         <h1 className="truncate text-sm font-semibold">{t("user.settings")}</h1>
       </header>
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <nav aria-label={t("settings.sections")} className="flex shrink-0 gap-1 overflow-x-auto border-b border-line p-2 md:w-56 md:flex-col md:border-b-0 md:border-r">
+        <nav aria-label={t("settings.sections")} className="flex shrink-0 select-none gap-1 overflow-x-auto border-b border-line p-2 md:w-56 md:flex-col md:border-b-0 md:border-r">
           {admin && (
             <>
               {/* Node admins of the home node: the node administration at the top (also in the account menu). */}

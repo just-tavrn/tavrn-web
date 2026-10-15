@@ -371,7 +371,7 @@ function PasswordStep({ onPreauth, onSession }: { onPreauth: (resp: PreAuthRespo
         </p>
       )}
       {mode === "login" && <SsoButton next={next} onHandoff={ssoOnNodePage} />}
-      <div role="tablist" aria-label={t("a11y.auth_mode")} onKeyDown={tabListKeyDown} className={`grid grid-cols-2 rounded-md bg-bg-0 p-1 text-sm ${mode === "login" && node.data?.sso ? "mt-4" : ""}`}>
+      <div role="tablist" aria-label={t("a11y.auth_mode")} onKeyDown={tabListKeyDown} className={`grid select-none grid-cols-2 rounded-md bg-bg-0 p-1 text-sm ${mode === "login" && node.data?.sso ? "mt-4" : ""}`}>
         {(["login", "register"] as Mode[]).map((m) => (
           <button
             key={m}

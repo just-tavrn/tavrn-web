@@ -28,7 +28,9 @@ import { useChannelMenu } from "../components/menus/ChannelMenu";
 import { mutedNow, useNotifications } from "../stores/notifications";
 import { DEFAULT_EXPIRY_HOURS, expiryChoices } from "../lib/inviteExpiry";
 import { useRoomMenu } from "../components/menus/RoomMenu";
-import { ChevronDownIcon } from "../components/icons";
+import { AnnouncementIcon, BellOffIcon, ChevronDownIcon, FolderIcon, ForumIcon, HashIcon, PlusIcon, SparkleIcon } from "../components/icons";
+import { SpeakerIcon } from "../voice/ui/icons";
+import { SIDEBAR_CATEGORY, SIDEBAR_ICON_SLOT, SIDEBAR_ROW, sidebarRowTone } from "../components/sidebarRow";
 import { badgeText, useCapabilities, useOpenRoomReports } from "../moderation/hooks";
 import { patchRoom, withChannel } from "../lib/roomCache";
 
@@ -109,7 +111,7 @@ const ChannelLink = memo(function ChannelLink({ room, channel, marks, onClick }:
         onClick={onClick}
         data-unread={unread || undefined}
         {...menu.triggerProps}
-        className={({ isActive }) => `group/ch flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-sm ${isActive ? "bg-accent-soft text-fg-0" : unread ? "text-fg-0 hover:bg-bg-3/60" : "text-fg-1 hover:bg-bg-3/60 hover:text-fg-0"}`}
+        className={({ isActive }) => `group/ch ${SIDEBAR_ROW} min-w-0 flex-1 ${sidebarRowTone(isActive, unread)}`}
       >
         <ChannelIcon kind={channel.kind} encrypted={channel.encrypted} />
         <span className={`min-w-0 flex-1 truncate ${unread ? "font-semibold" : ""} ${restricted ? "text-fg-2 group-aria-[current=page]/ch:text-fg-0" : ""}`}>{channelName(channel)}</span>
@@ -128,14 +130,14 @@ const ChannelLink = memo(function ChannelLink({ room, channel, marks, onClick }:
   );
 });
 
-/** A small bell-off glyph on muted channels (design note 4.11). */
+/** A 16 px bell-off mark on muted channels (design note 4.11). */
 function MutedMark({ conversationId, roomId }: { conversationId: string; roomId: string }) {
   const t = useT();
   const muted = useNotifications((s) => mutedNow(s.settings.channels[conversationId]?.muted_until) || mutedNow(s.settings.rooms[roomId]?.muted_until));
   if (!muted) return null;
   return (
-    <span role="img" className="shrink-0 text-[11px] text-fg-2" title={t("notify.muted")} aria-label={t("notify.muted")} data-testid="channel-muted">
-      🔕
+    <span role="img" className="inline-flex shrink-0 text-fg-2" title={t("notify.muted")} aria-label={t("notify.muted")} data-testid="channel-muted">
+      <BellOffIcon size={16} />
     </span>
   );
 }
@@ -177,8 +179,8 @@ function sidebarView(r: RoomDetail, userId: string, voiceChannelId: string | nul
 const ChannelGroup = memo(function ChannelGroup({ room, name, channels, access, onNavigate }: { room: RoomDetail; name: string | null; channels: Channel[]; access: Map<string, ChannelAccess>; onNavigate: () => void }) {
   return (
     <div className="mb-2">
-      {name && <div className="px-2 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-fg-2">{name}</div>}
-      <ul>
+      {name && <div className={`px-2 pb-1 pt-3 ${SIDEBAR_CATEGORY}`}>{name}</div>}
+      <ul className="space-y-0.5">
         {channels.map((c) => (
           <li key={c.id}>
             {c.kind === "voice" ? <VoiceRowWithMenu room={room} channel={c} onNavigate={onNavigate} access={access.get(c.id)} /> : <ChannelLink room={room} channel={c} marks={access.get(c.id)?.marks ?? NO_MARKS} onClick={onNavigate} />}
@@ -189,13 +191,18 @@ const ChannelGroup = memo(function ChannelGroup({ room, name, channels, access, 
   );
 });
 
+/** The SVG of a channel kind at the shared sidebar icon size (20 px, `sidebar-icon` in styles.css). */
+export function ChannelKindIcon({ kind, className = "" }: { kind: string; className?: string }) {
+  const Icon = kind === "voice" ? SpeakerIcon : kind === "announcement" ? AnnouncementIcon : kind === "forum" ? ForumIcon : kind === "files" ? FolderIcon : kind === "system" ? SparkleIcon : HashIcon;
+  return <Icon className={`sidebar-icon ${className}`} data-testid="channel-kind-icon" data-icon={kind} />;
+}
+
 function ChannelIcon({ kind, encrypted }: { kind: string; encrypted: boolean }) {
   const t = useT();
-  const icon = kind === "voice" ? "🔊" : kind === "announcement" ? "📣" : kind === "forum" ? "🗂" : kind === "files" ? "📁" : kind === "system" ? "👋" : "#";
-  // The kind glyph and a 16 px lock slot (empty for voice and the welcome channel, so the names stay aligned).
+  // The kind icon and a 16 px lock slot (empty for the welcome channel, so the names stay aligned).
   return (
-    <span className="flex w-9 shrink-0 items-center gap-1 text-fg-2">
-      <span aria-hidden="true" className="w-4 text-center">{icon}</span>
+    <span className={`${SIDEBAR_ICON_SLOT} text-fg-2`}>
+      <ChannelKindIcon kind={kind} />
       {kind !== "voice" && kind !== "system" ? encrypted ? <LockMark testId="channel-lock" /> : <LockMark open title={t("channel.unencrypted")} testId="channel-unlocked" /> : <span className="w-4" aria-hidden="true" />}
     </span>
   );
@@ -244,18 +251,18 @@ export function ChannelSidebar({ roomId }: { roomId: string }) {
           >
             <RoomIcon room={r} size={28} testId="room-header-icon" />
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-semibold text-fg-0" data-testid="room-name">
+              <span className="block truncate text-base font-semibold leading-5 text-fg-0" data-testid="room-name">
                 {r.name}
               </span>
               {/* Rooms of other nodes always show their node (design note 9d). */}
               {!node.home && (
-                <span className="block truncate text-[11px] font-normal text-fg-2" data-testid="room-node" title={t("node.room_on", { domain: node.domain })}>
+                <span className="block truncate text-xs font-normal text-fg-2" data-testid="room-node" title={t("node.room_on", { domain: node.domain })}>
                   {node.domain}
                 </span>
               )}
             </span>
             <span className="relative flex h-6 w-6 shrink-0 items-center justify-center text-fg-2" aria-hidden="true">
-              <ChevronDownIcon size={18} />
+              <ChevronDownIcon size={20} />
               {openReports && (
                 <span className="absolute -right-1.5 -top-1.5 min-w-4 rounded-full bg-danger-solid px-1 text-center text-[10px] font-semibold leading-4 text-white" data-testid="room-reports-badge">
                   {openReports}
@@ -268,7 +275,7 @@ export function ChannelSidebar({ roomId }: { roomId: string }) {
       </div>
       <nav aria-label={t("shell.channels")} className="p-2">
         {pinned.length > 0 && (
-          <ul className="mb-2" data-testid="pinned-channels">
+          <ul className="mb-2 space-y-0.5" data-testid="pinned-channels">
             {pinned.map((c) => (
               <li key={c.id}>
                 <ChannelLink room={r} channel={c} marks={access.get(c.id)?.marks ?? NO_MARKS} onClick={closeNav} />
@@ -280,8 +287,11 @@ export function ChannelSidebar({ roomId }: { roomId: string }) {
           <ChannelGroup key={g.id ?? "none"} room={r} name={g.name} channels={g.channels} access={access} onNavigate={closeNav} />
         ))}
         {canManageChannels && (
-          <button type="button" onClick={() => setCreateOpen(true)} className="mt-1 flex min-h-10 w-full items-center gap-2 rounded-md px-2 text-sm text-fg-2 hover:bg-bg-3/60 hover:text-fg-0">
-            <span className="w-5 text-center">+</span> {t("channel.create")}
+          <button type="button" onClick={() => setCreateOpen(true)} className={`mt-1 w-full ${SIDEBAR_ROW} text-fg-2 hover:bg-bg-3/60 hover:text-fg-0`}>
+            <span className={SIDEBAR_ICON_SLOT}>
+              <PlusIcon className="sidebar-icon" data-testid="channel-kind-icon" data-icon="create" />
+            </span>
+            {t("channel.create")}
           </button>
         )}
       </nav>

@@ -2,7 +2,9 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
+import type { Message } from "@tavrn/sdk";
 import { AppShell } from "./AppShell";
+import { MessageList } from "./MessageList";
 
 describe("AppShell (responsive)", () => {
 
@@ -44,5 +46,23 @@ describe("AppShell (responsive)", () => {
     render(<AppShell aside={<span>Mitglied A</span>}>Inhalt</AppShell>);
     expect(screen.getByTestId("members-drawer")).not.toHaveClass("hidden");
     expect(screen.getByTestId("app-shell").className).toContain("xl:grid-cols-[72px_240px_1fr_240px]");
+  });
+});
+
+describe("AppShell (no text selection on the chrome, tavrn-web#186)", () => {
+  it("the rail, the sidebar, the member list and the top bar are not selectable; the message list is", () => {
+    const message: Message = { id: "m1", conversation_id: "c1", author: "alice@t.local", author_id: "u1", device_id: "d1", encrypted: false, format: 1, epoch: null, content: { type: "text", body: "Kopier mich" }, reply_to_id: null, thread_id: null, mentions: [], mentions_everyone: false, created_at: new Date().toISOString(), edited_at: null, attachments: [], reactions: [], pinned: false };
+    render(
+      <AppShell rail={<span>Räume</span>} sidebar={<span>Channelliste</span>} aside={<span>Mitglied A</span>}>
+        <MessageList messages={[message]} currentUserId="u2" canManage={false} hasMore={false} />
+      </AppShell>,
+    );
+    expect(screen.getByRole("navigation", { name: "Räume" })).toHaveClass("select-none");
+    expect(screen.getByRole("complementary", { name: "Channels" })).toHaveClass("select-none");
+    expect(screen.getByTestId("members-drawer")).toHaveClass("select-none");
+    expect(screen.getByTestId("nav-toggle").parentElement).toHaveClass("select-none");
+    expect(screen.getByTestId("message-list").closest(".select-none")).toBeNull();
+    expect(screen.getByText("Kopier mich").closest(".select-none")).toBeNull();
+    expect(screen.getByRole("main")).not.toHaveClass("select-none");
   });
 });

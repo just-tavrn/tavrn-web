@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useT } from "../i18n";
 import { confirmDialog } from "./Confirm";
-import { GroupOffIcon, LockIcon, NoEntryIcon, UnlockIcon } from "./icons";
+import { BotIcon, BotOffIcon, GroupOffIcon, LockIcon, NoEntryIcon, UnlockIcon } from "./icons";
 import { acknowledgeKeyChange, useMlsUi } from "../stores/mls";
 import { formatCount, useUnread } from "../stores/unread";
 import type { AccessMarkKind } from "../lib/channelPermissions";
@@ -60,21 +60,21 @@ export function SealedMark({ by }: { by: "sender" | "node" }) {
 }
 
 /** An encrypted channel that admits bots in a room that keeps them out by default (design note 4.7, APPLICATIONS.md §3.5). */
-export function BotsAllowedIcon() {
+export function BotsAllowedIcon({ size = 16 }: { size?: number }) {
   const t = useT();
   return (
-    <span title={t("apps.bots_allowed.icon")} aria-label={t("apps.bots_allowed.icon")} role="img" className="shrink-0 text-[10px]" data-testid="bots-allowed-icon">
-      🤖
+    <span title={t("apps.bots_allowed.icon")} aria-label={t("apps.bots_allowed.icon")} role="img" className="inline-flex shrink-0 text-fg-2" data-testid="bots-allowed-icon">
+      <BotIcon size={size} />
     </span>
   );
 }
 
-/** Marks a channel no bot can see or join ("no bots", APPLICATIONS.md §3.5). */
-export function NoBotsIcon() {
+/** Marks a channel no bot can see or join ("no bots", APPLICATIONS.md §3.5): the robot head struck through, 16 px. */
+export function NoBotsIcon({ size = 16 }: { size?: number }) {
   const t = useT();
   return (
-    <span title={t("apps.no_bots.icon")} aria-label={t("apps.no_bots.icon")} role="img" className="shrink-0 text-[10px]" data-testid="no-bots-icon">
-      🚫🤖
+    <span title={t("apps.no_bots.icon")} aria-label={t("apps.no_bots.icon")} role="img" className="inline-flex shrink-0 text-fg-2" data-testid="no-bots-icon">
+      <BotOffIcon size={size} />
     </span>
   );
 }

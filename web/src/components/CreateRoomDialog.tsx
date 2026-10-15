@@ -27,7 +27,7 @@ export function CreateRoomDialog({ open, onClose, onCreated }: { open: boolean; 
   const tabClass = (active: boolean) => `min-h-10 flex-1 rounded-md px-2 text-sm ${active ? "bg-accent-soft text-fg-0" : "text-fg-1 hover:bg-bg-3"}`;
   return (
     <Dialog title={tab === "create" ? t("room.create.title") : tab === "join" ? t("room.join.title") : t("addapp.title")} open={open} onClose={onClose}>
-      <div role="tablist" className="mb-4 flex gap-1 rounded-lg border border-line p-1">
+      <div role="tablist" className="mb-4 flex select-none gap-1 rounded-lg border border-line p-1">
         <button type="button" role="tab" aria-selected={tab === "create"} className={tabClass(tab === "create")} onClick={() => setTab("create")} data-testid="tab-create-room">
           {t("room.create.tab")}
         </button>

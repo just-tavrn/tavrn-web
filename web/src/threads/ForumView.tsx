@@ -93,7 +93,7 @@ export function ForumView({ room, channel, perms, roomMembers, members, refreshM
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="forum-view">
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-4">
+      <header className="flex h-12 shrink-0 select-none items-center gap-2 border-b border-line px-4">
         <span className="text-fg-2" aria-hidden="true">
           🗂
         </span>

@@ -154,7 +154,7 @@ function PanelFrame({ title, detail, onClose }: { title: string; detail?: string
   const t = useT();
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-4">
+      <header className="flex h-12 shrink-0 select-none items-center gap-2 border-b border-line px-4">
         <button type="button" onClick={onClose} className="min-h-10 min-w-10 rounded-md text-fg-2 hover:bg-bg-3 hover:text-fg-0" aria-label={t("threads.close")} data-testid="thread-close">
           ×
         </button>

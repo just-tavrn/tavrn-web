@@ -293,7 +293,7 @@ function PickerPanel({ onPick, customEmojis }: { onPick: (emoji: string) => void
       </div>
       {!query && (
         // One tab stop for the section buttons; arrow keys move between them (roving focus).
-        <nav className="flex shrink-0 gap-0.5 overflow-x-auto border-b border-line px-1 py-1" aria-label={t("emoji_picker.sections")} onKeyDown={(e) => rovingKeyDown(e, "button", { orientation: "horizontal" })}>
+        <nav className="flex shrink-0 select-none gap-0.5 overflow-x-auto border-b border-line px-1 py-1" aria-label={t("emoji_picker.sections")} onKeyDown={(e) => rovingKeyDown(e, "button", { orientation: "horizontal" })}>
           {sections.map((s, i) => (
             <button
               key={s.id}

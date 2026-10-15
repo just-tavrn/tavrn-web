@@ -185,7 +185,7 @@ export function VoiceControls({ room, channel, perms }: { room: RoomDetail; chan
   // The native voice engine (desktop app on Linux, or the Windows setting) is audio only in this version.
   const nativeOnly = useVoiceEngine((s) => s.kind === "native") ? t("voice.native.unavailable") : undefined;
   return (
-    <div className="flex shrink-0 flex-wrap items-center justify-center gap-1 border-t border-line bg-bg-1 px-2 py-2 pb-[max(0.5rem,var(--safe-bottom))] md:gap-2" data-testid="voice-controls">
+    <div className="flex shrink-0 select-none flex-wrap items-center justify-center gap-1 border-t border-line bg-bg-1 px-2 py-2 pb-[max(0.5rem,var(--safe-bottom))] md:gap-2" data-testid="voice-controls">
       <ControlButton label={muted ? t("voice.unmute") : t("voice.mute")} active={muted} pulse={mutedTalk} onClick={() => void toggleMute()} testid="voice-mute" className="min-h-11 min-w-11" menu={micMenu.triggerProps}>
         {muted ? <MicOffIcon size={20} /> : <MicIcon size={20} />}
       </ControlButton>

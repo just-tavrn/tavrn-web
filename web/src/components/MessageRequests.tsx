@@ -21,6 +21,8 @@ import { useShell } from "./AppShell";
 import { NOTE_MAX } from "./FriendRequestForm";
 import { Button, Dialog, Field, Input } from "./ui";
 import { viaOf } from "./ViaNode";
+import { MailIcon } from "./icons";
+import { SIDEBAR_ROW, sidebarRowTone } from "./sidebarRow";
 
 /** One request, wherever it is hosted. */
 export interface RequestItem {
@@ -90,11 +92,9 @@ export function MessageRequestsLink() {
   const count = requests.data?.length ?? 0;
   if (!count) return null;
   return (
-    <NavLink to="/requests" onClick={closeNav} data-testid="requests-link" className={({ isActive }) => `mt-1 flex min-h-10 items-center gap-2 rounded-md px-2 text-sm ${isActive ? "bg-accent-soft text-fg-0" : "text-fg-1 hover:bg-bg-3/60 hover:text-fg-0"}`}>
-      <span aria-hidden="true" className="w-5 text-center">
-        ✉
-      </span>
-      <span className="flex-1">{t("requests.title")}</span>
+    <NavLink to="/requests" onClick={closeNav} data-testid="requests-link" className={({ isActive }) => `mt-0.5 ${SIDEBAR_ROW} ${sidebarRowTone(isActive)}`}>
+      <MailIcon className="sidebar-icon text-fg-2" />
+      <span className="min-w-0 flex-1 truncate">{t("requests.title")}</span>
       <span className="rounded-full bg-accent px-1.5 text-xs text-accent-text" data-testid="requests-count">
         {count}
       </span>

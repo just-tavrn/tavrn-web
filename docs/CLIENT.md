@@ -270,8 +270,9 @@ while connected ("Voice channels" below). At the bottom, the **account bar** hol
 account of another node), the notification bell and the user settings. On phones the bell is in the top bar instead,
 so there is always exactly one. Node admins also find "Node administration" at the top of the settings navigation.
 
-**The channel list** shows each channel with its kind (# text, 📣 announcement, 🗂 forum, 📁 files, 🔊 voice, 👋 the
-welcome channel) and an SVG lock next to the kind icon: closed for end-to-end encrypted channels (all voice channels),
+**The channel list** shows each channel with its kind as an SVG icon (hash for text, megaphone for announcement, two
+speech bubbles for forum, folder for files, speaker for voice, a sparkle for the welcome channel) and an SVG lock next
+to the kind icon: closed for end-to-end encrypted channels (all voice channels),
 open in the warning colour for plaintext channels; the welcome channel has none. Channel headers show the same lock.
 After the name come the unread badges, a bell-off mark on muted channels, the access marks (below), the bot markers
 "No bots" and "Bots can read this encrypted channel" and the "18+" badge of gated channels. Voice channels list who is
@@ -1404,6 +1405,24 @@ The language also decides the language of the home node's e-mails (address confi
 legal and app token mails): the client sends it as `locale` (`PATCH /users/me`) when the app starts and the node has
 another one, and whenever the user switches the language under Settings → Language (`lib/mailLocale.ts`). The node
 writes English where it has no texts for the language.
+
+## UI conventions
+
+- **Sidebar rows** (channel list, direct messages, friends and requests links; `web/src/components/sidebarRow.ts`):
+  16 px medium text on a 20 px line, 8 px gap and side padding, 34 px high on desktop (42 px for rows led by a 32 px
+  avatar) and 44 px with a coarse pointer, 2 px between rows. The kind icon of every row has one size, the
+  `sidebar-icon` utility (`--sidebar-icon`, 20 px, `web/src/styles.css`); the marks after the name (lock, access
+  marks, muted, bot markers) are 16 px SVGs, the unread badges 20 px high. Category labels are 12 px semibold
+  uppercase. Voice participants: 14 px names, 24 px avatars. Names truncate with an ellipsis; the sidebar stays 240 px
+  wide on desktop.
+- **No text selection on the chrome**: the room rail, the sidebars (channel list, home, voice and account bars), the
+  member list, the phone top bar, the views' headers, the settings navigation, tab bars, the voice controls, context
+  menus and dialog titles carry Tailwind's `select-none` (`user-select: none` with the `-webkit-` prefix), so a press
+  and drag across them paints no selection. Selectable stay: message bodies and attachments, the channel topic and
+  the voice channel status in the headers (`select-text`), code blocks, dialog bodies, legal and Markdown documents,
+  settings values, the rules box and toasts; fields are always selectable (`styles.css`). Images in the chrome
+  (avatars, room icons, emoji) are not draggable, so a drag shows no ghost image; the rail's folder drag and drop and
+  the voice participants' drag are unaffected.
 
 ## Accessibility
 

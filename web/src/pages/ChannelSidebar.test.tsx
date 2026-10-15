@@ -229,3 +229,45 @@ describe("channel access marks (private and restricted, never the lock)", () => 
     expect(within(row(container, "stage")).getByRole("link")).toHaveAccessibleName("Sprachkanal Bühne, Beitreten nur für bestimmte Rollen");
   });
 });
+
+describe("row metrics (tavrn-web#185)", () => {
+  beforeEach(() => useUnread.setState({ states: {}, held: {} }));
+
+  const kinds = (): RoomDetail => ({
+    ...room(perms(Permission.MANAGE_CHANNELS)),
+    categories: [{ id: "cat", room_id: "r1", name: "Gilde", position: 0, no_bots: false }],
+    channels: [
+      { ...channel("w", "system", "welcome", -1), system_name: "welcome" },
+      { ...channel("t", "text", "allgemein", 0), category_id: "cat" },
+      { ...channel("a", "announcement", "news", 1), category_id: "cat" },
+      { ...channel("f", "forum", "fragen", 2), category_id: "cat" },
+      { ...channel("d", "files", "dateien", 3), category_id: "cat" },
+      { ...channel("v", "voice", "Sprache", 4), category_id: "cat" },
+    ],
+  });
+
+  it("every row kind shows its kind as an SVG icon of the one shared sidebar size, no emoji glyphs", async () => {
+    mockFetch({ "/rooms/r1/reports": { body: { open: 0, reports: [] } }, "/rooms/r1": { body: kinds() }, "/node": { body: { capabilities: [] } } });
+    const { container } = renderSidebar();
+    await screen.findAllByTestId("channel-row");
+    const nav = container.querySelector("nav")!;
+    const icons = [...nav.querySelectorAll("[data-testid='channel-kind-icon']")];
+    expect(icons.map((i) => i.getAttribute("data-icon"))).toEqual(["system", "text", "announcement", "forum", "files", "voice", "create"]);
+    for (const icon of icons) {
+      expect(icon.tagName.toLowerCase()).toBe("svg");
+      expect(icon).toHaveClass("sidebar-icon");
+    }
+    expect(nav.textContent ?? "").not.toMatch(/[\u{1F44B}\u{1F4E3}\u{1F5C2}\u{1F4C1}\u{1F50A}#]/u);
+  });
+
+  it("rows have 16 px medium text, 34 px desktop height and 44 px touch targets; categories 12 px uppercase", async () => {
+    mockFetch({ "/rooms/r1/reports": { body: { open: 0, reports: [] } }, "/rooms/r1": { body: kinds() }, "/node": { body: { capabilities: [] } } });
+    const { container } = renderSidebar();
+    await screen.findAllByTestId("channel-row");
+    const links = [...container.querySelectorAll("nav a"), screen.getByRole("button", { name: "Channel erstellen" })];
+    expect(links).toHaveLength(7);
+    for (const link of links) expect(link).toHaveClass("text-base", "leading-5", "font-medium", "min-h-[34px]", "pointer-coarse:min-h-11", "gap-2", "px-2");
+    expect(screen.getByText("Gilde")).toHaveClass("text-xs", "font-semibold", "uppercase", "tracking-wide");
+    expect(screen.getByTestId("room-name")).toHaveClass("text-base", "font-semibold");
+  });
+});

@@ -65,7 +65,7 @@ function RoomEmojiByName({ roomId, name, id, size }: { roomId?: string; name: st
   const emojiId = id ?? emojis.data?.find((e) => e.name === name)?.id ?? "";
   const known = !!emojis.data?.some((e) => e.id === emojiId);
   const url = useEmojiImage(known ? (roomId ?? "") : "", known ? emojiId : "");
-  return url ? <img src={url} alt="" width={size} height={size} className="object-contain" /> : null;
+  return url ? <img src={url} alt="" width={size} height={size} draggable={false} className="object-contain" /> : null;
 }
 
 /** Speaking level (0…1) of a participant of the own call; 0 if silent or not in the call. */

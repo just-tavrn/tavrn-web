@@ -79,7 +79,7 @@ function ThreadsPopover({ channel, onOpen, onNew }: { channel: Channel; onOpen: 
   });
   return (
     <div role="dialog" aria-label={t("threads.list")} className="absolute right-0 top-11 z-30 w-[min(22rem,calc(100vw-2rem))] rounded-md border border-line bg-bg-1 p-2 shadow-xl" data-testid="threads-popover">
-      <div className="mb-2 flex items-center gap-1" role="tablist">
+      <div className="mb-2 flex select-none items-center gap-1" role="tablist">
         {[false, true].map((a) => (
           <button key={String(a)} type="button" role="tab" aria-selected={archived === a} onClick={() => setArchived(a)} className="min-h-9 rounded-md px-2 text-sm text-fg-2 hover:bg-bg-3 aria-selected:bg-bg-3 aria-selected:text-fg-0" data-testid={a ? "threads-tab-archived" : "threads-tab-active"}>
             {a ? t("threads.tab_archived") : t("threads.tab_active")}

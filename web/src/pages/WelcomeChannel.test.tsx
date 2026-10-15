@@ -31,7 +31,7 @@ describe("welcome channel", () => {
     const pinned = await screen.findByTestId("pinned-channels");
     const row = within(pinned).getByTestId("channel-row");
     expect(row).toHaveAttribute("data-kind", "system");
-    expect(row).toHaveTextContent("👋");
+    expect(within(row).getByTestId("channel-kind-icon")).toHaveAttribute("data-icon", "system");
     expect(within(row).getByTestId("welcome-new")).toBeInTheDocument();
     expect(within(row).queryByTestId("mention-count")).toBeNull();
     expect(within(row).queryByTestId("unread-count")).toBeNull();
