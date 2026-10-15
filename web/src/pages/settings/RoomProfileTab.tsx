@@ -5,7 +5,7 @@ import { Permission, hasPermission, parsePermissions, type Member, type RoomDeta
 import { useNode } from "../../components/NodeScope";
 import { MediaAvatar } from "../../components/Avatar";
 import { useT } from "../../i18n";
-import { describeError, toastError, useToasts } from "../../stores/toasts";
+import { useAction } from "../../hooks/useAction";
 import { Button, ErrorText, Field, Input } from "../../components/ui";
 import { useRoomMembers } from "../ChannelPage";
 import { Section, Textarea } from "./common";
@@ -32,50 +32,23 @@ function RoomProfileForm({ room, member }: { room: RoomDetail; member: Member })
   const input = useRef<HTMLInputElement>(null);
   const [nick, setNick] = useState(member.nick ?? "");
   const [bio, setBio] = useState(member.room_bio ?? "");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // The form's errors show inline; the avatar removal and the reset report through a toast.
+  const { run: act, busy, error, setError } = useAction({ errors: "inline", refresh: () => queryClient.invalidateQueries({ queryKey: ["members", room.id] }) });
   const allowed = hasPermission(parsePermissions(room.my_permissions), Permission.CHANGE_NICKNAME);
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["members", room.id] });
 
-  const save = async (e: React.FormEvent) => {
+  const save = (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    try {
-      await api.members.setMyProfile(room.id, { nickname: nick.trim() ? nick.trim() : null, bio });
-      await refresh();
-      useToasts.getState().push({ kind: "info", title: t("common.saved") });
-    } catch (err) {
-      setError(describeError(err));
-    }
+    void act(() => api.members.setMyProfile(room.id, { nickname: nick.trim() ? nick.trim() : null, bio }), { done: t("common.saved") });
   };
   const upload = async (file: File) => {
-    setError(null);
     if (file.size > UPLOAD_MAX_BYTES) {
       setError(t("profile.too_large"));
       return;
     }
-    setBusy(true);
-    try {
-      await api.members.uploadMyAvatar(room.id, file);
-      await refresh();
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setBusy(false);
-      if (input.current) input.current.value = "";
-    }
+    await act(() => api.members.uploadMyAvatar(room.id, file));
+    if (input.current) input.current.value = "";
   };
-  const run = async (fn: () => Promise<unknown>) => {
-    setBusy(true);
-    try {
-      await fn();
-      await refresh();
-    } catch (err) {
-      toastError(err);
-    } finally {
-      setBusy(false);
-    }
-  };
+  const run = (fn: () => Promise<unknown>) => act(fn, { errors: "toast" });
   const still = mediaUrl(member.room_avatar_still);
   const animated = mediaUrl(member.room_avatar);
   const name = member.nick ?? member.user.display_name;

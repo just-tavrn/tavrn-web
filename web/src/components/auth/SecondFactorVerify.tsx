@@ -2,7 +2,7 @@
 import { useState } from "react";
 import type { AuthResponse, TavrnApi } from "@tavrn/sdk";
 import { useT } from "../../i18n";
-import { describeError } from "../../stores/toasts";
+import { useAction } from "../../hooks/useAction";
 import { passkeyLogin, usePasskeyBlocker } from "../../lib/passkeys";
 import { Button, ErrorText, Field, Input } from "../ui";
 import { cleanCode } from "./SecondFactorEnroll";
@@ -23,20 +23,8 @@ export function SecondFactorVerify({ api, preauthToken, methods, onSession, onCa
   const keyHint = methods.includes("webauthn") && (blocker === "key" || blocker === "key_access") ? t(blocker === "key" ? "verify.insert_key" : "passkey.key_no_access") : null;
   const [mode, setMode] = useState<"totp" | "recovery">(hasTotp ? "totp" : "recovery");
   const [code, setCode] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const run = async (fn: () => Promise<VerifyResult>) => {
-    setBusy(true);
-    setError(null);
-    try {
-      onSession(await fn());
-    } catch (err) {
-      setError(describeError(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const { run: act, busy, error, setError } = useAction({ errors: "inline" });
+  const run = (fn: () => Promise<VerifyResult>) => act(async () => onSession(await fn()));
 
   return (
     <div className="space-y-3">

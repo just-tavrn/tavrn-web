@@ -19,6 +19,7 @@ import { topPosition } from "../../lib/hierarchy";
 import { insertIntoComposer, mentionToken } from "../../lib/composerBridge";
 import { channelName } from "../../lib/names";
 import { toastError, useToasts } from "../../stores/toasts";
+import { useAction } from "../../hooks/useAction";
 import { participantsOf, useVoicePresence, voiceChannelOfUser } from "../../voice/presence";
 import { useVoice } from "../../voice/store";
 import { useVoiceSettings } from "../../voice/settings";
@@ -84,15 +85,9 @@ export function useMemberMenu(room: RoomDetail, member: Member | null, voiceTarg
     await queryClient.invalidateQueries({ queryKey: ["members", room.id] });
     await queryClient.invalidateQueries({ queryKey: ["room", room.id] });
   };
-  const run = async (fn: () => Promise<unknown>, done?: string) => {
-    try {
-      await fn();
-      if (done) useToasts.getState().push({ kind: "info", title: done });
-      await refresh();
-    } catch (e) {
-      toastError(e);
-    }
-  };
+  // Menu actions run one at a time; the member list's refetch afterwards is not part of the action.
+  const { run: act } = useAction({ refresh });
+  const run = (fn: () => Promise<unknown>, done?: string) => act(fn, { done });
   const otherVoiceChannels = room.channels.filter((c) => c.kind === "voice" && c.id !== voiceChannelId).map((c) => ({ id: c.id, name: channelName(c) }));
   const voiceActions = {
     serverMute: (muted: boolean) => voiceChannelId && void run(() => api.voice.serverMute(room.id, voiceChannelId, address, muted)),

@@ -10,7 +10,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { TavrnApiError, type Application, type Subscription } from "@tavrn/sdk";
 import { api } from "../../lib/api";
 import { intlLocale, useT } from "../../i18n";
-import { describeError, toastError, useToasts } from "../../stores/toasts";
+import { describeError } from "../../stores/toasts";
+import { useAction } from "../../hooks/useAction";
 import { Button, Field, Input } from "../../components/ui";
 import { ConfirmDialog, Section } from "./common";
 
@@ -52,7 +53,6 @@ export function SubscriptionSection({ app }: { app: Application }) {
   });
   const [url, setUrl] = useState("");
   const [events, setEvents] = useState<string[]>(["message.create"]);
-  const [busy, setBusy] = useState(false);
   const [removing, setRemoving] = useState(false);
   const loaded = sub.data;
   useEffect(() => {
@@ -65,18 +65,8 @@ export function SubscriptionSection({ app }: { app: Application }) {
   }, [loaded?.url, loaded?.created_at]);
   const refresh = () => queryClient.invalidateQueries({ queryKey: key });
   const date = (s: string | null | undefined) => (s ? new Date(s).toLocaleString(intlLocale(), { dateStyle: "medium", timeStyle: "short" }) : "—");
-  const act = async (f: () => Promise<unknown>, done: string) => {
-    setBusy(true);
-    try {
-      await f();
-      await refresh();
-      useToasts.getState().push({ kind: "info", title: done });
-    } catch (err) {
-      toastError(err);
-    } finally {
-      setBusy(false);
-    }
-  };
+  const { run, busy } = useAction({ refresh });
+  const act = (f: () => Promise<unknown>, done: string) => run(f, { done });
   return (
     <Section title={t("subscriptions.title")} description={t("subscriptions.hint")}>
       <div data-testid="subscription-section" className="space-y-3">
