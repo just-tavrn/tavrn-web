@@ -1134,7 +1134,10 @@ bit left at "–" inherits from the layer below. In **Room settings → Channels
 this category**, a channel shows **Permissions in this channel**. Both editors list only the channel-scoped
 permissions, grouped as general, text, voice, files and management, each with an allow / – / deny choice; under
 every permission the value it inherits is shown in grey ("Inherited: allowed by the category" / "by the roles"), which
-is also the accessible description of the choice. **Reset to category** removes a channel's own overrides after a
+is also the accessible description of the choice. The hint is what "–" gives: inside the edited layer the `@everyone`
+override and, for a member, the overrides of the member's roles apply before the subject's own, so a category that
+denies "View channel" to `@everyone` shows a neutral role as "Inherited: denied by @everyone here" (`inheritedOverrideValue`
+of `@tavrn/sdk`, the file types likewise). **Reset to category** removes a channel's own overrides after a
 confirmation. `channelPermissions` (`web/src/lib/channelPermissions.ts`) computes exactly like the node, including the
 view, read and connect a moved participation grants in the voice channel the user's own session is in.
 
