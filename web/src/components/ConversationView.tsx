@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "react-router";
 import type { Attachment, Member, Message, RoomDetail } from "@tavrn/sdk";
-import { useTyping } from "../stores/typing";
+import { TypingIndicator } from "./TypingIndicator";
 import { useNodeSockets, useRealtimeState } from "../hooks/useRealtime";
 import { useNode } from "./NodeScope";
 import { useT } from "../i18n";
@@ -136,7 +136,6 @@ export function ConversationView(p: ConversationViewProps) {
   const homeSocket = useRealtimeState((s) => s.socket);
   const nodeSocket = useNodeSockets((s) => s.sockets[domain]);
   const socket = home ? homeSocket : nodeSocket;
-  const typing = useTyping((s) => s.byChannel[conversationId]);
   const node = useQuery({ queryKey: home ? ["well-known"] : ["well-known", domain], queryFn: () => api.node.wellKnown(), staleTime: 10 * 60_000 });
   const nodeInfo = useQuery({ queryKey: home ? ["node"] : ["node", domain], queryFn: () => api.node.info(), staleTime: 10 * 60_000 });
   const threadId = p.threadId;
@@ -339,7 +338,6 @@ export function ConversationView(p: ConversationViewProps) {
               ? e2ee.error ?? undefined
               : undefined;
 
-  const typingNames = Object.keys(typing ?? {}).filter((id) => id !== user?.id);
   // The effective limit of this user here (entitlements, design note 4.13); the node default until it loaded.
   const uploadLimit = uploadPolicy.data?.max_bytes ?? node.data?.policies.upload_max_bytes;
 
@@ -749,10 +747,7 @@ export function ConversationView(p: ConversationViewProps) {
         />
       )}
       <InteractionNotices conversationId={conversationId} qualified={q} encrypted={p.encrypted} mls={e2ee.mls} />
-      <div className="h-5 px-4 text-xs text-fg-2" aria-live="polite" data-testid="typing-indicator">
-        {typingNames.length === 1 && t("messages.typing_one")}
-        {typingNames.length > 1 && t("messages.typing_many", { count: typingNames.length })}
-      </div>
+      <TypingIndicator conversationId={conversationId} selfId={user?.id} />
       {p.readOnlyNote || p.composerNote ? (
         <p className="mx-4 mb-4 rounded-md border border-line bg-bg-1 px-3 py-2 text-sm text-fg-2" data-testid={p.readOnlyNote ? "read-only-note" : "composer-note"}>
           {p.readOnlyNote ?? p.composerNote}
