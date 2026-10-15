@@ -13,17 +13,30 @@ import { platform, type AndroidPermission, type PermissionAnswer } from "../plat
 /** The answers of the last request per permission (for the error message). */
 const answers = new Map<AndroidPermission, PermissionAnswer>();
 let notificationsAsked = false;
+/** Android shows one permission request at a time: every request of the app goes through this one flow, in order. */
+let flow: Promise<unknown> = Promise.resolve();
 
-export async function prepareAndroidMedia(kind: "microphone" | "camera"): Promise<PermissionAnswer | null> {
+function ask(permission: AndroidPermission): Promise<PermissionAnswer | null> {
   const android = platform().android;
-  if (!android) return null;
-  const answer = await android.requestPermission(kind).catch(() => null);
+  const answer = flow.then(() => android?.requestPermission(permission).catch(() => null) ?? null);
+  flow = answer;
+  return answer;
+}
+
+/**
+ * Asks for the microphone or the camera and resolves with that answer. With a granted microphone the headsets and
+ * (once per start) the notifications follow in the same flow without being awaited: they only affect the audio
+ * routing and the voice notification, so the join does not wait for the user's answers.
+ */
+export async function prepareAndroidMedia(kind: "microphone" | "camera"): Promise<PermissionAnswer | null> {
+  if (!platform().android) return null;
+  const answer = await ask(kind);
   if (answer) answers.set(kind, answer);
   if (kind === "microphone" && answer === "granted") {
-    await android.requestPermission("bluetooth").catch(() => null);
+    void ask("bluetooth");
     if (!notificationsAsked) {
       notificationsAsked = true;
-      await android.requestPermission("notifications").catch(() => null);
+      void ask("notifications");
     }
   }
   return answer;
