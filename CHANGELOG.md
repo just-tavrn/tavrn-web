@@ -317,6 +317,21 @@ First public release of the web client and the desktop apps.
 
 ### Security
 
+- Realtime events of a node change only that node's rooms, channels, conversations, messages and member lists in the
+  client's cache; ids another node lists are ignored, and notification lookups never cache another node's room under
+  a home room's id.
+- The desktop and Android apps use a node's announced web origin for the sign-in window and native passkeys only
+  when it is bound to the node (its host, the identity domain or a subdomain of them); another site's origin is
+  replaced by the node's own.
+- The attachment cache is keyed by node, id and the checked hash, so a cached copy never stands in for another
+  node's attachment or another hash.
+- A session ended by the node (revoked elsewhere, expired) locks the key store, drops the session manager and forgets
+  decrypted attachments and rendered messages, as an explicit sign-out does; signing in again needs the recovery key
+  or a passkey when the account asks for it every time.
+- Android: notification taps open their view through a private activity with an allow-list of the app's views; the
+  exported main activity no longer takes a path from other apps' intents.
+- The device's history archive hands out archived content only for the same author, device, epoch, edit and
+  ciphertext; entries of the earlier format are decrypted again.
 - Plaintext in end-to-end encrypted conversations is shown as "not end-to-end encrypted", never as the author's
   content (list, replies, notifications, push); a person's plaintext message without a device id is marked unverified.
 - Every encrypted write path (edits, thread titles, forum posts, file records, whiteboard scenes) shows the
