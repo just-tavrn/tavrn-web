@@ -18,7 +18,7 @@ import { useUploadPrivacy } from "./UploadPrivacy";
 import { useComposePreview } from "./ComposePreview";
 import { wrapSpoiler } from "../lib/markdown";
 import { renameClipboardFiles } from "../lib/clipboardName";
-import { composerGrowth, type Growth } from "../lib/composerGrowth";
+import { composerGrowth, PHONE_MAX_WIDTH, type Growth } from "../lib/composerGrowth";
 import { blockedText, isAutomodBlock } from "../moderation/blocked";
 import { EyeOffIcon } from "./icons";
 import { ContextMenu, menuItem, useContextMenu, type MenuItem } from "./ContextMenu";
@@ -308,8 +308,15 @@ export function Composer({
   }, []);
 
   // Measures before paint: the text's height in a hidden twin of the textarea (measuring the textarea itself
-  // would reset its height and break the transition), the rest of the composer, the viewport.
+  // would reset its height and break the transition), the rest of the composer, the viewport. It runs after every
+  // render (the toolbar, chips, pickers and reply bar all change the height), but reads layout only when the
+  // composer can grow: without focus or text, after Escape or on phones it stays collapsed, so a render of the
+  // conversation (new messages, typing) forces no reflow here.
   useLayoutEffect(() => {
+    if (!focused || shrunk || !value || window.innerWidth < PHONE_MAX_WIDTH) {
+      if (growth.expanded || growth.height !== null) setGrowth({ expanded: false, height: null });
+      return;
+    }
     const el = textarea.current;
     const twin = mirror.current;
     const row = inputRow.current;
