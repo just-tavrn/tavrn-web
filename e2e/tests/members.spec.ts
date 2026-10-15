@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { NODE, createRoomViaApi, loginAs, registerViaApi } from "./helpers";
 import { createRole, isTouch, joinRoom, openMembers, setRoles } from "./menu-helpers";
+
+/** The members drawer's layout width (CSS px), unaffected by its slide-in transform. */
+const drawerWidth = (page: Page) => page.getByTestId("members-drawer").evaluate((el) => (el as HTMLElement).offsetWidth);
 
 test.describe("Member list and roles (design note 4.11)", () => {
   test("Roles displayed separately form their own sections, offline members are at the bottom", async ({ page, request }) => {
@@ -83,9 +86,12 @@ test.describe("Member list and roles (design note 4.11)", () => {
     await expect(row).toBeVisible();
     const box = await row.evaluate((el) => {
       const name = Array.from(el.querySelectorAll("span.truncate")).find((s) => s.textContent?.startsWith("Maximiliane"))!;
-      const drawer = el.closest("aside")!.getBoundingClientRect();
+      const aside = el.closest("aside")!;
+      const drawer = aside.getBoundingClientRect();
       const r = el.getBoundingClientRect();
-      return { truncated: name.scrollWidth > name.clientWidth, overflow: getComputedStyle(name).textOverflow, rowRight: r.right, drawerRight: drawer.right, drawerWidth: drawer.width };
+      // The drawer's width from the layout (its CSS width), not the rendered rectangle: the drawer slides in with a
+      // transform, and mid-transition the rectangle is a subpixel float (239.99996…, tavrn-web#121 run on 2026-10-15).
+      return { truncated: name.scrollWidth > name.clientWidth, overflow: getComputedStyle(name).textOverflow, rowRight: r.right, drawerRight: drawer.right, drawerWidth: (aside as HTMLElement).offsetWidth };
     });
     expect(box.truncated).toBe(true);
     expect(box.overflow).toBe("ellipsis");
@@ -95,10 +101,10 @@ test.describe("Member list and roles (design note 4.11)", () => {
       // Landscape phone and tablet sizes below the desktop grid: the drawer is 280 px, portrait keeps 240 px.
       await page.setViewportSize({ width: 915, height: 412 });
       await openMembers(page);
-      await expect.poll(async () => (await page.getByTestId("members-drawer").boundingBox())!.width).toBe(280);
+      await expect.poll(() => drawerWidth(page)).toBe(280);
       await page.setViewportSize({ width: 412, height: 915 });
       await openMembers(page);
-      await expect.poll(async () => (await page.getByTestId("members-drawer").boundingBox())!.width).toBe(240);
+      await expect.poll(() => drawerWidth(page)).toBe(240);
     } else {
       expect(box.drawerWidth).toBe(240);
     }
