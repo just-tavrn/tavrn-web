@@ -105,7 +105,11 @@ export function Composer({
   onTyping?: () => void;
   canAttach?: boolean;
   uploadLimitBytes?: number;
-  onUpload?: (file: File, onProgress: (f: number) => void) => Promise<Attachment>;
+  /**
+   * Uploads one file. `signal` aborts when the user removes the file or the composer goes away: a running upload
+   * stops, a finished one is not going to be sent (its keys can be dropped).
+   */
+  onUpload?: (file: File, onProgress: (f: number) => void, signal: AbortSignal) => Promise<Attachment>;
   gifsEnabled?: boolean;
   customEmojis?: CustomEmoji[];
   commands?: ComposerCommands;
@@ -124,6 +128,8 @@ export function Composer({
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [uploads, setUploads] = useState<PendingUpload[]>([]);
+  /** One controller per upload until it is sent or removed. */
+  const uploadAborts = useRef(new Map<string, AbortController>());
   const [dragging, setDragging] = useState(false);
   const [sendWhenReady, setSendWhenReady] = useState(false);
   const [gifOpen, setGifOpen] = useState(false);
@@ -261,9 +267,15 @@ export function Composer({
         }
       }
       setUploads((u) => [...u, { key, name: file.name, size: file.size, progress: 0, note }]);
-      onUpload(file, (p) => setUploads((u) => u.map((x) => (x.key === key ? { ...x, progress: p } : x))))
-        .then((attachment) => setUploads((u) => u.map((x) => (x.key === key ? { ...x, attachment, progress: 1 } : x))))
-        .catch((e: unknown) => setUploads((u) => u.map((x) => (x.key === key ? { ...x, error: uploadError(e) } : x))));
+      const abort = new AbortController();
+      uploadAborts.current.set(key, abort);
+      onUpload(file, (p) => !abort.signal.aborted && setUploads((u) => u.map((x) => (x.key === key ? { ...x, progress: p } : x))), abort.signal)
+        .then((attachment) => !abort.signal.aborted && setUploads((u) => u.map((x) => (x.key === key ? { ...x, attachment, progress: 1 } : x))))
+        .catch((e: unknown) => {
+          if (abort.signal.aborted) return;
+          uploadAborts.current.delete(key);
+          setUploads((u) => u.map((x) => (x.key === key ? { ...x, error: uploadError(e) } : x)));
+        });
     }
   };
 
@@ -281,6 +293,8 @@ export function Composer({
       await onSend({ body, attachmentIds: ready, gif, preview: gif ? undefined : (composePreview.preview ?? undefined), ...(spoilerIds.length ? { spoilerIds } : {}) });
       setValue("");
       composePreview.reset();
+      // Sent: nothing to abort any more.
+      uploadAborts.current.clear();
       setUploads([]);
       setGifOpen(false);
     } catch (e) {
@@ -301,11 +315,21 @@ export function Composer({
 
   useEffect(() => {
     window.addEventListener("resize", viewportChanged);
+    const aborts = uploadAborts.current;
     return () => {
       window.removeEventListener("resize", viewportChanged);
       window.clearTimeout(blurTimer.current);
+      // Leaving the conversation: running uploads stop, finished ones are not sent.
+      for (const a of aborts.values()) a.abort();
+      aborts.clear();
     };
   }, []);
+
+  const removeUpload = (key: string) => {
+    uploadAborts.current.get(key)?.abort();
+    uploadAborts.current.delete(key);
+    setUploads((x) => x.filter((y) => y.key !== key));
+  };
 
   // Measures before paint: the text's height in a hidden twin of the textarea (measuring the textarea itself
   // would reset its height and break the transition), the rest of the composer, the viewport. It runs after every
@@ -457,7 +481,7 @@ export function Composer({
                   {u.spoiler ? "🙈" : "👁"}
                 </button>
               )}
-              <button type="button" aria-label={t("composer.remove", { name: u.name })} onClick={() => setUploads((x) => x.filter((y) => y.key !== u.key))} className="min-h-6 min-w-6 text-fg-2 hover:text-fg-0">
+              <button type="button" aria-label={t("composer.remove", { name: u.name })} onClick={() => removeUpload(u.key)} className="min-h-6 min-w-6 text-fg-2 hover:text-fg-0">
                 ×
               </button>
             </li>

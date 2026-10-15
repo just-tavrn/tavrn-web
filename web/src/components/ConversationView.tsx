@@ -358,22 +358,32 @@ export function ConversationView(p: ConversationViewProps) {
     }
   };
 
-  const upload = async (file: File, onProgress: (f: number) => void): Promise<Attachment> => {
+  const upload = async (file: File, onProgress: (f: number) => void, signal: AbortSignal): Promise<Attachment> => {
     // Uploads go by XMLHttpRequest (progress), past the fetch guard: refused here while previewing.
     assertNotPreviewing();
-    if (!p.encrypted) {
-      const stored = await api.attachments.uploadToConversation(conversationId, file, file.name, onProgress);
-      uploads.current.set(stored.id, stored);
+    // Removed in the composer (or the conversation closed): the upload's state goes at once, a late answer is
+    // dropped. The node deletes uploads that are never sent.
+    const keep = (stored: Attachment, store: () => void) => {
+      signal.throwIfAborted();
+      store();
+      signal.addEventListener("abort", () => {
+        uploads.current.delete(stored.id);
+        uploadKeys.current.delete(stored.id);
+      });
       return stored;
+    };
+    if (!p.encrypted) {
+      const stored = await untilAborted(api.attachments.uploadToConversation(conversationId, file, file.name, onProgress), signal);
+      return keep(stored, () => uploads.current.set(stored.id, stored));
     }
     // §6: encrypt locally, upload only ciphertext; name, type and key go into the encrypted content. The
     // category is declared (PROTOCOL.md §7a): the node cannot see the file.
     const category = declaredCategory(await classifyFile(file));
     const { blob, meta } = await encryptAttachment(file);
-    const stored = await api.attachments.uploadToConversation(conversationId, blob, "", onProgress, category);
+    signal.throwIfAborted();
+    const stored = await untilAborted(api.attachments.uploadToConversation(conversationId, blob, "", onProgress, category), signal);
     if (stored.sha256 !== meta.sha256) throw new Error(t("attachment.upload_mismatch"));
-    uploadKeys.current.set(stored.id, { id: stored.id, ...meta });
-    return stored;
+    return keep(stored, () => uploadKeys.current.set(stored.id, { id: stored.id, ...meta }));
   };
 
   /**
@@ -790,4 +800,14 @@ export function ConversationView(p: ConversationViewProps) {
     </div>
     </EmojiContext.Provider>
   );
+}
+
+/** `p`, or a rejection as soon as `signal` aborts (the request itself goes on: the sdk's upload takes no signal). */
+function untilAborted<T>(p: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    p.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
 }
