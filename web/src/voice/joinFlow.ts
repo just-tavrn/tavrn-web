@@ -10,7 +10,7 @@
  *    joins the channel's MLS group (`ensureJoined`, in the MLS manager's priority lane: background work such as the
  *    group-join probes waits, and the probes pause while a join runs).
  * 2. Once this device is in the group the ghost cleanup runs (never waiting for the election, `cleanupBeforeVoice`)
- *    and then the self update that gives the session its fresh epoch.
+ *    and then, once the node accepted the join, the self update that gives the session its fresh epoch.
  * 3. Only the frame key of the fresh epoch and publishing wait for that (`fresh`): the call connects meanwhile with
  *    the key of the current epoch, and the re-key subscription of the session picks up the new epoch. Nothing is
  *    published before the fresh key is the sending key.
@@ -98,12 +98,15 @@ export async function startJoin(d: JoinFlowDeps): Promise<JoinFlow> {
   }
   mark("ensure_joined_done", { epoch: d.mls.epoch(d.q) });
   let later: () => void = () => undefined;
-  // Ghost leaves go before the fresh voice key (ENCRYPTION.md §4.7), then the self update (§5a). Never rejects.
+  // Ghost leaves go before the fresh voice key (ENCRYPTION.md §4.7), then the self update (§5a). Never rejects. The
+  // self update waits for the node's answer: a refused join commits nothing (every member would re-key for nothing);
+  // the answer is usually there long before the group join and the cleanup are done.
   const update = pending
     ? (async () => {
         mark("cleanup_start");
         later = await d.cleanup(pending).catch(() => () => undefined);
         mark("cleanup_done");
+        if (!(await answer.then(() => true, () => false))) return;
         await d.mls.selfUpdate(d.q, { priority: true }).catch(() => false);
         mark("self_update_done", { epoch: d.mls.epoch(d.q) });
       })()
