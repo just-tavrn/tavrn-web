@@ -1166,7 +1166,13 @@ Mentions and DMs show a toast with a jump link, a soft sound and an entry behind
 unless set to nothing), the sound (with a preview), lists the rooms and channels with their own settings (set from
 their context menus) with a Reset each, and has **Desktop notifications when tavrn is in the background**: the
 browser shows them then (the permission is asked only after that click; encrypted messages never appear in the notification
-text). The settings are stored on the home node and fall back to this browser on nodes that do not offer them.
+text). The settings are stored on the home node and fall back to this browser on nodes that do not offer them. A
+change on another device or tab arrives at once (`notifications.update`) and is kept when this device saves its own
+change (the client saves its changes on top of the node's settings); a save the node refuses shows an error toast and
+the settings show the node's again. A burst of messages in one conversation shows one toast with the newest message
+(a mention keeps its own); at most five toasts show at once. A ban by a room or node on another node
+(`ban.notify`) and a friend request or invitation that could not be delivered to another node
+(`federation.undeliverable`) show a warning toast.
 
 **Push notifications on this device** turns on web push for this browser or installed app (PROTOCOL.md §6d): the
 client registers a service worker (`public/sw.js`, push and notification clicks only: it caches nothing and there is
@@ -1345,9 +1351,11 @@ of a window ("Sign in on \<node>'s page"). What is different in the client:
 
 The web client ships English and German. It takes the language saved on this device, else the first of the browser's
 languages it knows, else English; Settings → Language changes it. To add a language, copy `web/src/i18n/en.json` to
-`web/src/i18n/<code>.json`, translate the values and register the file in `web/src/i18n/index.ts`. A unit test checks
-that every language has exactly the keys of English, and that the texts write "tavrn" in lowercase, name no
-authenticator app and contain no roadmap wording.
+`web/src/i18n/<code>.json`, translate the values and register the file in `web/src/i18n/index.ts` (with a loader:
+English is part of the bundle as the fallback, every other language is a chunk of its own that loads before the first
+render and when the user switches to it). A unit test checks that every language has exactly the keys of English, and
+that the texts write "tavrn" in lowercase, name no authenticator app and contain no roadmap wording. Dates and times
+follow the chosen language, not the browser's (`formatDate` in `web/src/lib/format.ts`).
 
 The language also decides the language of the home node's e-mails (address confirmation, password reset, account,
 legal and app token mails): the client sends it as `locale` (`PATCH /users/me`) when the app starts and the node has
