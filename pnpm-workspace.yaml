@@ -15,15 +15,18 @@ allowBuilds:
   # A Windows installer helper electron-builder depends on; the Linux shell never uses it.
   electron-winstaller: false
 
-# Private phase: the @tavrn packages come from their repositories by tag (tavrn-js README, "Installation").
-# @tavrn/e2ee and @tavrn/bot depend on their siblings and on @tavrn/crypto through git dependencies, which pnpm
-# blocks below the top level by default; the overrides make every package use the same tagged copies (one
-# WebAssembly module for the client and @tavrn/e2ee). Once the packages are on npm these become version ranges.
+# Until @tavrn/sdk, @tavrn/e2ee and @tavrn/bot are on npm they come from tavrn-js by commit (tavrn-js README,
+# "Installation"): @tavrn/e2ee and @tavrn/bot depend on their siblings through git dependencies, which pnpm blocks
+# below the top level by default; the overrides make every package use the same copies. @tavrn/crypto is the
+# published package (one WebAssembly module for the client and @tavrn/e2ee). Our own packages are installed the
+# moment they are published, so the @tavrn scope is exempt from pnpm's minimum release age.
 blockExoticSubdeps: false
+minimumReleaseAgeExclude:
+  - "@tavrn/*"
 overrides:
-  "@tavrn/sdk": "github:just-tavrn/tavrn-js#c30cfd43d76e6df9c7c4aa90b1412ef76ed3289c&path:sdk"
-  "@tavrn/e2ee": "github:just-tavrn/tavrn-js#c30cfd43d76e6df9c7c4aa90b1412ef76ed3289c&path:e2ee"
-  "@tavrn/crypto": "github:just-tavrn/tavrn-crypto#6db3f27100ff49c646c4f0327aaf9c534605586f&path:pkg"
+  "@tavrn/sdk": "github:just-tavrn/tavrn-js#82f245c66d85f548a5096664ff80d177f09a48dc&path:sdk"
+  "@tavrn/e2ee": "github:just-tavrn/tavrn-js#82f245c66d85f548a5096664ff80d177f09a48dc&path:e2ee"
+  "@tavrn/crypto": "^0.1.0"
   # Security overrides for @excalidraw/excalidraw 0.18.1 (the newest release; `pnpm audit` must stay clean).
   # Drop each one once Excalidraw ships a release without the problem.
   # - nanoid: Excalidraw pins 3.3.3 exactly (GHSA-mwcw-c2x4-8c55 and three newer advisories: predictable or endless
