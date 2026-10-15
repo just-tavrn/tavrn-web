@@ -19,6 +19,7 @@ import { HistoryRestoreSection } from "./HistoryRestoreSection";
 import { AgeGateSection } from "../../components/age/AgeGateSection";
 import { FilesDeletionFacts, deletionCase, useFilesChannelsUsage } from "../../files/DeleteChannel";
 import { channelName } from "../../lib/names";
+import { RoomRules } from "../../components/RoomRules";
 
 export function OverviewTab({ room }: { room: RoomDetail }) {
   const { api, home, domain } = useNode();
@@ -26,6 +27,7 @@ export function OverviewTab({ room }: { room: RoomDetail }) {
   const [name, setName] = useState(room.name);
   const [description, setDescription] = useState(room.description);
   const [rules, setRules] = useState(room.rules);
+  const [previewRules, setPreviewRules] = useState(false);
   const [joinMode, setJoinMode] = useState(room.join_mode);
   const [discoverable, setDiscoverable] = useState(room.discoverable);
   const [confirm, setConfirm] = useState<"delete" | "leave" | null>(null);
@@ -61,9 +63,16 @@ export function OverviewTab({ room }: { room: RoomDetail }) {
           <Field label={t("settings.description")}>
             <Textarea value={description} onChange={(e) => setDescription(e.target.value)} disabled={!canManage} rows={2} maxLength={1000} />
           </Field>
-          <Field label={t("settings.rules")} hint={t("settings.rules_hint")}>
+          <Field label={t("settings.rules")} hint={`${t("settings.rules_hint")} ${t("settings.rules_markdown")}`}>
             <Textarea value={rules} onChange={(e) => setRules(e.target.value)} disabled={!canManage} rows={4} maxLength={10000} />
           </Field>
+          {/* The rules as the invite page and the join dialog show them (Markdown, components/RoomRules.tsx). */}
+          <div className="space-y-2">
+            <Button variant="ghost" aria-pressed={previewRules} onClick={() => setPreviewRules((v) => !v)} data-testid="rules-preview-toggle">
+              {t("settings.rules_preview")}
+            </Button>
+            {previewRules && (rules.trim() ? <RoomRules markdown={rules} /> : <p className="text-xs text-fg-2">{t("settings.rules_preview_empty")}</p>)}
+          </div>
           <Field label={t("room.join_mode")}>
             <Select value={joinMode} onChange={(e) => setJoinMode(e.target.value)} disabled={!canManage}>
               <option value="invite">{t("room.join_mode.invite")}</option>

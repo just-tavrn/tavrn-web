@@ -13,6 +13,7 @@ import { useT } from "../i18n";
 import { describeError } from "../stores/toasts";
 import { Button, ErrorText } from "../components/ui";
 import { RoomIcon } from "../components/Avatar";
+import { RoomRules } from "../components/RoomRules";
 import { LegalLink } from "../components/legal/LegalLink";
 import { isAdult } from "@tavrn/sdk";
 import { useAgeStatus } from "../lib/age";
@@ -75,7 +76,7 @@ export function InvitePage() {
             {preview.data.rules && (
               <div className="mt-4 rounded-md border border-line bg-bg-0 p-3 text-left text-sm">
                 <p className="mb-1 font-medium">{t("invite.rules")}</p>
-                <p className="whitespace-pre-wrap text-fg-1">{preview.data.rules}</p>
+                <RoomRules markdown={preview.data.rules} />
                 <label className="mt-3 flex items-center gap-2 text-sm">
                   <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} className="h-5 w-5" /> {t("invite.accept_rules")}
                 </label>

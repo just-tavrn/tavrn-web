@@ -291,6 +291,19 @@ the viewer's own membership and a new owner fetch the room again (the node compu
 once per burst of events. The list
 evaluates the layered permissions once per room version: one map of permissions and access marks per channel.
 
+**Reordering channels** happens only in **Room settings → Channels** (*Manage channels*), never in the sidebar, where
+a slip of the mouse or finger would move a channel by accident. The tree there shows the sidebar's order: the welcome
+channel, the channels without category, then the categories with their channels. Every channel row and category
+header has a grab handle: drag a channel onto another row to take its place, onto a category header to move it to the
+end of that category, or onto "Without category"; drag a category onto another category to take its place (categories
+never nest). The ▲/▼ buttons do the same one step at a time (keyboard, touch); the category dropdown of the channel
+editor moves a channel to the end of the chosen category. The welcome channel stays at the top. Positions count per
+group from 0, and only the channels or categories whose position changes are saved, one `PATCH` after the other
+(`web/src/lib/channelOrder.ts`); "Order saved" confirms it. Moving a channel out of its category copies the category's
+overrides into it, and moving it into a category that grants more needs *Manage roles* there: the node refuses it
+otherwise, the error is shown and the room is fetched again. Other members see the new order through the
+`channel.update` and `category.update` events.
+
 ### Channel list marks
 
 Besides the encryption lock (which never means anything else), two SVG marks after the channel name tell who may use a
@@ -1276,6 +1289,15 @@ the text once), and a lock next to the WEBHOOK badge says which.
 | User settings | Profile, Privacy & safety, Security, Voice & video, Notifications, Emojis, Sounds, Applications, Language, Devices, Legal & privacy, and App in the desktop app |
 | Room settings | Overview, My profile here, Roles, Channels, Members, Bans, Invites, Webhooks, Applications, Emojis, Soundboard, Moderation, Audit log; Reports, Auto-moderation and History requests where the node announces them; each tab only with its permission |
 | Node administration | Overview, Users, Invites, Bans, Reports (with `reports.v1`), Entitlements, API tokens, Applications, SSO (when single sign-on is configured), Federation, Legal, Notices, Audit log |
+
+**Room rules** (Room settings → Overview → Rules, at most 10,000 characters) are Markdown, a subset like the profile
+bio ([PROTOCOL.md](https://github.com/just-tavrn/tavrn-protocol/blob/main/PROTOCOL.md), `rules`): paragraphs, lists,
+bold and italic, links, quotes, headings and tables. The field's hint says so, and **Preview** (a toggle under the
+field) shows the text being edited as invitees will see it. The invite page and the join dialog render the rules
+with the legal documents' renderer (`renderDocument` in `web/src/lib/markdown.ts`: raw HTML stays text, images are
+dropped, links keep only `http(s)`, `mailto` and same-site targets, DOMPurify), compact (headings at most the size of
+the text's third level) and in a scroll box when they are long, above "I accept the rules"
+(`web/src/components/RoomRules.tsx`).
 
 ## The desktop app
 

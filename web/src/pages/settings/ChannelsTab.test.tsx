@@ -97,7 +97,7 @@ describe("ChannelsTab: the access marks of the channel list", () => {
     renderWithProviders(<ChannelsTab room={marked} />, { route: "/rooms/r1/settings/channels?channel=c1" });
     const editor = await screen.findByTestId("channel-editor");
     expect(within(editor).queryByTestId("channel-access-line")).toBeNull();
-    await u.click(screen.getByRole("button", { name: /Bühne/ }));
+    await u.click(screen.getByRole("button", { name: /^🔊.*Bühne/ }));
     expect(await screen.findByTestId("channel-access-line")).toHaveTextContent("Beitreten nur für bestimmte Rollen");
   });
 });

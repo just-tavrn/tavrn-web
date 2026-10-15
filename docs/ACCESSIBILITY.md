@@ -137,6 +137,12 @@ Before: 3 critical + 325 serious + 241 moderate + 25 minor nodes. After: 0 criti
   the menus. Every drag-and-drop action is a menu entry too (WCAG 2.5.7). Badges and the drop indicator use
   `danger-solid` (3.2:1 on `bg-0`) and `accent` (6.97:1); targets stay 48 × 48 px. `e2e/tests/rail-folders.spec.ts`
   scans the rail with axe with a folder collapsed and expanded.
+- **Channel order** (`pages/settings/ChannelTree.tsx`, Room settings → Channels): the drag handles are named images
+  ("Drag general to reorder"), every drag has real buttons as its equivalent (WCAG 2.5.7): "Move … up" / "Move …
+  down" per channel and per category (24 × 24 px, 44 × 44 px on touch screens), the category dropdown of the channel
+  editor for moves between categories. An arrow button keeps the focus while its row moves; during a save the tree is
+  `aria-busy` and the buttons `aria-disabled`. The drop target's ring uses `accent`; the dragged row is dimmed, not
+  only coloured. `e2e/tests/channel-order.spec.ts` scans the tree with axe.
 - **Room card and voice badges** (`components/RoomHoverCard.tsx`, `components/RoomRail.tsx`): content on hover follows
   WCAG 1.4.13 and the client's rule "no hover-only functionality": the card opens on mouse hover after 300 ms and at
   once on keyboard focus (not on the focus of a click or tap), is `role="tooltip"` referenced by the room link's
