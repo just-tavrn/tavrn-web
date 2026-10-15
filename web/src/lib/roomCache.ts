@@ -8,7 +8,7 @@
  * categories and channels by position, overrides by id (ties by id).
  */
 import type { QueryClient } from "@tanstack/react-query";
-import type { Category, Channel, PermissionOverride, Role, Room, RoomDetail } from "@tavrn/sdk";
+import type { Category, Channel, Member, PermissionOverride, Role, Room, RoomDetail, User } from "@tavrn/sdk";
 
 /** A change of the cached room detail. */
 export type RoomPatch = (room: RoomDetail) => RoomDetail;
@@ -99,3 +99,58 @@ export function roomRefetcher(queryClient: QueryClient, delayMs = 250) {
     },
   };
 }
+
+// ---- The member list of a room (`["members", roomId]`, every member, the node's order: by user id) -------------
+
+/** A change of a cached member list. */
+export type MembersPatch = (list: Member[]) => Member[];
+
+const byUserId = (a: Member, b: Member) => (a.user.id < b.user.id ? -1 : a.user.id > b.user.id ? 1 : 0);
+
+/** `member` inserted or replaced (by user id), in the node's order. */
+export const withMember = (member: Member): MembersPatch => (list) => {
+  if (typeof member?.user?.id !== "string") return list;
+  const at = list.findIndex((m) => m.user.id === member.user.id);
+  if (at >= 0) return list.map((m, i) => (i === at ? member : m));
+  return [...list, member].sort(byUserId);
+};
+
+/** A joined user (`member.join` carries the user only): no roles, no room profile yet. */
+export const joinedMember = (user: User, joinedAt = new Date().toISOString()): Member => ({ user, roles: [], nick: null, nickname: null, joined_at: joinedAt, room_avatar: null, room_avatar_animated: false, room_avatar_still: null, room_bio: null, timeout_until: null });
+
+/** A joined user added unless already listed (a listed member keeps its roles and room profile). */
+export const withJoined = (user: User): MembersPatch => (list) => (typeof user?.id !== "string" || list.some((m) => m.user.id === user.id) ? list : withMember(joinedMember(user))(list));
+
+export const withoutMember = (userId: string): MembersPatch => (list) => (list.some((m) => m.user.id === userId) ? list.filter((m) => m.user.id !== userId) : list);
+
+/**
+ * The public profile of one user replaced in a list (`user.update`): matched by id and address, so only the copies
+ * of the node that sent it change (user ids are node-local; another node's copy, with its own avatar paths, waits
+ * for that node's own event). The same list comes back when the user is not in it.
+ */
+export function withUser<T>(list: readonly T[], user: User, get: (item: T) => User, set: (item: T, user: User) => T): readonly T[] {
+  if (!list.some((x) => sameUser(get(x), user))) return list;
+  return list.map((x) => (sameUser(get(x), user) ? set(x, { ...get(x), ...user }) : x));
+}
+
+export const sameUser = (a: Pick<User, "id" | "address"> | null | undefined, b: Pick<User, "id" | "address">) => !!a && a.id === b.id && a.address === b.address;
+
+/** The cached member list of a room, if any. */
+export const cachedMembers = (queryClient: QueryClient, roomId: string) => queryClient.getQueryData<Member[]>(["members", roomId]);
+
+/**
+ * Applies `patch` to the room's cached member list. While the list is being fetched the answer may predate the change:
+ * it is fetched again instead (the patch would be overwritten). Nothing is fetched for a list nobody loaded.
+ */
+export function patchMembers(queryClient: QueryClient, roomId: string, patch: MembersPatch): void {
+  const query = queryClient.getQueryCache().find<Member[]>({ queryKey: ["members", roomId], exact: true });
+  if (!query) return;
+  if (query.state.fetchStatus === "fetching") {
+    void queryClient.invalidateQueries({ queryKey: ["members", roomId], exact: true });
+    return;
+  }
+  if (query.state.data) queryClient.setQueryData<Member[]>(["members", roomId], (list) => (list ? patch(list) : list));
+}
+
+/** `member_count` of the cached room detail moved by `delta` (a join or leave of another member). */
+export const withMemberCount = (delta: number): RoomPatch => (d) => ({ ...d, member_count: Math.max(0, (d.member_count ?? 0) + delta) });

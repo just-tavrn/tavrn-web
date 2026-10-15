@@ -32,6 +32,7 @@ import { usePresence } from "../stores/presence";
 import { useNotifications } from "../stores/notifications";
 import { isAttentive } from "./useMarkRead";
 import { loadRoomDetails, notifyMessage } from "../lib/notify";
+import { applyUserUpdate, isEventUser } from "../lib/userUpdate";
 import { historyPending, historyReceive } from "../crypto/history";
 import { historyDecidedEvent, historyRequestEvent } from "../history/restore";
 import { registerFilesChannel, useHistoryKeys } from "../files/registry";
@@ -309,13 +310,12 @@ export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: 
     socket.on<Parameters<typeof historyDecidedEvent>[0]>("history.request_decided", (d) => historyDecidedEvent(d, node, queryClient, me()?.address)),
     // The room detail and the room list follow the room's metadata events (patched from their payloads, roomEvents.ts).
     ...roomEventHandlers(socket, queryClient, me),
+    // The member list follows member.* from the payloads (roomEvents.ts); a kick or ban of the viewer is announced.
     socket.on<{ room_id: string; user_id: string; kicked?: boolean; banned?: boolean }>("member.leave", (d) => {
-      void queryClient.invalidateQueries({ queryKey: ["members", d.room_id] });
       if (d.user_id === me()?.id && (d.kicked || d.banned)) {
         useToasts.getState().push({ kind: "warning", title: t(d.banned ? "notice.banned" : "notice.kicked") });
       }
     }),
-    ...["member.join", "member.update"].map((type) => socket.on<{ room_id: string }>(type, (d) => void queryClient.invalidateQueries({ queryKey: ["members", d.room_id] }))),
     // `hidden: true`: the user lost access (PROTOCOL.md §6), the channel itself still exists.
     socket.on<{ id?: string; hidden?: boolean }>("channel.delete", (d) => {
       useHiddenChannels.getState().deleted(d);
@@ -329,13 +329,12 @@ export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: 
       useInteractions.getState().add({ interactionId: r.interaction_id, conversationId: r.conversation_id, messageId: r.message_id ?? null, kind: "ephemeral", application: r.application, content: r.content, epoch: r.epoch, deviceId: r.device_id }),
     ),
     // ---- Profiles and presence (design note 4.9)
-    socket.on<Presence>("presence.update", (p) => onPresence(p)),
+    socket.on<Presence>("presence.update", (p) => onPresence(p, node)),
+    // The cached lists showing the user are patched from the payload (lib/userUpdate.ts).
     socket.on<{ user: User }>("user.update", (d) => {
-      for (const key of ["members", "friends", "conversations", "conversation", "profile", "blocks", "requests"]) void queryClient.invalidateQueries({ queryKey: [key] });
-      if (d.user.address === useAuth.getState().user?.address && d.user.id === useAuth.getState().user?.id) {
-        const current = useAuth.getState().user;
-        if (current) useAuth.getState().setUser({ ...current, ...d.user });
-      }
+      if (!isEventUser(d?.user)) return;
+      applyUserUpdate(queryClient, d.user, node);
+      if (node === null) applyOwnProfile(d.user);
     }),
     socket.on<{ request: { conversation: Conversation } }>("conversation.request", () => {
       void queryClient.invalidateQueries({ queryKey: ["requests"] });
@@ -349,15 +348,35 @@ export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: 
   ];
 }
 
-/** A `presence.update`: others go to the store, the own one (unfiltered view) updates `mine`. */
-function onPresence(p: Presence) {
+/**
+ * A `presence.update`: others go to the store, the own one (unfiltered view) updates `mine`. The own presence is the
+ * home node's to say: another node's socket (`node` set) never changes it.
+ */
+export function onPresence(p: Presence, node: string | null = null) {
   const store = usePresence.getState();
   const me = useAuth.getState().user?.address;
   if (p.user === me) {
-    if (store.mine) store.setMine({ ...store.mine, effective: p.status, custom_status: p.custom_status, activity: p.activity });
+    if (node === null && store.mine) store.setMine({ ...store.mine, effective: p.status, custom_status: p.custom_status, activity: p.activity });
     return;
   }
   store.apply(p);
+}
+
+/** Fields of the own profile a `user.update` may change: name and avatar (PROTOCOL.md §6), nothing else. */
+const OWN_PROFILE_FIELDS = ["display_name", "avatar", "avatar_still", "avatar_blob_id"] as const;
+
+/**
+ * The home node's `user.update` of the signed-in account (another device changed the name or avatar): only the display
+ * fields are taken over; the account's id, address, domain, username and flags never come from an event. Only the home
+ * socket calls this; other nodes' copies of the user are node-local and never merged into the account.
+ */
+export function applyOwnProfile(user: User) {
+  const current = useAuth.getState().user;
+  if (!current || user.address !== current.address || user.id !== current.id) return;
+  const patch: Partial<User> = {};
+  for (const key of OWN_PROFILE_FIELDS) if (key in user) (patch as Record<string, unknown>)[key] = user[key];
+  if (OWN_PROFILE_FIELDS.every((k) => patch[k] === undefined || patch[k] === current[k])) return;
+  useAuth.getState().setUser({ ...current, ...patch });
 }
 
 /** Connects the WebSocket while a token is present and keeps the query cache up to date. */

@@ -127,15 +127,62 @@ describe("roomEventHandlers", () => {
     expect(keys()).toEqual(['["commands"]', '["commands"]', '["room","r1"]']);
   });
 
-  it("member joins and leaves refetch the room (its member count); the own ones refresh the room list too", async () => {
-    const { emit, keys } = setup();
-    emit("member.join", { room_id: "r1", user: { id: "other" } });
-    emit("member.leave", { room_id: "r1", user_id: "other2" });
+  it("another member's join or leave patches the member list and the member count without any refetch", async () => {
+    const { client, emit, keys, room } = setup();
+    const user = (id: string) => ({ id, address: `${id}@localhost`, display_name: id, username: id, domain: "localhost", kind: "user" });
+    const member = (id: string, roles: string[] = []) => ({ user: user(id), roles, joined_at: "2026-01-01T00:00:00Z", room_avatar_animated: false });
+    client.setQueryData(["members", "r1"], [member("a"), member("c", ["mod"])]);
+    // Observed like the member list does: an invalidation would fetch it again.
+    const fetches = vi.fn(async () => [] as unknown[]);
+    const observer = client.getQueryCache().build(client, { queryKey: ["members", "r1"], queryFn: fetches });
+    emit("member.join", { room_id: "r1", user: user("b") });
+    expect(client.getQueryData<{ user: { id: string } }[]>(["members", "r1"])!.map((m) => m.user.id)).toEqual(["a", "b", "c"]);
+    expect(room().member_count).toBe(4);
+    // A repeated join keeps the listed member (roles, room profile) and the count.
+    emit("member.join", { room_id: "r1", user: user("c") });
+    expect(client.getQueryData<{ roles: string[] }[]>(["members", "r1"])![2]!.roles).toEqual(["mod"]);
+    expect(room().member_count).toBe(4);
+    emit("member.update", { room_id: "r1", member: member("b", ["vip"]) });
+    expect(client.getQueryData<{ roles: string[] }[]>(["members", "r1"])![1]!.roles).toEqual(["vip"]);
+    emit("member.leave", { room_id: "r1", user_id: "a" });
+    expect(client.getQueryData<{ user: { id: string } }[]>(["members", "r1"])!.map((m) => m.user.id)).toEqual(["b", "c"]);
+    expect(room().member_count).toBe(3);
+    // Unknown leaver: not listed, the count stays.
+    emit("member.leave", { room_id: "r1", user_id: "zz" });
+    expect(room().member_count).toBe(3);
     await vi.advanceTimersByTimeAsync(300);
-    expect(keys()).toEqual(['["room","r1"]']);
+    expect(keys()).toEqual(['["commands"]']);
+    expect(fetches).not.toHaveBeenCalled();
+    expect(observer.state.data).toHaveLength(2);
+  });
+
+  it("a join or leave without a cached member list still moves the count", async () => {
+    const { emit, keys, room } = setup();
+    emit("member.join", { room_id: "r1", user: { id: "x", address: "x@localhost" } });
+    emit("member.join", { room_id: "r1", user: { id: "y", address: "y@localhost" } });
+    emit("member.leave", { room_id: "r1", user_id: "x" });
+    expect(room().member_count).toBe(4);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(keys()).toEqual([]);
+  });
+
+  it("a member list being fetched is fetched again instead of patched (the answer may predate the event)", () => {
+    const { client, emit, invalidate } = setup();
+    client.setQueryData(["members", "r1"], []);
+    const query = client.getQueryCache().find({ queryKey: ["members", "r1"] })!;
+    query.setState({ fetchStatus: "fetching" });
+    emit("member.join", { room_id: "r1", user: { id: "x", address: "x@localhost" } });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["members", "r1"], exact: true });
+  });
+
+  it("the viewer's own joins and leaves refetch the room and refresh the room list", async () => {
+    const { emit, keys } = setup();
+    emit("member.join", { room_id: "r1", user: { id: "me", address: "me@localhost" } });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(keys()).toEqual(['["rooms"]', '["room","r1"]']);
     emit("member.leave", { room_id: "r1", user_id: "me", kicked: true });
     await vi.advanceTimersByTimeAsync(300);
-    expect(keys()).toEqual(['["room","r1"]', '["rooms"]', '["room","r1"]']);
+    expect(keys()).toEqual(['["rooms"]', '["room","r1"]', '["rooms"]', '["room","r1"]']);
   });
 
   it("commands.update refreshes the command palettes; unsubscribing drops pending refetches", async () => {
