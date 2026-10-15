@@ -1581,6 +1581,7 @@
   "common.continue": "Weiter",
   "common.copied": "In die Zwischenablage kopiert",
   "common.copy_failed": "Kopieren hat nicht geklappt – bitte den Text markieren und selbst kopieren",
+  "common.refresh_failed": "Erledigt, aber die Ansicht konnte nicht aktualisiert werden. Lade neu, um den aktuellen Stand zu sehen.",
   "common.download": "Herunterladen",
   "common.remove": "Entfernen",
   "wizard.step": "Schritt {current} von {total}",

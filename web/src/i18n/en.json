@@ -1581,6 +1581,7 @@
   "common.continue": "Continue",
   "common.copied": "Copied to the clipboard",
   "common.copy_failed": "Copying failed; please select the text and copy it by hand",
+  "common.refresh_failed": "Done, but the view could not be updated. Reload to see the current state.",
   "common.download": "Download",
   "common.remove": "Remove",
   "wizard.step": "Step {current} of {total}",
