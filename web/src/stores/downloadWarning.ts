@@ -4,7 +4,7 @@
  * resolver. {@link DownloadWarningDialog} shows it; without a mounted dialog the browser's own confirm asks.
  */
 import { create } from "zustand";
-import type { ExecutableKind } from "../lib/uploads";
+import type { ExecutableKind } from "@tavrn/sdk";
 
 interface Pending {
   name: string;

@@ -10,7 +10,7 @@
  * date, and their owner can still delete them ("Your files").
  */
 import { forgetGhostAck, isGhostRefusal } from "../components/GhostGate";
-import { newUlid as ulid, type FileEntry, type TavrnApi } from "@tavrn/sdk";
+import { declaredCategory, newUlid as ulid, type FileEntry, type TavrnApi } from "@tavrn/sdk";
 import {
   decryptFileChunks,
   decryptFileBytes,
@@ -28,7 +28,7 @@ import {
   type MlsManager,
   type RecordEntry,
 } from "@tavrn/e2ee";
-import { classifyFile, declaredCategory } from "../lib/uploads";
+import { classifyFile } from "../lib/uploads";
 import { safeBlobType } from "../lib/preview";
 import type { E2eePhase } from "../hooks/useE2eeConversation";
 

@@ -2,7 +2,7 @@
 // Wiring of the MLS session manager: the tabs of this browser coordinate one MLS state per node, account and device
 // (`@tavrn/e2ee` tabs.ts); the KeyPackages of `ensureDevice` are created in the open manager's state.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { OpenMlsOptions } from "@tavrn/e2ee";
+import { E2eeError, openMlsManager, type OpenMlsOptions } from "@tavrn/e2ee";
 
 const opened: OpenMlsOptions[] = [];
 const manager = {
@@ -34,7 +34,8 @@ vi.mock("../crypto/e2ee", async (importOriginal) => ({ ...(await importOriginal<
 import { cryptoStore } from "../crypto/store";
 import { useAuth } from "./auth";
 import { useE2ee } from "./e2ee";
-import { getMls, mlsTabName, resetMls, syncInboxChannels } from "./mls";
+import { getMls, mlsOpenFailure, mlsTabName, resetMls, syncInboxChannels } from "./mls";
+import { describeError } from "./toasts";
 
 const user = (address: string) => ({ address, username: address.split("@")[0], domain: address.split("@")[1] }) as never;
 
@@ -113,5 +114,31 @@ describe("inbox keys of channels with webhooks (APPLICATIONS.md §6.1a)", () => 
     vi.mocked(cryptoStore.isUnlocked).mockReturnValue(true);
     await getMls();
     expect(manager.setInboxWanted).not.toHaveBeenCalled();
+  });
+});
+
+describe("a session manager that cannot open", () => {
+  it("keeps the encryption error (stored pins that do not parse) for the views, translated, until an open works", async () => {
+    vi.mocked(openMlsManager).mockRejectedValueOnce(new E2eeError("state_unreadable"));
+    expect(await getMls()).toBeNull();
+    const failure = mlsOpenFailure();
+    expect(failure).toBeInstanceOf(E2eeError);
+    expect(describeError(failure)).toBe("Gespeicherte Verschlüsselungsdaten konnten nicht gelesen werden. Sie bleiben unverändert erhalten; lade die Seite neu, um es erneut zu versuchen.");
+    // The next call tries again; once it works the failure is gone.
+    expect(await getMls()).toBe(manager);
+    expect(mlsOpenFailure()).toBeNull();
+  });
+
+  it("other failures (the node unreachable) leave the device locked, as before", async () => {
+    vi.mocked(openMlsManager).mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    expect(await getMls()).toBeNull();
+    expect(mlsOpenFailure()).toBeNull();
+  });
+
+  it("sign-out forgets the failure", async () => {
+    vi.mocked(openMlsManager).mockRejectedValueOnce(new E2eeError("state_unreadable"));
+    await getMls();
+    resetMls();
+    expect(mlsOpenFailure()).toBeNull();
   });
 });

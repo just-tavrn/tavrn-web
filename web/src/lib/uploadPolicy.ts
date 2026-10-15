@@ -4,7 +4,7 @@
  * `uploads::effective`), for the editors of roles and overrides: the effective categories of a subject and what a
  * neutral category in an override inherits. The node decides; this only explains its decision in the settings.
  */
-import { UPLOAD_CATEGORIES, type UploadCategory } from "./uploads";
+import { UPLOAD_CATEGORIES, type UploadCategoryName } from "@tavrn/sdk";
 
 /** An override's upload masks as the room detail carries them. */
 export interface UploadOverrideInput {
@@ -27,7 +27,7 @@ export interface UploadSubject {
 
 export type UploadOverrideState = "allow" | "neutral" | "deny";
 
-const inOrder = (set: Set<string>): UploadCategory[] => UPLOAD_CATEGORIES.filter((c) => set.has(c));
+const inOrder = (set: Set<string>): UploadCategoryName[] => UPLOAD_CATEGORIES.filter((c) => set.has(c));
 
 function roleBase(s: UploadSubject): Set<string> {
   if (s.privileged) return new Set(UPLOAD_CATEGORIES);
@@ -60,7 +60,7 @@ function applyLayer(cats: Set<string>, s: UploadSubject, overrides: readonly Upl
 }
 
 /** The categories the subject may upload with the override layers (the category's, then the channel's). */
-export function effectiveUploads(s: UploadSubject, layers: readonly (readonly UploadOverrideInput[])[]): UploadCategory[] {
+export function effectiveUploads(s: UploadSubject, layers: readonly (readonly UploadOverrideInput[])[]): UploadCategoryName[] {
   const cats = roleBase(s);
   if (!s.privileged) for (const layer of layers) applyLayer(cats, s, layer);
   return inOrder(cats);
@@ -74,7 +74,7 @@ export function inheritedUpload(s: UploadSubject, categoryOverrides: readonly Up
   const layers = categoryOverrides ? [categoryOverrides] : [];
   const applies = (o: UploadOverrideInput) => (o.subject_type === "role" ? o.subject_id === s.everyoneId || s.roles.some((r) => r.id === o.subject_id) : o.subject_id === s.memberId);
   const touched = !s.privileged && (categoryOverrides ?? []).some((o) => applies(o) && [...(o.upload_allow ?? []), ...(o.upload_deny ?? [])].includes(category));
-  return { allowed: effectiveUploads(s, layers).includes(category as UploadCategory), source: touched ? "category" : "role" };
+  return { allowed: effectiveUploads(s, layers).includes(category as UploadCategoryName), source: touched ? "category" : "role" };
 }
 
 export function overrideUploadState(o: Pick<UploadOverrideInput, "upload_allow" | "upload_deny">, category: string): UploadOverrideState {

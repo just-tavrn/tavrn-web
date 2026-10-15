@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router";
-import { EVERYONE_RESTRICTED, Permission, hasPermission, parsePermissions, type Role, type RoomDetail } from "@tavrn/sdk";
+import { EVERYONE_RESTRICTED, Permission, UPLOAD_CATEGORIES, hasPermission, parsePermissions, type Role, type RoomDetail } from "@tavrn/sdk";
 import { canManageRole, planRoleReorder, sortRoles, topPosition } from "../../lib/hierarchy";
 import { safeColor } from "../../lib/untrusted";
 import { useNode } from "../../components/NodeScope";
@@ -11,7 +11,6 @@ import { toastError, useToasts } from "../../stores/toasts";
 import { useAction } from "../../hooks/useAction";
 import { Button, Field, Input } from "../../components/ui";
 import { ConfirmDialog, PermissionCheckboxes, Section } from "./common";
-import { UPLOAD_CATEGORIES } from "../../lib/uploads";
 import { useRoomPreview } from "../../stores/rolePreview";
 import { ViewAsRole } from "./ViewAsRole";
 import { patchRoom, withRole, withoutRole, type RoomPatch } from "../../lib/roomCache";

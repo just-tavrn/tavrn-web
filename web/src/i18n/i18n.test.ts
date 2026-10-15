@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import type { DecryptFailure, E2eeErrorCode } from "@tavrn/e2ee";
 import { PERMISSION_LABELS } from "@tavrn/sdk";
 import { act, renderHook } from "@testing-library/react";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -25,6 +26,29 @@ describe("i18n", () => {
   it("every permission the editors list is translated in every language (perm.<NAME>)", () => {
     for (const [code, { messages }] of all) {
       const missing = PERMISSION_LABELS.map((p) => `perm.${p.name}`).filter((k) => !(k in messages));
+      expect({ code, missing }).toEqual({ code, missing: [] });
+    }
+  });
+
+  it("every decrypt failure and every encryption error code of @tavrn/e2ee is translated in every language", () => {
+    // `satisfies Record<…>`: a new reason or code in @tavrn/e2ee fails the typecheck until it is listed here.
+    const reasons = Object.keys({ missing_key: 1, bad_signature: 1, unknown_device: 1, replay: 1, invalid: 1, locked: 1, envelope_mismatch: 1, retry: 1 } satisfies Record<DecryptFailure, 1>);
+    const codes = Object.keys({
+      recovery_key_invalid: 1,
+      recovery_key_wrong: 1,
+      passkey_wrong: 1,
+      no_recovery_entry: 1,
+      no_passkey_entry: 1,
+      identity_mismatch: 1,
+      rotation_devices: 1,
+      locked: 1,
+      already_set_up: 1,
+      device_key_lost: 1,
+      state_unreadable: 1,
+    } satisfies Record<E2eeErrorCode, 1>);
+    const wanted = [...reasons.flatMap((r) => [`messages.undecryptable.${r}`, `messages.undecryptable_short.${r}`]), ...codes.map((c) => `e2ee.error.${c}`)];
+    for (const [code, { messages }] of all) {
+      const missing = wanted.filter((k) => !(k in messages));
       expect({ code, missing }).toEqual({ code, missing: [] });
     }
   });

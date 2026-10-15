@@ -3,12 +3,13 @@
  * Saving a file the user downloads from a conversation or a files channel (attachments, the media viewer, files
  * entries): executables and scripts ask first ("This file can run programs on your computer"), everything else is
  * saved at once. The check runs on the content that is about to be saved, so it covers encrypted files (decrypted
- * here) exactly like plaintext ones, with the node's rules (lib/uploads.ts `executableKind`; archives excluded).
+ * here) exactly like plaintext ones, with the node's rules (`executableKind` of @tavrn/sdk; archives excluded).
  */
 import { t } from "../i18n";
 import { saveFile, type SaveFileOutcome, type SaveFileRequest } from "../platform/saveFile";
 import { askDownloadAnyway } from "../stores/downloadWarning";
-import { executableKind, readHead } from "./uploads";
+import { executableKind } from "@tavrn/sdk";
+import { readHead } from "./uploads";
 
 /**
  * Saves `file` after the warning if it is an executable; `type` is the file's declared content type (the saved blob
