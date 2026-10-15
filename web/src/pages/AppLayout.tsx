@@ -3,7 +3,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate, Outlet, useLocation, useNavigate, useParams } from "react-router";
 import { api, publicApi } from "../lib/api";
-import { useAuth } from "../stores/auth";
+import { useAuth, useSessionKey } from "../stores/auth";
 import { useNodeRealtime, useRealtime } from "../hooks/useRealtime";
 import { useLocale, useT } from "../i18n";
 import { syncMailLocale } from "../lib/mailLocale";
@@ -147,14 +147,14 @@ function useGameActivity(signedIn: boolean) {
   }, [signedIn]);
 }
 
-function useNotificationSetup(token: string | null, address: string | undefined) {
+function useNotificationSetup(session: string | null, address: string | undefined) {
   const navigate = useNavigate();
   useEffect(() => {
     setNotificationNavigator((path) => navigate(path));
     return () => setNotificationNavigator(null);
   }, [navigate]);
   useEffect(() => {
-    if (!token || !address) return;
+    if (!session || !address) return;
     void useNotifications.getState().load({ get: () => api.users.notificationSettings(), put: (s) => api.users.putNotificationSettings(s) }, address);
     // Web push of this device (PROTOCOL.md §6d): renews an enabled registration on the home node.
     const { user, deviceId } = useAuth.getState();
@@ -166,28 +166,28 @@ function useNotificationSetup(token: string | null, address: string | undefined)
       useNotifications.getState().reset();
       usePush.getState().reset();
     };
-  }, [token, address]);
+  }, [session, address]);
 }
 
 /**
  * What the automatic image previews depend on (design note 4.12): the `auto_preview` setting of the account, the
  * node's size cap and the friends list (shared with the friends views through the query cache).
  */
-function usePrivacySetup(token: string | null, address: string | undefined) {
+function usePrivacySetup(session: string | null, address: string | undefined) {
   // The language of the node's mails follows the client's (lib/mailLocale.ts): checked at start, sent on a switch.
   const locale = useLocale((s) => s.locale);
   const mailLocale = useRef<string | null | undefined>(undefined);
   useEffect(() => {
-    if (!token || !address || mailLocale.current === undefined || mailLocale.current === locale) return;
+    if (!session || !address || mailLocale.current === undefined || mailLocale.current === locale) return;
     void syncMailLocale(api, mailLocale.current, locale)
       .then(() => {
         mailLocale.current = locale;
       })
       .catch(() => undefined);
-  }, [token, address, locale]);
-  const friends = useQuery({ queryKey: ["friends"], queryFn: () => api.friends.list(), enabled: !!token && !!address, staleTime: 30_000 });
+  }, [session, address, locale]);
+  const friends = useQuery({ queryKey: ["friends"], queryFn: () => api.friends.list(), enabled: !!session && !!address, staleTime: 30_000 });
   useEffect(() => {
-    if (!token || !address) return;
+    if (!session || !address) return;
     mailLocale.current = undefined;
     void api.users
       .me()
@@ -203,17 +203,17 @@ function usePrivacySetup(token: string | null, address: string | undefined) {
       .info()
       .then((info) => usePrivacy.getState().setMaxBytes(info.preview_auto_max_bytes))
       .catch(() => undefined);
-  }, [token, address]);
+  }, [session, address]);
   useEffect(() => {
     usePrivacy.getState().setFriends(friends.data?.friends.map((f) => f.user.address) ?? []);
   }, [friends.data]);
 }
 
 /** Keeps the index in sync and federated sessions alive while signed in. */
-function useNodeHousekeeping(token: string | null, address: string | undefined) {
+function useNodeHousekeeping(session: string | null, address: string | undefined) {
   const queryClient = useQueryClient();
   useEffect(() => {
-    if (!token || !address) return;
+    if (!session || !address) return;
     // Signed in with an account of another node: this client's own node needs a federated session too.
     if (useAuth.getState().home) {
       void publicApi.node
@@ -236,41 +236,54 @@ function useNodeHousekeeping(token: string | null, address: string | undefined) 
     void renewExpiring();
     const timer = setInterval(() => void renewExpiring(), RENEW_CHECK_MS);
     return () => clearInterval(timer);
-  }, [token, address, queryClient]);
+  }, [session, address, queryClient]);
 }
 
-export function AppLayout() {
-  const token = useAuth((s) => s.token);
+/**
+ * Everything a signed-in session sets up once (index sync and federated sessions, notification settings, web push,
+ * the Android connection service, privacy settings, the device check, the background search sync). Keyed on the
+ * session (account and device, {@link useSessionKey}), not on the access token: a token refresh changes nothing here.
+ */
+export function useSessionHousekeeping(): void {
+  const session = useSessionKey();
   const address = useAuth((s) => s.user?.address);
   const status = useE2ee((s) => s.status);
-  useRealtime();
-  useNodeRealtime();
-  useVoiceRealtime();
-  useNodeHousekeeping(token, address);
-  useNotificationSetup(token, address);
-  useDesktopShell(address);
-  useGameActivity(!!token);
-  useUpdateAnnouncement();
-  usePrivacySetup(token, address);
-  const { node: nodeParam, roomId, conversationId } = useParams();
-  const location = useLocation();
-  // The home node keeps the classic routes; other nodes live under /n/<domain>.
-  const node = nodeParam && !isHome(nodeParam) ? nodeParam : null;
+  useNodeHousekeeping(session, address);
+  useNotificationSetup(session, address);
+  usePrivacySetup(session, address);
   useEffect(() => {
-    if (!token || !address) return;
+    if (!session || !address) return;
     void useE2ee
       .getState()
       .refresh()
       .then((s) => {
         if (s === "unlocked") void useE2ee.getState().ensureDevice();
       });
-  }, [token, address]);
+  }, [session, address]);
   // Background sync of the local search index while this device can decrypt (design note 4.4).
   useEffect(() => {
-    if (!token || status !== "unlocked") return;
+    if (!session || status !== "unlocked") return;
     return startSearchSync();
-  }, [token, status]);
-  if (!token) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname)}`} replace />;
+  }, [session, status]);
+}
+
+export function AppLayout() {
+  // Signed in or not: a refreshed token re-renders nothing here.
+  const signedIn = useAuth((s) => !!s.token);
+  const address = useAuth((s) => s.user?.address);
+  const status = useE2ee((s) => s.status);
+  useRealtime();
+  useNodeRealtime();
+  useVoiceRealtime();
+  useSessionHousekeeping();
+  useDesktopShell(address);
+  useGameActivity(signedIn);
+  useUpdateAnnouncement();
+  const { node: nodeParam, roomId, conversationId } = useParams();
+  const location = useLocation();
+  // The home node keeps the classic routes; other nodes live under /n/<domain>.
+  const node = nodeParam && !isHome(nodeParam) ? nodeParam : null;
+  if (!signedIn) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname)}`} replace />;
   if (nodeParam && !node) return <Navigate to={location.pathname.replace(`/n/${nodeParam}`, "") || "/"} replace />;
   // Lock on close: a new tab must unlock before anything else (unless the user chose to skip in this tab).
   if (status === "locked" && !skipUnlockChosen()) return <Navigate to={`/encryption?next=${encodeURIComponent(location.pathname)}`} replace />;

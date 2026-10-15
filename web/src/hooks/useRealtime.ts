@@ -6,7 +6,7 @@ import { TavrnSocket, type Conversation, type EphemeralReply, type FriendRequest
 import { create } from "zustand";
 import { refreshHome, wsUrl } from "../lib/api";
 import { cleanupConversation, cleanupOwnLeaves } from "../lib/leafCleanup";
-import { useAuth } from "../stores/auth";
+import { useAuth, useSessionKey } from "../stores/auth";
 import { useToasts } from "../stores/toasts";
 import { t } from "../i18n";
 import { useTyping } from "../stores/typing";
@@ -363,7 +363,7 @@ function onPresence(p: Presence) {
 /** Connects the WebSocket while a token is present and keeps the query cache up to date. */
 export function useRealtime() {
   // One socket per signed-in account and device; refreshed tokens do not reconnect (the socket refreshes itself).
-  const session = useAuth((s) => (s.token && s.user ? `${s.user.address}/${s.deviceId ?? ""}` : null));
+  const session = useSessionKey();
   const queryClient = useQueryClient();
   // `useNavigate` changes with every route change: read it through a ref, so the socket stays connected.
   const navigateNow = useNavigate();

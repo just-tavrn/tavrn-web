@@ -187,6 +187,20 @@ export const useAuth = create<AuthState>((set, get) => ({
   },
 }));
 
+/**
+ * The identity of the signed-in session: account and device, null when signed out. Unlike the access token it does
+ * not change with a token refresh (hourly, or another tab's rotation): effects that set up a signed-in session
+ * (index sync, push registration, notification settings, presence, the search sync) are keyed on it.
+ */
+export function sessionKey(s: Pick<AuthState, "token" | "user" | "deviceId">): string | null {
+  return s.token && s.user ? `${s.user.address}/${s.deviceId ?? ""}` : null;
+}
+
+/** {@link sessionKey} of the current session; re-renders only when the account or the device changes. */
+export function useSessionKey(): string | null {
+  return useAuth(sessionKey);
+}
+
 // Other tabs rotate tokens and sign in or out: follow them (PROTOCOL.md §5b), so no tab keeps presenting a refresh
 // token that another tab already rotated.
 if (typeof window !== "undefined") {

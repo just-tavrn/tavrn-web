@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import type { Activity } from "@tavrn/sdk";
 import { useT } from "../i18n";
-import { useAuth } from "../stores/auth";
+import { useAuth, useSessionKey } from "../stores/auth";
 import { useNodes } from "../stores/nodes";
 import { CHOSEN_STATUSES, DOT_CLASS, activeCustom, usePresence, type PresenceStatus } from "../stores/presence";
 import { toastError } from "../stores/toasts";
@@ -37,18 +37,21 @@ export function expiryTime(choice: (typeof EXPIRY)[number], now = new Date()): s
   return minutes ? new Date(now.getTime() + minutes * 60_000).toISOString() : null;
 }
 
-/** Sync on start, on new node sessions and on reconnect; automatic idle after the set timeout (default 10 minutes). */
-function usePresenceSync() {
-  const token = useAuth((s) => s.token);
+/**
+ * Sync on start, on new node sessions and on reconnect; automatic idle after the set timeout (default 10 minutes).
+ * Keyed on the session (account and device), so a token refresh neither syncs again nor restarts the idle detector.
+ */
+export function usePresenceSync() {
+  const session = useSessionKey();
   const idleMinutes = useIdleSettings((s) => s.minutes);
   const domains = useNodes((s) => Object.keys(s.sessions).sort().join(","));
   const status = useRealtimeState((s) => s.status);
   useEffect(() => {
-    if (!token || status !== "ready") return;
+    if (!session || status !== "ready") return;
     void syncPresence().catch(() => undefined);
-  }, [token, domains, status]);
+  }, [session, domains, status]);
   useEffect(() => {
-    if (!token) return;
+    if (!session) return;
     const timeoutMs = idleTimeoutMs(idleMinutes);
     // "Never": an automatic idle of the earlier setting ends right away.
     if (timeoutMs === null) {
@@ -57,7 +60,7 @@ function usePresenceSync() {
     }
     const detector = createIdleDetector({ timeoutMs, onIdle: () => void setAutoIdle(true), onActive: () => void setAutoIdle(false) });
     return () => detector.stop();
-  }, [token, idleMinutes]);
+  }, [session, idleMinutes]);
 }
 
 export function PresenceMenu() {
