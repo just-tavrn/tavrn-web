@@ -18,6 +18,7 @@ import { ProfilePage } from "./pages/ProfilePage";
 import { MessageRequestPage, MessageRequestsPage } from "./pages/MessageRequestsPage";
 import { ReauthDialog } from "./components/ReauthDialog";
 import { DownloadWarningDialog } from "./components/DownloadWarningDialog";
+import { ConfirmHost } from "./components/Confirm";
 import { TermsGate } from "./components/legal/TermsGate";
 import { DateOfBirthGate } from "./components/age/DateOfBirthGate";
 import { NodePickerPage } from "./pages/NodePickerPage";
@@ -122,6 +123,7 @@ export function App() {
       </Routes>
       <ReauthDialog />
       <DownloadWarningDialog />
+      <ConfirmHost />
       <TermsGate />
       <DateOfBirthGate />
     </BrowserRouter>

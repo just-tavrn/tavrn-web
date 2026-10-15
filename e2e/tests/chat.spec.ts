@@ -41,9 +41,9 @@ test.describe("Text chat", () => {
     await page.keyboard.press("Enter");
     const edited = page.getByTestId("message").filter({ hasText: "Hallo Gilde, korrigiert!" });
     await expect(edited).toContainText("(bearbeitet)");
-    page.once("dialog", (d) => d.accept());
     await edited.hover();
     await edited.getByRole("button", { name: "Nachricht löschen" }).click();
+    await page.getByTestId("confirm-ok").click();
     await expect(edited).toHaveCount(0);
   });
 

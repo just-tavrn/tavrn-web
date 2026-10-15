@@ -3,6 +3,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ComponentModal, inputError } from "./ComponentModal";
+import { ConfirmHost } from "../components/Confirm";
 import type { Modal } from "@tavrn/sdk";
 
 const MODAL: Modal = {
@@ -17,7 +18,12 @@ const MODAL: Modal = {
 const apiError = (code: string, status: number, meta?: Record<string, unknown>) => Object.assign(new Error(code), { name: "TavrnApiError", code, status, problem: { code, status, detail: "", title: "", meta } });
 
 function open(onSubmit: (values: Record<string, string>) => Promise<void> = vi.fn(async () => undefined), onClose = vi.fn()) {
-  render(<ComponentModal modal={MODAL} appName="Raid Bot" onSubmit={onSubmit} onClose={onClose} />);
+  render(
+    <>
+      <ComponentModal modal={MODAL} appName="Raid Bot" onSubmit={onSubmit} onClose={onClose} />
+      <ConfirmHost />
+    </>,
+  );
   return { onSubmit, onClose, dialog: screen.getByRole("dialog", { name: "Raid note" }) };
 }
 
@@ -89,13 +95,15 @@ describe("component modal (APPLICATIONS.md §5.10)", () => {
     const { onClose, dialog } = open();
     await userEvent.keyboard("{Escape}");
     expect(onClose).toHaveBeenCalledTimes(1);
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     await userEvent.type(within(dialog).getByLabelText(/Character/), "x");
     await userEvent.keyboard("{Escape}");
-    expect(confirm).toHaveBeenCalledTimes(1);
+    // The app's confirmation over the form; Escape there keeps the form (and closes only the question).
+    expect(screen.getByTestId("confirm-text")).toHaveTextContent("Was du in dieses Formular geschrieben hast, verwerfen?");
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByTestId("confirm-dialog")).toBeNull();
     expect(onClose).toHaveBeenCalledTimes(1);
-    confirm.mockReturnValue(true);
     await userEvent.click(within(dialog).getByTestId("component-modal-cancel"));
+    await userEvent.click(screen.getByTestId("confirm-ok"));
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 });

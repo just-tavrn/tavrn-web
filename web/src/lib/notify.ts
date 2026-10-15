@@ -9,6 +9,7 @@
 import { previewOf } from "../stores/rolePreview";
 import { previewHides } from "./previewRoom";
 import { plainInEncrypted } from "./unverified";
+import { previewText } from "./messagePreview";
 import type { QueryClient } from "@tanstack/react-query";
 import type { Conversation, Message, RoomDetail } from "@tavrn/sdk";
 import { t } from "../i18n";
@@ -35,12 +36,9 @@ const PREVIEW = 140;
  */
 export function plainPreview(m: Pick<Message, "encrypted" | "content">, conversationEncrypted = false): string | null {
   if (m.encrypted || plainInEncrypted(m, conversationEncrypted)) return null;
-  const c = m.content as { type?: unknown; body?: unknown; question?: unknown } | null;
-  // A plaintext poll (PROTOCOL.md §7g) reads as its question.
-  if (c?.type === "poll" && typeof c.question === "string") return `📊 ${c.question.replace(/\s+/g, " ").trim().slice(0, PREVIEW - 3)}`;
-  if (!c || c.type !== "text" || typeof c.body !== "string") return null;
-  const body = c.body.replace(/\s+/g, " ").trim();
-  return body.length > PREVIEW ? `${body.slice(0, PREVIEW - 1)}…` : body;
+  const c = m.content as { type?: unknown } | null;
+  // Texts and plaintext polls (PROTOCOL.md §7g, read as their question).
+  return c?.type === "text" || c?.type === "poll" ? previewText(c, PREVIEW) : null;
 }
 
 export interface Located {

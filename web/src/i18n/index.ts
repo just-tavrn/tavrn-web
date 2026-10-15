@@ -101,10 +101,27 @@ export const useLocale = create<LocaleState>((set) => ({
   },
 }));
 
-/** Translation function for components; re-renders when the language changes. */
-export function useT() {
-  const locale = useLocale((s) => s.locale);
-  return (key: string, params?: Record<string, string | number>) => translate(locale, key, params);
+/** A translation function bound to one language. */
+export type TFn = (key: string, params?: Record<string, string | number>) => string;
+
+/** One function per language: `useT()` keeps its identity until the language changes. */
+const bound = new Map<string, TFn>();
+
+function boundT(locale: string): TFn {
+  let fn = bound.get(locale);
+  if (!fn) {
+    fn = (key, params) => translate(locale, key, params);
+    bound.set(locale, fn);
+  }
+  return fn;
+}
+
+/**
+ * Translation function for components; re-renders when the language changes. The function is stable per language,
+ * so it can be a dependency of memos and effects.
+ */
+export function useT(): TFn {
+  return boundT(useLocale((s) => s.locale));
 }
 
 /** Outside of components (stores, hooks without rendering). */

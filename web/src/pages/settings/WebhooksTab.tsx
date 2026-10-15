@@ -16,7 +16,8 @@ import { UserAvatar } from "../../components/Avatar";
 import { WebhookBadge } from "../../components/Badges";
 import { Button, Dialog, Field, Input } from "../../components/ui";
 import { channelName } from "../../lib/names";
-import { describeError, toastError, useToasts } from "../../stores/toasts";
+import { describeError, useToasts } from "../../stores/toasts";
+import { useAction } from "../../hooks/useAction";
 import { getMls } from "../../stores/mls";
 import { ConfirmDialog, Section, Select } from "./common";
 
@@ -105,7 +106,7 @@ function CreateWebhook({ room, channels, mayEveryone, onCreated }: { room: RoomD
   const [channelId, setChannelId] = useState(channels[0]?.id ?? "");
   const [sealing, setSealing] = useState<Sealing>("sender");
   const [everyone, setEveryone] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const { run, busy } = useAction();
   const target = channels.find((c) => c.id === channelId);
   const encrypted = !!target?.encrypted;
   return (
@@ -113,21 +114,19 @@ function CreateWebhook({ room, channels, mayEveryone, onCreated }: { room: RoomD
       {channels.length === 0 && <p className="text-sm text-fg-2" data-testid="webhook-no-channel">{t("webhooks.no_channel")}</p>}
       <form
         className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
-        onSubmit={async (e) => {
+        onSubmit={(e) => {
           e.preventDefault();
-          setBusy(true);
-          try {
-            const created = await api.webhooks.create(room.id, channelId, { name: name.trim(), allow_mentions_everyone: everyone, ...(encrypted ? { sealing } : {}) });
-            // The webhook is usable once a member published the channel's inbox key: this device does it if it can.
-            if (encrypted) await (await getMls())?.publishInboxKey(qualify(domain, channelId)).catch(() => false);
-            setName("");
-            setEveryone(false);
-            await onCreated(created);
-          } catch (err) {
-            toastError(err);
-          } finally {
-            setBusy(false);
-          }
+          void run(
+            async () => {
+              const created = await api.webhooks.create(room.id, channelId, { name: name.trim(), allow_mentions_everyone: everyone, ...(encrypted ? { sealing } : {}) });
+              // The webhook is usable once a member published the channel's inbox key: this device does it if it can.
+              if (encrypted) await (await getMls())?.publishInboxKey(qualify(domain, channelId)).catch(() => false);
+              setName("");
+              setEveryone(false);
+              return created;
+            },
+            { refresh: onCreated },
+          );
         }}
       >
         <Field label={t("webhooks.name")}>
@@ -170,14 +169,8 @@ function WebhookRow({ room, webhook, channels, onChanged, onUrl }: { room: RoomD
   const [confirm, setConfirm] = useState<"reset" | "delete" | null>(null);
   const targetEncrypted = !!room.channels.find((c) => c.id === channelId)?.encrypted;
   const channel = room.channels.find((c) => c.id === webhook.channel_id);
-  const run = async (f: () => Promise<unknown>) => {
-    try {
-      await f();
-      await onChanged();
-    } catch (err) {
-      toastError(err);
-    }
-  };
+  const { run: act, busy } = useAction({ refresh: onChanged });
+  const run = (f: () => Promise<unknown>) => act(f);
   const used = webhook.last_used_at ? new Date(webhook.last_used_at).toLocaleString(intlLocale(), { dateStyle: "medium", timeStyle: "short" }) : t("webhooks.never_used");
   return (
     <li className="space-y-2 py-2" data-testid="webhook-row" data-webhook-id={webhook.id} data-sealing={webhook.sealing ?? undefined} data-pending={webhook.pending_key || undefined}>
@@ -227,7 +220,7 @@ function WebhookRow({ room, webhook, channels, onChanged, onUrl }: { room: RoomD
               </Select>
             </Field>
             <ForumHint channel={room.channels.find((c) => c.id === channelId)} />
-            <Button type="submit" data-testid="webhook-save">
+            <Button type="submit" disabled={busy} data-testid="webhook-save">
               {t("common.save")}
             </Button>
             {targetEncrypted && <SealingChoice value={sealing} onChange={setSealing} />}
@@ -247,7 +240,7 @@ function WebhookRow({ room, webhook, channels, onChanged, onUrl }: { room: RoomD
               />
             </label>
             {webhook.avatar && (
-              <Button variant="ghost" onClick={() => void run(() => api.webhooks.deleteAvatar(room.id, webhook.id))}>
+              <Button variant="ghost" disabled={busy} onClick={() => void run(() => api.webhooks.deleteAvatar(room.id, webhook.id))}>
                 {t("webhooks.avatar_remove")}
               </Button>
             )}

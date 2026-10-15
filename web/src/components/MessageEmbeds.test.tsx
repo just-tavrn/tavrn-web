@@ -2,7 +2,8 @@
 import { act, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Message } from "@tavrn/sdk";
-import { LinkPreviews, embedColor, embedHost } from "./LinkPreviews";
+import { LinkPreviews, embedColor } from "./LinkPreviews";
+import { urlHost } from "../lib/untrusted";
 import { MessageList } from "./MessageList";
 import { DEFAULT_CONTENT_PRIVACY, useContentPrivacy } from "../stores/contentPrivacy";
 
@@ -47,7 +48,7 @@ describe("message embeds (APPLICATIONS.md §6.4)", () => {
   it("drops invalid embeds and shows hosts in full", () => {
     render(<LinkPreviews body="" content={{ type: "text", body: "", embeds: [{ title: "x", url: "http://insecure.example" }] }} />);
     expect(screen.queryByTestId("message-embed")).toBeNull();
-    expect(embedHost("https://login.bank.example.evil.example/path")).toBe("login.bank.example.evil.example");
+    expect(urlHost("https://login.bank.example.evil.example/path")).toBe("login.bank.example.evil.example");
     expect(embedColor(0)).toBe("#000000");
     expect(embedColor(undefined)).toBeUndefined();
   });

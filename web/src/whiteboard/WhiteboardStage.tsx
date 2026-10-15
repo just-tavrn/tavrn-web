@@ -15,6 +15,7 @@ import { useNode } from "../components/NodeScope";
 import { Button } from "../components/ui";
 import { EyeOffIcon } from "../components/icons";
 import { toastError } from "../stores/toasts";
+import { confirmDialog } from "../components/Confirm";
 import { ScreenOffIcon } from "../voice/ui/icons";
 import { FullscreenButton, FullscreenControls, exitFullscreen, fullscreenElement, useFullscreen } from "../voice/ui/fullscreen";
 import { useWhiteboardSession } from "./store";
@@ -131,7 +132,7 @@ export function WhiteboardIndicator({ channelId }: { channelId: string }) {
   const [busy, setBusy] = useState(false);
   if (!session || !isOwner) return null;
   const close = async () => {
-    if (!confirm(t("whiteboard.close_confirm"))) return;
+    if (!(await confirmDialog({ title: t("whiteboard.close"), text: t("whiteboard.close_confirm"), confirmLabel: t("whiteboard.close"), danger: true }))) return;
     setBusy(true);
     try {
       await controller.close();
@@ -171,7 +172,7 @@ export function WhiteboardControl({ channelId, canOpen, className = "" }: { chan
     setBusy(true);
     try {
       if (isOwner) {
-        if (confirm(t("whiteboard.close_confirm"))) await controller.close();
+        if (await confirmDialog({ title: t("whiteboard.close"), text: t("whiteboard.close_confirm"), confirmLabel: t("whiteboard.close"), danger: true })) await controller.close();
       } else if (!othersBoard) {
         await openBoard(controller, { domain, conversationId: channelId });
       }

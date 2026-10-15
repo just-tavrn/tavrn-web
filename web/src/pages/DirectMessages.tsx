@@ -13,6 +13,7 @@ import { useUnread } from "../stores/unread";
 import { useShell } from "../components/AppShell";
 import { conversationPath, useNode } from "../components/NodeScope";
 import { Avatar, Button, Dialog, ErrorText, Field, Input } from "../components/ui";
+import { confirmDialog } from "../components/Confirm";
 import { BotBadge, KeyChangedBadge, UnreadBadges, useHasUnread } from "../components/Badges";
 import { ConversationView } from "../components/ConversationView";
 import { CallButton } from "../voice/calls/CallUi";
@@ -457,7 +458,8 @@ export function ConversationMembers({ conversationId }: { conversationId: string
   };
   const remove = async (user: User) => {
     const self = user.address === me?.address;
-    if (!confirm(self ? t("dm.leave_confirm") : t("dm.remove_confirm", { address: user.address }))) return;
+    const asked = self ? { title: t("dm.leave"), text: t("dm.leave_confirm"), confirmLabel: t("dm.leave") } : { text: t("dm.remove_confirm", { address: user.address }), confirmLabel: t("common.remove") };
+    if (!(await confirmDialog({ ...asked, danger: true }))) return;
     try {
       await api.conversations.removeMember(conversationId, user.address);
       if (self) {

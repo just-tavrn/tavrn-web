@@ -7,7 +7,9 @@ import { Button, Field } from "../components/ui";
 import { Section, Select } from "../pages/settings/common";
 import { HISTORY_CAP_CHOICES_MB, enforceHistoryCap, historyCapBytes, setHistoryCapMb } from "../history/local";
 import { useE2ee } from "../stores/e2ee";
-import { toastError, useToasts } from "../stores/toasts";
+import { toastError } from "../stores/toasts";
+import { useAction } from "../hooks/useAction";
+import { confirmDialog } from "../components/Confirm";
 import { clearLocalIndex, localIndex, rebuildLocalIndex, refreshLocalState, useLocalSearch } from "./local";
 import { wakeSearchSync } from "./sync";
 
@@ -26,22 +28,11 @@ export function LocalIndexSection() {
   const history = useLocalSearch((s) => s.history);
   const historyBytes = Object.values(history).reduce((a, b) => a + b, 0);
   const [capMb, setCapMb] = useState(() => historyCapBytes() / 1024 / 1024);
-  const [busy, setBusy] = useState(false);
+  const { run, busy } = useAction({ refresh: wakeSearchSync });
   useEffect(() => {
     if (unlocked) void localIndex().then((i) => refreshLocalState(i));
   }, [unlocked]);
-  const act = async (fn: () => Promise<void>, done: string) => {
-    setBusy(true);
-    try {
-      await fn();
-      wakeSearchSync();
-      useToasts.getState().push({ kind: "info", title: done });
-    } catch (e) {
-      toastError(e);
-    } finally {
-      setBusy(false);
-    }
-  };
+  const act = (fn: () => Promise<void>, done: string) => run(fn, { done });
   return (
     <Section title={t("search.settings.title")} description={t("search.settings.description", { days: DEFAULT_WINDOW_DAYS, mb: Math.round(DEFAULT_MAX_BYTES / 1024 / 1024) })}>
       {!unlocked ? (
@@ -94,8 +85,8 @@ export function LocalIndexSection() {
             <Button
               variant="ghost"
               disabled={busy}
-              onClick={() => {
-                if (confirm(t("search.settings.clear_confirm"))) void act(clearLocalIndex, t("search.settings.cleared"));
+              onClick={async () => {
+                if (await confirmDialog({ title: t("search.settings.clear"), text: t("search.settings.clear_confirm"), confirmLabel: t("search.settings.clear"), danger: true })) await act(clearLocalIndex, t("search.settings.cleared"));
               }}
               data-testid="local-index-clear"
             >

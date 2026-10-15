@@ -7,6 +7,7 @@ import { api } from "../lib/api";
 import { intlLocale, useT } from "../i18n";
 import { useAuth } from "../stores/auth";
 import { describeError, toastError, useToasts } from "../stores/toasts";
+import { useAction } from "../hooks/useAction";
 import { formatSize } from "../components/AttachmentView";
 import { Button, Field, Input } from "../components/ui";
 import { ConfirmDialog, Section } from "./settings/common";
@@ -148,15 +149,8 @@ function UsersTab() {
   const [resetFactor, setResetFactor] = useState<AdminUser | null>(null);
   const [resetAudit, setResetAudit] = useState<Record<string, AuditEntry | null>>({});
   const users = useQuery({ queryKey: ["admin", "users", search], queryFn: () => api.admin.users({ q: search, limit: 100 }) });
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
-  const update = async (id: string, body: Parameters<typeof api.admin.updateUser>[1]) => {
-    try {
-      await api.admin.updateUser(id, body);
-      await refresh();
-    } catch (e) {
-      toastError(e);
-    }
-  };
+  const { run, busy } = useAction({ refresh: () => queryClient.invalidateQueries({ queryKey: ["admin", "users"] }) });
+  const update = (id: string, body: Parameters<typeof api.admin.updateUser>[1]) => run(() => api.admin.updateUser(id, body));
   return (
     <Section title={t("admin.users")}>
       <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("common.search")} aria-label={t("admin.users_search")} />
@@ -181,16 +175,16 @@ function UsersTab() {
             {u.id !== me?.id && !u.deleted && (
               <div className="flex flex-wrap items-center gap-2">
                 <UserDataActions user={u} />
-                <Button variant="ghost" onClick={() => void update(u.id, { disabled: !u.disabled })}>
+                <Button variant="ghost" disabled={busy} onClick={() => void update(u.id, { disabled: !u.disabled })}>
                   {u.disabled ? t("admin.enable") : t("admin.disable")}
                 </Button>
-                <Button variant="ghost" onClick={() => void update(u.id, { node_admin: !u.is_node_admin })}>
+                <Button variant="ghost" disabled={busy} onClick={() => void update(u.id, { node_admin: !u.is_node_admin })}>
                   {u.is_node_admin ? t("admin.remove_admin") : t("admin.make_admin")}
                 </Button>
                 <label className="flex items-center gap-1 text-xs text-fg-2">
                   {t("admin.grant")}
                   <input type="number" min={0} max={1000} aria-label={`${t("admin.grant")} ${u.username}`} value={grant[u.id] ?? String(u.room_creation_grant ?? 0)} onChange={(e) => setGrant({ ...grant, [u.id]: e.target.value })} className="w-16 rounded-md border border-line-strong bg-bg-0 px-2 py-1 text-sm text-fg-0" />
-                  <Button variant="ghost" onClick={() => void update(u.id, { room_creation_grant: Number(grant[u.id] ?? u.room_creation_grant ?? 0) })}>
+                  <Button variant="ghost" disabled={busy} onClick={() => void update(u.id, { room_creation_grant: Number(grant[u.id] ?? u.room_creation_grant ?? 0) })}>
                     {t("admin.grant_set")}
                   </Button>
                 </label>
@@ -268,20 +262,17 @@ function InvitesTab() {
   const [note, setNote] = useState("");
   const [maxUses, setMaxUses] = useState(1);
   const [hours, setHours] = useState(168);
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["admin", "invites"] });
+  const { run, busy } = useAction({ refresh: () => queryClient.invalidateQueries({ queryKey: ["admin", "invites"] }) });
   return (
     <Section title={t("admin.invites")} description={t("admin.invites_hint")}>
       <form
         className="grid gap-3 sm:grid-cols-[2fr_1fr_1fr_auto] sm:items-end"
-        onSubmit={async (e) => {
+        onSubmit={(e) => {
           e.preventDefault();
-          try {
+          void run(async () => {
             await api.admin.createInvite({ note, max_uses: maxUses, expires_hours: hours });
             setNote("");
-            await refresh();
-          } catch (err) {
-            toastError(err);
-          }
+          });
         }}
       >
         <Field label={t("admin.invite_note")}>
@@ -293,7 +284,9 @@ function InvitesTab() {
         <Field label={t("admin.invite_expires")}>
           <Input type="number" min={0} max={8760} value={hours} onChange={(e) => setHours(Number(e.target.value))} />
         </Field>
-        <Button type="submit">{t("admin.invite_create")}</Button>
+        <Button type="submit" disabled={busy}>
+          {t("admin.invite_create")}
+        </Button>
       </form>
       <ul className="divide-y divide-line text-sm" data-testid="account-invite-list">
         {invites.data?.map((i) => (
@@ -305,7 +298,7 @@ function InvitesTab() {
             <Button variant="ghost" onClick={() => void navigator.clipboard?.writeText(`${webOrigin()}/login?invite=${i.code}`)}>
               {t("common.copy")}
             </Button>
-            <Button variant="ghost" onClick={async () => { try { await api.admin.deleteInvite(i.code); await refresh(); } catch (e) { toastError(e); } }}>
+            <Button variant="ghost" disabled={busy} onClick={() => void run(() => api.admin.deleteInvite(i.code))}>
               {t("common.delete")}
             </Button>
           </li>
@@ -321,26 +314,23 @@ function BansTab() {
   const bans = useQuery({ queryKey: ["admin", "bans"], queryFn: () => api.admin.bans() });
   const [subject, setSubject] = useState("");
   const [reason, setReason] = useState("");
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["admin", "bans"] });
+  const { run, busy } = useAction({ refresh: () => queryClient.invalidateQueries({ queryKey: ["admin", "bans"] }) });
   return (
     <Section title={t("admin.bans")} description={t("admin.bans_hint")}>
       <form
         className="flex flex-wrap gap-2"
-        onSubmit={async (e) => {
+        onSubmit={(e) => {
           e.preventDefault();
-          try {
+          void run(async () => {
             await api.admin.ban({ subject, reason });
             setSubject("");
             setReason("");
-            await refresh();
-          } catch (err) {
-            toastError(err);
-          }
+          });
         }}
       >
         <Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder={t("bans.placeholder")} aria-label={t("bans.subject")} className="flex-1" required />
         <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t("bans.reason_placeholder")} aria-label={t("bans.reason")} className="flex-1" />
-        <Button type="submit" variant="danger">
+        <Button type="submit" variant="danger" disabled={busy}>
           {t("bans.ban")}
         </Button>
       </form>
@@ -350,7 +340,7 @@ function BansTab() {
             <span className="flex-1 truncate">
               {b.subject} {b.reason && <span className="text-fg-2">· {b.reason}</span>}
             </span>
-            <Button variant="ghost" onClick={async () => { try { await api.admin.unban(b.subject); await refresh(); } catch (e) { toastError(e); } }}>
+            <Button variant="ghost" disabled={busy} onClick={() => void run(() => api.admin.unban(b.subject))}>
               {t("bans.lift")}
             </Button>
           </li>
@@ -414,26 +404,14 @@ function FederationTab() {
   const [domain, setDomain] = useState("");
   const [running, setRunning] = useState<string | null>(null);
   const [open, setOpen] = useState<Record<string, boolean>>({});
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["admin", "federation"] });
+  const { run: act, busy } = useAction({ refresh: () => queryClient.invalidateQueries({ queryKey: ["admin", "federation"] }) });
   const runCheck = async (target: string) => {
     setRunning(target);
-    try {
+    await act(async () => {
       await api.admin.checkPeer(target);
       setOpen((o) => ({ ...o, [target]: true }));
-      await refresh();
-    } catch (e) {
-      toastError(e);
-    } finally {
-      setRunning(null);
-    }
-  };
-  const act = async (fn: () => Promise<unknown>) => {
-    try {
-      await fn();
-      await refresh();
-    } catch (e) {
-      toastError(e);
-    }
+    });
+    setRunning(null);
   };
   return (
     <Section title={t("admin.federation")} description={t("admin.federation_hint")}>
@@ -453,7 +431,7 @@ function FederationTab() {
       {peers.isError && <p className="text-sm text-danger">{describeError(peers.error)}</p>}
       <ul className="divide-y divide-line" data-testid="federation-peer-list">
         {peers.data?.map((p) => (
-          <PeerRow key={p.domain} peer={p} running={running === p.domain} busy={!!running} open={!!open[p.domain]} onToggle={() => setOpen((o) => ({ ...o, [p.domain]: !o[p.domain] }))} onCheck={() => void runCheck(p.domain)} onBlock={() => void act(() => api.admin.blockPeer(p.domain))} onUnblock={() => void act(() => api.admin.unblockPeer(p.domain))} />
+          <PeerRow key={p.domain} peer={p} running={running === p.domain} busy={busy} open={!!open[p.domain]} onToggle={() => setOpen((o) => ({ ...o, [p.domain]: !o[p.domain] }))} onCheck={() => void runCheck(p.domain)} onBlock={() => void act(() => api.admin.blockPeer(p.domain))} onUnblock={() => void act(() => api.admin.unblockPeer(p.domain))} />
         ))}
         {peers.data?.length === 0 && <li className="py-2 text-sm text-fg-2">{t("admin.federation_none")}</li>}
       </ul>
@@ -471,15 +449,7 @@ function ReportsSection() {
   const queryClient = useQueryClient();
   const reports = useQuery({ queryKey: ["admin", "reports"], queryFn: () => api.admin.reports() });
   const [open, setOpen] = useState<string | null>(null);
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["admin", "reports"] });
-  const act = async (fn: () => Promise<unknown>) => {
-    try {
-      await fn();
-      await refresh();
-    } catch (e) {
-      toastError(e);
-    }
-  };
+  const { run: act, busy } = useAction({ refresh: () => queryClient.invalidateQueries({ queryKey: ["admin", "reports"] }) });
   return (
     <div className="space-y-2 border-t border-line pt-4">
       <h3 className="text-sm font-semibold">{t("admin.reports")}</h3>
@@ -492,6 +462,7 @@ function ReportsSection() {
             key={r.domain}
             summary={r}
             open={open === r.domain}
+            busy={busy}
             onToggle={() => setOpen((o) => (o === r.domain ? null : r.domain))}
             onDelist={() => void act(() => api.admin.delistNode(r.domain))}
             onRelist={() => void act(() => api.admin.relist(r.domain))}
@@ -508,7 +479,7 @@ function ReportsSection() {
   );
 }
 
-function ReportRow({ summary: r, open, onToggle, onDelist, onRelist, onDismiss }: { summary: ReportSummary; open: boolean; onToggle: () => void; onDelist: () => void; onRelist: () => void; onDismiss: () => void }) {
+function ReportRow({ summary: r, open, busy, onToggle, onDelist, onRelist, onDismiss }: { summary: ReportSummary; open: boolean; busy: boolean; onToggle: () => void; onDelist: () => void; onRelist: () => void; onDismiss: () => void }) {
   const t = useT();
   const list = useQuery({ queryKey: ["admin", "reports", r.domain], queryFn: () => api.admin.reportsOf(r.domain), enabled: open });
   return (
@@ -526,15 +497,15 @@ function ReportRow({ summary: r, open, onToggle, onDelist, onRelist, onDismiss }
           {open ? t("admin.reports_hide") : t("admin.reports_show")}
         </Button>
         {r.delisted ? (
-          <Button variant="ghost" onClick={onRelist}>
+          <Button variant="ghost" disabled={busy} onClick={onRelist}>
             {t("admin.reports_relist")}
           </Button>
         ) : (
-          <Button variant="danger" onClick={onDelist}>
+          <Button variant="danger" disabled={busy} onClick={onDelist}>
             {t("admin.reports_delist")}
           </Button>
         )}
-        <Button variant="ghost" onClick={onDismiss}>
+        <Button variant="ghost" disabled={busy} onClick={onDismiss}>
           {t("admin.reports_dismiss")}
         </Button>
       </div>
@@ -590,11 +561,11 @@ function PeerRow({ peer: p, running, busy, open, onToggle, onCheck, onBlock, onU
           {running ? t("admin.federation_running") : t("admin.federation_run")}
         </Button>
         {blocked ? (
-          <Button variant="ghost" onClick={onUnblock}>
+          <Button variant="ghost" disabled={busy} onClick={onUnblock}>
             {t("admin.federation_unblock")}
           </Button>
         ) : (
-          <Button variant="danger" onClick={onBlock}>
+          <Button variant="danger" disabled={busy} onClick={onBlock}>
             {t("admin.federation_block")}
           </Button>
         )}

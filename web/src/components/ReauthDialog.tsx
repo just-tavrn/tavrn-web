@@ -3,7 +3,7 @@ import { useState } from "react";
 import { api } from "../lib/api";
 import { passkeyReauth, usePasskeyBlocker } from "../lib/passkeys";
 import { startSso } from "../lib/sso";
-import { describeError } from "../stores/toasts";
+import { useAction } from "../hooks/useAction";
 import { finishReauth, setReauth, useReauth } from "../stores/reauth";
 import { useT } from "../i18n";
 import { Button, Dialog, ErrorText, Field, Input } from "./ui";
@@ -16,8 +16,7 @@ export function ReauthDialog() {
   const t = useT();
   const pending = useReauth((s) => s.pending);
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { run, busy, error, setError } = useAction({ errors: "inline" });
   // The browser, the Windows app (natively), the Linux app with a security key plugged in (looked for while the dialog
   // is open) and the Android app when the node accepts its origin.
   const inAppPasskey = usePasskeyBlocker(!!pending) === null;
@@ -27,17 +26,6 @@ export function ReauthDialog() {
     setPassword("");
     setError(null);
     finishReauth(ok);
-  };
-  const run = async (fn: () => Promise<void>) => {
-    setError(null);
-    setBusy(true);
-    try {
-      await fn();
-    } catch (e) {
-      setError(describeError(e) || t("reauth.failed"));
-    } finally {
-      setBusy(false);
-    }
   };
   const withPassword = () =>
     run(async () => {

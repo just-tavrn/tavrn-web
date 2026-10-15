@@ -10,6 +10,7 @@ import { ContextMenu, MenuButton, useContextMenu } from "../components/ContextMe
 import { threadMenu } from "../lib/menus";
 import { Button, Dialog, Field, Input } from "../components/ui";
 import { describeError, toastError } from "../stores/toasts";
+import { confirmDialog } from "../components/Confirm";
 import { channelName } from "../lib/names";
 import { sealTitle, useThreadTitles } from "./titles";
 import { useThreads } from "./store";
@@ -90,7 +91,7 @@ export function ThreadPanel({ threadId, channel, perms, onClose, view }: { threa
           setArchived: (archived) => void update({ archived }),
           setLocked: (locked) => void update({ locked }),
           remove: async () => {
-            if (!confirm(t("threads.delete_confirm"))) return;
+            if (!(await confirmDialog({ title: t("threads.delete"), text: t("threads.delete_confirm"), confirmLabel: t("common.delete"), danger: true }))) return;
             try {
               await api.threads.delete(threadId);
               onClose();

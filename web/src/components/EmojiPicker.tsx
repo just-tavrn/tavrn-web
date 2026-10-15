@@ -16,6 +16,7 @@ import { GROUP_ICONS, GROUP_KEYS, loadEmojiData, matchScore, normalizeQuery, rec
 import { emojiImageUrl, useEmojiContext, useOtherEmojis, type PickerEmoji } from "../lib/emojis";
 import { emojiToken, parseEmojiToken } from "../lib/markdown";
 import { useNode } from "./NodeScope";
+import { useDismiss } from "../lib/dismiss";
 import { rovingKeyDown } from "../lib/a11y";
 
 export const QUICK_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥", "🎉", "👀"];
@@ -202,7 +203,7 @@ function PickerPanel({ onPick, customEmojis }: { onPick: (emoji: string) => void
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, data, tone, recents, roomItems, personalItems, otherItems, external, locale, missing]);
+  }, [query, data, tone, recents, roomItems, personalItems, otherItems, external, t, missing]);
 
   // Chunked rendering: the first sections paint at once, the long Unicode categories follow frame by frame.
   useEffect(() => {
@@ -358,32 +359,7 @@ export function EmojiPicker({ onPick, customEmojis = [], label, triggerClassName
   useEffect(() => {
     if (open && pos) menu.current?.querySelector<HTMLElement>("[role=menuitem]")?.focus({ preventScroll: true });
   }, [open, pos]);
-  useEffect(() => {
-    if (!open) return;
-    const close = () => setOpen(false);
-    const onDown = (e: PointerEvent) => {
-      const target = e.target as Node;
-      if (!menu.current?.contains(target) && !button.current?.contains(target)) close();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      close();
-      button.current?.focus();
-    };
-    const onScroll = (e: Event) => {
-      if (!menu.current?.contains(e.target as Node)) close();
-    };
-    document.addEventListener("pointerdown", onDown);
-    document.addEventListener("keydown", onKey);
-    window.addEventListener("scroll", onScroll, true);
-    window.addEventListener("resize", close);
-    return () => {
-      document.removeEventListener("pointerdown", onDown);
-      document.removeEventListener("keydown", onKey);
-      window.removeEventListener("scroll", onScroll, true);
-      window.removeEventListener("resize", close);
-    };
-  }, [open]);
+  useDismiss(open, () => setOpen(false), { inside: [menu, button], returnFocus: button, closeOnScroll: true });
   const pick = (e: string) => {
     onPick(e);
     setOpen(false);

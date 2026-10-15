@@ -11,6 +11,8 @@ import { useNodeSockets, useRealtimeState } from "../hooks/useRealtime";
 import { useNode } from "./NodeScope";
 import { useT } from "../i18n";
 import { describeError, toastError, useToasts } from "../stores/toasts";
+import { confirmDialog } from "./Confirm";
+import { previewText } from "../lib/messagePreview";
 import { EmojiContext, useEmojiUrlMap, useRoomEmojis, type EmojiContextValue } from "../lib/emojis";
 import { Permission, hasPermission } from "@tavrn/sdk";
 import { useMlsUi } from "../stores/mls";
@@ -485,7 +487,7 @@ export function ConversationView(p: ConversationViewProps) {
     }
   };
   const remove = async (m: Message) => {
-    if (!confirm(t("messages.delete_confirm"))) return;
+    if (!(await confirmDialog({ title: t("messages.delete"), text: t("messages.delete_confirm"), confirmLabel: t("common.delete"), danger: true }))) return;
     try {
       await api.conversations.deleteMessage(conversationId, m.id);
       setPages((old) => mapMessages(old, (page) => page.filter((x) => x.id !== m.id)));
@@ -631,7 +633,7 @@ export function ConversationView(p: ConversationViewProps) {
             },
             openWhiteboard: () => navigate(`${location.pathname.replace(/\/+$/, "")}/whiteboard`),
             openPoll: (question) => setPollComposer({ kind: "choice", question }),
-            confirm: (text) => window.confirm(text),
+            confirm: (text) => confirmDialog({ text, danger: true }),
             info: (title) => useToasts.getState().push({ kind: "info", title }),
             showHelp: () => undefined,
           });
@@ -646,7 +648,7 @@ export function ConversationView(p: ConversationViewProps) {
       },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [registry, appCommands, p.permissions, p.roomId, p.room, p.roomMembers, hasVoice, conversationId, domain, user?.domain, location.pathname, pollsOffered]);
+  }, [registry, appCommands, p.permissions, p.roomId, p.room, p.roomMembers, hasVoice, conversationId, domain, user?.domain, location.pathname, pollsOffered, t]);
 
   const emojiContext = useMemo<EmojiContextValue>(() => ({ domain, roomId: p.roomId, externalAllowed, roomEmojis: emojiList }), [domain, p.roomId, externalAllowed, emojiList]);
 
@@ -660,8 +662,7 @@ export function ConversationView(p: ConversationViewProps) {
     if (plainInEncrypted(m, p.encrypted)) return t("messages.not_e2ee_short");
     const c = m.encrypted ? (pinDecrypted[m.id]?.ok ? (pinDecrypted[m.id] as { content: Record<string, unknown> }).content : null) : (m.content as Record<string, unknown> | null);
     if (m.encrypted && !c) return t("messages.encrypted_short");
-    if (c?.type === "poll" && typeof c.question === "string") return `📊 ${c.question}`;
-    return typeof c?.body === "string" ? c.body : t("channel.attachment");
+    return previewText(c, 200) ?? t("channel.attachment");
   };
 
   return (

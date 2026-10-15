@@ -8,6 +8,7 @@ import { useT } from "../../i18n";
 import { useVoiceSettings } from "../settings";
 import { useVoice } from "../store";
 import { SpeakerIcon } from "./icons";
+import { useDismiss } from "../../lib/dismiss";
 
 /** A labelled range input showing its value (volumes, thresholds); it keeps the value while it is dragged. */
 export function RangeSlider({ label, value, onChange, testid, min, max, step, unit }: { label: string; value: number; onChange: (v: number) => void; testid?: string; min: number; max: number; step: number; unit: string }) {
@@ -50,25 +51,20 @@ export function StreamAudioControls({ address, name }: { address: string; name: 
   const setVolume = useVoiceSettings((s) => s.setStreamVolume);
   const keepsPlaying = useVoiceSettings((s) => s.settings.streamWhileDeafened);
   const deafened = useVoice((s) => s.deafened);
-  const panel = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: PointerEvent) => {
-      if (!panel.current?.parentElement?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("pointerdown", close);
-    return () => document.removeEventListener("pointerdown", close);
-  }, [open]);
+  const wrapper = useRef<HTMLSpanElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  useDismiss(open, () => setOpen(false), { inside: [wrapper], returnFocus: button });
   const audible = deafened && keepsPlaying;
   const label = t("voice.stream.volume", { name });
   return (
-    <span className="relative flex items-center gap-1.5">
+    <span ref={wrapper} className="relative flex items-center gap-1.5">
       {audible && (
         <span role="img" className="flex min-h-8 items-center gap-1 rounded-md bg-accent px-1.5 text-[11px] text-accent-text" aria-label={t("voice.stream.audible")} title={t("voice.stream.audible")} data-testid="stream-audible">
           <SpeakerIcon size={14} />
         </span>
       )}
       <button
+        ref={button}
         type="button"
         onClick={() => setOpen((o) => !o)}
         className="min-h-8 min-w-8 rounded-md bg-black/60 text-fg-0"
@@ -81,12 +77,7 @@ export function StreamAudioControls({ address, name }: { address: string; name: 
         <SpeakerIcon size={16} className={`mx-auto ${volume === 0 ? "opacity-50" : ""}`} />
       </button>
       {open && (
-        <div
-          ref={panel}
-          className="absolute right-0 top-9 z-20 w-56 max-w-[80vw] rounded-md border border-line bg-bg-1 p-2 shadow-lg"
-          onKeyDown={(e) => e.key === "Escape" && setOpen(false)}
-          data-testid="stream-volume-panel"
-        >
+        <div className="absolute right-0 top-9 z-20 w-56 max-w-[80vw] rounded-md border border-line bg-bg-1 p-2 shadow-lg" data-testid="stream-volume-panel">
           <VolumeSlider label={t("voice.stream.volume_label")} value={volume} onChange={(v) => setVolume(address, v)} testid="stream-volume" />
         </div>
       )}

@@ -10,6 +10,8 @@ import type { LegalContact } from "@tavrn/sdk";
 import { api } from "../../lib/api";
 import { intlLocale, useLocale, useT } from "../../i18n";
 import { describeError, toastError, useToasts } from "../../stores/toasts";
+import { useAction } from "../../hooks/useAction";
+import { confirmDialog } from "../../components/Confirm";
 import { Button, ErrorText, Field, Input } from "../../components/ui";
 import { Section, Select, Textarea } from "../settings/common";
 import { LegalDocumentView, LEGAL_KINDS } from "../legal/LegalPages";
@@ -64,29 +66,21 @@ function DocumentEditor({ kind }: { kind: Kind }) {
   const [markdown, setMarkdown] = useState("");
   const [lang, setLang] = useState("");
   const [preview, setPreview] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const { run, busy } = useAction({ refresh: () => Promise.all([queryClient.invalidateQueries({ queryKey: ["admin", "legal", "documents"] }), queryClient.invalidateQueries({ queryKey: ["legal"] }), queryClient.invalidateQueries({ queryKey: ["node"] })]) });
   useEffect(() => {
     setMarkdown(current?.markdown ?? "");
     setLang(current?.lang ?? "");
     setPreview(false);
   }, [kind, current?.version, current?.markdown, current?.lang]);
-  const refresh = () => Promise.all([queryClient.invalidateQueries({ queryKey: ["admin", "legal", "documents"] }), queryClient.invalidateQueries({ queryKey: ["legal"] }), queryClient.invalidateQueries({ queryKey: ["node"] })]);
-  const publish = async () => {
-    setBusy(true);
-    try {
+  const publish = () =>
+    run(async () => {
       const doc = await api.legal.publish(kind, markdown, lang);
-      await refresh();
       useToasts.getState().push({ kind: "info", title: t("admin.legal.published", { version: doc.version }) });
-    } catch (e) {
-      toastError(e);
-    } finally {
-      setBusy(false);
-    }
-  };
+    });
   const template = async () => {
     try {
       const tpl = await api.legal.template(kind, locale === "de" ? "de" : "en");
-      if (markdown.trim() && !window.confirm(t("admin.legal.template_replace"))) return;
+      if (markdown.trim() && !(await confirmDialog({ title: t("admin.legal.template"), text: t("admin.legal.template_replace"), confirmLabel: t("admin.legal.template"), danger: true }))) return;
       setMarkdown(tpl.markdown);
       setPreview(false);
     } catch (e) {
@@ -128,14 +122,10 @@ function DocumentEditor({ kind }: { kind: Kind }) {
         {current && (
           <Button
             variant="ghost"
+            disabled={busy}
             onClick={async () => {
-              if (!window.confirm(t("admin.legal.unpublish_confirm"))) return;
-              try {
-                await api.legal.unpublish(kind);
-                await refresh();
-              } catch (e) {
-                toastError(e);
-              }
+              if (!(await confirmDialog({ title: t("admin.legal.unpublish"), text: t("admin.legal.unpublish_confirm"), confirmLabel: t("admin.legal.unpublish"), danger: true }))) return;
+              await run(() => api.legal.unpublish(kind));
             }}
           >
             {t("admin.legal.unpublish")}

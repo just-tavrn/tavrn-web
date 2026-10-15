@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useT } from "../i18n";
+import { confirmDialog } from "./Confirm";
 import { GroupOffIcon, LockIcon, NoEntryIcon, UnlockIcon } from "./icons";
 import { acknowledgeKeyChange, useMlsUi } from "../stores/mls";
 import { formatCount, useUnread } from "../stores/unread";
@@ -91,8 +92,8 @@ export function KeyChangedBadge({ address }: { address: string }) {
     return (
       <button
         type="button"
-        onClick={() => {
-          if (confirm(t("badge.key_changed_confirm", { address }))) void acknowledgeKeyChange(address);
+        onClick={async () => {
+          if (await confirmDialog({ title: t("badge.key_changed"), text: t("badge.key_changed_confirm", { address }), confirmLabel: t("badge.key_changed_hide") })) void acknowledgeKeyChange(address);
         }}
         className="rounded bg-warn/15 px-1 text-[10px] font-semibold text-warn hover:bg-warn/25"
         title={t("badge.key_changed_hint", { address })}

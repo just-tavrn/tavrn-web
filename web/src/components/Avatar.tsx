@@ -13,10 +13,7 @@ import { DOT_CLASS, useStatus, type PresenceStatus } from "../stores/presence";
 import { useAuth } from "../stores/auth";
 import { useT } from "../i18n";
 import { useNode } from "./NodeScope";
-
-function reducedMotion(): boolean {
-  return typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-}
+import { reducedMotion } from "../lib/emojis";
 
 /**
  * `active` while the pointer (mouse or pen, not touch) is over the element or its closest interactive

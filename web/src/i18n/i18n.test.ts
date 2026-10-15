@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 import { PERMISSION_LABELS } from "@tavrn/sdk";
+import { act, renderHook } from "@testing-library/react";
 import { beforeAll, describe, expect, it } from "vitest";
-import { DEFAULT_LOCALE, LOCALES, errorMessage, format, loadLocale, messagesOf, translate, useLocale, type Messages } from "./index";
+import { DEFAULT_LOCALE, LOCALES, errorMessage, format, loadLocale, messagesOf, translate, useLocale, useT, type Messages } from "./index";
 
 /** Every language with its messages (each one its own chunk, loaded here). */
 let all: Array<[string, { messages: Messages }]> = [];
@@ -26,6 +27,23 @@ describe("i18n", () => {
       const missing = PERMISSION_LABELS.map((p) => `perm.${p.name}`).filter((k) => !(k in messages));
       expect({ code, missing }).toEqual({ code, missing: [] });
     }
+  });
+
+  it("useT returns the same function until the language changes (usable as a memo or effect dependency)", () => {
+    const before = useLocale.getState().locale;
+    act(() => useLocale.getState().setLocale("en"));
+    const { result, rerender } = renderHook(() => useT());
+    const first = result.current;
+    rerender();
+    expect(result.current).toBe(first);
+    expect(first("auth.login")).toBe("Sign in");
+    act(() => useLocale.getState().setLocale("de"));
+    expect(result.current).not.toBe(first);
+    expect(result.current("auth.login")).toBe("Anmelden");
+    const german = result.current;
+    rerender();
+    expect(result.current).toBe(german);
+    act(() => useLocale.getState().setLocale(before));
   });
 
   it("replaces placeholders and falls back to English", () => {

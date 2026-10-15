@@ -14,6 +14,7 @@ import { PROVIDER_NAMES, type Embed } from "../lib/embeds";
 import { cardsOf, readPreview, type LinkPreview } from "../lib/linkPreview";
 import { useContentPrivacy } from "../stores/contentPrivacy";
 import { originUrl } from "../platform";
+import { urlHost } from "../lib/untrusted";
 
 /** `true` once the element has been near the viewport (always `true` without IntersectionObserver). */
 function useSeen<T extends Element>(): [React.RefObject<T | null>, boolean] {
@@ -101,14 +102,6 @@ export function embedColor(color: number | undefined): string | undefined {
   return color === undefined ? undefined : `#${color.toString(16).padStart(6, "0")}`;
 }
 
-/** The host of an embed link, shown in full next to it (`ci.example`, `xn--…` stays as it is). */
-export function embedHost(url: string): string {
-  try {
-    return new URL(url).host;
-  } catch {
-    return url;
-  }
-}
 
 /** One embed of a message's content (APPLICATIONS.md §6.4): colour bar, title (link), description, fields, footer. */
 export function MessageEmbedCard({ embed }: { embed: MessageEmbed }) {
@@ -137,7 +130,7 @@ export function MessageEmbedCard({ embed }: { embed: MessageEmbed }) {
         ))}
       {embed.url && (
         <a href={embed.url} target="_blank" rel="noopener noreferrer nofollow ugc" className="block break-all text-xs text-fg-2 hover:underline" title={embed.url} data-testid="message-embed-host">
-          {embedHost(embed.url)}
+          {urlHost(embed.url)}
         </a>
       )}
       {description && <div className="markdown mt-1 break-words text-sm text-fg-1" data-testid="message-embed-description" dangerouslySetInnerHTML={{ __html: description }} />}

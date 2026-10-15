@@ -19,6 +19,7 @@ import { pushActivity, pushPresence, setAutoIdle, syncPresence } from "../lib/pr
 import { useRealtimeState } from "../hooks/useRealtime";
 import { UserAvatar } from "./Avatar";
 import { useShell } from "./AppShell";
+import { useDismiss } from "../lib/dismiss";
 import { Button, Dialog, Field, Input } from "./ui";
 import { rovingKeyDown } from "../lib/a11y";
 import { WrenchIcon } from "./icons";
@@ -76,25 +77,11 @@ export function PresenceMenu() {
   const ref = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const effective = (mine?.effective ?? "online") as PresenceStatus;
+  // Escape closes the menu and gives the focus back to its button (WAI-ARIA menu button); so does a press outside.
+  useDismiss(open, () => setOpen(false), { inside: [ref], returnFocus: trigger });
+  // The first entry takes the focus; arrow keys move between the entries.
   useEffect(() => {
-    if (!open) return;
-    const close = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    // Escape closes the menu and gives the focus back to its button (WAI-ARIA menu button).
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      setOpen(false);
-      trigger.current?.focus();
-    };
-    // The first entry takes the focus; arrow keys move between the entries.
-    ref.current?.querySelector<HTMLElement>('[role^="menuitem"]')?.focus();
-    document.addEventListener("mousedown", close);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", close);
-      window.removeEventListener("keydown", onKey);
-    };
+    if (open) ref.current?.querySelector<HTMLElement>('[role^="menuitem"]')?.focus();
   }, [open]);
   if (!user) return null;
   const choose = async (status: (typeof CHOSEN_STATUSES)[number]) => {

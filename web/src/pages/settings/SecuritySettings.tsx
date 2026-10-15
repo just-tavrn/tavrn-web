@@ -8,6 +8,7 @@ import { intlLocale, useT } from "../../i18n";
 import { useAuth } from "../../stores/auth";
 import { e2eeContext, useE2ee } from "../../stores/e2ee";
 import { describeError, useToasts } from "../../stores/toasts";
+import { useAction } from "../../hooks/useAction";
 import { passkeyEntryIds, regenerateRecoveryKey, rotateIdentity } from "../../crypto/e2ee";
 import { ownIdentityRotated } from "../../stores/mls";
 import { cryptoStore } from "../../crypto/store";
@@ -561,22 +562,10 @@ function SsoSection() {
   const sso = useSso();
   const remoteHome = useAuth((s) => !!s.home);
   const qc = useQueryClient();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { run, busy, error } = useAction({ errors: "inline" });
   const enabled = !!sso && !remoteHome;
   const identity = useQuery({ queryKey: ["sso-identity"], queryFn: () => api.oidc.identity(), enabled });
   if (!enabled) return null;
-  const run = async (fn: () => Promise<void>) => {
-    setBusy(true);
-    setError(null);
-    try {
-      await fn();
-    } catch (e) {
-      setError(describeError(e));
-    } finally {
-      setBusy(false);
-    }
-  };
   const linked = identity.data;
   return (
     <Section title={t("sso.section_title")} description={t("sso.section_hint")}>

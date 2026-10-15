@@ -11,9 +11,7 @@ const STILL = readFileSync(new URL("../fixtures/still.png", import.meta.url));
 
 async function newPage(browser: Browser): Promise<Page> {
   const context = await browser.newContext({ ...test.info().project.use });
-  const page = await context.newPage();
-  page.on("dialog", (d) => void d.accept());
-  return page;
+  return context.newPage();
 }
 
 async function createRoomInUi(page: Page, name: string): Promise<string> {
@@ -36,7 +34,6 @@ async function inviteLink(page: Page): Promise<string> {
 
 /** Alice with a new encrypted room and Bob as a member, both on the channel. Returns the channel URL. */
 async function twoInARoom(browser: Browser, page: Page): Promise<{ bob: Page; channelUrl: string }> {
-  page.on("dialog", (d) => void d.accept());
   await registerViaUi(page, { prefix: "wbalice", displayName: "Alice" });
   const channelUrl = await createRoomInUi(page, "Raidgilde");
   const link = await inviteLink(page);
@@ -140,6 +137,7 @@ test.describe("Whiteboard", () => {
     await expect(board(page)).toHaveAttribute("data-role", "owner", { timeout: 30_000 });
     await action(page, "Szenen");
     await page.getByTestId("scene").filter({ hasText: "Raidplan" }).getByRole("button", { name: "Laden" }).click();
+    await page.getByTestId("confirm-ok").click();
     await expect(board(page)).toHaveAttribute("data-elements", "3");
     await expect(board(bob)).toHaveAttribute("data-elements", "3", { timeout: 20_000 });
     await expect(bob.getByTestId("whiteboard-texts")).toContainText("Raid um 20 Uhr");
@@ -173,6 +171,7 @@ test.describe("Whiteboard", () => {
     await bob.getByRole("button", { name: "Whiteboard-Sitzung beitreten" }).click();
     await expect(board(bob)).toHaveAttribute("data-elements", "4", { timeout: 20_000 });
     await action(page, "Board schließen");
+    await page.getByTestId("confirm-ok").click();
     await expect(bob.getByTestId("whiteboard-ended")).toHaveText("Das Whiteboard wurde geschlossen.", { timeout: 20_000 });
     await expect(page.getByRole("button", { name: "Whiteboard öffnen" })).toBeVisible();
   });

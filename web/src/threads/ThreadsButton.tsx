@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Channel, Thread } from "@tavrn/sdk";
 import { qualify } from "@tavrn/e2ee";
@@ -10,6 +10,7 @@ import { relativeTime } from "./format";
 import { useThreadTitles } from "./titles";
 import { useThreads } from "./store";
 import { LockMark } from "../components/Badges";
+import { useDismiss } from "../lib/dismiss";
 
 /** The query key of a channel's thread list. */
 export function threadListKey(domain: string, channelId: string, archived: boolean) {
@@ -25,27 +26,14 @@ export function ThreadsButton({ channel, onOpen, onNew }: { channel: Channel; on
   const t = useT();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
   const followed = useThreads((s) => s.followed);
   const unread = Object.values(followed).filter((f) => f.channelId === channel.id).reduce((n, f) => n + f.unread, 0);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  useDismiss(open, () => setOpen(false), { inside: [ref], returnFocus: button });
   return (
     <div className="relative shrink-0" ref={ref}>
       <button
+        ref={button}
         type="button"
         aria-expanded={open}
         aria-haspopup="dialog"

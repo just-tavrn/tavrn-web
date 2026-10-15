@@ -147,8 +147,8 @@ test.describe("Polls", () => {
     await expect(option(poll, "o2").getByTestId("poll-count")).toHaveText("0 · 0 %");
 
     // The author closes the poll early: nobody can vote any more.
-    page.on("dialog", (d) => void d.accept());
     await poll.getByTestId("poll-close-now").click();
+    await page.getByTestId("confirm-ok").click();
     await expect(poll.getByTestId("poll-closed")).toBeVisible();
     await expect(bobPoll.getByTestId("poll-closed")).toBeVisible({ timeout: scaled(20_000) });
     await expect(bobPoll.getByTestId("poll-vote")).toHaveCount(0);
@@ -250,8 +250,8 @@ test.describe("Polls", () => {
     await expect(cell(poll, "s2")).toHaveAccessibleName(/1 ja, 0 vielleicht, 1 nein/, { timeout: scaled(20_000) });
 
     // Closed early: the client takes no votes, and the node refuses retracting (and voting) afterwards.
-    page.on("dialog", (d) => void d.accept());
     await poll.getByTestId("poll-close-now").click();
+    await page.getByTestId("confirm-ok").click();
     await expect(bobPoll.getByTestId("poll-closed")).toBeVisible({ timeout: scaled(20_000) });
     await expect(bobPoll.getByTestId("poll-retract")).toHaveCount(0);
     await expect(bobPoll.getByTestId("poll-change")).toHaveCount(0);

@@ -111,8 +111,9 @@ export function AuthorProfiles({ messages, members, children }: { messages: Mess
       const item = target.closest<HTMLElement>("[data-message-id]");
       if (!item) return;
       const avatar = target.closest<HTMLElement>('[data-testid="message-avatar"]');
-      const name = target.closest<HTMLElement>("span.font-semibold");
-      const isName = !!name && !!name.parentElement?.classList.contains("items-baseline");
+      // The name in the message header carries `data-author-name` (MessageList), independent of its styling.
+      const name = target.closest<HTMLElement>("[data-author-name]");
+      const isName = !!name && item.contains(name);
       if (!(avatar && item.contains(avatar)) && !isName) return;
       const m = messages.find((x) => x.id === item.dataset.messageId);
       if (!m) return;

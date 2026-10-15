@@ -14,7 +14,8 @@ import { roomsQuery } from "./queries";
  * (`GET /api/v1/emojis/{id}/image`, `?still=1` for the first frame), so they need no token and are cached.
  */
 
-function reducedMotion(): boolean {
+/** `prefers-reduced-motion` right now. */
+export function reducedMotion(): boolean {
   return typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 }
 

@@ -83,7 +83,6 @@ test.afterEach(async () => {
 interface Person {
   page: Page;
   address: string;
-  dialogs: string[];
 }
 
 async function person(browser: Browser, prefix: string, displayName: string): Promise<Person> {
@@ -93,13 +92,8 @@ async function person(browser: Browser, prefix: string, displayName: string): Pr
   await context.addInitScript(recordOrientationLocks);
   await context.addInitScript(() => localStorage.setItem("tavrn.voice.settings", JSON.stringify({ cuesOff: true })));
   const page = await context.newPage();
-  const dialogs: string[] = [];
-  page.on("dialog", (d) => {
-    dialogs.push(d.message());
-    void d.accept();
-  });
   const account = await registerViaUi(page, { prefix, displayName });
-  return { page, address: account.address, dialogs };
+  return { page, address: account.address };
 }
 
 async function joinVoice(page: Page, roomUrl: string) {
@@ -275,7 +269,8 @@ test.describe("Whiteboard on the voice stage", () => {
 
     // One presentation at a time: sharing the screen asks, then closes the board for everyone.
     await alice.page.getByTestId("voice-screen").click();
-    await expect.poll(() => alice.dialogs.join("\n")).toContain("Whiteboard schließen und Bildschirm teilen?");
+    await expect(alice.page.getByTestId("confirm-text")).toContainText("Whiteboard schließen und Bildschirm teilen?");
+    await alice.page.getByTestId("confirm-ok").click();
     await alice.page.getByTestId("screen-share-start").click();
     await expect(alicePreview).toHaveCount(0, { timeout: 20_000 });
     await expect(alice.page.getByTestId("whiteboard-indicator")).toHaveCount(0);
