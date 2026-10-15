@@ -1094,7 +1094,9 @@ profile.
 Roles with "show separately in the member list" get their own section there; the role list in the room settings is
 reordered by drag and drop (or the arrows). `@everyone` can never get management permissions; the editor greys them
 out. Moderation items against someone whose highest role is not below yours stay greyed out with the reason. Each
-role also carries its allowed file types ("File types" above).
+role also carries its allowed file types ("File types" above). When another admin changes the role you are editing,
+an untouched editor shows the new version; with edits in progress your edits stay and a notice says the role changed
+elsewhere, with **Load their version** (saving keeps yours).
 
 **Channel permissions are layered**
 ([permissions.md](https://github.com/just-tavrn/tavrn-protocol/blob/main/permissions.md) "Evaluation"): roles give
