@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The LiveKit side of the native engine: joins the room with end-to-end encryption (`e2ee.rs`), publishes the
 //! microphone once the frame cryptor of the own track is active (never unencrypted, VOICE.md §6), subscribes to the
-//! remote tracks except screen shares (streams are opt-in, as in the browser engine, and this engine has no video to
-//! join one with), feeds the remote audio into the playback mix (`mix.rs`), follows the node's permission changes
+//! remote audio tracks except a screen share's (streams are opt-in, as in the browser engine, and this engine has no
+//! video to join one with; cameras are never received either), feeds the remote audio into the playback mix (`mix.rs`), follows the node's permission changes
 //! (server mute), reconnects through the SDK and reports everything to the webview as [`VoiceEvent`]s.
 
 use std::borrow::Cow;
@@ -204,7 +204,7 @@ impl Engine {
             engine.leave().await;
             return Err(e);
         }
-        // Those already in the room: their microphones (and cameras) now, never their screen shares; tracks published
+        // Those already in the room: their microphones now, never their cameras or screen shares; tracks published
         // later follow as `TrackPublished` events.
         for participant in room.remote_participants().into_values() {
             for publication in participant.track_publications().into_values() {
@@ -455,15 +455,16 @@ fn participants(room: &Room) -> VoiceEvent {
     VoiceEvent::Participants { participants: list }
 }
 
-/// Whether this engine subscribes a remote track of `source`: everything but screen shares (video and audio), which
-/// are opt-in in tavrn (a viewer receives a stream only after joining it) and cannot be joined without video.
-fn wants_subscription(source: TrackSource) -> bool {
-    !matches!(source, TrackSource::Screenshare | TrackSource::ScreenshareAudio)
+/// Whether this engine subscribes a remote track: audio only, as it plays no video (a camera would only cost download
+/// bandwidth and decoding), and never a screen share's audio: streams are opt-in in tavrn (a viewer receives one only
+/// after joining it) and cannot be joined without video.
+fn wants_subscription(kind: TrackKind, source: TrackSource) -> bool {
+    kind == TrackKind::Audio && !matches!(source, TrackSource::Screenshare | TrackSource::ScreenshareAudio)
 }
 
 /// Brings a remote publication to the wanted subscription (the room connects without auto-subscription).
 fn subscribe_wanted(publication: &RemoteTrackPublication) {
-    let want = wants_subscription(publication.source());
+    let want = wants_subscription(publication.kind(), publication.source());
     if publication.is_desired() != want {
         publication.set_subscribed(want);
     }
@@ -497,8 +498,8 @@ fn stop_downlink(parts: &Parts, sid: &str) {
 
 async fn handle(parts: &Arc<Parts>, room: &Arc<Room>, event: RoomEvent) {
     match event {
-        RoomEvent::TrackSubscribed { publication, .. } if !wants_subscription(publication.source()) => {
-            // Never played: a screen share is only received after joining it, which this engine cannot.
+        RoomEvent::TrackSubscribed { publication, .. } if !wants_subscription(publication.kind(), publication.source()) => {
+            // Never played: video, and a screen share is only received after joining it, which this engine cannot.
             publication.set_subscribed(false);
         }
         RoomEvent::TrackSubscribed { track: RemoteTrack::Audio(track), publication, participant } => {
@@ -580,12 +581,14 @@ mod tests {
     }
 
     #[test]
-    fn screen_shares_are_never_subscribed() {
-        // Streams are opt-in (the web client's `streams.ts`); this engine plays no video, so it never joins one.
-        assert!(wants_subscription(TrackSource::Microphone));
-        assert!(wants_subscription(TrackSource::Camera));
-        assert!(wants_subscription(TrackSource::Unknown));
-        assert!(!wants_subscription(TrackSource::Screenshare));
-        assert!(!wants_subscription(TrackSource::ScreenshareAudio));
+    fn only_audio_is_subscribed_never_a_screen_share() {
+        // Streams are opt-in (the web client's `streams.ts`); this engine plays no video, so it never joins one and
+        // never receives a camera.
+        assert!(wants_subscription(TrackKind::Audio, TrackSource::Microphone));
+        assert!(wants_subscription(TrackKind::Audio, TrackSource::Unknown));
+        assert!(!wants_subscription(TrackKind::Video, TrackSource::Camera));
+        assert!(!wants_subscription(TrackKind::Video, TrackSource::Unknown));
+        assert!(!wants_subscription(TrackKind::Video, TrackSource::Screenshare));
+        assert!(!wants_subscription(TrackKind::Audio, TrackSource::ScreenshareAudio));
     }
 }

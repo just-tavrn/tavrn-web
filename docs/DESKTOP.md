@@ -614,9 +614,10 @@ unencrypted (`voice.invalid_url` otherwise). The shell (`src-tauri/src/voice`):
   the input volume, then the gate (`gate.rs`, the same DSP as `web/src/voice/gate.ts`: threshold, 6 dB hysteresis,
   hold, 5 ms attack, 40 ms release) for voice activation, the noise gate and push-to-talk with its release delay.
   Opus with DTX and without RED, the channel's bitrate, as in the browser.
-- **Subscriptions**: the room connects without auto-subscription; microphones (and every other track) are subscribed
-  as they are published, screen shares never (`wants_subscription` in `engine.rs`). Screen shares are opt-in in tavrn
-  (a viewer receives a stream only after joining it, docs/CLIENT.md "Streams are joined"), and this engine has no video
+- **Subscriptions**: the room connects without auto-subscription; microphones (every remote audio track) are
+  subscribed as they are published, cameras and screen shares never (`wants_subscription` in `engine.rs`): this engine
+  plays no video, so a camera would only cost download bandwidth and decoding. Screen shares are opt-in in tavrn (a
+  viewer receives a stream only after joining it, docs/CLIENT.md "Streams are joined"), and this engine has no video
   to join one with; joining a stream in the client says so.
 - **Playback** (`mix.rs`): every subscribed remote audio track is decoded (and decrypted) by libwebrtc and mixed with
   the per-participant gain the client computes (`volume.ts`: per-user volume × output volume, 0 while deafened); the
