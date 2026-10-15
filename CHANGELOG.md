@@ -37,6 +37,10 @@ First public release of the web client and the desktop apps.
   removed applications stay visible but disabled with the reason. Values are encrypted for the members in encrypted
   conversations. The role and channel permission editors list the new *Use buttons and menus of apps* permission
   (docs/CLIENT.md "Message components").
+- **Who reacted** (protocol PROTOCOL.md §7 "Reactions", tavrn-protocol#43): hovering, focusing or long-pressing a
+  reaction chip shows the reactors (up to ten names and "and n more"), loaded when first shown and cached per message,
+  emoji and count; the text is the chip's accessible description too, Escape hides it.
+
 - **Log join timings** for slow voice joins: Settings → Voice & video → Connection test → "Log join timings" (or
   `localStorage` `tavrn.debug.voice=1`) prints one table to the browser console after each join with every stage's
   duration (`vj:*` performance marks), the opening of the `/rtc` WebSocket, each peer connection from creation through
@@ -210,6 +214,9 @@ First public release of the web client and the desktop apps.
 
 ### Fixed
 
+- **Reaction highlights of other people** (tavrn-node#83): a live reaction change no longer shows the reactor's own
+  highlighted chips to every viewer for a moment; the client keeps its own flags from its requests and takes a change
+  only when the event names you as the reactor (another tab or device).
 - **Ctrl-click and middle click on an internal link no longer open the app's own page in the system browser** (#163):
   in the desktop apps and the Android app a Ctrl-, Shift- or Cmd-click or a middle click on a sidebar entry or a
   settings link opened `https://tauri.localhost/…` in the browser. Internal links now act as a plain click and open

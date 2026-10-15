@@ -724,7 +724,7 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
             {formatTime(m.created_at)}
           </time>
         </span>
-        <ReactionBar reactions={m.reactions ?? []} canReact={canReact} roomId={roomId} customEmojis={customEmojis} onToggle={onToggleReaction} />
+        <ReactionBar reactions={m.reactions ?? []} canReact={canReact} roomId={roomId} customEmojis={customEmojis} onToggle={onToggleReaction} conversationId={m.conversation_id} messageId={m.id} usersById={usersById} />
         {canReact && onReact && <EmojiPicker customEmojis={customEmojis} onPick={(e) => onReact(m, e, false)} />}
         {menu.open && menu.anchor && <ContextMenu entries={menuEntries} anchor={menu.anchor} onClose={menu.close} label={t("menu.message.label")} testId="message-menu" />}
       </div>
@@ -744,7 +744,7 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
             {formatTime(m.created_at)}
           </time>
         </span>
-        <ReactionBar reactions={m.reactions ?? []} canReact={canReact} roomId={roomId} customEmojis={customEmojis} onToggle={onToggleReaction} />
+        <ReactionBar reactions={m.reactions ?? []} canReact={canReact} roomId={roomId} customEmojis={customEmojis} onToggle={onToggleReaction} conversationId={m.conversation_id} messageId={m.id} usersById={usersById} />
         {canReact && onReact && <EmojiPicker customEmojis={customEmojis} onPick={(e) => onReact(m, e, false)} />}
         {menu.open && menu.anchor && <ContextMenu entries={menuEntries} anchor={menu.anchor} onClose={menu.close} label={t("menu.message.label")} testId="message-menu" />}
       </div>
@@ -764,7 +764,7 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
             {formatTime(m.created_at)}
           </time>
         </span>
-        <ReactionBar reactions={m.reactions ?? []} canReact={canReact} roomId={roomId} customEmojis={customEmojis} onToggle={onToggleReaction} />
+        <ReactionBar reactions={m.reactions ?? []} canReact={canReact} roomId={roomId} customEmojis={customEmojis} onToggle={onToggleReaction} conversationId={m.conversation_id} messageId={m.id} usersById={usersById} />
         {canReact && onReact && <EmojiPicker customEmojis={customEmojis} onPick={(e) => onReact(m, e, false)} />}
         {menu.open && menu.anchor && <ContextMenu entries={menuEntries} anchor={menu.anchor} onClose={menu.close} label={t("menu.message.label")} testId="message-menu" />}
       </div>
@@ -791,7 +791,7 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
             {formatTime(m.created_at)}
           </time>
         </span>
-        <ReactionBar reactions={m.reactions ?? []} canReact={canReact} roomId={roomId} customEmojis={customEmojis} onToggle={onToggleReaction} />
+        <ReactionBar reactions={m.reactions ?? []} canReact={canReact} roomId={roomId} customEmojis={customEmojis} onToggle={onToggleReaction} conversationId={m.conversation_id} messageId={m.id} usersById={usersById} />
         {canReact && onReact && <EmojiPicker customEmojis={customEmojis} onPick={(e) => onReact(m, e, false)} />}
         {menu.open && menu.anchor && <ContextMenu entries={menuEntries} anchor={menu.anchor} onClose={menu.close} label={t("menu.message.label")} testId="message-menu" />}
       </div>
@@ -979,7 +979,7 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
           {m.encrypted
             ? c.kind === "text" && !!c.files?.length && <MessageAttachments items={c.files.map((f) => fromEncrypted(f, m.attachments))} author={m.author} own={own} inRoom={!!roomId} />
             : c.kind !== "forged" && c.kind !== "unencrypted" && !!m.attachments?.length && <MessageAttachments items={m.attachments.map(fromPlain)} author={m.author} own={own} inRoom={!!roomId} />}
-          <ReactionBar reactions={m.reactions ?? []} canReact={canReact} roomId={roomId} customEmojis={customEmojis} onToggle={onToggleReaction} />
+          <ReactionBar reactions={m.reactions ?? []} canReact={canReact} roomId={roomId} customEmojis={customEmojis} onToggle={onToggleReaction} conversationId={m.conversation_id} messageId={m.id} usersById={usersById} />
           {m.thread && onThread && <ThreadIndicator summary={m.thread} usersById={usersById} onOpen={() => onThread(m, "reply", body)} />}
         </div>
         {/* The hover actions float over the row's top right corner instead of taking a column of the layout (an
