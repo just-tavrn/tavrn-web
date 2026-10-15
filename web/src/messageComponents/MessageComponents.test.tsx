@@ -2,13 +2,12 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Message } from "@tavrn/sdk";
+import type { Message, Row } from "@tavrn/sdk";
 import { MessageList } from "../components/MessageList";
-import { ComponentsContext, useExpiredComponents, type ComponentsEnv } from "./context";
+import { ComponentsContext, useUnusableComponents, type ComponentsEnv } from "./context";
 import { BUTTON_STYLES } from "./MessageComponents";
-import type { ComponentRow } from "./types";
 
-const ROWS: ComponentRow[] = [
+const ROWS: Row[] = [
   {
     type: "row",
     components: [
@@ -76,7 +75,7 @@ function show(m: Message, e: ComponentsEnv | null = env()) {
 const button = (name: string | RegExp) => screen.getByRole("button", { name });
 
 describe("message components: rendering (APPLICATIONS.md §5.10)", () => {
-  beforeEach(() => act(() => useExpiredComponents.setState({ expired: {} })));
+  beforeEach(() => act(() => useUnusableComponents.setState({ state: {} })));
 
   it("renders every row below the body with the fixed palette, emoji and a link button", () => {
     show(msg());
@@ -110,11 +109,11 @@ describe("message components: rendering (APPLICATIONS.md §5.10)", () => {
     expect(b.querySelector(".truncate")?.textContent).toBe(long);
   });
 
-  it("a select takes the full width on phones and a fixed width from the sm breakpoint", () => {
+  it("a select takes the row's width up to a limit", () => {
     show(msg());
     const select = screen.getAllByTestId("component-select")[0]!;
     expect(select.className).toContain("w-full");
-    expect(select.className).toContain("sm:w-80");
+    expect(select.className).toContain("max-w-md");
     expect(within(select).getByTestId("component-select-trigger")).toHaveAttribute("aria-haspopup", "listbox");
     // The default option is shown as chosen.
     expect(within(select).getByTestId("component-select-trigger").textContent).toContain("Mage");
@@ -155,15 +154,24 @@ describe("message components: rendering (APPLICATIONS.md §5.10)", () => {
     await userEvent.click(button("Sign up"));
     await screen.findByTestId("components-expired");
     expect(button("Sign up")).toHaveAttribute("aria-disabled", "true");
-    expect(screen.getByTestId("message-components").dataset.expired).toBe("true");
+    expect(screen.getByTestId("message-components").dataset.unusable).toBe("expired");
     // Link buttons never reach the node and stay usable.
     expect(button(/Guide/)).not.toHaveAttribute("aria-disabled");
   });
 
-  it("other API errors are shown as an alert under the components", async () => {
-    show(msg(), env({ invoke: vi.fn(async () => Promise.reject(Object.assign(new Error("x"), { problem: { code: "component.forbidden", status: 403, detail: "" } }))) }));
+  it("a 404 (the application was removed) disables them with the reason", async () => {
+    show(msg(), env({ invoke: vi.fn(async () => Promise.reject(Object.assign(new Error("gone"), { code: "component.not_found", status: 404 }))) }));
     await userEvent.click(button("Sign up"));
-    expect((await screen.findByTestId("components-error")).getAttribute("role")).toBe("alert");
+    expect((await screen.findByTestId("components-gone")).textContent).toMatch(/nicht mehr/);
+    expect(button("Maybe")).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("other API errors are announced politely under the components", async () => {
+    show(msg(), env({ invoke: vi.fn(async () => Promise.reject(Object.assign(new Error("x"), { code: "component.forbidden", problem: { code: "component.forbidden", status: 403, detail: "" } }))) }));
+    await userEvent.click(button("Sign up"));
+    const error = await screen.findByTestId("components-error");
+    expect(error.getAttribute("role")).toBe("status");
+    expect(error.textContent).toContain("Du darfst die Bedienelemente");
   });
 
   it("marks the pressed button busy until the node answered and blocks the others meanwhile", async () => {
@@ -180,6 +188,17 @@ describe("message components: rendering (APPLICATIONS.md §5.10)", () => {
     expect(button("Sign up")).not.toHaveAttribute("aria-busy");
   });
 
+  it("an answer to a component says who used the application and jumps to the message", async () => {
+    const jump = vi.fn();
+    const answer = msg({ id: "m2", content: { type: "text", body: "Bob signed up" }, interaction: { id: "i1", kind: "component", command: null, application: "t.local/raid", user: "bob@t.local", message_id: "m1" } as unknown as Message["interaction"] });
+    show(answer, env({ jump }));
+    const line = screen.getByTestId("message-interaction");
+    expect(line.dataset.kind).toBe("component");
+    expect(line.textContent).toContain("bob hat raid-bot verwendet");
+    await userEvent.click(screen.getByTestId("message-interaction-jump"));
+    expect(jump).toHaveBeenCalledWith("m1");
+  });
+
   it("a link button asks first and names the full URL", async () => {
     const e = env();
     show(msg(), e);
@@ -194,7 +213,7 @@ describe("message components: rendering (APPLICATIONS.md §5.10)", () => {
 });
 
 describe("message components: selects", () => {
-  beforeEach(() => act(() => useExpiredComponents.setState({ expired: {} })));
+  beforeEach(() => act(() => useUnusableComponents.setState({ state: {} })));
 
   it("a single select is a listbox: arrow keys move, Enter picks and invokes at once", async () => {
     const e = env();

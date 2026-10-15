@@ -9,7 +9,8 @@ import { useT } from "../i18n";
 import { describeError } from "../stores/toasts";
 import { stripBidi } from "../lib/untrusted";
 import { Button, Dialog, ErrorText } from "../components/ui";
-import type { Modal, ModalInput } from "./types";
+import type { Modal, ModalInput } from "@tavrn/sdk";
+import { BotBadge } from "../components/Badges";
 
 const length = (v: string) => [...v].length;
 
@@ -91,7 +92,10 @@ export function ComponentModal({ modal, appName, onSubmit, onClose }: { modal: M
           void submit();
         }}
       >
-        <p className="text-xs text-fg-2">{t("components.modal.from", { name: appName })}</p>
+        <p className="flex flex-wrap items-center gap-2 text-xs text-fg-2" data-testid="component-modal-app">
+          <span>{t("components.modal.from", { name: appName })}</span>
+          <BotBadge />
+        </p>
         {modal.inputs.map((input, i) => {
           const id = `${baseId}-${i}`;
           const err = shown ? errors[input.custom_id] : null;

@@ -6,16 +6,16 @@
  * tooltip), a select takes the full width on narrow screens, and the whole area has a hard height limit.
  */
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import type { Message } from "@tavrn/sdk";
+import type { Button as ComponentButton, ButtonStyle, Message, Row, Select as ComponentSelect } from "@tavrn/sdk";
 import { useT } from "../i18n";
 import { describeError } from "../stores/toasts";
+import { PREVIEW_REFUSED } from "../lib/previewGuard";
 import { stripBidi } from "../lib/untrusted";
 import { Button, Dialog } from "../components/ui";
 import { MessageNotices } from "../components/InteractionNotices";
 import { ComponentEmoji, emojiName } from "./ComponentEmoji";
-import { useComponentsEnv, useExpiredComponents } from "./context";
+import { useComponentsEnv, useUnusableComponents } from "./context";
 import { defaultValues, linkHost } from "./model";
-import type { ButtonStyle, ComponentButton, ComponentRow, ComponentSelect } from "./types";
 
 const BUTTON_BASE =
   "inline-flex min-h-10 min-w-10 max-w-full items-center justify-center gap-1.5 rounded-md px-3 text-sm font-medium transition-colors motion-reduce:transition-none aria-disabled:cursor-not-allowed aria-disabled:opacity-50";
@@ -30,14 +30,15 @@ export const BUTTON_STYLES: Record<ButtonStyle, string> = {
 };
 
 /** The component area of one message; `rows` passed the rules of `componentsOf`. */
-export function MessageComponents({ m, rows }: { m: Message; rows: ComponentRow[] }) {
+export function MessageComponents({ m, rows }: { m: Message; rows: Row[] }) {
   const t = useT();
   const env = useComponentsEnv();
-  const expired = useExpiredComponents((s) => !!env && !!s.expired[`${env.conversationId}:${m.id}`]);
+  // The node said the components cannot be used any more: expired (410) or gone with their application (404).
+  const unusable = useUnusableComponents((s) => (env ? s.state[`${env.conversationId}:${m.id}`] : undefined));
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const errorId = useId();
-  const usable = !!env && env.canUse && !expired;
+  const usable = !!env && env.canUse && !unusable;
   const run = async (customId: string, values: string[] | null) => {
     if (!env || !usable || pending) return;
     setPending(customId);
@@ -46,18 +47,20 @@ export function MessageComponents({ m, rows }: { m: Message; rows: ComponentRow[
       await env.invoke(m, customId, values);
     } catch (e) {
       const code = (e as { code?: string }).code;
-      if (code === "component.expired") useExpiredComponents.getState().mark(env.conversationId, m.id);
-      else setError(describeError(e));
+      if (code === "component.expired") useUnusableComponents.getState().mark(env.conversationId, m.id, "expired");
+      else if (code === "component.not_found") useUnusableComponents.getState().mark(env.conversationId, m.id, "gone");
+      // The role preview refused the request before it left and said so already.
+      else if (code !== PREVIEW_REFUSED) setError(describeError(e));
     } finally {
       setPending(null);
     }
   };
-  const note = expired ? t("components.expired") : env && !env.canUse ? t("components.forbidden") : null;
+  const note = unusable ? t(`components.${unusable}`) : env && !env.canUse ? t("components.forbidden") : null;
   return (
     <div
       className="mt-1 max-h-[28rem] max-w-full space-y-2 overflow-y-auto overflow-x-hidden overscroll-contain py-0.5"
       data-testid="message-components"
-      data-expired={expired || undefined}
+      data-unusable={unusable}
       aria-describedby={error ? errorId : undefined}
     >
       {rows.map((row, r) => (
@@ -72,12 +75,13 @@ export function MessageComponents({ m, rows }: { m: Message; rows: ComponentRow[
         </div>
       ))}
       {note && (
-        <p className="text-xs text-fg-2" data-testid={expired ? "components-expired" : "components-forbidden"}>
+        <p className="text-xs text-fg-2" data-testid={unusable ? `components-${unusable}` : "components-forbidden"}>
           {note}
         </p>
       )}
       {error && (
-        <p id={errorId} role="alert" className="text-xs text-danger" data-testid="components-error">
+        // Announced politely next to the message (§5.10.1).
+        <p id={errorId} role="status" className="text-xs text-danger" data-testid="components-error">
           {error}
         </p>
       )}
@@ -88,7 +92,7 @@ export function MessageComponents({ m, rows }: { m: Message; rows: ComponentRow[
 function ButtonControl({ button: b, usable, pending, blocked, onPress }: { button: ComponentButton; usable: boolean; pending: boolean; blocked: boolean; onPress: () => void }) {
   const t = useT();
   const [confirm, setConfirm] = useState(false);
-  const label = stripBidi(b.label);
+  const label = stripBidi(b.label ?? "");
   const isLink = b.style === "link";
   // Link buttons never reach the node, so they stay usable on expired messages; disabled ones never act.
   const inactive = !!b.disabled || (!isLink && (!usable || blocked));
@@ -121,7 +125,7 @@ function ButtonControl({ button: b, usable, pending, blocked, onPress }: { butto
         )}
         {isLink && label && <span className="sr-only">{t("components.link_hint", { host: linkHost(b.url ?? "") })}</span>}
       </button>
-      {isLink && b.url && <LinkConfirm url={b.url} open={confirm} onClose={() => setConfirm(false)} />}
+      {isLink && !!b.url && <LinkConfirm url={b.url} open={confirm} onClose={() => setConfirm(false)} />}
     </>
   );
 }
@@ -213,7 +217,7 @@ function SelectControl({ select: s, usable, pending, blocked, onPick }: { select
   }, [open, active, id]);
   const countOk = chosen.length >= min && chosen.length <= max;
   return (
-    <div className="w-full min-w-0 sm:w-80" data-testid="component-select" data-custom-id={s.custom_id}>
+    <div className="w-full min-w-0 max-w-md" data-testid="component-select" data-custom-id={s.custom_id}>
       <button
         ref={triggerRef}
         type="button"
@@ -316,4 +320,28 @@ export function ComponentNotices({ m }: { m: Message }) {
   const env = useComponentsEnv();
   if (!env) return null;
   return <MessageNotices conversationId={env.conversationId} messageId={m.id} qualified={env.qualified} encrypted={env.encrypted} mls={env.mls} />;
+}
+
+/**
+ * "<user> used <application>" above an answer to a component or a modal (§5.10.3), with a jump to the message whose
+ * component was used when the view offers it.
+ */
+export function ComponentInteractionLine({ interaction, app }: { interaction: { user: string; message_id?: string | null }; app: string }) {
+  const t = useT();
+  const env = useComponentsEnv();
+  const user = interaction.user.split("@")[0] ?? interaction.user;
+  const text = t("interactions.used_component", { user, app });
+  const target = interaction.message_id;
+  return (
+    <div className="mb-0.5 ml-12 flex min-w-0 items-center gap-1 text-xs text-fg-2" data-testid="message-interaction" data-kind="component">
+      <span aria-hidden="true">↱</span>
+      {target && env?.jump ? (
+        <button type="button" className="min-h-6 min-w-0 truncate rounded text-left hover:text-fg-0 hover:underline" onClick={() => env.jump?.(target)} data-testid="message-interaction-jump">
+          {text}
+        </button>
+      ) : (
+        <span className="min-w-0 truncate">{text}</span>
+      )}
+    </div>
+  );
 }

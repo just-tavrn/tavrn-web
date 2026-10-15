@@ -8,7 +8,7 @@ import { ConversationView } from "../components/ConversationView";
 import { useAuth } from "../stores/auth";
 import { useInteractions } from "../stores/interactions";
 import { mockFetch, renderWithProviders } from "../test/render";
-import { useExpiredComponents } from "./context";
+import { useUnusableComponents } from "./context";
 
 const encrypt = vi.fn(async (_q: string, content: Record<string, unknown>) => ({ content: `sealed:${String(content.type)}`, epoch: 7 }));
 let decrypted: Record<string, unknown> = {};
@@ -71,7 +71,7 @@ describe("message components: interaction flow", () => {
     useAuth.setState({ token: "t", user: me });
     act(() => {
       useInteractions.setState({ notices: [] });
-      useExpiredComponents.setState({ expired: {} });
+      useUnusableComponents.setState({ state: {} });
     });
     decrypted = {};
     encrypt.mockClear();

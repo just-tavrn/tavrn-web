@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from "vitest";
-import { authoredByBot, componentsOf, defaultValues, errorText, modalOf } from "./model";
+import { authorKind, componentsOf as read, defaultValues, errorText, modalOf } from "./model";
+
+const componentsOf = (content: unknown) => read(content, "bot");
 
 const button = (over: Record<string, unknown> = {}) => ({ type: "button", style: "primary", label: "Go", custom_id: "go", ...over });
 const select = (over: Record<string, unknown> = {}) => ({ type: "select", custom_id: "s", options: [{ label: "A", value: "a" }, { label: "B", value: "b" }], ...over });
@@ -13,7 +15,7 @@ describe("message components: what the client accepts (APPLICATIONS.md §5.10)",
     expect(componentsOf(text(rows(five, five.map((b, i) => ({ ...b, custom_id: `c${i}` })), [select()])))).toHaveLength(3);
     expect(componentsOf(text(rows([button({ label: "x".repeat(80) })])))).not.toBeNull();
     expect(componentsOf(text(rows([button({ label: "", emoji: "🎲" })])))).not.toBeNull();
-    expect(componentsOf(text(rows([button({ label: "", emoji: ":thumbsup:" })])))).not.toBeNull();
+    expect(componentsOf(text(rows([button({ label: "", emoji: ":party_parrot:" })])))).not.toBeNull();
     expect(componentsOf(text(rows([button({ style: "link", custom_id: undefined, url: "https://a.example/x" })])))).not.toBeNull();
     const options = Array.from({ length: 25 }, (_, i) => ({ label: `o${i}`, value: `v${i}` }));
     expect(componentsOf(text(rows([select({ options, min: 0, max: 25 })])))).not.toBeNull();
@@ -26,7 +28,8 @@ describe("message components: what the client accepts (APPLICATIONS.md §5.10)",
     ["a select next to a button", rows([select(), button()])],
     ["a label of 81 characters", rows([button({ label: "x".repeat(81) })])],
     ["an empty label without emoji", rows([button({ label: "" })])],
-    ["two emojis", rows([button({ emoji: "🎲🎲" })])],
+    ["an emoji with a space", rows([button({ emoji: "🎲 🎲" })])],
+    ["a shortcode of one character", rows([button({ emoji: ":x:" })])],
     ["an unknown style", rows([button({ style: "blink" })])],
     ["an unknown key", rows([button({ color: "#f00" })])],
     ["html in a key's place", rows([button({ html: "<b>x</b>" })])],
@@ -48,10 +51,11 @@ describe("message components: what the client accepts (APPLICATIONS.md §5.10)",
   it("only `text` carries components and only bot devices author them", () => {
     expect(componentsOf({ type: "action", body: "x", components: rows([button()]) })).toBeNull();
     expect(componentsOf({ type: "text", body: "x" })).toBeNull();
-    expect(authoredByBot({ author_kind: "bot" }, false)).toBe(true);
-    expect(authoredByBot({ author_kind: "webhook" }, true)).toBe(false);
-    expect(authoredByBot({ author_kind: "user" }, true)).toBe(false);
-    expect(authoredByBot({ author_kind: undefined }, true)).toBe(true);
+    expect(read(text(rows([button()])), "webhook")).toBeNull();
+    expect(read(text(rows([button()])), "user")).toBeNull();
+    expect(authorKind({ author_kind: "webhook" }, true)).toBe("webhook");
+    expect(authorKind({ author_kind: undefined }, true)).toBe("bot");
+    expect(authorKind({ author_kind: undefined }, false)).toBeNull();
   });
 
   it("modals: 1–5 inputs, title ≤ 45, unique ids, lengths", () => {

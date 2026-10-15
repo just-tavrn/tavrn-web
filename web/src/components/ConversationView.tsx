@@ -62,8 +62,7 @@ import { assertNotPreviewing } from "../lib/previewGuard";
 import { PollComposer } from "../polls/PollComposer";
 import { ComponentsContext, type ComponentsEnv } from "../messageComponents/context";
 import { ComponentModal } from "../messageComponents/ComponentModal";
-import { USE_COMPONENTS } from "../messageComponents/permission";
-import { applyAnswer, componentBody, invokeComponent, modalBody, submitModal, type OpenModal } from "../messageComponents/invoke";
+import { applyAnswer, componentBody, modalBody, type OpenModal, type Sealer } from "../messageComponents/invoke";
 import { PollContext } from "../polls/context";
 import { useConversationPolls } from "../polls/env";
 import type { PollContent, PollKind } from "../polls/model";
@@ -546,32 +545,37 @@ export function ConversationView(p: ConversationViewProps) {
     applyAnswer(res, { ...answerTarget, application: def.application, messageId: null });
   };
   // Message components (APPLICATIONS.md §5.10): buttons and selects of bot messages, and the modals bots answer with.
-  const sealer = () => {
+  const sealer = (): Sealer => {
     if (!p.encrypted) return { mls: null, conversation: null };
     // Values are encrypted for the group like command arguments; the node sees only the component's id (§5.10).
     if (!e2ee.mls) throw new Error(t("e2ee.composer_locked"));
     return { mls: e2ee.mls, conversation: q };
   };
   const invokeMessageComponent = async (m: Message, customId: string, values: string[] | null) => {
-    const { mls, conversation } = sealer();
-    const body = await componentBody(mls, conversation, m, customId, values);
-    const res = await invokeComponent(api, conversationId, m.id, body);
+    const res = await api.components.invoke(conversationId, m.id, await componentBody(sealer(), m.id, customId, values));
     const look = authors?.get(m.author);
     applyAnswer(res, { ...answerTarget, application: res.ephemeral?.application ?? { ref: "", name: look?.name || (m.author.split("@")[0] ?? m.author), bot: m.author }, messageId: m.id });
   };
   const invokeComponentRef = useRef(invokeMessageComponent);
   invokeComponentRef.current = invokeMessageComponent;
   const submitOpenModal = async (open: OpenModal, values: Record<string, string>) => {
-    const { mls, conversation } = sealer();
-    const body = await modalBody(mls, conversation, open.interactionId, open.modal.custom_id, values);
-    const res = await submitModal(api, open.interactionId, body);
+    const res = await api.interactions.submit(open.interactionId, await modalBody(sealer(), open.interactionId, open.modal.custom_id, values));
     applyAnswer(res, { ...answerTarget, application: res.ephemeral?.application ?? open.application, messageId: open.messageId });
   };
   // DMs and group DMs grant every permission of a conversation to its members.
-  const canUseComponents = p.permissions === undefined || hasPermission(p.permissions, USE_COMPONENTS);
+  const canUseComponents = p.permissions === undefined || hasPermission(p.permissions, Permission.USE_COMPONENTS);
   const componentsEnv = useMemo<ComponentsEnv>(
-    () => ({ conversationId, canUse: canUseComponents, invoke: (m, customId, values) => invokeComponentRef.current(m, customId, values), qualified: q, encrypted: p.encrypted, mls: e2ee.mls }),
-    [conversationId, canUseComponents, q, p.encrypted, e2ee.mls],
+    () => ({
+      conversationId,
+      canUse: canUseComponents,
+      invoke: (m, customId, values) => invokeComponentRef.current(m, customId, values),
+      jump: p.jumpEnabled === false ? undefined : (id) => navigate(`${location.pathname}?m=${id}`),
+      qualified: q,
+      encrypted: p.encrypted,
+      mls: e2ee.mls,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [conversationId, canUseComponents, q, p.encrypted, e2ee.mls, p.jumpEnabled, location.pathname],
   );
   const invokeRef = useRef(invokeApp);
   invokeRef.current = invokeApp;

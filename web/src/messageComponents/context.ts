@@ -19,6 +19,8 @@ export interface ComponentsEnv {
    * message, a notice under the message, an update or a modal). API errors reject.
    */
   invoke: (m: Message, customId: string, values: string[] | null) => Promise<void>;
+  /** Shows a message of this conversation (the one whose component an answer belongs to). */
+  jump?: (messageId: string) => void;
   /** For the notices under a message (encrypted ephemeral replies are decrypted with the group's keys). */
   qualified: string;
   encrypted: boolean;
@@ -29,15 +31,18 @@ export const ComponentsContext = createContext<ComponentsEnv | null>(null);
 export const useComponentsEnv = () => useContext(ComponentsContext);
 
 /**
- * Messages whose components the node called expired (`410 component.expired`): their controls stay visible but
- * disabled. Memory only, keyed by conversation and message id.
+ * Messages whose components the node refused for good: `expired` (`410 component.expired`) or `gone` (`404
+ * component.not_found`: the message's application was removed). Their controls stay visible but disabled, with the
+ * reason. Memory only, keyed by conversation and message id.
  */
-interface ExpiredState {
-  expired: Record<string, true>;
-  mark: (conversationId: string, messageId: string) => void;
+export type Unusable = "expired" | "gone";
+
+interface UnusableState {
+  state: Record<string, Unusable>;
+  mark: (conversationId: string, messageId: string, why: Unusable) => void;
 }
 
-export const useExpiredComponents = create<ExpiredState>((set) => ({
-  expired: {},
-  mark: (conversationId, messageId) => set((s) => ({ expired: { ...s.expired, [`${conversationId}:${messageId}`]: true } })),
+export const useUnusableComponents = create<UnusableState>((set) => ({
+  state: {},
+  mark: (conversationId, messageId, why) => set((s) => ({ state: { ...s.state, [`${conversationId}:${messageId}`]: why } })),
 }));

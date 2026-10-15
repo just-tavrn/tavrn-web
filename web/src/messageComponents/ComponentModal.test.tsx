@@ -3,7 +3,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ComponentModal, inputError } from "./ComponentModal";
-import type { Modal } from "./types";
+import type { Modal } from "@tavrn/sdk";
 
 const MODAL: Modal = {
   custom_id: "note",
@@ -16,7 +16,7 @@ const MODAL: Modal = {
 
 const apiError = (code: string, status: number, meta?: Record<string, unknown>) => Object.assign(new Error(code), { name: "TavrnApiError", code, status, problem: { code, status, detail: "", title: "", meta } });
 
-function open(onSubmit = vi.fn(async () => undefined), onClose = vi.fn()) {
+function open(onSubmit: (values: Record<string, string>) => Promise<void> = vi.fn(async () => undefined), onClose = vi.fn()) {
   render(<ComponentModal modal={MODAL} appName="Raid Bot" onSubmit={onSubmit} onClose={onClose} />);
   return { onSubmit, onClose, dialog: screen.getByRole("dialog", { name: "Raid note" }) };
 }
