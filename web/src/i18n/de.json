@@ -948,6 +948,8 @@
   "roles.delete": "Rolle löschen",
   "roles.delete_text": "Die Rolle „{name}“ wird allen Mitgliedern entzogen und gelöscht.",
   "roles.saved": "Rolle gespeichert",
+  "roles.changed_elsewhere": "Jemand anderes hat diese Rolle geändert, während du sie bearbeitet hast. Speichern behält deine Fassung.",
+  "roles.changed_reload": "Neue Fassung laden",
   "channels.title": "Channels",
   "channels.uncategorized": "Ohne Kategorie",
   "channels.new_category": "Neue Kategorie",

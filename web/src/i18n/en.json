@@ -948,6 +948,8 @@
   "roles.delete": "Delete role",
   "roles.delete_text": "The role “{name}” will be removed from all members and deleted.",
   "roles.saved": "Role saved",
+  "roles.changed_elsewhere": "Someone else changed this role while you were editing it. Saving keeps your version.",
+  "roles.changed_reload": "Load their version",
   "channels.title": "Channels",
   "channels.uncategorized": "Without category",
   "channels.new_category": "New category",
