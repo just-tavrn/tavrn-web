@@ -18,7 +18,16 @@ vi.mock("../history/local", () => ({
   },
 }));
 
-import { RETRY_NON_FINAL_MS, useDecrypted, usePlainSignatures } from "./useE2eeConversation";
+const opening = vi.hoisted(() => ({ failure: null as unknown }));
+vi.mock("../stores/mls", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../stores/mls")>()),
+  getMls: async () => null,
+  mlsOpenFailure: () => opening.failure,
+}));
+
+import { E2eeError } from "@tavrn/e2ee";
+import { useE2ee } from "../stores/e2ee";
+import { RETRY_NON_FINAL_MS, useDecrypted, useE2eeConversation, usePlainSignatures } from "./useE2eeConversation";
 
 const enc = (id: string, content = `ct-${id}`): Message => ({ id, encrypted: true, content, device_id: "d1", author: "a@t", epoch: 1 }) as unknown as Message;
 const plain = (id: string, text = id): Message => ({ id, encrypted: false, content: { text }, device_id: "d1", author: "a@t", signature: `sig-${id}` }) as unknown as Message;
@@ -149,5 +158,25 @@ describe("usePlainSignatures", () => {
     // A changed envelope (new object) is checked again.
     rerender({ messages: [...first.slice(1), plain("p000", "changed"), plain("p040")] });
     await waitFor(() => expect(mls.verifyCalls).toHaveLength(42));
+  });
+});
+
+describe("useE2eeConversation without a session manager", () => {
+  const open = () => renderHook(() => useE2eeConversation({ conversationId: "n/c", encrypted: true, canCreate: true, members: ["a@t"], mayManage: false }));
+
+  it("shows why the manager could not open (stored encryption data unreadable) instead of a locked device", async () => {
+    useE2ee.setState({ status: "unlocked" });
+    opening.failure = new E2eeError("state_unreadable");
+    const { result } = open();
+    await waitFor(() => expect(result.current.phase).toBe("error"));
+    expect(result.current.error).toBe("Gespeicherte Verschlüsselungsdaten konnten nicht gelesen werden. Sie bleiben unverändert erhalten; lade die Seite neu, um es erneut zu versuchen.");
+  });
+
+  it("is locked when nothing failed (no master secret or device key yet)", async () => {
+    useE2ee.setState({ status: "unlocked" });
+    opening.failure = null;
+    const { result } = open();
+    await waitFor(() => expect(result.current.phase).toBe("locked"));
+    expect(result.current.error).toBeNull();
   });
 });

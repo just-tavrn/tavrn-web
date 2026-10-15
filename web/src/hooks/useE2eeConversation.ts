@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { archivedDecrypted } from "../history/local";
 import type { Message } from "@tavrn/sdk";
 import { useE2ee } from "../stores/e2ee";
-import { getMls, useMlsUi } from "../stores/mls";
+import { getMls, mlsOpenFailure, useMlsUi } from "../stores/mls";
 import type { Decrypted, GhostViolation, MlsManager, PlainStatus } from "@tavrn/e2ee";
 import { describeError } from "../stores/toasts";
 import { cleanupConversation } from "../lib/leafCleanup";
@@ -86,7 +86,11 @@ export function useE2eeConversation(opts: {
     void (async () => {
       const mls = await getMls();
       if (cancelled) return;
-      if (!mls) return setState({ phase: "locked", mls: null, waiting: [], ghosts: [], error: null });
+      if (!mls) {
+        // An encryption error while opening the manager (stored encryption data unreadable) is not a locked device.
+        const failure = mlsOpenFailure();
+        return setState({ phase: failure ? "error" : "locked", mls: null, waiting: [], ghosts: [], error: failure ? describeError(failure) : null });
+      }
       try {
         const joined = await mls.ensureJoined(conversationId, { canCreate });
         if (cancelled) return;
