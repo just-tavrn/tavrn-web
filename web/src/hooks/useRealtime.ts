@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
-import { TavrnSocket, type Conversation, type EphemeralReply, type FriendRequest, type Member, type Message, type PendingInvite, type Presence, type RoomDetail, type SocketStatus, type User } from "@tavrn/sdk";
+import { TavrnSocket, type Conversation, type EphemeralReply, type FriendRequest, type Member, type Message, type PendingInvite, type Presence, type SocketStatus, type User } from "@tavrn/sdk";
 import { create } from "zustand";
 import { refreshHome, wsUrl } from "../lib/api";
 import { cleanupConversation, cleanupOwnLeaves } from "../lib/leafCleanup";
@@ -31,7 +31,7 @@ import { isRealDeletion, useHiddenChannels } from "../lib/hiddenChannels";
 import { usePresence } from "../stores/presence";
 import { useNotifications } from "../stores/notifications";
 import { isAttentive } from "./useMarkRead";
-import { loadRoomDetails, notifyMessage } from "../lib/notify";
+import { loadRoomDetails, locate, notifyMessage } from "../lib/notify";
 import { applyUserUpdate, isEventUser } from "../lib/userUpdate";
 import { historyPending, historyReceive } from "../crypto/history";
 import { historyDecidedEvent, historyRequestEvent } from "../history/restore";
@@ -42,6 +42,7 @@ import { rememberDeleted } from "../moderation/deletedIds";
 import { viaOf } from "../components/ViaNode";
 import { pollHandlers } from "../polls/votes";
 import { roomEventHandlers } from "./roomEvents";
+import { roomOfChannel } from "../lib/roomCache";
 
 /**
  * May this user commit removals of departed members in a conversation (`mls.remove_needed`)? DMs and group DMs:
@@ -49,9 +50,8 @@ import { roomEventHandlers } from "./roomEvents";
  * user's own other leaves every member may remove (ENCRYPTION.md §4.7).
  */
 export function mayManageConversation(queryClient: QueryClient, conversationId: string): boolean {
-  for (const [, room] of queryClient.getQueriesData<RoomDetail>({ queryKey: ["room"] })) {
-    if (room?.channels?.some((c) => c.id === conversationId)) return mayManageRoom(room);
-  }
+  const owner = roomOfChannel(queryClient, conversationId);
+  if (owner) return mayManageRoom(owner.room);
   // The conversation lists of every node (["conversations"] and ["conversations", domain]).
   return queryClient.getQueriesData<Conversation[]>({ queryKey: ["conversations"] }).some(([, list]) => !!list?.some((c) => c.id === conversationId));
 }
@@ -61,28 +61,20 @@ export function mayManageConversation(queryClient: QueryClient, conversationId: 
  * cached room and member list; null when unknown and for DMs and group DMs (there every member may).
  */
 export function conversationManagers(queryClient: QueryClient, conversationId: string): string[] | null {
-  for (const [, room] of queryClient.getQueriesData<RoomDetail>({ queryKey: ["room"] })) {
-    if (room?.channels?.some((c) => c.id === conversationId)) return roomManagers(room, queryClient.getQueryData<Member[]>(["members", room.id]));
-  }
-  return null;
+  const owner = roomOfChannel(queryClient, conversationId);
+  return owner ? roomManagers(owner.room, queryClient.getQueryData<Member[]>(["members", owner.room.id])) : null;
 }
 
 /** The history policy of a channel whose room is cached (ENCRYPTION.md §7b); null if unknown. */
 function channelHistoryPolicy(queryClient: QueryClient, conversationId: string) {
-  for (const [, room] of queryClient.getQueriesData<RoomDetail>({ queryKey: ["room"] })) {
-    const channel = room?.channels?.find((c) => c.id === conversationId);
-    if (channel) return channel.encrypted ? parseHistoryPolicy(channel.history_for_new_members) : null;
-  }
-  return null;
+  const channel = roomOfChannel(queryClient, conversationId)?.channel;
+  return channel?.encrypted ? parseHistoryPolicy(channel.history_for_new_members) : null;
 }
 
 /** Registers an encrypted files channel found in the cached rooms for the history key checks; returns the cleanup. */
 function registerKnownFilesChannel(queryClient: QueryClient, qualified: string, conversationId: string): () => void {
-  for (const [, room] of queryClient.getQueriesData<RoomDetail>({ queryKey: ["room"] })) {
-    const channel = room?.channels?.find((c) => c.id === conversationId);
-    if (channel?.kind === "files" && channel.encrypted) return registerFilesChannel(qualified, room!.id);
-  }
-  return () => undefined;
+  const owner = roomOfChannel(queryClient, conversationId);
+  return owner?.channel.kind === "files" && owner.channel.encrypted ? registerFilesChannel(qualified, owner.room.id) : () => undefined;
 }
 
 /** `identity.changed` of another user (of any node): re-check the key on the user's home node (notice, §3.3). */
@@ -195,6 +187,20 @@ export async function onInvite(invite: PendingInvite, queryClient: QueryClient) 
   useToasts.getState().push({ kind: "info", title: t(invite.kind === "room" ? "invites.toast_room" : "invites.toast_conversation", { name, inviter: invite.inviter }), detail: via ? `${invite.node} · ${t("invites.via", { node: via })}` : invite.node });
 }
 
+/**
+ * A new message in a cached DM or group DM: its `last_message_id` in the node's list (`["conversations"]` home,
+ * `["conversations", node]` another node) moves it to the top of the merged list, without refetching any list.
+ */
+export function patchConversationActivity(queryClient: QueryClient, node: string | null, m: Pick<Message, "conversation_id" | "id">) {
+  queryClient.setQueryData<Conversation[]>(node ? ["conversations", node] : ["conversations"], (list) => {
+    if (!Array.isArray(list)) return undefined;
+    const at = list.findIndex((c) => c.id === m.conversation_id);
+    const c = at >= 0 ? list[at]! : null;
+    if (!c || (c.last_message_id && c.last_message_id >= m.id)) return undefined;
+    return list.map((x, i) => (i === at ? { ...x, last_message_id: m.id } : x));
+  });
+}
+
 interface RealtimeState {
   status: SocketStatus;
   socket: TavrnSocket | null;
@@ -233,17 +239,21 @@ export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: 
     socket.on<Message>("message.create", (m) => {
       const self = me();
       // Thread messages (PROTOCOL.md §7e): the open thread's pages; counted and notified only for followers.
+      const loadRooms = () => loadRoomDetails(queryClient, node, m.conversation_id);
       if (m.thread_id) {
-        if (threadMessage(m, queryClient, self) && self) void notifyMessage(m, { queryClient, node, me: self, loadRooms: () => loadRoomDetails(queryClient, node) }).catch(() => undefined);
+        if (threadMessage(m, queryClient, self) && self) void notifyMessage(m, { queryClient, node, me: self, loadRooms }).catch(() => undefined);
         return;
       }
       // Unread counts: not for the conversation the user is looking at right now.
       if (self) useUnread.getState().message(m, self, useMlsUi.getState().open === m.conversation_id && isAttentive());
-      // Notifications (design note 4.11): toast, sound, notification center, browser notification.
-      if (self) void notifyMessage(m, { queryClient, node, me: self, loadRooms: () => loadRoomDetails(queryClient, node) }).catch(() => undefined);
-      // DMs and group DMs: refresh the list (order by last activity) unless it is a known room channel.
-      const inRoom = queryClient.getQueriesData<RoomDetail>({ queryKey: ["room"] }).some(([, r]) => r?.channels?.some((c) => c.id === m.conversation_id));
-      if (!inRoom) void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      // One lookup of the room or DM for everything below.
+      const located = locate(queryClient, m.conversation_id);
+      // A known DM or group DM moves up in its node's list (order by last activity): patched, nothing is fetched.
+      if (located.conversation) patchConversationActivity(queryClient, node, m);
+      // Notifications (design note 4.11): toast, sound, notification center, browser notification. An unknown
+      // conversation is looked up there (the room on that node, else that node's conversation list).
+      if (self) void notifyMessage(m, { queryClient, node, me: self, loadRooms, located }).catch(() => undefined);
+      else if (!located.room && !located.conversation) void queryClient.invalidateQueries({ queryKey: node ? ["conversations", node] : ["conversations"], exact: true });
       // Only the open conversation has loaded pages (lazy history); nothing is fetched for others.
       updatePages(m.conversation_id, (d) => prependMessage(d, m));
       // The answer to a deferred command ends "… is thinking" (APPLICATIONS.md §5.7).

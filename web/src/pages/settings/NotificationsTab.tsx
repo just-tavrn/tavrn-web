@@ -17,6 +17,7 @@ import { Button, Field } from "../../components/ui";
 import { Section, Select } from "./common";
 import { AccessibilitySection } from "./AccessibilitySection";
 import { PushSection } from "./PushSection";
+import { roomOfChannel } from "../../lib/roomCache";
 
 const MODES: NotificationMode[] = ["all", "mentions", "nothing"];
 
@@ -32,11 +33,8 @@ export function NotificationsTab() {
   const rooms = queryClient.getQueriesData<RoomDetail>({ queryKey: ["room"] }).map(([, r]) => r).filter((r): r is RoomDetail => !!r?.channels);
   const roomName = (id: string) => rooms.find((r) => r.id === id)?.name ?? id;
   const channelLabel = (id: string) => {
-    for (const r of rooms) {
-      const c = r.channels.find((x) => x.id === id);
-      if (c) return `#${channelName(c)} · ${r.name}`;
-    }
-    return id;
+    const owner = roomOfChannel(queryClient, id);
+    return owner ? `#${channelName(owner.channel)} · ${owner.room.name}` : id;
   };
   const until = (v: string | null | undefined) => (!v ? "" : v === FOREVER || Date.parse(v) > Date.now() + 365 * 86_400_000 ? t("menu.duration.forever") : new Date(v).toLocaleString(intlLocale()));
   const overrides = [

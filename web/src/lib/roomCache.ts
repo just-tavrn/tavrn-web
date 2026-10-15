@@ -154,3 +154,41 @@ export function patchMembers(queryClient: QueryClient, roomId: string, patch: Me
 
 /** `member_count` of the cached room detail moved by `delta` (a join or leave of another member). */
 export const withMemberCount = (delta: number): RoomPatch => (d) => ({ ...d, member_count: Math.max(0, (d.member_count ?? 0) + delta) });
+
+// ---- Which cached room owns a channel ----------------------------------------------------------------------------
+
+/** A channel id → the cached room detail holding it, rebuilt lazily after any change of a room entry. */
+const channelIndexes = new WeakMap<QueryClient, { rooms: Map<string, RoomDetail> | null }>();
+
+function channelIndex(queryClient: QueryClient): Map<string, RoomDetail> {
+  let entry = channelIndexes.get(queryClient);
+  if (!entry) {
+    const created = { rooms: null as Map<string, RoomDetail> | null };
+    entry = created;
+    channelIndexes.set(queryClient, created);
+    // Any change of a room entry (patched, fetched, removed) drops the index; the next lookup builds it again.
+    queryClient.getQueryCache().subscribe((event) => {
+      if (event.query.queryKey[0] === "room" && (event.type === "added" || event.type === "removed" || (event.type === "updated" && event.action.type === "success"))) created.rooms = null;
+    });
+  }
+  if (!entry.rooms) {
+    const rooms = new Map<string, RoomDetail>();
+    for (const [, room] of queryClient.getQueriesData<RoomDetail>({ queryKey: ["room"] })) {
+      if (!room || !Array.isArray(room.channels)) continue;
+      for (const c of room.channels) if (!rooms.has(c.id)) rooms.set(c.id, room);
+    }
+    entry.rooms = rooms;
+  }
+  return entry.rooms;
+}
+
+/**
+ * The cached room detail (`["room", id]`) that lists this channel, with the channel; null for DMs, group DMs and
+ * channels of rooms whose detail is not cached. One lookup for every place that needs it (permissions, history
+ * policy, notifications, search names), backed by an index instead of a scan over every room per message.
+ */
+export function roomOfChannel(queryClient: QueryClient, channelId: string): { room: RoomDetail; channel: Channel } | null {
+  const room = channelIndex(queryClient).get(channelId);
+  const channel = room?.channels.find((c) => c.id === channelId);
+  return room && channel ? { room, channel } : null;
+}
