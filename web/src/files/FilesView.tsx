@@ -83,6 +83,7 @@ import {
   type SortKey,
   type SortState,
 } from "./model";
+import { formatDate } from "../lib/format";
 
 const MediaViewer = lazy(() => import("../components/MediaViewer"));
 
@@ -991,7 +992,7 @@ function EntryRow(p: {
   const long = useRef<ReturnType<typeof setTimeout> | null>(null);
   const button = useRef<HTMLSpanElement>(null);
   const date = new Date(e.updated_at);
-  const when = Number.isNaN(date.getTime()) ? "" : date.toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
+  const when = Number.isNaN(date.getTime()) ? "" : formatDate(date, "short");
   const common = {
     id: `file-${e.id}`,
     role: "option",

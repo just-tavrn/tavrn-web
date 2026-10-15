@@ -43,6 +43,7 @@ import { viaOf } from "../components/ViaNode";
 import { pollHandlers } from "../polls/votes";
 import { roomEventHandlers } from "./roomEvents";
 import { roomOfChannel } from "../lib/roomCache";
+import { formatDate } from "../lib/format";
 
 /**
  * May this user commit removals of departed members in a conversation (`mls.remove_needed`)? DMs and group DMs:
@@ -353,7 +354,7 @@ export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: 
     // An app token of one of my applications expires soon (APPLICATIONS.md §2.2).
     socket.on<{ application_id: string; token_id: string; expires_at: string; days: number }>("application.token_expiring", (d) => {
       void queryClient.invalidateQueries({ queryKey: ["applications"] });
-      useToasts.getState().push({ kind: "warning", title: t("apps.token_expiring", { days: String(d.days) }), detail: new Date(d.expires_at).toLocaleString() });
+      useToasts.getState().push({ kind: "warning", title: t("apps.token_expiring", { days: String(d.days) }), detail: formatDate(d.expires_at, "medium") });
     }),
   ];
 }

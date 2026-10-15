@@ -8,7 +8,7 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { RoomDetail } from "@tavrn/sdk";
-import { intlLocale, useT } from "../../i18n";
+import { useT } from "../../i18n";
 import { FOREVER, mutedNow, setGlobalSetting, useNotifications, type NotificationMode } from "../../stores/notifications";
 import { browserNotificationsSupported, desktopNotificationsEnabled, playNotifySound, requestBrowserPermission, setDesktopNotifications } from "../../lib/notify";
 import { platform } from "../../platform";
@@ -18,6 +18,7 @@ import { Section, Select } from "./common";
 import { AccessibilitySection } from "./AccessibilitySection";
 import { PushSection } from "./PushSection";
 import { roomOfChannel } from "../../lib/roomCache";
+import { formatDate } from "../../lib/format";
 
 const MODES: NotificationMode[] = ["all", "mentions", "nothing"];
 
@@ -36,7 +37,7 @@ export function NotificationsTab() {
     const owner = roomOfChannel(queryClient, id);
     return owner ? `#${channelName(owner.channel)} · ${owner.room.name}` : id;
   };
-  const until = (v: string | null | undefined) => (!v ? "" : v === FOREVER || Date.parse(v) > Date.now() + 365 * 86_400_000 ? t("menu.duration.forever") : new Date(v).toLocaleString(intlLocale()));
+  const until = (v: string | null | undefined) => (!v ? "" : v === FOREVER || Date.parse(v) > Date.now() + 365 * 86_400_000 ? t("menu.duration.forever") : formatDate(v, "datetime"));
   const overrides = [
     ...Object.entries(settings.rooms).map(([id, v]) => ({ key: `r:${id}`, label: roomName(id), level: "room" as const, id, mode: v.mode, muted: mutedNow(v.muted_until) ? v.muted_until : null, suppress: !!v.suppress_everyone })),
     ...Object.entries(settings.channels).map(([id, v]) => ({ key: `c:${id}`, label: channelLabel(id), level: "channel" as const, id, mode: v.mode, muted: mutedNow(v.muted_until) ? v.muted_until : null, suppress: false })),

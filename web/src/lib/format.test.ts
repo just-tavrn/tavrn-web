@@ -26,3 +26,25 @@ describe("avatarBackground", () => {
     expect(avatarBackground(blue)).toBe("hsl(220 45% 40%)");
   });
 });
+
+describe("formatDate", () => {
+  it("follows the language of the settings, not the browser's", async () => {
+    const { formatDate, formatTime, formatFullTime } = await import("./format");
+    const { useLocale } = await import("../i18n");
+    const iso = "2026-03-04T05:06:07Z";
+    const before = useLocale.getState().locale;
+    try {
+      useLocale.setState({ locale: "de" });
+      expect(formatDate(iso, "date")).toBe(new Intl.DateTimeFormat("de-DE").format(new Date(iso)));
+      expect(formatDate(iso, "short")).toBe(new Date(iso).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" }));
+      expect(formatDate(iso, "datetime")).toBe(new Date(iso).toLocaleString("de-DE"));
+      expect(formatFullTime(iso)).toBe(new Date(iso).toLocaleString("de-DE", { dateStyle: "full", timeStyle: "short" }));
+      expect(formatTime(iso)).toBe(`${new Date(iso).toLocaleDateString("de-DE")} ${new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}`);
+      useLocale.setState({ locale: "en" });
+      expect(formatDate(iso, "date")).toBe(new Intl.DateTimeFormat("en-US").format(new Date(iso)));
+      expect(formatDate("not a date", "medium")).toBe("");
+    } finally {
+      useLocale.setState({ locale: before });
+    }
+  });
+});

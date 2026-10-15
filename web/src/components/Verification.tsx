@@ -15,6 +15,7 @@ import type { PlainStatus } from "@tavrn/e2ee";
 import { QrCode } from "./auth/QrCode";
 import { Button, Dialog } from "./ui";
 import { ShieldCheckIcon } from "./icons";
+import { formatDate } from "../lib/format";
 
 /** 60 digits as 12 groups of 5 (3 lines of 4 groups on screen). */
 export function safetyNumberGroups(number: string): string[] {
@@ -163,7 +164,7 @@ export function VerifyDialog({ address, onClose }: { address: string; onClose: (
           <>
             <p className="text-fg-1">{t("safety.intro", { address })}</p>
             <p role="status" data-testid="verify-state" data-state={state ?? "unverified"} className={state === "broken" ? "rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-danger" : "text-fg-2"}>
-              {state === "verified" ? t("safety.state_verified", { date: verifiedAt ? new Date(verifiedAt).toLocaleDateString() : "" }) : state === "broken" ? t("safety.state_broken") : state === "refresh" ? t("safety.state_refresh") : t("safety.state_unverified")}
+              {state === "verified" ? t("safety.state_verified", { date: verifiedAt ? formatDate(verifiedAt, "date") : "" }) : state === "broken" ? t("safety.state_broken") : state === "refresh" ? t("safety.state_refresh") : t("safety.state_unverified")}
             </p>
             <div>
               <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-fg-2">{t("safety.number_label")}</p>
