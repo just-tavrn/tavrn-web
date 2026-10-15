@@ -467,7 +467,8 @@ export function ConversationView(p: ConversationViewProps) {
     try {
       assertNotPreviewing();
       const previous = m.encrypted ? (decrypted[m.id]?.ok ? (decrypted[m.id] as { content: Record<string, unknown> }).content : null) : (m.content as Record<string, unknown>);
-      if (!previous) return;
+      // Without the decrypted original there is nothing to edit: refused with a notice, the editor keeps the text.
+      if (!previous) throw new Error(t("messages.edit_not_decrypted"));
       const next = { ...previous, type: previous.type === "action" ? "action" : "text", body };
       // Edits are signed anew by the editing device (§10.3); the bound attachments stay.
       const signature = !p.encrypted && e2ee.mls

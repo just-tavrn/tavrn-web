@@ -1378,6 +1378,7 @@
   "messages.edit_save": "Speichern",
   "messages.edit_cancel": "Abbrechen",
   "messages.edit_text": "Neuer Text",
+  "messages.edit_not_decrypted": "Diese Nachricht kann nicht bearbeitet werden: Sie ist auf diesem Gerät nicht entschlüsselt.",
   "auth.invite_code": "Einladungscode",
   "auth.invite_hint": "Dieser Knoten verlangt einen Einladungscode für neue Konten.",
   "auth.forgot": "Passwort vergessen?",

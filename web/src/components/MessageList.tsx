@@ -898,7 +898,12 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
                 e.preventDefault();
                 const next = draft.trim();
                 if (!next) return;
-                await onEdit?.(m, next);
+                try {
+                  await onEdit?.(m, next);
+                } catch {
+                  // Reported by the conversation (toast): the editor stays open with the new text.
+                  return;
+                }
                 setEditingId(null);
               }}
             >
