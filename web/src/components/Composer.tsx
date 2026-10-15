@@ -2,7 +2,7 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState, type ReactNode } from "react";
 import { previewing } from "../stores/rolePreview";
 import { toastPreviewRefused } from "../lib/previewGuard";
-import type { Attachment, Gif } from "@tavrn/sdk";
+import { UPLOAD_CATEGORIES, type Attachment, type Gif, type UploadCategoryName } from "@tavrn/sdk";
 import { errorMessage, t as translate, useT } from "../i18n";
 import { formatSize } from "./AttachmentView";
 import { GifPicker } from "./GifPicker";
@@ -12,7 +12,7 @@ import { activeArgIndex, currentToken, parseArgs, parseCommandLine, tokenize } f
 import { ArgumentHint, CommandHelp, CommandList, argLabel } from "../commands/CommandPalette";
 import { choiceSuggestions, resolveCommand } from "../commands/merge";
 import type { ArgValue, CommandArg, CommandDefinition } from "../commands/types";
-import { UPLOAD_CATEGORIES, acceptFor, classifyFile, isAllowed, type UploadCategory } from "../lib/uploads";
+import { acceptFor, classifyFile, isAllowed } from "../lib/uploads";
 import type { LinkPreview } from "../lib/linkPreview";
 import { useUploadPrivacy } from "./UploadPrivacy";
 import { useComposePreview } from "./ComposePreview";
@@ -73,7 +73,7 @@ function uploadError(e: unknown): string {
   if (err.problem?.code === "upload.type_forbidden") {
     const meta = err.problem.meta ?? {};
     if (meta.executable === true) return translate("upload.executable_forbidden");
-    if (typeof meta.category === "string" && UPLOAD_CATEGORIES.includes(meta.category as UploadCategory)) {
+    if (typeof meta.category === "string" && UPLOAD_CATEGORIES.includes(meta.category as UploadCategoryName)) {
       return translate("upload.type_forbidden", { category: translate(`upload.category.${meta.category}`) });
     }
   }

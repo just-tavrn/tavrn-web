@@ -2,7 +2,7 @@
 import { AgeGateSection } from "../../components/age/AgeGateSection";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { EVERYONE_RESTRICTED, Permission, hasPermission, inheritedOverrideValue, parsePermissions, type Category, type Channel, type RoomDetail } from "@tavrn/sdk";
+import { EVERYONE_RESTRICTED, Permission, UPLOAD_CATEGORIES, hasPermission, inheritedOverrideValue, parsePermissions, type Category, type Channel, type RoomDetail } from "@tavrn/sdk";
 import { useSearchParams } from "react-router";
 import { useNode } from "../../components/NodeScope";
 import { useT } from "../../i18n";
@@ -10,7 +10,6 @@ import { toastError, useToasts } from "../../stores/toasts";
 import { useAction } from "../../hooks/useAction";
 import { Button, Field, Input } from "../../components/ui";
 import { ConfirmDialog, OverrideTriState, Section, Select, TriStateRow } from "./common";
-import { UPLOAD_CATEGORIES } from "../../lib/uploads";
 import { effectiveUploads, inheritedUpload, overrideUploadState, setOverrideUpload, type UploadOverrideInput, type UploadSubject } from "../../lib/uploadPolicy";
 import { categoryName, channelName } from "../../lib/names";
 import { AccessMark, BotsAllowedIcon, LockMark, NoBotsIcon, accessMarkKey } from "../../components/Badges";
