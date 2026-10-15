@@ -47,7 +47,11 @@ impl<R: Runtime> Android<R> {
     async fn call<T: serde::de::DeserializeOwned>(&self, command: &str, payload: serde_json::Value) -> Result<T, String> {
         self.0.run_mobile_plugin_async(command, payload).await.map_err(|e| match e {
             tauri::plugin::mobile::PluginInvokeError::InvokeRejected(r) => r.code.unwrap_or_else(|| "android.failed".into()),
-            _ => "android.failed".into(),
+            other => {
+                // The bridge itself failed (no plugin, an answer that does not parse): the client only learns the code.
+                eprintln!("tavrn: the Android plugin call {command} failed: {other}");
+                "android.failed".into()
+            }
         })
     }
 }

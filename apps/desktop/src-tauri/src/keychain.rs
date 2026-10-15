@@ -61,7 +61,12 @@ impl From<Error> for KeychainError {
         match e {
             Error::BadDataFormat(..) | Error::BadEncoding(_) | Error::Ambiguous(_) => Self::Corrupt,
             Error::Invalid(..) | Error::TooLong(..) => Self::Invalid,
-            _ => Self::Unavailable,
+            other => {
+                // A locked keyring, no Secret Service on D-Bus, a denied access: the client only learns "unavailable".
+                // The store's message names no secret (at most the entry's account).
+                eprintln!("tavrn: the keychain is unavailable: {other}");
+                Self::Unavailable
+            }
         }
     }
 }
