@@ -44,7 +44,7 @@ import {
   uploadEncrypted,
   type EncryptedContext,
 } from "./e2ee";
-import { useLocale, useT } from "../i18n";
+import { useT } from "../i18n";
 import { useNode } from "../components/NodeScope";
 import { useNodeSockets, useRealtimeState } from "../hooks/useRealtime";
 import { ContextMenu, menuItem, normalizeMenu, separator, type MenuEntry } from "../components/ContextMenu";
@@ -217,9 +217,7 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
     return r?.ok ? r.record : null;
   }, [records]);
   const lockState = encrypted ? filesLockState(e2ee.phase, records) : null;
-  // `t` is a new function on every render: the labels change with the language only.
-  const locale = useLocale((s) => s.locale);
-  const lockedLabels = useMemo(() => ({ file: t("files.locked_file"), folder: t("files.locked_folder") }), [locale]); // eslint-disable-line react-hooks/exhaustive-deps
+  const lockedLabels = useMemo(() => ({ file: t("files.locked_file"), folder: t("files.locked_folder") }), [t]);
   // Role preview: encrypted entries from before the window a new member with the roles would get are cut.
   const preview = useRoomPreview(room.id);
   const historyStart = preview ? previewHistoryStart(channel, channelPermissions(room, channel.id, ""), preview.joinedAt) : null;
@@ -277,9 +275,7 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
     return () => {
       stale = true;
     };
-    // `t` is left out on purpose (a new function per render).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [encrypted, wanted, listing.isSuccess, listing.hasNextPage, byId, api, room.id, channel.id, q]);
+  }, [encrypted, wanted, listing.isSuccess, listing.hasNextPage, byId, api, room.id, channel.id, q, t]);
   const decryptFolderNames = useCallback(
     async (list: Parameters<typeof decryptRecords>[2]) => {
       const out = new Map<string, string>();

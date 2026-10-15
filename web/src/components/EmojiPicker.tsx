@@ -202,7 +202,7 @@ function PickerPanel({ onPick, customEmojis }: { onPick: (emoji: string) => void
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, data, tone, recents, roomItems, personalItems, otherItems, external, locale, missing]);
+  }, [query, data, tone, recents, roomItems, personalItems, otherItems, external, t, missing]);
 
   // Chunked rendering: the first sections paint at once, the long Unicode categories follow frame by frame.
   useEffect(() => {

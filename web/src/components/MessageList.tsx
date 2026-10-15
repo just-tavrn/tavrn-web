@@ -10,7 +10,7 @@ import { configureMarkdown, handleMarkdownClick, handleMarkdownKey, markdownVers
 import { useEmojiResolver } from "../lib/emojis";
 import { isGifUrl } from "../lib/gifs";
 import { GifView } from "./GifView";
-import { useLocale, useT } from "../i18n";
+import { useT } from "../i18n";
 import { Avatar } from "./ui";
 import { MessageAttachments, fromEncrypted, fromPlain } from "./AttachmentView";
 import { ContextMenu, MenuButton, useContextMenu } from "./ContextMenu";
@@ -634,10 +634,8 @@ function snippet(m: Message, d: Decrypted | undefined): string | null {
  */
 const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, grouped, own, bot, author, replyAuthor, decrypted, signature, editing, setEditingId, canManage, canReact, canPin, roomId, customEmojis, emojiUrls, onReact, onPin, onEdit, onDelete, onReply, onReport, onThread, usersById, canStartThreads, onMarkUnread, replyTo, replyDecrypted, mentioned, mentions }: RowProps) {
   const t = useT();
-  const locale = useLocale((s) => s.locale);
   const [draft, setDraft] = useState("");
-  // `t` is a new function on every render; `locale` stands in for it.
-  const c = useMemo(() => contentOf(m, decrypted, signature, t, conversationEncrypted), [m, decrypted, signature, locale, conversationEncrypted]);
+  const c = useMemo(() => contentOf(m, decrypted, signature, t, conversationEncrypted), [m, decrypted, signature, t, conversationEncrypted]);
   const body = c.kind === "text" ? c.body : "";
   const resolve = useEmojiResolver();
   // highlight.js arriving re-renders rows with code blocks.
