@@ -438,7 +438,7 @@ test.describe("Voice channels", () => {
     await joinRoom(request, bob.page, code);
     await joinFromSidebar(alice.page, roomId);
     await joinFromSidebar(bob.page, roomId);
-    await expect(row(alice.page, bob.address)).toHaveCount(1, { timeout: 20_000 });
+    await expect(row(alice.page, bob.address)).toHaveCount(1, { timeout: scaled(20_000) });
     await expect.poll(() => cues(bob.page)).toContainEqual({ cue: "join", own: true });
     expect(await cues(alice.page)).toEqual([]);
     const bobIdentity = (await hooks(bob.page)).local.identity;
@@ -446,29 +446,29 @@ test.describe("Voice channels", () => {
 
     // The node loses Bob's connection (LiveKit's webhook): Alice sees the plug glyph instead of a ring.
     await liveKitWebhook(request, { event: "participant_connection_aborted", room: { name: lkRoom }, participant: { identity: bobIdentity } });
-    await expect(row(alice.page, bob.address)).toHaveAttribute("data-connection", "reconnecting", { timeout: 10_000 });
+    await expect(row(alice.page, bob.address)).toHaveAttribute("data-connection", "reconnecting", { timeout: scaled(10_000) });
     await expect(row(alice.page, bob.address).getByTestId("connection-problems")).toBeAttached();
     await expect(row(alice.page, bob.address)).not.toHaveAttribute("data-speaking", "true");
     await expect(tile(alice.page, bob.address).getByTestId("connection-problems")).toBeVisible();
     // Back: normal state, listed once.
     await liveKitWebhook(request, { event: "participant_joined", room: { name: lkRoom }, participant: { identity: bobIdentity } });
-    await expect(row(alice.page, bob.address)).not.toHaveAttribute("data-connection", "reconnecting", { timeout: 10_000 });
+    await expect(row(alice.page, bob.address)).not.toHaveAttribute("data-connection", "reconnecting", { timeout: scaled(10_000) });
     await expect(row(alice.page, bob.address)).toHaveCount(1);
 
     // Bob's own connection breaks: his client rejoins by itself (voice bar "reconnecting"), E2EE again.
     await bob.page.evaluate(() => void (window as unknown as { __tavrnVoice: { drop: () => Promise<void> } }).__tavrnVoice.drop());
     await expect(bob.page.getByTestId("voice-stage")).toBeVisible();
-    await expect.poll(async () => bob.page.evaluate(() => !!(window as unknown as { __tavrnVoice?: { state: () => { e2eeEnabled: boolean } } }).__tavrnVoice?.state().e2eeEnabled), { timeout: 30_000 }).toBe(true);
-    await expect(row(alice.page, bob.address)).toHaveCount(1, { timeout: 20_000 });
+    await expect.poll(async () => bob.page.evaluate(() => !!(window as unknown as { __tavrnVoice?: { state: () => { e2eeEnabled: boolean } } }).__tavrnVoice?.state().e2eeEnabled), { timeout: scaled(30_000) }).toBe(true);
+    await expect(row(alice.page, bob.address)).toHaveCount(1, { timeout: scaled(20_000) });
     await expect(tile(alice.page, bob.address)).toHaveCount(1);
 
     // A drop longer than the grace period (5 s on the test nodes): LiveKit drops Bob and his client cannot
     // rejoin (offline). Alice sees him reconnecting, then he is gone; Bob's client gives up.
     await bob.page.evaluate(() => (window as unknown as { __tavrnVoice: { room: { simulateScenario: (s: string) => Promise<void> } } }).__tavrnVoice.room.simulateScenario("server-leave"));
     await bob.page.context().setOffline(true);
-    await expect(row(alice.page, bob.address)).toHaveAttribute("data-connection", "reconnecting", { timeout: 15_000 });
-    await expect(row(alice.page, bob.address)).toHaveCount(0, { timeout: 15_000 });
-    await expect(bob.page.getByTestId("voice-join-panel")).toBeVisible({ timeout: 15_000 });
+    await expect(row(alice.page, bob.address)).toHaveAttribute("data-connection", "reconnecting", { timeout: scaled(15_000) });
+    await expect(row(alice.page, bob.address)).toHaveCount(0, { timeout: scaled(15_000) });
+    await expect(bob.page.getByTestId("voice-join-panel")).toBeVisible({ timeout: scaled(15_000) });
     await bob.page.context().setOffline(false);
   });
 
