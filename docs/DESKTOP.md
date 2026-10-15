@@ -475,7 +475,8 @@ the identity domain as for invites). **Rules** (`src-tauri/src/deeplink.rs`, the
 in the client's `platform/deepLinks.ts`): `<node>` is a domain name with a dot (no port, no address, no `localhost`, so
 a link never points the app at this computer), codes and ids are base64url of at most 64 characters, `connect` takes
 exactly the 43-character session id and a 16 to 128 character state (the rules of the sign-in window's
-`open_connect`), no fragment, no other parameter, at most 512 bytes. Everything else is dropped by the shell.
+`open_connect`), no fragment, no other parameter, at most 512 bytes. Everything else is dropped by the shell. Both
+shells test these rules against the same cases, `apps/shared-vectors/deeplink.json`.
 
 **The client shows the target before it acts.** A link never navigates by itself: a dialog names what it opens ("An
 invite to a room on chat.example", "A channel of a room on chat.example") and shows the link; only **Open** goes there,
@@ -747,7 +748,7 @@ others (layout, bridge, profile, packages) exist for this shell only.
 | `src/main/guard.ts` | the decisions of navigations, new windows, external links, permissions and the dev server URL (pure functions, unit-tested) |
 | `src/main/ipc.ts` | the registry of the bridge's IPC channels: sender check, argument checks, handlers |
 | `src/main/events.ts` | the shell's events for the client (one channel) |
-| `src/main/config.ts`, `node_url.ts` | the settings file and the node URL rules (the Tauri shell's `config.rs` and `node_url.rs`, with their test cases) |
+| `src/main/config.ts`, `node_url.ts` | the settings file and the node URL rules (the Tauri shell's `config.rs` and `node_url.rs`; both shells test the node URL rules against `apps/shared-vectors/node_url.json`) |
 | `src/main/shell.ts` | the `shell` namespace: settings, version, external links, node resolution, the sign-in window |
 | `src/main/resolve.ts` | address first: well-known, SRV, direct (the Tauri shell's `resolve.rs`, with its test cases) |
 | `src/main/connect.ts` | the sign-in window |

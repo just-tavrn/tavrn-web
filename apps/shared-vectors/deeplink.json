@@ -1,0 +1,80 @@
+{
+ "_comment": "tavrn:// links (apps/desktop/src-tauri/src/deeplink.rs, apps/desktop-electron/src/main/deeplink.ts): both shells read these cases in their tests, so they accept exactly the same links.",
+ "accept": [
+  [
+   "tavrn://invite/chat.example/AbCd_123",
+   "tavrn://invite/chat.example/AbCd_123"
+  ],
+  [
+   "TAVRN://Invite/Chat.Example/AbCd_123/",
+   "tavrn://invite/chat.example/AbCd_123"
+  ],
+  [
+   "tavrn://room/chat.example/01J9ZQ",
+   "tavrn://room/chat.example/01J9ZQ"
+  ],
+  [
+   "tavrn://room/chat.example/01J9ZQ/01JA00",
+   "tavrn://room/chat.example/01J9ZQ/01JA00"
+  ],
+  [
+   "tavrn://add/chat.example/01J9ZQ",
+   "tavrn://add/chat.example/01J9ZQ"
+  ],
+  [
+   "tavrn://add/chat.example/apps.example/01J9ZQ?room=chat.example%2F01AB",
+   "tavrn://add/chat.example/apps.example/01J9ZQ?room=chat.example%2F01AB"
+  ],
+  [
+   "tavrn://connect?session=SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS&state=ssssssssssssssssssssss",
+   "tavrn://connect?session=SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS&state=ssssssssssssssssssssss"
+  ],
+  [
+   "tavrn://connect/?state=ssssssssssssssssssssss&session=SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS",
+   "tavrn://connect?session=SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS&state=ssssssssssssssssssssss"
+  ]
+ ],
+ "refuse": [
+  "tavrn://connect?session=SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS",
+  "tavrn://connect?state=ssssssssssssssssssssss",
+  "tavrn://connect?session=SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS&state=ssssssssssssssssssssss",
+  "tavrn://connect?session=SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS&state=short",
+  "tavrn://connect?session=SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS&state=sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+  "tavrn://connect?session=SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS&state=ssssssssssssssssssssss&code=abcd",
+  "tavrn://connect?session=SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS&session=SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS&state=ssssssssssssssssssssss",
+  "tavrn://connect?session=SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS&state=ssssssssssssssssssssss#k=SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS",
+  "tavrn://connect/x?session=SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS&state=ssssssssssssssssssssss",
+  "tavrn://connect?session=SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS&state=++++++++++++++++++++++",
+  "",
+  "not a url",
+  "https://chat.example/invite/code1234",
+  "tavrn:invite/chat.example/code1234",
+  "tavrn://chat.example/invite/code1234",
+  "tavrn://invite/chat.example/abc",
+  "tavrn://invite/chat.example/code1234/more",
+  "tavrn://invite/chat.example/code1234?next=/admin",
+  "tavrn://invite/chat.example/code1234#x",
+  "tavrn://invite/localhost/code1234",
+  "tavrn://invite/127.0.0.1/code1234",
+  "tavrn://invite/10.0.0.1/code1234",
+  "tavrn://invite/chat.example:8443/code1234",
+  "tavrn://invite:1/chat.example/code1234",
+  "tavrn://user@invite/chat.example/code1234",
+  "tavrn://invite/chat.example/code%2F1234",
+  "tavrn://invite/chat.example/../code1234",
+  "tavrn://room/chat.example",
+  "tavrn://room/chat.example/r1/c1/threads",
+  "tavrn://room/chat.example/r1?x=1",
+  "tavrn://room/chat.example/r%20 1",
+  "tavrn://add/chat.example",
+  "tavrn://add/chat.example/not_a_domain/01J9ZQ",
+  "tavrn://add/chat.example/01J9ZQ?room=a&room=b",
+  "tavrn://add/chat.example/01J9ZQ?room=a%20b",
+  "tavrn://add/chat.example/01J9ZQ?other=1",
+  "tavrn://settings/chat.example",
+  "tavrn://",
+  "javascript://invite/chat.example/code1234",
+  "tavrn://invite/chat.example/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "tavrn://invite/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.example/code1234"
+ ]
+}
