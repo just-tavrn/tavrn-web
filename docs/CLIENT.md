@@ -291,6 +291,19 @@ the viewer's own membership and a new owner fetch the room again (the node compu
 once per burst of events. The list
 evaluates the layered permissions once per room version: one map of permissions and access marks per channel.
 
+**Reordering channels** happens only in **Room settings → Channels** (*Manage channels*), never in the sidebar, where
+a slip of the mouse or finger would move a channel by accident. The tree there shows the sidebar's order: the welcome
+channel, the channels without category, then the categories with their channels. Every channel row and category
+header has a grab handle: drag a channel onto another row to take its place, onto a category header to move it to the
+end of that category, or onto "Without category"; drag a category onto another category to take its place (categories
+never nest). The ▲/▼ buttons do the same one step at a time (keyboard, touch); the category dropdown of the channel
+editor moves a channel to the end of the chosen category. The welcome channel stays at the top. Positions count per
+group from 0, and only the channels or categories whose position changes are saved, one `PATCH` after the other
+(`web/src/lib/channelOrder.ts`); "Order saved" confirms it. Moving a channel out of its category copies the category's
+overrides into it, and moving it into a category that grants more needs *Manage roles* there: the node refuses it
+otherwise, the error is shown and the room is fetched again. Other members see the new order through the
+`channel.update` and `category.update` events.
+
 ### Channel list marks
 
 Besides the encryption lock (which never means anything else), two SVG marks after the channel name tell who may use a

@@ -12,16 +12,17 @@ import { Button, Field, Input } from "../../components/ui";
 import { ConfirmDialog, OverrideTriState, Section, Select, TriStateRow } from "./common";
 import { effectiveUploads, inheritedUpload, overrideUploadState, setOverrideUpload, type UploadOverrideInput, type UploadSubject } from "../../lib/uploadPolicy";
 import { categoryName, channelName } from "../../lib/names";
-import { AccessMark, BotsAllowedIcon, LockMark, NoBotsIcon, accessMarkKey } from "../../components/Badges";
+import { LockMark, accessMarkKey } from "../../components/Badges";
 import { GroupOffIcon } from "../../components/icons";
 import { channelPrivacy } from "../../lib/channelPermissions";
-import { botMarker } from "../../lib/botAccess";
 import { ChannelBotsAllowed } from "./BotsEncryptionSection";
 import { HistoryPolicySection } from "./HistoryPolicy";
 import { ThreadSettingsSection } from "../../threads/ThreadSettings";
 import { StorageSection } from "../../files/StorageSection";
 import { FilesDeletionFacts, deletionCase } from "../../files/DeleteChannel";
 import { VoiceQualitySection } from "./VoiceQualitySection";
+import { planChannelMove } from "../../lib/channelOrder";
+import { ChannelTree, useOrderSaver } from "./ChannelTree";
 import { patchRoom, withCategory, withChannel, withOverrides, withoutCategory, withoutChannel, withoutOverrides, type RoomPatch } from "../../lib/roomCache";
 
 export function ChannelsTab({ room }: { room: RoomDetail }) {
@@ -49,42 +50,29 @@ export function ChannelsTab({ room }: { room: RoomDetail }) {
   const apply = async (patch?: RoomPatch) => (patch ? patchRoom(queryClient, room.id, patch) : queryClient.invalidateQueries({ queryKey: ["room", room.id] }));
 
   return (
-    <div className="grid gap-4 md:grid-cols-[220px_1fr]">
-      <Section title={t("channels.title")}>
-        {room.categories.map((cat) => (
-          <div key={cat.id}>
-            <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wide text-fg-2">
-              {canManageRoles ? (
-                <button
-                  type="button"
-                  onClick={() => setCategoryId(cat.id)}
-                  aria-label={t("channels.category_permissions_open", { name: categoryName(cat) })}
-                  aria-pressed={selectedCategory?.id === cat.id}
-                  data-testid="category-permissions"
-                  data-category={cat.id}
-                  className={`flex min-h-9 min-w-0 flex-1 items-center gap-1 rounded-md px-2 text-left uppercase ${selectedCategory?.id === cat.id ? "bg-bg-3 text-fg-0" : "hover:bg-bg-3/60 hover:text-fg-0"}`}
-                >
-                  <span className="truncate">{categoryName(cat)}</span>
-                  <span className="ml-auto shrink-0 text-[10px] font-normal normal-case">{t("channels.category_permissions_short")}</span>
-                </button>
-              ) : (
-                <span>{categoryName(cat)}</span>
-              )}
-              {canManage && (
-                <button type="button" aria-label={t("channels.delete_category", { name: categoryName(cat) })} className="min-h-6 min-w-6 text-fg-2 hover:text-danger" onClick={async () => { try { await api.channels.deleteCategory(room.id, cat.id); await apply(withoutCategory(cat.id)); } catch (e) { toastError(e); } }}>
-                  ×
-                </button>
-              )}
-            </div>
-            <ChannelButtons room={room} channels={room.channels.filter((c) => c.category_id === cat.id)} selectedId={selectedCategory ? undefined : selected?.id} onSelect={selectChannel} />
-          </div>
-        ))}
-        {room.channels.some((c) => !c.category_id) && (
-          <div>
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-fg-2">{t("channels.uncategorized")}</div>
-            <ChannelButtons room={room} channels={room.channels.filter((c) => !c.category_id)} selectedId={selectedCategory ? undefined : selected?.id} onSelect={selectChannel} />
-          </div>
-        )}
+    <div className="grid gap-4 md:grid-cols-[260px_1fr]">
+      <Section title={t("channels.title")} description={canManage ? t("channels.reorder_hint") : undefined}>
+        <ChannelTree
+          room={room}
+          canReorder={canManage}
+          canManageRoles={canManageRoles}
+          selectedChannelId={selectedCategory ? undefined : selected?.id}
+          selectedCategoryId={selectedCategory?.id}
+          onSelectChannel={selectChannel}
+          onSelectCategory={setCategoryId}
+          onDeleteCategory={
+            canManage
+              ? async (cat) => {
+                  try {
+                    await api.channels.deleteCategory(room.id, cat.id);
+                    await apply(withoutCategory(cat.id));
+                  } catch (e) {
+                    toastError(e);
+                  }
+                }
+              : undefined
+          }
+        />
         {canManage && (
           <form
             className="flex gap-2"
@@ -116,28 +104,6 @@ export function ChannelsTab({ room }: { room: RoomDetail }) {
   );
 }
 
-function ChannelButtons({ room, channels, selectedId, onSelect }: { room: RoomDetail; channels: Channel[]; selectedId?: string; onSelect: (id: string) => void }) {
-  return (
-    <ul className="mt-1 space-y-0.5">
-      {channels.map((c) => {
-        const privacy = channelPrivacy(room, c.id);
-        return (
-          <li key={c.id}>
-            <button type="button" onClick={() => onSelect(c.id)} className={`flex min-h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm ${selectedId === c.id ? "bg-bg-3 text-fg-0" : "text-fg-1 hover:bg-bg-3/60"}`}>
-              <span className="text-fg-2">{c.kind === "voice" ? "🔊" : c.kind === "files" ? "📁" : "#"}</span>
-              <span className="truncate">{channelName(c)}</span>
-              {privacy && <AccessMark kind={privacy} />}
-              {!c.encrypted && c.kind !== "voice" && <LockMark open />}
-              {botMarker(c, room) === "no_bots" && <NoBotsIcon />}
-              {botMarker(c, room) === "bots_allowed" && <BotsAllowedIcon />}
-            </button>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
 function ChannelEditor({ channel, room, canManage, onChanged }: { channel: Channel; room: RoomDetail; canManage: boolean; onChanged: (patch?: RoomPatch) => Promise<void> }) {
   const { api, domain } = useNode();
   const t = useT();
@@ -157,13 +123,23 @@ function ChannelEditor({ channel, room, canManage, onChanged }: { channel: Chann
   // What the overrides mean for @everyone: the channel list's private mark, spelled out for the admins.
   const privacy = channelPrivacy(room, channel.id);
 
+  const order = useOrderSaver(room.id);
+
   const save = async () => {
+    // A new category: the channel goes to the end of it and both groups are renumbered (lib/channelOrder.ts), the same
+    // plan as a drop on the category's header. The channel's own update rides along with the editor's fields.
+    const target = categoryId || null;
+    const plan = target !== (channel.category_id ?? null) ? planChannelMove(room, channel.id, target, Number.POSITIVE_INFINITY) : null;
+    const own = plan?.ok ? plan.updates.find((u) => u.id === channel.id) : undefined;
+    const move = plan ? { category_id: target, ...(own ? { position: own.position } : {}) } : {};
     try {
-      await onChanged(withChannel(await api.channels.update(room.id, channel.id, { name, topic, category_id: categoryId || null, slowmode_secs: slowmode, encrypted: isVoice || isFiles ? null : encrypted })));
-      useToasts.getState().push({ kind: "info", title: t("channels.saved") });
+      await onChanged(withChannel(await api.channels.update(room.id, channel.id, { name, topic, ...move, slowmode_secs: slowmode, encrypted: isVoice || isFiles ? null : encrypted })));
     } catch (err) {
       toastError(err);
+      return;
     }
+    if (plan?.ok && !(await order.save("channel", { ok: true, updates: plan.updates.filter((u) => u.id !== channel.id) }, { quiet: true }))) return;
+    useToasts.getState().push({ kind: "info", title: t("channels.saved") });
   };
 
   return (

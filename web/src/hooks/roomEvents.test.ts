@@ -53,6 +53,20 @@ describe("roomEventHandlers", () => {
     expect(keys()).toEqual([]);
   });
 
+  it("a reorder by another client: channel.update and category.update move entries, the cache keeps the node's order", () => {
+    const { emit, room } = setup();
+    emit("category.create", { id: "k1", room_id: "r1", name: "Team", position: 0, no_bots: false });
+    emit("category.create", { id: "k2", room_id: "r1", name: "Play", position: 1, no_bots: false });
+    emit("channel.create", { id: "c2", room_id: "r1", category_id: "k1", kind: "text", name: "zwei", topic: "", position: 1, encrypted: false });
+    emit("channel.update", { id: "c1", room_id: "r1", category_id: "k1", kind: "text", name: "allgemein", topic: "", position: 2, encrypted: false });
+    expect(room().channels.map((c) => [c.id, c.category_id])).toEqual([["c2", "k1"], ["c1", "k1"]]);
+    emit("channel.update", { id: "c1", room_id: "r1", category_id: "k2", kind: "text", name: "allgemein", topic: "", position: 0, encrypted: false });
+    expect(room().channels.map((c) => [c.id, c.category_id])).toEqual([["c1", "k2"], ["c2", "k1"]]);
+    emit("category.update", { id: "k2", room_id: "r1", name: "Play", position: 0, no_bots: false });
+    emit("category.update", { id: "k1", room_id: "r1", name: "Team", position: 1, no_bots: false });
+    expect(room().categories.map((c) => c.id)).toEqual(["k2", "k1"]);
+  });
+
   it("override.update replaces the target's overrides and refreshes only the command palettes", async () => {
     const { emit, keys, room } = setup();
     const o = { id: "o1", target_type: "channel", target_id: "c1", subject_type: "role", subject_id: "e", allow: "0", deny: "1" };

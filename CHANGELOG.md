@@ -41,6 +41,12 @@ First public release of the web client and the desktop apps.
   reaction chip shows the reactors (up to ten names and "and n more"), loaded when first shown and cached per message,
   emoji and count; the text is the chip's accessible description too, Escape hides it.
 
+- **Reorder channels and categories** (#179): Room settings → Channels lets channel managers drag channels and
+  categories by a handle (or use the ▲/▼ buttons) to reorder them, drop a channel on a category to move it there, or
+  out of every category; the category dropdown of the channel editor appends to the end of the new category. Only
+  changed positions are saved and the sidebar follows at once; the sidebar itself stays without drag and drop. The
+  tree in the settings now lists the channels without category first, as the sidebar does (docs/CLIENT.md
+  "Reordering channels").
 - **Log join timings** for slow voice joins: Settings → Voice & video → Connection test → "Log join timings" (or
   `localStorage` `tavrn.debug.voice=1`) prints one table to the browser console after each join with every stage's
   duration (`vj:*` performance marks), the opening of the `/rtc` WebSocket, each peer connection from creation through
