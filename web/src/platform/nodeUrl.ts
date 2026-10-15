@@ -38,7 +38,10 @@ export async function checkNode(base: string): Promise<NodeCheck> {
   try {
     doc = await new TavrnApi({ baseUrl: base }).node.wellKnown();
   } catch (e) {
-    return { ok: false, reason: e instanceof TypeError ? "unreachable" : "not_a_node" };
+    // The sdk reports a node it could not reach (DNS, TLS, refused, CORS) or that did not answer in time with these
+    // transport codes (status 0); anything else answered, but not as a node.
+    const code = (e as { problem?: { code?: string } } | null)?.problem?.code;
+    return { ok: false, reason: code === "network.error" || code === "network.timeout" || e instanceof TypeError ? "unreachable" : "not_a_node" };
   }
   const { domain, web } = (doc ?? {}) as { domain?: unknown; web?: unknown };
   // A node in development mode (plain http on this computer) is called `localhost`.
