@@ -6,7 +6,7 @@ import { DIRECT_PERMISSIONS, isBotKind, type Conversation, type User } from "@ta
 import { api } from "../lib/api";
 import { findDm, indexConversation, indexLeftConversation } from "../stores/conversationIndex";
 import { useAuth } from "../stores/auth";
-import { apiFor, isHome, useNodes } from "../stores/nodes";
+import { isHome, useNodes } from "../stores/nodes";
 import { useT } from "../i18n";
 import { describeError, toastError } from "../stores/toasts";
 import { useUnread } from "../stores/unread";
@@ -23,21 +23,13 @@ import { MessageRequestsLink } from "../components/MessageRequests";
 import { MenuButton } from "../components/ContextMenu";
 import { isClosed, useClosedDms, useDmMenu } from "../components/menus/DmMenu";
 import { useOriginDomain } from "../lib/origin";
+import { conversationsQuery, nodeInfoQuery } from "../lib/queries";
 
 /** A DM or group DM together with the domain of the node that hosts it. */
 export type NodeConversation = Conversation & { node: string };
 
-/** The conversation list of one node (null: the home node); it carries the unread counts (design note 4.4). */
-function conversationsOf(domain: string | null) {
-  return {
-    queryKey: domain ? ["conversations", domain] : ["conversations"],
-    queryFn: async () => {
-      const list = await apiFor(domain).conversations.list();
-      useUnread.getState().seed(list.map((c) => ({ conversation_id: c.id, last_message_id: c.last_message_id, last_read_message_id: c.last_read_message_id, unread_count: c.unread_count ?? 0, mention_count: c.mention_count ?? 0 })));
-      return list;
-    },
-  };
-}
+/** The conversation list of one node (null: the home node); it carries the unread counts (design note 4.4, lib/queries.ts). */
+const conversationsOf = (domain: string | null) => conversationsQuery(domain);
 
 /** Newest activity first; message and conversation ids are ULIDs (time-ordered). */
 const activity = (c: Conversation) => (c.last_message_id && c.last_message_id > c.id ? c.last_message_id : c.id);
@@ -81,7 +73,7 @@ export function useFriends() {
 }
 
 function useNodeInfo() {
-  return useQuery({ queryKey: ["node"], queryFn: () => api.node.info(), staleTime: 10 * 60_000 });
+  return useQuery(nodeInfoQuery(null));
 }
 
 /** Display title of a DM (the other person) or group DM (its name or the members). */

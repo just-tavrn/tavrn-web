@@ -20,6 +20,7 @@ import { DeletionsSection, UserDataActions } from "./admin/AccountRequests";
 import { ReportsInbox } from "../moderation/ReportsInbox";
 import { badgeText, useOpenAdminReports } from "../moderation/hooks";
 import { webOrigin } from "../platform";
+import { nodeInfoQuery } from "../lib/queries";
 
 const TABS = ["overview", "users", "invites", "bans", "reports", "entitlements", "tokens", "applications", "sso", "federation", "legal", "notices", "audit"] as const;
 type Tab = (typeof TABS)[number];
@@ -32,7 +33,7 @@ export function AdminPage() {
   const { tab = "overview" } = useParams();
   const navigate = useNavigate();
   // The SSO tab only exists when the node offers OIDC logins (capability `sso.oidc`, APPLICATIONS.md §8).
-  const node = useQuery({ queryKey: ["node"], queryFn: () => api.node.info(), staleTime: 10 * 60_000, enabled: !!user?.is_node_admin });
+  const node = useQuery({ ...nodeInfoQuery(null), enabled: !!user?.is_node_admin });
   const sso = !!node.data?.capabilities?.includes("sso.oidc");
   // Reports (MODERATION.md) on nodes that announce them; the tab shows the open count.
   const reports = !!node.data?.capabilities?.includes("reports.v1");

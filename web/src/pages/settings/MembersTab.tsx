@@ -8,10 +8,12 @@ import { useAuth } from "../../stores/auth";
 import { describeError, toastError, useToasts } from "../../stores/toasts";
 import { Avatar, Button, Dialog, Field, Input } from "../../components/ui";
 import { Section } from "./common";
+import { roomMembersQuery } from "../../lib/queries";
 
+/** The room's complete member list, the same entry as the member list's (lib/queries.ts). */
 export function useMembers(roomId: string) {
   const { api } = useNode();
-  return useQuery({ queryKey: ["members", roomId], queryFn: () => api.members.list(roomId, { limit: 500 }) });
+  return useQuery(roomMembersQuery(api, roomId));
 }
 
 export function MembersTab({ room }: { room: RoomDetail }) {

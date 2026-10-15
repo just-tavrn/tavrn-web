@@ -38,6 +38,7 @@ import { useGames, useGameSupport, watchList } from "../games/store";
 import { pushActivity } from "../lib/presence";
 import { usePresence } from "../stores/presence";
 import { restoreKeepConnection } from "../lib/androidConnection";
+import { nodeInfoQuery } from "../lib/queries";
 import { useToasts } from "../stores/toasts";
 
 /** Renewal check for federated sessions (before the 7-day cap). */
@@ -185,6 +186,7 @@ function usePrivacySetup(session: string | null, address: string | undefined) {
       })
       .catch(() => undefined);
   }, [session, address, locale]);
+  const queryClient = useQueryClient();
   const friends = useQuery({ queryKey: ["friends"], queryFn: () => api.friends.list(), enabled: !!session && !!address, staleTime: 30_000 });
   useEffect(() => {
     if (!session || !address) return;
@@ -199,11 +201,12 @@ function usePrivacySetup(session: string | null, address: string | undefined) {
         });
       })
       .catch(() => undefined);
-    void api.node
-      .info()
+    // The shared entry of `GET /node` (lib/queries.ts): the views reading it need no request of their own.
+    void queryClient
+      .fetchQuery(nodeInfoQuery(null))
       .then((info) => usePrivacy.getState().setMaxBytes(info.preview_auto_max_bytes))
       .catch(() => undefined);
-  }, [session, address]);
+  }, [session, address, queryClient]);
   useEffect(() => {
     usePrivacy.getState().setFriends(friends.data?.friends.map((f) => f.user.address) ?? []);
   }, [friends.data]);

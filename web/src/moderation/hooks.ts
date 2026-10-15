@@ -3,11 +3,12 @@
 import { useQuery } from "@tanstack/react-query";
 import type { TavrnApi } from "@tavrn/sdk";
 import { apiFor } from "../stores/nodes";
+import { nodeInfoQuery } from "../lib/queries";
 
 /** Capabilities of a node (`null` = home node); the same cache entry as the other `GET /node` reads. */
 export function useCapabilities(node: string | null): readonly string[] | undefined {
   const client = apiFor(node);
-  const info = useQuery({ queryKey: node ? ["node", node] : ["node"], queryFn: () => client.node.info(), staleTime: 10 * 60_000 });
+  const info = useQuery(nodeInfoQuery(node ?? null, client));
   return info.data?.capabilities;
 }
 

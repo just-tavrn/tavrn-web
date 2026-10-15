@@ -19,6 +19,7 @@ import { formatSize } from "../../components/AttachmentView";
 import { ContentPrivacySection } from "./ContentPrivacySection";
 import { AllowedAppsSection } from "../../activity/AllowedAppsSection";
 import { DeleteAccountSection } from "./AccountDataSections";
+import { nodeInfoQuery } from "../../lib/queries";
 
 const POLICIES = ["friends", "everyone_shared", "everyone"] as const;
 type Policy = (typeof POLICIES)[number];
@@ -43,7 +44,7 @@ function DmPolicySection() {
   const address = useAuth((s) => s.user?.address ?? "");
   const profile = useQuery({ queryKey: ["profile", "me", address], queryFn: () => api.users.profile(address), enabled: !!address });
   const presence = useQuery({ queryKey: ["presence", "me"], queryFn: () => api.presence.mine() });
-  const node = useQuery({ queryKey: ["node"], queryFn: () => api.node.info(), staleTime: 10 * 60_000 });
+  const node = useQuery(nodeInfoQuery(null));
   const bound = (node.data?.dm_policy === "open" ? "everyone" : node.data?.dm_policy) as Policy | undefined;
   const allowed = (p: Policy) => !bound || POLICIES.indexOf(p) <= POLICIES.indexOf(bound);
   const current = profile.data?.dm_policy as Policy | undefined;

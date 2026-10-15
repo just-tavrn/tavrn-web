@@ -14,6 +14,7 @@ import { describeError, toastError, useToasts } from "../../stores/toasts";
 import { Button, ErrorText, Field, Input } from "../../components/ui";
 import { Section, Select, Textarea } from "../settings/common";
 import { downloadJson } from "../settings/AccountDataSections";
+import { nodeInfoQuery } from "../../lib/queries";
 
 const STATES = ["received", "in_review", "actioned", "rejected", "counter_notice"] as const;
 type ActionKind = "remove_content" | "disable_account" | "reject" | "forward" | "set_state";
@@ -224,7 +225,7 @@ export function NoticesTab() {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const list = useQuery({ queryKey: ["admin", "notices", state, q], queryFn: () => api.legal.notices({ state: state || undefined, q: q || undefined, limit: 100 }) });
-  const node = useQuery({ queryKey: ["node"], queryFn: () => api.node.info(), staleTime: 10 * 60_000 });
+  const node = useQuery(nodeInfoQuery(null));
   if (open) return <Detail caseId={open} onBack={() => setOpen(null)} />;
   return (
     <Section title={t("admin.notices.title")} description={t(node.data?.legal?.notices?.enabled ? "admin.notices.hint" : "admin.notices.hint_off")}>

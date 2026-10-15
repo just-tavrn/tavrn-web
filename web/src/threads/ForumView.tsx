@@ -25,6 +25,7 @@ import { formatCount } from "../stores/unread";
 import { LockMark } from "../components/Badges";
 import { useRoomPreview } from "../stores/rolePreview";
 import { cutHistory, previewHistoryStart } from "../lib/previewRoom";
+import { nodeInfoQuery } from "../lib/queries";
 
 type Sort = "activity" | "created";
 
@@ -213,7 +214,7 @@ function NewPostDialog({ open, onClose, room, channel, mls, onCreated }: { open:
   const { api, domain, home } = useNode();
   const queryClient = useQueryClient();
   // Nodes announcing `threads.client_ids` keep the client's thread id: the first message is signed with it.
-  const nodeInfo = useQuery({ queryKey: home ? ["node"] : ["node", domain], queryFn: () => api.node.info(), staleTime: 10 * 60_000 });
+  const nodeInfo = useQuery(nodeInfoQuery(home ? null : domain, api));
   const clientIds = !!nodeInfo.data?.capabilities?.includes("threads.client_ids");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");

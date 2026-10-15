@@ -12,11 +12,13 @@ import { useNode } from "../components/NodeScope";
 import { describeError, useToasts } from "../stores/toasts";
 import { Button, Dialog, ErrorText, Field } from "../components/ui";
 import { Section, Select } from "../pages/settings/common";
+import { roomMembersQuery } from "../lib/queries";
 
 export function TransferDialog({ client, roomId, roomName, domain, meId, onClose, onDone }: { client: TavrnApi; roomId: string; roomName: string; domain: string; meId: string | undefined; onClose: () => void; onDone?: () => void }) {
   const t = useT();
   const queryClient = useQueryClient();
-  const members = useQuery({ queryKey: ["members", roomId], queryFn: () => client.members.list(roomId, { limit: 1000 }) });
+  // The room's complete member list (lib/queries.ts), the same entry the member list uses.
+  const members = useQuery(roomMembersQuery(client, roomId));
   const [target, setTarget] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

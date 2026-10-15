@@ -13,7 +13,6 @@ import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { Permission, hasPermission, type RoomDetail } from "@tavrn/sdk";
 import { useT } from "../i18n";
-import { api } from "../lib/api";
 import { channelName } from "../lib/names";
 import { channelPermissions } from "../lib/channelPermissions";
 import { useAuth } from "../stores/auth";
@@ -28,6 +27,7 @@ import { ownVoiceChannel, useVoice } from "../voice/store";
 import { joinVoice } from "../voice";
 import { SpeakerIcon } from "../voice/ui/icons";
 import { roomPath } from "./NodeScope";
+import { roomsQuery } from "../lib/queries";
 
 /** A friend's voice location with the names to show and how to join. */
 export interface FriendVoice {
@@ -39,10 +39,10 @@ export interface FriendVoice {
 /** The rooms the user is a member of, by room key, with their node (null: home) and name. */
 function useMemberRooms(): Map<string, { node: string | null; name: string }> {
   const homeDomain = useAuth((s) => s.user?.domain ?? "");
-  const home = useQuery({ queryKey: ["rooms"], queryFn: () => api.rooms.list() });
+  const home = useQuery(roomsQuery(null));
   const domains = useNodes((s) => Object.keys(s.sessions).sort().join(","));
   const list = domains ? domains.split(",").filter((d) => d !== homeDomain) : [];
-  const remote = useQueries({ queries: list.map((d) => ({ queryKey: ["rooms", d], queryFn: () => apiFor(d).rooms.list(), retry: 1 })) });
+  const remote = useQueries({ queries: list.map((d) => roomsQuery(d)) });
   const rooms = new Map<string, { node: string | null; name: string }>();
   for (const r of home.data ?? []) rooms.set(roomKey(homeDomain, r.id), { node: null, name: r.name });
   list.forEach((d, i) => {

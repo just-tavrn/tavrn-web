@@ -12,7 +12,9 @@ import { create } from "zustand";
 import { TavrnApiError, type ConversationIndexState, type IndexEntry, type TavrnApi } from "@tavrn/sdk";
 import { api } from "../lib/api";
 import { onAccountChange, useAuth } from "./auth";
-import { apiFor, connectNode, homeDomain, useNodes } from "./nodes";
+import { apiFor, connectNode, homeDomain, isHome, useNodes } from "./nodes";
+import { queryClient } from "../lib/queryClient";
+import { conversationsQuery, roomsQuery } from "../lib/queries";
 
 /** An entry; unknown fields written by other clients are kept. */
 export type IndexItem = IndexEntry & Record<string, unknown>;
@@ -169,7 +171,9 @@ export async function syncIndex(): Promise<void> {
   const keep = (e: IndexItem): IndexItem => existing.get(entryKey(e)) ?? e;
   const ops: IndexOp[] = [];
   const listNode = async (node: string, client: TavrnApi) => {
-    const [rooms, conversations] = await Promise.all([client.rooms.list(), client.conversations.list()]);
+    // The shared queries: the room rail and the DM list fetch the same lists at start (one request each).
+    const key = isHome(node) ? null : node;
+    const [rooms, conversations] = await Promise.all([queryClient.fetchQuery(roomsQuery(key, client)), queryClient.fetchQuery(conversationsQuery(key, client))]);
     ops.push({ type: "replace", node, kinds: ["room"], entries: rooms.map((r) => keep(roomEntry(node, r.id))) });
     ops.push({
       type: "replace",

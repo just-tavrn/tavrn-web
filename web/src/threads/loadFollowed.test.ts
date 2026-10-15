@@ -70,7 +70,14 @@ describe("followed threads of every room at start (PROTOCOL.md §7e, #2)", () =>
     expect(c.rooms.list).toHaveBeenCalledTimes(1);
     await loadFollowedThreads({ key: "a", client: c, queryClient, sleep: async () => {}, now });
     expect(c.rooms.list).toHaveBeenCalledTimes(1);
+    expect(c.threads.followed).toHaveBeenCalledTimes(1);
     now.mockReturnValue(1_000_000 + 60_001);
+    await loadFollowedThreads({ key: "a", client: c, queryClient, sleep: async () => {}, now });
+    expect(c.threads.followed).toHaveBeenCalledTimes(2);
+    // The room list is the shared query's (lib/queries.ts): still fresh, it is not fetched again.
+    expect(c.rooms.list).toHaveBeenCalledTimes(1);
+    await queryClient.invalidateQueries({ queryKey: ["rooms", "a"] });
+    now.mockReturnValue(1_000_000 + 120_002);
     await loadFollowedThreads({ key: "a", client: c, queryClient, sleep: async () => {}, now });
     expect(c.rooms.list).toHaveBeenCalledTimes(2);
     // Another node loads on its own.
