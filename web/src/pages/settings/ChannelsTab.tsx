@@ -117,6 +117,9 @@ function ChannelEditor({ channel, room, canManage, onChanged }: { channel: Chann
   const isVoice = channel.kind === "voice";
   // Files channels have no messages; their encryption is chosen at creation and fixed (FILES.md §1).
   const isFiles = channel.kind === "files";
+  // The welcome channel (kind `system`): the node refuses renaming, moving, deleting and its other settings; only the
+  // topic (and the age gate below) can change.
+  const isSystem = channel.kind === "system";
   const filesUsage = useQuery({ queryKey: ["files-usage", domain, channel.id], queryFn: () => api.files.usage(room.id, channel.id), enabled: isFiles && confirmDelete });
   const [keepExternal, setKeepExternal] = useState(false);
   const canManageRoles = hasPermission(parsePermissions(room.my_permissions), Permission.MANAGE_ROLES);
@@ -126,6 +129,15 @@ function ChannelEditor({ channel, room, canManage, onChanged }: { channel: Chann
   const order = useOrderSaver(room.id);
 
   const save = async () => {
+    if (isSystem) {
+      try {
+        await onChanged(withChannel(await api.channels.update(room.id, channel.id, { topic })));
+        useToasts.getState().push({ kind: "info", title: t("channels.saved") });
+      } catch (err) {
+        toastError(err);
+      }
+      return;
+    }
     // A new category: the channel goes to the end of it and both groups are renumbered (lib/channelOrder.ts), the same
     // plan as a drop on the category's header. The channel's own update rides along with the editor's fields.
     const target = categoryId || null;
@@ -160,7 +172,7 @@ function ChannelEditor({ channel, room, canManage, onChanged }: { channel: Chann
             </p>
           )}
           <Field label={t("common.name")}>
-            <Input value={name} onChange={(e) => setName(e.target.value)} disabled={!canManage} maxLength={100} required />
+            <Input value={name} onChange={(e) => setName(e.target.value)} disabled={!canManage || isSystem} maxLength={100} required />
           </Field>
           {!isVoice && (
             <Field label={t("channel.topic")}>
@@ -169,7 +181,7 @@ function ChannelEditor({ channel, room, canManage, onChanged }: { channel: Chann
           )}
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label={t("channel.category")}>
-              <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} disabled={!canManage}>
+              <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} disabled={!canManage || isSystem}>
                 <option value="">{t("common.none")}</option>
                 {room.categories.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -178,13 +190,13 @@ function ChannelEditor({ channel, room, canManage, onChanged }: { channel: Chann
                 ))}
               </Select>
             </Field>
-            {!isVoice && !isFiles && (
+            {!isVoice && !isFiles && !isSystem && (
               <Field label={t("channels.slowmode")} hint={t("channels.slowmode_hint")}>
                 <Input type="number" min={0} max={21600} value={slowmode} onChange={(e) => setSlowmode(Number(e.target.value))} disabled={!canManage} />
               </Field>
             )}
           </div>
-          {!isVoice && !isFiles && (
+          {!isVoice && !isFiles && !isSystem && (
             <label className="flex items-start gap-2 text-sm">
               <input type="checkbox" className="mt-0.5 h-4 w-4" checked={encrypted} onChange={(e) => setEncrypted(e.target.checked)} disabled={!canManage} data-testid="encrypted-toggle" />
               <span>
@@ -204,9 +216,11 @@ function ChannelEditor({ channel, room, canManage, onChanged }: { channel: Chann
           )}
           {canManage && (
             <div className="flex flex-wrap justify-end gap-2">
-              <Button variant="danger" onClick={() => setConfirmDelete(true)}>
-                {t("channels.delete")}
-              </Button>
+              {!isSystem && (
+                <Button variant="danger" onClick={() => setConfirmDelete(true)}>
+                  {t("channels.delete")}
+                </Button>
+              )}
               <Button type="submit">{t("common.save")}</Button>
             </div>
           )}

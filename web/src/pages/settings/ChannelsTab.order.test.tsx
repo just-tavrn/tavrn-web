@@ -177,3 +177,25 @@ describe("ChannelsTab: reordering", () => {
     expect(screen.getAllByTestId("channel-tree-row").every((r) => r.getAttribute("draggable") === null)).toBe(true);
   });
 });
+
+describe("ChannelsTab: the welcome channel's editor", () => {
+  beforeEach(() => {
+    useAuth.setState({ token: "acc" });
+    useLocale.setState({ locale: "en" });
+    useToasts.setState({ toasts: [] });
+  });
+
+  it("sends only the topic (the node refuses renaming, moving and the other fields of the welcome channel)", async () => {
+    const calls = answers();
+    renderLive();
+    const u = userEvent.setup();
+    await u.click(await screen.findByRole("button", { name: /welcome/ }));
+    const editor = await screen.findByTestId("channel-editor");
+    expect(within(editor).getByRole("textbox", { name: "Name" })).toBeDisabled();
+    expect(within(editor).getByRole("combobox", { name: "Category" })).toBeDisabled();
+    await u.type(within(editor).getByRole("textbox", { name: "Topic" }), "Hello");
+    await u.click(within(editor).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(useToasts.getState().toasts.map((t) => t.title)).toContain("Channel saved"));
+    expect(patches(calls)).toEqual([["channels/welcome", { topic: "Hello" }]]);
+  });
+});
