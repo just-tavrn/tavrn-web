@@ -828,7 +828,7 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
         <div className="min-w-0 flex-1">
           {!grouped && (
             <div className="flex items-baseline gap-2">
-              <span className={`font-semibold ${gone ? "italic text-fg-2" : "text-fg-0"}`} style={author?.color && !gone ? { color: author.color } : undefined} data-testid="message-author" data-deleted={gone || undefined}>
+              <span className={`font-semibold ${gone ? "italic text-fg-2" : "text-fg-0"}`} style={author?.color && !gone ? { color: author.color } : undefined} data-testid="message-author" data-author-name data-deleted={gone || undefined}>
                 {name}
               </span>
               {!gone && (
