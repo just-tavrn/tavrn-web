@@ -23,7 +23,7 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /**
  * The spellings of a message's mentions: `@name@domain` always and `@name` for users of the conversation's node,
  * the reader's own address as `self`, bots as `bot`, `@everyone` and `@here` when the message mentions everyone, and
- * the room's role names as `role`. Longest first, so `@bot@node` wins over `@bot` and `@Raid Leads` over `@Raid`.
+ * the room's role names as `role` (unless a mentioned member or bot is spelled the same). Longest first, so `@bot@node` wins over `@bot` and `@Raid Leads` over `@Raid`.
  */
 export function mentionTokens(
   m: { mentions?: readonly string[] | null; mentions_everyone?: boolean | null },
@@ -41,7 +41,10 @@ export function mentionTokens(
     if (domain && at > 0 && a.slice(at + 1) === domain) out.push({ token: a.slice(0, at), kind });
   }
   if (m.mentions_everyone) out.push({ token: "everyone", kind: "everyone" }, { token: "here", kind: "everyone" });
-  for (const name of opts.roles ?? []) if (name && !name.startsWith("@")) out.push({ token: name, kind: "role" });
+  // A role spelled like a mentioned member or bot (an application's managed role carries its bot's name) is not a
+  // token of its own: the explicit mention keeps its kind (and a bot its badge).
+  const taken = new Set(out.map((t) => t.token));
+  for (const name of opts.roles ?? []) if (name && !name.startsWith("@") && !taken.has(name.toLowerCase())) out.push({ token: name, kind: "role" });
   return out.sort((x, y) => y.token.length - x.token.length);
 }
 

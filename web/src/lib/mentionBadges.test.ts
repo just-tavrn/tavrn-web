@@ -70,6 +70,17 @@ describe("mention pills (tavrn-web#122)", () => {
     expect(html).toBe('<p><span class="mention" data-testid="mention" data-mention="bot" data-bot="true">@weather</span><span class="bot-mention-badge" data-testid="bot-badge">BOT</span>?</p>');
   });
 
+  it("a role named like a mentioned bot or member does not take over their mention (the bot's managed role)", () => {
+    // An application's managed role carries its name; its bot's username is the same name in lower case.
+    const tokens = mentionTokens({ mentions: ["weather@node.test", "alice@node.test"] }, { bots, self: "alice@node.test", nodeDomain: "node.test", roles: ["Weather", "Alice", "Mod"] });
+    expect(tokens.filter((t) => t.token.toLowerCase() === "weather")).toEqual([{ token: "weather", kind: "bot" }]);
+    expect(tokens.filter((t) => t.token.toLowerCase() === "alice")).toEqual([{ token: "alice", kind: "self" }]);
+    const html = markMentions("<p>Danke @weather! @alice @Mod</p>", tokens, "BOT");
+    expect(html).toContain('data-mention="bot" data-bot="true">@weather</span><span class="bot-mention-badge" data-testid="bot-badge">BOT</span>!');
+    expect(html).toContain('data-mention="self">@alice</span>');
+    expect(html).toContain('data-mention="role">@Mod</span>');
+  });
+
   it("round-trips through the string form for memoised rows", () => {
     const tokens = mentionTokens(msg, { bots, self: "alice@node.test", nodeDomain: "node.test", roles: ["Mod"] });
     expect(parseMentionTokens(serializeMentionTokens(tokens))).toEqual(tokens);
