@@ -10,7 +10,9 @@
  *
  * An id listed by the home node belongs to the home node, whoever else lists it; an id listed by two other nodes
  * belongs to neither. Another node's socket may change an id only when that node alone listed it and the home node's
- * lists of that kind have been seen; the home node's socket may change everything no other node claims alone.
+ * lists of that kind have been seen. The home node's socket loses only rooms another node's room list names while the
+ * home node's own (known) list does not: a room detail is whatever its node serves, so channel claims from details
+ * (and DM lists, which can name any id) never silence the home node's channels.
  */
 import type { Query, QueryClient } from "@tanstack/react-query";
 import type { Conversation, Room, RoomDetail } from "@tavrn/sdk";
@@ -116,7 +118,11 @@ export function verdict(queryClient: QueryClient, node: string | null, kind: Kin
   const reg = registry(queryClient);
   const claims = kind === "room" ? roomClaims(reg, id) : conversationClaims(reg, id);
   const self = nodeKey(node);
-  if (self === HOME) return claims.has(HOME) ? "own" : claims.size ? "foreign" : "unknown";
+  if (self === HOME) {
+    if (claims.has(HOME)) return "own";
+    // Only another node's room list against the home node's known one; never a detail's or a DM list's claim.
+    return kind === "room" && reg.homeRooms && claims.size ? "foreign" : "unknown";
+  }
   if (claims.has(HOME) || [...claims].some((n) => n !== self)) return "foreign";
   if (!claims.has(self)) return "unknown";
   // Until the home node's list of that kind was seen, an id of the home node cannot be told apart.

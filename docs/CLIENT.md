@@ -107,7 +107,9 @@ The web client is a client of several nodes at once. Rooms of other nodes appear
 own and keeps one WebSocket per node. A node's socket changes only that node's rooms, channels, conversations and
 messages in the client: the client remembers which node listed each room and conversation (the room and conversation
 lists of every node) and ignores events naming ids another node listed, the home node's above all; a message in a
-conversation no list names yet is shown once the sending node lists it (`web/src/lib/nodeScope.ts`,
+conversation no list names yet is shown once the sending node lists it. The home node's socket ignores only rooms
+another node's room list names and its own does not; what another node's room details or DM list claim never
+silences a channel of the home node (`web/src/lib/nodeScope.ts`,
 `web/src/hooks/socketScope.ts`). The conversation index on the home node lists every room and conversation on any
 node, so a new device brings them all back after signing in. The login page offers "Sign in with an account of
 another node": with the address `alice@home.example` the client finds the home node and signs in there directly

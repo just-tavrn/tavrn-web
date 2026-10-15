@@ -13,6 +13,8 @@ import { useMlsUi } from "../stores/mls";
 import { useUnread } from "../stores/unread";
 import { loadRoomDetails, resetRoomLookups } from "../lib/notify";
 import { roomOfChannel } from "../lib/roomCache";
+import { verdict } from "../lib/nodeScope";
+import { UNRESOLVED_MAX, rememberUnresolved, resetScopeLookups, unresolvedSize } from "./socketScope";
 import { mockFetch } from "../test/render";
 
 const HOME_ROOM = "01HOMEROOM0000000000000000";
@@ -153,6 +155,53 @@ describe("a node's socket changes only that node's cached state", () => {
     emit("message.create", forged(NEW_DM, { author: "eve@evil.test", author_id: "eve" }));
     await vi.waitFor(() => expect(client.getQueryData<{ pages: Message[][] }>(["messages", NEW_DM])!.pages.flat()).toHaveLength(1));
     expect(useToasts.getState().toasts[0]).toMatchObject({ title: "Eve" });
+  });
+
+  it("another node's room detail or lists never silence the home node's channel whose room is not opened yet", async () => {
+    const handlers = new Map<string, ((data: unknown) => void)[]>();
+    const socket = { on: (type: string, h: (data: unknown) => void) => (handlers.set(type, [...(handlers.get(type) ?? []), h]), () => undefined) } as unknown as TavrnSocket;
+    const client = new QueryClient();
+    vi.spyOn(client, "invalidateQueries").mockResolvedValue(undefined);
+    // The home node lists its room; its detail is not cached. The other node names the home channel in its own room's
+    // detail and even in its DM list.
+    client.setQueryData(["rooms"], [{ id: HOME_ROOM }]);
+    client.setQueryData(["conversations"], []);
+    client.setQueryData(["rooms", "evil.test"], [{ id: EVIL_ROOM }]);
+    client.setQueryData(["conversations", "evil.test"], [{ id: HOME_CHAN, kind: "dm", members: [] }]);
+    client.setQueryData(["room", EVIL_ROOM], { ...room(EVIL_ROOM, HOME_CHAN, "Evil"), channels: [{ id: HOME_CHAN, room_id: EVIL_ROOM, category_id: null, kind: "text", name: "copy", topic: "", position: 0, encrypted: false }] });
+    expect(verdict(client, null, "conversation", HOME_CHAN)).not.toBe("foreign");
+    roomHandlers(socket, client, () => ({ id: "me", address: "me@home.test" }), null);
+    client.setQueryData(["messages", HOME_CHAN], { pages: [[]], pageParams: [undefined] });
+    const m = { id: "01HOMEMSG00000000000000000", conversation_id: HOME_CHAN, author: "bob@home.test", author_id: "b", encrypted: false, content: { type: "text", body: "@me hi" }, created_at: "x", reactions: [], attachments: [], mentions: ["me@home.test"] } as unknown as Message;
+    (handlers.get("message.create") ?? []).forEach((h) => h(m));
+    expect(client.getQueryData<{ pages: Message[][] }>(["messages", HOME_CHAN])!.pages.flat().map((x) => x.id)).toContain(m.id);
+    expect(useUnread.getState().states[HOME_CHAN]?.mentions).toBe(1);
+    // Once the home room's detail names the channel, the home-listed room wins over every other claim: the other node
+    // may not touch it, and the channel resolves to the home room.
+    client.setQueryData(["room", HOME_ROOM], room(HOME_ROOM, HOME_CHAN, "Home room"));
+    expect(verdict(client, "evil.test", "conversation", HOME_CHAN)).toBe("foreign");
+    expect(verdict(client, null, "conversation", HOME_CHAN)).toBe("own");
+    expect(roomOfChannel(client, HOME_CHAN)?.room.id).toBe(HOME_ROOM);
+  });
+
+  it("a room only another node's list names is not the home node's (once the home list is known)", () => {
+    const { client } = setup(null);
+    expect(verdict(client, null, "room", EVIL_ROOM)).toBe("foreign");
+    // Named by both lists: the home node's.
+    client.setQueryData(["rooms", "evil.test"], [{ id: EVIL_ROOM }, { id: HOME_ROOM }]);
+    expect(verdict(client, null, "room", HOME_ROOM)).toBe("own");
+  });
+
+  it("the ids no node lists are remembered within a bound", () => {
+    resetScopeLookups();
+    const now = 1_000_000;
+    for (let i = 0; i < UNRESOLVED_MAX * 3; i++) rememberUnresolved(`evil.test|junk${i}`, now + i);
+    expect(unresolvedSize()).toBeLessThanOrEqual(UNRESOLVED_MAX);
+    // Expired entries go first.
+    resetScopeLookups();
+    rememberUnresolved("evil.test|old", now);
+    rememberUnresolved("evil.test|new", now + 120_000);
+    expect(unresolvedSize()).toBe(1);
   });
 
   it("loading another node's rooms for a notification never caches its detail under a home room's id", async () => {

@@ -73,7 +73,26 @@ export function scopeOf(type: string, data: unknown): Scope | null {
 
 /** Not looked up again for this long when the node does not list the conversation of a message. */
 const UNRESOLVED_MS = 60_000;
+/** At most this many remembered: a node sending junk ids cannot grow the map. */
+export const UNRESOLVED_MAX = 500;
+/** Key → until when it is not looked up again (insertion order = expiry order). */
 const unresolved = new Map<string, number>();
+
+/** Remembers a failed lookup; expired entries go first, then the oldest beyond {@link UNRESOLVED_MAX}. */
+export function rememberUnresolved(key: string, now = Date.now()): void {
+  for (const [k, until] of unresolved) {
+    if (until > now) break;
+    unresolved.delete(k);
+  }
+  unresolved.delete(key);
+  unresolved.set(key, now + UNRESOLVED_MS);
+  while (unresolved.size > UNRESOLVED_MAX) unresolved.delete(unresolved.keys().next().value!);
+}
+
+/** How many failed lookups are remembered (tests). */
+export function unresolvedSize(): number {
+  return unresolved.size;
+}
 
 /** Forgets the negative lookups (tests). */
 export function resetScopeLookups(): void {
@@ -86,11 +105,13 @@ export function resetScopeLookups(): void {
  */
 async function resolveConversation(queryClient: QueryClient, node: string, conversationId: string): Promise<boolean> {
   const key = `${node}|${conversationId}`;
-  if ((unresolved.get(key) ?? 0) > Date.now()) return false;
+  const until = unresolved.get(key);
+  if (until !== undefined && until > Date.now()) return false;
+  if (until !== undefined) unresolved.delete(key);
   await Promise.all([queryClient.fetchQuery(roomsQuery(null)).catch(() => undefined), queryClient.fetchQuery(conversationsQuery(null)).catch(() => undefined), loadRoomDetails(queryClient, node, conversationId).catch(() => undefined)]);
   if (verdict(queryClient, node, "conversation", conversationId) === "unknown") await queryClient.fetchQuery({ ...conversationsQuery(node), staleTime: 0 }).catch(() => undefined);
   const own = admits(queryClient, node, "conversation", conversationId);
-  if (!own) unresolved.set(key, Date.now() + UNRESOLVED_MS);
+  if (!own) rememberUnresolved(key);
   return own;
 }
 
