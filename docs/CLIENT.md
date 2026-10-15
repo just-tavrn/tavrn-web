@@ -350,7 +350,9 @@ the device-local setting `encryptedPreviews` in `tavrn.privacy.content`); plaint
 Typing indicators are not sent while the status is "invisible".
 
 **Messages** get reactions, replies, inline edits (marked "(edited)"), pins (the channel's "Pinned messages" panel) and
-threads. Links to YouTube, Twitch, Vimeo and Spotify become click-to-play embeds (Settings → Privacy & safety →
+threads. Hovering, focusing or long-pressing a reaction chip shows who reacted (up to ten names and "and n more", loaded
+when first shown, also read as the chip's description); live reaction changes keep your own highlighted chips as they
+are and change them only for your own reactions from another tab or device (protocol PROTOCOL.md §6, §7 "Reactions"). Links to YouTube, Twitch, Vimeo and Spotify become click-to-play embeds (Settings → Privacy & safety →
 "Embeds": a thumbnail and play on click, play on click without a thumbnail, or off); nothing loads before the card is
 on screen, the player only after a click. Message authors are shown like the member list everywhere: in rooms the
 nickname or display name with the role colour, in DMs and group DMs the members' display names (as in the header),

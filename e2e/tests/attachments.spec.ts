@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test } from "@playwright/test";
-import { NODE, createRoomViaApi, loginAs, registerViaApi } from "./helpers";
+import { NODE, createRoomViaApi, inviteCode, loginAs, registerViaApi } from "./helpers";
+import { postMessage } from "./menu-helpers";
 
 const SVG = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><script>window.svgRan = true</script><rect width="10" height="10"/></svg>');
 const PNG =Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
@@ -36,6 +37,48 @@ test.describe("Attachments, Markdown, reactions, pins", () => {
     await expect(message.getByLabel("Angepinnt")).toBeVisible();
     await page.getByRole("button", { name: "Angepinnte Nachrichten" }).click();
     await expect(page.getByTestId("pin-panel")).toContainText("Schau");
+  });
+
+  test("Live reactions keep the viewer's own state, and a chip tells who reacted (PROTOCOL.md §6, §7)", async ({ page, request }) => {
+    const owner = await registerViaApi(request, "rwo");
+    const member = await registerViaApi(request, "rwm");
+    const room = await createRoomViaApi(request, owner.token, "Wer-Raum");
+    const code = await inviteCode(request, owner.token, room.id);
+    expect((await request.post(`${NODE}/api/v1/invites/${code}/join`, { headers: { Authorization: `Bearer ${member.token}` }, data: {} })).ok()).toBe(true);
+    const channel = room.channels.find((c: { kind: string }) => c.kind === "text") as { id: string };
+    const posted = await postMessage(request, owner.token, channel.id, "Wer kommt mit?");
+    const react = async (token: string, emoji: string) => {
+      const resp = await request.put(`${NODE}/api/v1/conversations/${channel.id}/messages/${posted.id}/reactions/${encodeURIComponent(emoji)}`, { headers: { Authorization: `Bearer ${token}` }, data: {} });
+      expect(resp.ok()).toBe(true);
+    };
+    await loginAs(page, owner);
+    await page.goto(`/rooms/${room.id}`);
+    const message = page.getByTestId("message").filter({ hasText: "Wer kommt mit?" });
+    await expect(message).toBeVisible();
+
+    // Somebody else reacts: the chip appears live, not pressed for the viewer.
+    await react(member.token, "👍");
+    await expect(message.getByRole("button", { name: "👍 1" })).toHaveAttribute("aria-pressed", "false");
+    // The viewer reacts on another device: the event names the viewer, so the chip is pressed here too.
+    await react(owner.token, "👍");
+    await expect(message.getByRole("button", { name: "👍 2" })).toHaveAttribute("aria-pressed", "true");
+    // Another reaction of somebody else keeps the viewer's flag (events carry no per-viewer state).
+    await react(member.token, "🎉");
+    await expect(message.getByRole("button", { name: "🎉 1" })).toHaveAttribute("aria-pressed", "false");
+    await expect(message.getByRole("button", { name: "👍 2" })).toHaveAttribute("aria-pressed", "true");
+
+    // Focus (keyboard; hover and long press show the same) lists who reacted, as tooltip and description.
+    const chip = message.getByRole("button", { name: "👍 2" });
+    await chip.focus();
+    const tip = message.getByRole("tooltip");
+    await expect(tip).toContainText(member.username);
+    await expect(tip).toContainText(owner.username);
+    await expect(chip).toHaveAttribute("aria-describedby", (await tip.getAttribute("id"))!);
+    await page.keyboard.press("Escape");
+    await expect(tip).toHaveCount(0);
+    // Taking the reaction back here unpresses the chip.
+    await chip.click();
+    await expect(message.getByRole("button", { name: "👍 1" })).toHaveAttribute("aria-pressed", "false");
   });
 
   test("SVG is only a download, never an embedded image (design note 4.12)", async ({ page, request }) => {

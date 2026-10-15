@@ -21,6 +21,7 @@ import { qualify, splitIdentity } from "@tavrn/e2ee";
 import { acceptInvite, autoAccepts } from "../lib/invites";
 import { mayManageRoom, roomManagers } from "../lib/rooms";
 import { mapMessages, prependMessage, type MessagePages } from "../lib/messagePages";
+import { mergeMessageUpdate, type MessageUpdateEvent } from "../lib/reactionEvents";
 import { threadHandlers, threadMessage } from "../threads/realtime";
 import { useUnread } from "../stores/unread";
 import { apiFor, homeDomain, refreshNode, useNodes } from "../stores/nodes";
@@ -247,8 +248,10 @@ export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: 
       // The answer to a deferred command ends "… is thinking" (APPLICATIONS.md §5.7).
       if (m.interaction) useInteractions.getState().resolve(m.interaction.id);
     }),
-    socket.on<Message>("message.update", (m) => {
-      updatePages(m.conversation_id, (d) => mapMessages(d, (page) => page.map((x) => (x.id === m.id ? m : x))));
+    // Events carry no per-viewer state (PROTOCOL.md §6): the viewer's reaction flags stay those of the cached copy.
+    socket.on<MessageUpdateEvent>("message.update", (m) => {
+      const self = me();
+      updatePages(m.conversation_id, (d) => mapMessages(d, (page) => page.map((x) => (x.id === m.id ? mergeMessageUpdate(x, m, self) : x))));
     }),
     socket.on<{ conversation_id: string; id: string }>("message.delete", (d) => {
       rememberDeleted(d.id);
