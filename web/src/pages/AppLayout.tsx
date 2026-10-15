@@ -5,13 +5,13 @@ import { Link, Navigate, Outlet, useLocation, useNavigate, useParams } from "rea
 import { api, publicApi } from "../lib/api";
 import { useAuth, useSessionKey } from "../stores/auth";
 import { useNodeRealtime, useRealtime } from "../hooks/useRealtime";
-import { useLocale, useT } from "../i18n";
+import { t, useLocale, useT } from "../i18n";
 import { syncMailLocale } from "../lib/mailLocale";
 import { AppShell } from "../components/AppShell";
 import { RolePreviewBanner } from "../components/RolePreviewBanner";
 import { Toaster } from "../components/Toaster";
 import { NotificationBell } from "../components/NotificationCenter";
-import { useNotifications } from "../stores/notifications";
+import { setNotificationSaveFailed, useNotifications } from "../stores/notifications";
 import { usePush } from "../stores/push";
 import { usePrivacy } from "../stores/privacy";
 import { setNotificationNavigator } from "../lib/notify";
@@ -39,7 +39,7 @@ import { pushActivity } from "../lib/presence";
 import { usePresence } from "../stores/presence";
 import { restoreKeepConnection } from "../lib/androidConnection";
 import { nodeInfoQuery } from "../lib/queries";
-import { useToasts } from "../stores/toasts";
+import { toastError, useToasts } from "../stores/toasts";
 
 /** Renewal check for federated sessions (before the 7-day cap). */
 const RENEW_CHECK_MS = 10 * 60_000;
@@ -154,6 +154,11 @@ function useNotificationSetup(session: string | null, address: string | undefine
     setNotificationNavigator((path) => navigate(path));
     return () => setNotificationNavigator(null);
   }, [navigate]);
+  // A notification-settings save the node refused is said (the settings show the node's again).
+  useEffect(() => {
+    setNotificationSaveFailed((e) => toastError(e, t("notify.save_failed")));
+    return () => setNotificationSaveFailed(null);
+  }, []);
   useEffect(() => {
     if (!session || !address) return;
     void useNotifications.getState().load({ get: () => api.users.notificationSettings(), put: (s) => api.users.putNotificationSettings(s) }, address);

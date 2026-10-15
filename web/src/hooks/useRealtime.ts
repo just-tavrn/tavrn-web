@@ -24,7 +24,7 @@ import { mapMessages, prependMessage, type MessagePages } from "../lib/messagePa
 import { mergeMessageUpdate, type MessageUpdateEvent } from "../lib/reactionEvents";
 import { threadHandlers, threadMessage } from "../threads/realtime";
 import { useUnread } from "../stores/unread";
-import { apiFor, homeDomain, refreshNode, useNodes } from "../stores/nodes";
+import { apiFor, homeDomain, isHome, refreshNode, useNodes } from "../stores/nodes";
 import { loadFollowedThreads } from "../threads/loadFollowed";
 import { unindexConversation, unindexMessages } from "../search/local";
 import { isRealDeletion, useHiddenChannels } from "../lib/hiddenChannels";
@@ -451,6 +451,7 @@ export function useRealtime() {
       // ---- A statement of reasons about the user's content (design note 4.14 item 1)
       socket.on<{ case_id: string }>("legal.statement", (d) => notifyStatement(d.case_id, queryClient)),
       ...conversationHandlers(socket, queryClient, navigate),
+      ...accountNoticeHandlers(socket, queryClient),
     ];
 
     /**
@@ -502,6 +503,33 @@ export function useRealtime() {
       useRealtimeState.setState({ socket: null, status: "closed" });
     };
   }, [session, queryClient, navigate]);
+}
+
+/**
+ * Events of the home node's socket about the account (PROTOCOL.md §6): notification settings changed on another
+ * device or tab (§6c), a ban by another room or node (information only), and a friend request or invitation the
+ * node could not deliver to another node (FEDERATION.md §5.3).
+ */
+export function accountNoticeHandlers(socket: TavrnSocket, queryClient: QueryClient): Array<() => void> {
+  return [
+    socket.on<{ settings?: unknown }>("notifications.update", (d) => {
+      if (d && typeof d.settings === "object" && d.settings) useNotifications.getState().applyRemote(d.settings);
+    }),
+    socket.on<{ room?: { node?: string; id?: string; name?: string }; scope?: string }>("ban.notify", (d) => {
+      const node = typeof d?.room?.node === "string" ? d.room.node : "";
+      if (!node) return;
+      const name = typeof d.room?.name === "string" ? d.room.name : "";
+      const title = d.scope === "node" ? t("notice.banned_node", { node }) : name ? t("notice.banned_room", { room: name, node }) : t("notice.banned");
+      useToasts.getState().push({ kind: "warning", title });
+      void queryClient.invalidateQueries({ queryKey: isHome(node) ? ["rooms"] : ["rooms", node] });
+    }),
+    socket.on<{ type?: string; to?: string }>("federation.undeliverable", (d) => {
+      const to = typeof d?.to === "string" ? d.to : "";
+      const friend = d?.type === "friend.request";
+      useToasts.getState().push({ kind: "warning", title: t(friend ? "notice.undeliverable_friend" : "notice.undeliverable_invite", { to }), detail: t("notice.undeliverable_hint") });
+      void queryClient.invalidateQueries({ queryKey: friend ? ["friends"] : ["pending-invites"] });
+    }),
+  ];
 }
 
 /** A statement of reasons or a decision on a notice about the user's content: notification entry and refresh. */

@@ -4,7 +4,9 @@
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Conversation, FriendList, Member, TavrnSocket, User, UserPrivate } from "@tavrn/sdk";
-import { roomHandlers } from "./useRealtime";
+import { accountNoticeHandlers, roomHandlers } from "./useRealtime";
+import { useToasts } from "../stores/toasts";
+import { DEFAULT_SETTINGS, useNotifications } from "../stores/notifications";
 import { useAuth } from "../stores/auth";
 import { usePresence } from "../stores/presence";
 
@@ -123,5 +125,40 @@ describe("own account from events", () => {
     expect(usePresence.getState().mine?.effective).toBe("online");
     setup(null).emit("presence.update", { user: "me@home.test", user_id: "me", status: "idle", custom_status: null, activity: null });
     expect(usePresence.getState().mine?.effective).toBe("idle");
+  });
+});
+
+describe("account notices on the home socket", () => {
+  function notices() {
+    const handlers = new Map<string, ((data: unknown) => void)[]>();
+    const socket = { on: (type: string, h: (data: unknown) => void) => (handlers.set(type, [...(handlers.get(type) ?? []), h]), () => undefined) } as unknown as TavrnSocket;
+    const client = new QueryClient();
+    const invalidate = vi.spyOn(client, "invalidateQueries").mockResolvedValue(undefined);
+    accountNoticeHandlers(socket, client);
+    return { emit: (type: string, data: unknown) => (handlers.get(type) ?? []).forEach((h) => h(data)), keys: () => invalidate.mock.calls.map(([f]) => JSON.stringify(f?.queryKey)) };
+  }
+  beforeEach(() => useToasts.setState({ toasts: [] }));
+
+  it("a ban by another room or node is told and the room list refreshed", () => {
+    const { emit, keys } = notices();
+    emit("ban.notify", { room: { node: "far.test", id: "r9", name: "Gilde" }, scope: "room" });
+    emit("ban.notify", { room: { node: "far.test", id: "r9", name: "Gilde" }, scope: "node" });
+    expect(useToasts.getState().toasts.map((x) => x.title)).toEqual(["Gilde auf far.test hat dich verbannt", "Der Knoten far.test hat dich verbannt"]);
+    expect(keys()).toEqual(['["rooms","far.test"]', '["rooms","far.test"]']);
+  });
+
+  it("an undeliverable friend request or invitation is told", () => {
+    const { emit, keys } = notices();
+    emit("federation.undeliverable", { type: "friend.request", to: "bob@far.test" });
+    emit("federation.undeliverable", { type: "room.invite", to: "carol@far.test" });
+    expect(useToasts.getState().toasts.map((x) => x.title)).toEqual(["Deine Freundschaftsanfrage an bob@far.test konnte nicht zugestellt werden", "Deine Einladung an carol@far.test konnte nicht zugestellt werden"]);
+    expect(keys()).toEqual(['["friends"]', '["pending-invites"]']);
+  });
+
+  it("notifications.update takes over the settings of another device", async () => {
+    await useNotifications.getState().load({ get: async () => DEFAULT_SETTINGS, put: async (s) => s }, "me@home.test");
+    notices().emit("notifications.update", { settings: { ...DEFAULT_SETTINGS, rooms: { r1: { mode: "nothing" } } } });
+    expect(useNotifications.getState().settings.rooms.r1).toEqual({ mode: "nothing" });
+    useNotifications.getState().reset();
   });
 });
