@@ -395,8 +395,7 @@ function ScenesPanel({ c, current, onCurrent, onClose }: { c: WhiteboardControll
     } catch (e) {
       setError(sceneErrorText(t, e));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [t]);
   useEffect(() => void reload(), [reload]);
   const act = async (fn: () => Promise<void>) => {
     setBusy(true);
