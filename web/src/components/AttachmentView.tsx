@@ -3,7 +3,7 @@
  * Attachments in chat (design note 4.11): images inline (a click opens the viewer, never a download), videos
  * with a poster that play inline and enlarge into the viewer, audio with an inline player, other files
  * with an explicit download icon. Encrypted attachments are downloaded, checked and decrypted in the
- * browser into object URLs (cached per blob); audio and video only when the user starts them.
+ * browser into object URLs (cached per blob, within a byte budget); audio and video only when the user starts them.
  *
  * Safety (design note 4.12): SVG is never shown inline (a file row, download only); object URLs only keep the
  * type of raster images, audio and video. Image previews load by themselves only where the user's
@@ -20,6 +20,7 @@ import { stripBidi } from "../lib/untrusted";
 import { usePrivacy } from "../stores/privacy";
 import { toastError } from "../stores/toasts";
 import { saveDownload } from "../lib/download";
+import { AttachmentCache } from "./attachmentCache";
 
 const MediaViewer = lazy(() => import("./MediaViewer"));
 
@@ -70,8 +71,9 @@ export function mediaKind(mime: string, name = ""): MediaKind {
 
 type NodeApi = ReturnType<typeof useNode>["api"];
 
-const blobs = new Map<string, Promise<Blob>>();
-const objectUrls = new Map<string, Promise<string>>();
+/** Plaintext kept for attachments nothing shows at the moment; entries in use are never dropped. */
+export const ATTACHMENT_CACHE_BYTES = 192 * 1024 * 1024;
+const cache = new AttachmentCache({ budget: ATTACHMENT_CACHE_BYTES, maxEntries: 400 });
 
 const cacheKey = (a: ViewAttachment) => (a.load ? `file:${a.id}` : a.encrypted ? `${a.id}|${a.encrypted.sha256}|${a.encrypted.key}` : a.id);
 
@@ -80,33 +82,27 @@ const cacheKey = (a: ViewAttachment) => (a.load ? `file:${a.id}` : a.encrypted ?
  * per blob: the preview, the player and the download share one download.
  */
 export function loadAttachment(api: NodeApi, a: ViewAttachment): Promise<Blob> {
-  const key = cacheKey(a);
-  let p = blobs.get(key);
-  if (!p) {
-    const enc = a.encrypted;
-    p = a.load
-      ? a.load().then((blob) => blob.slice(0, blob.size, safeBlobType(a.mime, a.name)))
-      : enc
-      ? api.attachments
-          .download(a.id)
-          .then(async (blob) => decryptAttachment(new Uint8Array(await blob.arrayBuffer()), enc))
-          .then((plain) => new Blob([plain as Uint8Array<ArrayBuffer>], { type: safeBlobType(enc.mime, enc.name) }))
-      : api.attachments.download(a.id).then(async (blob) => {
-          if (a.sha256) await verifyPlainAttachment(new Uint8Array(await blob.arrayBuffer()), a.sha256);
-          return blob.slice(0, blob.size, safeBlobType(a.mime, a.name));
-        });
-    blobs.set(key, p);
-    p.catch(() => blobs.delete(key));
-  }
-  return p;
+  return cache.blob(cacheKey(a), a.size, () => fetchAttachment(api, a));
+}
+
+function fetchAttachment(api: NodeApi, a: ViewAttachment): Promise<Blob> {
+  const enc = a.encrypted;
+  return a.load
+    ? a.load().then((blob) => blob.slice(0, blob.size, safeBlobType(a.mime, a.name)))
+    : enc
+    ? api.attachments
+        .download(a.id)
+        .then(async (blob) => decryptAttachment(new Uint8Array(await blob.arrayBuffer()), enc))
+        .then((plain) => new Blob([plain as Uint8Array<ArrayBuffer>], { type: safeBlobType(enc.mime, enc.name) }))
+    : api.attachments.download(a.id).then(async (blob) => {
+        if (a.sha256) await verifyPlainAttachment(new Uint8Array(await blob.arrayBuffer()), a.sha256);
+        return blob.slice(0, blob.size, safeBlobType(a.mime, a.name));
+      });
 }
 
 /** Sign-out: drops the downloaded and decrypted attachments of this session and revokes their object URLs. */
 export function forgetAttachments(): void {
-  const urls = [...objectUrls.values()];
-  objectUrls.clear();
-  blobs.clear();
-  for (const p of urls) void p.then((url) => URL.revokeObjectURL(url)).catch(() => undefined);
+  cache.clear();
 }
 
 /** Object URL of an attachment, cached per blob; `tampered`: the bytes do not match the attachment's hash. */
@@ -118,15 +114,12 @@ export function useAttachmentUrl(a: ViewAttachment, enabled: boolean): { url: st
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
-    let p = objectUrls.get(key);
-    if (!p) {
-      p = loadAttachment(api, a).then((blob) => URL.createObjectURL(blob));
-      objectUrls.set(key, p);
-      p.catch(() => objectUrls.delete(key));
-    }
-    p.then((url) => !cancelled && setState({ url, failed: false })).catch((e: unknown) => !cancelled && setState({ url: null, failed: true, tampered: e instanceof AttachmentIntegrityError }));
+    // Held while mounted: the cache drops (and revokes) only what no view shows.
+    const held = cache.acquireUrl(key, a.size, () => fetchAttachment(api, a));
+    held.url.then((url) => !cancelled && setState({ url, failed: false })).catch((e: unknown) => !cancelled && setState({ url: null, failed: true, tampered: e instanceof AttachmentIntegrityError }));
     return () => {
       cancelled = true;
+      held.release();
     };
     // `key` identifies the attachment.
     // eslint-disable-next-line react-hooks/exhaustive-deps

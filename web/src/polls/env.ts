@@ -31,6 +31,18 @@ export interface ConversationPollOptions {
 /** The poll content as the client holds it (decrypted, or the plaintext object): what `poll_hash` covers. */
 export type RawPoll = Record<string, unknown>;
 
+/** `poll_hash` per poll content object (JCS + SHA-256): computed once, not again for every vote event. */
+const hashes = new WeakMap<RawPoll, Promise<string>>();
+function cachedPollHash(raw: RawPoll): Promise<string> {
+  let h = hashes.get(raw);
+  if (!h) {
+    h = pollHash(raw);
+    hashes.set(raw, h);
+    h.catch(() => hashes.delete(raw));
+  }
+  return h;
+}
+
 export function useConversationPolls(o: ConversationPollOptions): PollEnv {
   const { api, conversationId, q, encrypted, mls, me, canVote, canManage } = o;
   // Callbacks of the caller change on every render: read through a ref, so the services (and the verified votes of
@@ -46,7 +58,7 @@ export function useConversationPolls(o: ConversationPollOptions): PollEnv {
       name: (address) => latest.current.name(address),
       list: async (messageId) => (await api.polls.votes(conversationId, messageId)).items as PollVoteRecord[],
       open: async (m, raw, poll, records) => {
-        const hash = await pollHash(raw);
+        const hash = await cachedPollHash(raw);
         return Promise.all(
           records.map(async (r): Promise<CheckedVote> => {
             if (r.pending) return { user: r.user, updated_at: r.updated_at, check: { ok: true, vote: null as unknown as PollVoteContent, selection: r.pending } };
@@ -62,7 +74,7 @@ export function useConversationPolls(o: ConversationPollOptions): PollEnv {
         );
       },
       vote: async (m, raw, poll, choice) => {
-        const vote = pollVoteContent(poll, m.id, await pollHash(raw), choice);
+        const vote = pollVoteContent(poll, m.id, await cachedPollHash(raw), choice);
         if (encrypted) {
           if (!mls) throw new Error("locked");
           return (await withFreshEpoch(mls, q, async () => api.polls.vote(conversationId, m.id, await latest.current.encryptVote(vote)))) as PollVoteRecord;

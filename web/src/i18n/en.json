@@ -1384,6 +1384,7 @@
   "messages.edit_save": "Save",
   "messages.edit_cancel": "Cancel",
   "messages.edit_text": "New text",
+  "messages.edit_not_decrypted": "This message cannot be edited: it is not decrypted on this device.",
   "auth.invite_code": "Invite code",
   "auth.invite_hint": "This node requires an invite code for new accounts.",
   "auth.forgot": "Forgot password?",

@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "react-router";
 import type { Attachment, Member, Message, RoomDetail } from "@tavrn/sdk";
-import { useTyping } from "../stores/typing";
+import { TypingIndicator } from "./TypingIndicator";
 import { useNodeSockets, useRealtimeState } from "../hooks/useRealtime";
 import { useNode } from "./NodeScope";
 import { useT } from "../i18n";
@@ -136,7 +136,6 @@ export function ConversationView(p: ConversationViewProps) {
   const homeSocket = useRealtimeState((s) => s.socket);
   const nodeSocket = useNodeSockets((s) => s.sockets[domain]);
   const socket = home ? homeSocket : nodeSocket;
-  const typing = useTyping((s) => s.byChannel[conversationId]);
   const node = useQuery({ queryKey: home ? ["well-known"] : ["well-known", domain], queryFn: () => api.node.wellKnown(), staleTime: 10 * 60_000 });
   const nodeInfo = useQuery({ queryKey: home ? ["node"] : ["node", domain], queryFn: () => api.node.info(), staleTime: 10 * 60_000 });
   const threadId = p.threadId;
@@ -339,7 +338,6 @@ export function ConversationView(p: ConversationViewProps) {
               ? e2ee.error ?? undefined
               : undefined;
 
-  const typingNames = Object.keys(typing ?? {}).filter((id) => id !== user?.id);
   // The effective limit of this user here (entitlements, design note 4.13); the node default until it loaded.
   const uploadLimit = uploadPolicy.data?.max_bytes ?? node.data?.policies.upload_max_bytes;
 
@@ -360,22 +358,32 @@ export function ConversationView(p: ConversationViewProps) {
     }
   };
 
-  const upload = async (file: File, onProgress: (f: number) => void): Promise<Attachment> => {
+  const upload = async (file: File, onProgress: (f: number) => void, signal: AbortSignal): Promise<Attachment> => {
     // Uploads go by XMLHttpRequest (progress), past the fetch guard: refused here while previewing.
     assertNotPreviewing();
-    if (!p.encrypted) {
-      const stored = await api.attachments.uploadToConversation(conversationId, file, file.name, onProgress);
-      uploads.current.set(stored.id, stored);
+    // Removed in the composer (or the conversation closed): the upload's state goes at once, a late answer is
+    // dropped. The node deletes uploads that are never sent.
+    const keep = (stored: Attachment, store: () => void) => {
+      signal.throwIfAborted();
+      store();
+      signal.addEventListener("abort", () => {
+        uploads.current.delete(stored.id);
+        uploadKeys.current.delete(stored.id);
+      });
       return stored;
+    };
+    if (!p.encrypted) {
+      const stored = await untilAborted(api.attachments.uploadToConversation(conversationId, file, file.name, onProgress), signal);
+      return keep(stored, () => uploads.current.set(stored.id, stored));
     }
     // §6: encrypt locally, upload only ciphertext; name, type and key go into the encrypted content. The
     // category is declared (PROTOCOL.md §7a): the node cannot see the file.
     const category = declaredCategory(await classifyFile(file));
     const { blob, meta } = await encryptAttachment(file);
-    const stored = await api.attachments.uploadToConversation(conversationId, blob, "", onProgress, category);
+    signal.throwIfAborted();
+    const stored = await untilAborted(api.attachments.uploadToConversation(conversationId, blob, "", onProgress, category), signal);
     if (stored.sha256 !== meta.sha256) throw new Error(t("attachment.upload_mismatch"));
-    uploadKeys.current.set(stored.id, { id: stored.id, ...meta });
-    return stored;
+    return keep(stored, () => uploadKeys.current.set(stored.id, { id: stored.id, ...meta }));
   };
 
   /**
@@ -459,7 +467,8 @@ export function ConversationView(p: ConversationViewProps) {
     try {
       assertNotPreviewing();
       const previous = m.encrypted ? (decrypted[m.id]?.ok ? (decrypted[m.id] as { content: Record<string, unknown> }).content : null) : (m.content as Record<string, unknown>);
-      if (!previous) return;
+      // Without the decrypted original there is nothing to edit: refused with a notice, the editor keeps the text.
+      if (!previous) throw new Error(t("messages.edit_not_decrypted"));
       const next = { ...previous, type: previous.type === "action" ? "action" : "text", body };
       // Edits are signed anew by the editing device (§10.3); the bound attachments stay.
       const signature = !p.encrypted && e2ee.mls
@@ -701,7 +710,7 @@ export function ConversationView(p: ConversationViewProps) {
       {gate.warning}
       <VerificationNotice addresses={broken} blocking={verificationBlock} />
       {messages.isError && <p className="p-4 text-sm text-danger">{describeError(messages.error)}</p>}
-      <AuthorProfiles messages={loaded}>
+      <AuthorProfiles messages={loaded} members={p.roomMembers}>
       <PollContext.Provider value={pollEnv}>
       <ComponentsContext.Provider value={componentsEnv}>
       <MessageList
@@ -749,10 +758,7 @@ export function ConversationView(p: ConversationViewProps) {
         />
       )}
       <InteractionNotices conversationId={conversationId} qualified={q} encrypted={p.encrypted} mls={e2ee.mls} />
-      <div className="h-5 px-4 text-xs text-fg-2" aria-live="polite" data-testid="typing-indicator">
-        {typingNames.length === 1 && t("messages.typing_one")}
-        {typingNames.length > 1 && t("messages.typing_many", { count: typingNames.length })}
-      </div>
+      <TypingIndicator conversationId={conversationId} selfId={user?.id} />
       {p.readOnlyNote || p.composerNote ? (
         <p className="mx-4 mb-4 rounded-md border border-line bg-bg-1 px-3 py-2 text-sm text-fg-2" data-testid={p.readOnlyNote ? "read-only-note" : "composer-note"}>
           {p.readOnlyNote ?? p.composerNote}
@@ -795,4 +801,14 @@ export function ConversationView(p: ConversationViewProps) {
     </div>
     </EmojiContext.Provider>
   );
+}
+
+/** `p`, or a rejection as soon as `signal` aborts (the request itself goes on: the sdk's upload takes no signal). */
+function untilAborted<T>(p: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    p.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
 }

@@ -16,7 +16,7 @@ import { MessageAttachments, fromEncrypted, fromPlain } from "./AttachmentView";
 import { ContextMenu, MenuButton, useContextMenu } from "./ContextMenu";
 import { messageMenu } from "../lib/menus";
 import { mentionsMe } from "../lib/mentions";
-import { markMentions, mentionTokens, parseMentionTokens, serializeMentionTokens } from "../lib/mentionBadges";
+import { mentionTokens, parseMentionTokens, serializeMentionTokens } from "../lib/mentionBadges";
 import { copyText } from "./ContextMenu";
 import { useToasts } from "../stores/toasts";
 import { useAccessibility } from "../stores/accessibility";
@@ -176,6 +176,20 @@ export function MessageList({
   const onReact = useCallback((m: Message, emoji: string, active: boolean) => actionsRef.current.onReact?.(m, emoji, active), []);
   const onPin = useCallback((m: Message, pinned: boolean) => actionsRef.current.onPin?.(m, pinned), []);
   const onEdit = useCallback(async (m: Message, body: string) => actionsRef.current.onEdit?.(m, body), []);
+  // The mention tokens of a row (memoized row prop), once per message object while the bots, the reader and the
+  // role names stay the same: not rebuilt for every visible row on every list render.
+  const mentionsOf = useMemo(() => {
+    const cache = new WeakMap<Message, string>();
+    const opts = { bots, self: currentAddress, nodeDomain: currentAddress ? currentAddress.slice(currentAddress.lastIndexOf("@") + 1) : null, roles: mentionRoles };
+    return (m: Message) => {
+      let s = cache.get(m);
+      if (s === undefined) {
+        s = serializeMentionTokens(mentionTokens(m, opts));
+        cache.set(m, s);
+      }
+      return s;
+    };
+  }, [bots, currentAddress, mentionRoles]);
   const onDelete = useCallback((m: Message) => actionsRef.current.onDelete?.(m), []);
   const onReply = useCallback((m: Message) => actionsRef.current.onReply?.(m), []);
   const onReport = useCallback((m: Message) => actionsRef.current.onReport?.(m), []);
@@ -278,7 +292,8 @@ export function MessageList({
       const index = orderedRef.current.findIndex((m) => m.id === focus.id);
       if (index < 0) return;
       if (measurable) virtualizer.scrollToIndex(index, { align: "center" });
-      else listRef.current?.querySelector(`[data-message-id="${focus.id}"]`)?.scrollIntoView({ block: "center" });
+      // Found by comparison, not by a selector built from the id (it comes from the URL).
+      else [...(listRef.current?.querySelectorAll<HTMLElement>("[data-message-id]") ?? [])].find((el) => el.dataset.messageId === focus.id)?.scrollIntoView({ block: "center" });
     };
     scroll();
     // Rows above the target are measured (and decrypted) after the first scroll and move it: aim again a few times
@@ -418,7 +433,7 @@ export function MessageList({
                   replyDecrypted={m.reply_to_id ? decrypted[m.reply_to_id] : undefined}
                   conversationEncrypted={encrypted}
                   mentioned={mentionsMe(m, currentAddress) && m.author_id !== currentUserId}
-                  mentions={serializeMentionTokens(mentionTokens(m, { bots, self: currentAddress, nodeDomain: currentAddress ? currentAddress.slice(currentAddress.lastIndexOf("@") + 1) : null, roles: mentionRoles }))}
+                  mentions={mentionsOf(m)}
                 />
               </article>
             );
@@ -644,7 +659,7 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
   const mdVersion = useSyncExternalStore(subscribeMarkdown, markdownVersion);
   const botLabel = t("badge.bot");
   const html = useMemo(
-    () => (body ? markMentions(renderMarkdown(body, emojiUrls, resolve), parseMentionTokens(mentions ?? ""), botLabel) : ""),
+    () => (body ? renderMarkdown(body, emojiUrls, resolve, mentions ? { tokens: parseMentionTokens(mentions), key: mentions, botLabel } : undefined) : ""),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [body, emojiUrls, resolve, mdVersion, mentions, botLabel],
   );
@@ -898,7 +913,12 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
                 e.preventDefault();
                 const next = draft.trim();
                 if (!next) return;
-                await onEdit?.(m, next);
+                try {
+                  await onEdit?.(m, next);
+                } catch {
+                  // Reported by the conversation (toast): the editor stays open with the new text.
+                  return;
+                }
                 setEditingId(null);
               }}
             >
