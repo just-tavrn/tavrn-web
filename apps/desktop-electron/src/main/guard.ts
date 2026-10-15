@@ -52,9 +52,13 @@ export function navigation(url: string, devUrl: string | null): Navigation {
   return link ? { kind: "external", url: link } : { kind: "deny" };
 }
 
-/** New windows (`window.open`, `target=_blank`) are never opened by the app; web links go to the system browser. */
-export function newWindow(url: string): string | null {
-  return externalLink(url);
+/**
+ * New windows (`window.open`, `target=_blank`) are never opened by the app; web links go to the system browser. A link
+ * of the app itself (a Ctrl/Shift/Meta-click or a middle click on an internal link asks for a new window with the app's
+ * own URL) is refused: the window stays where it is, the client navigates in place.
+ */
+export function newWindow(url: string, devUrl: string | null): string | null {
+  return isAppPage(url, devUrl) ? null : externalLink(url);
 }
 
 /**

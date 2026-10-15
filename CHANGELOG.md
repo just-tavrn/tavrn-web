@@ -201,6 +201,11 @@ First public release of the web client and the desktop apps.
 
 ### Fixed
 
+- **Ctrl-click and middle click on an internal link no longer open the app's own page in the system browser** (#163):
+  in the desktop apps and the Android app a Ctrl-, Shift- or Cmd-click or a middle click on a sidebar entry or a
+  settings link opened `https://tauri.localhost/…` in the browser. Internal links now act as a plain click and open
+  the view in place, the shells never hand the app's own address to the system browser, and links to other sites still
+  open there; in the browser such a click still opens a tab.
 - **The room views no longer render twice per room update after a "view as role" preview** (#154): the previewed
   room was handed on as a copy of the whole query result, which subscribed the sidebar, the channel page and the
   settings to every fetch-status change for the rest of the session.
