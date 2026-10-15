@@ -130,7 +130,8 @@ export interface AuthState extends Persisted {
   logout: () => void;
   /**
    * The home node refused the session (refused refresh token, socket closed for authentication): signs out, unless an
-   * explicit sign-out is running ({@link beginSignOut}), which signs out once the local data is gone.
+   * explicit sign-out is running ({@link beginSignOut}), which signs out once the local data is gone. Nothing happens
+   * when no account is signed in.
    */
   sessionRefused: () => void;
 }
@@ -183,6 +184,10 @@ export const useAuth = create<AuthState>((set, get) => ({
     accountEnded(previous);
   },
   sessionRefused: () => {
+    // Signed out already (a refresh refused after the sign-out finished): no account ends a second time, or the
+    // cleanup would empty the query cache under the login page's queries (web #167).
+    const { token, refresh, user } = get();
+    if (!token && !refresh && !user) return;
     if (explicitSignOuts === 0) get().logout();
   },
 }));

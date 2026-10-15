@@ -20,7 +20,7 @@ vi.mock("../search/local", async (importOriginal) => ({
 
 import { refreshHome } from "../lib/api";
 import { forgetSsoLogout, peekSsoLogout } from "../lib/sso";
-import { beginSignOut, useAuth } from "./auth";
+import { beginSignOut, onAccountChange, useAuth } from "./auth";
 import { signOut } from "./e2ee";
 
 const user = { id: "u1", username: "sso", address: "sso@home.test", domain: "home.test" } as unknown as UserPrivate;
@@ -66,6 +66,32 @@ describe("explicit sign-out", () => {
     end();
     end();
     useAuth.getState().sessionRefused();
+    expect(useAuth.getState().user).toBeNull();
+  });
+
+  it("a refusal that arrives after the sign-out finished does not end the account a second time", async () => {
+    // A request of the signed-in page got 401 after the logout revoked the session; its refresh is answered only once
+    // the sign-out is done and the login page shows. Ending the account again would empty the query cache under the
+    // login page's queries in flight (web #167).
+    let answerRefresh!: () => void;
+    const refreshAnswered = new Promise<void>((r) => (answerRefresh = r));
+    globalThis.fetch = (async (url: string) => {
+      if (url.includes("/auth/logout")) return json(200, {});
+      if (url.includes("/auth/refresh")) {
+        await refreshAnswered;
+        return json(401, refused);
+      }
+      return json(404, { type: "x", title: "Not found", status: 404, code: "route.not_found", detail: "" });
+    }) as unknown as typeof fetch;
+    const late = refreshHome();
+    const ended: Array<string | null> = [];
+    const off = onAccountChange((previous) => ended.push(previous));
+    await signOut();
+    expect(ended).toEqual(["sso@home.test"]);
+    answerRefresh();
+    expect(await late).toBeNull();
+    off();
+    expect(ended).toEqual(["sso@home.test"]);
     expect(useAuth.getState().user).toBeNull();
   });
 });
