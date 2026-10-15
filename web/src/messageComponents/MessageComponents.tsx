@@ -270,7 +270,8 @@ function SelectControl({ select: s, usable, pending, blocked, onPick }: { select
                   aria-disabled={full || undefined}
                   title={stripBidi(o.description ? `${o.label} – ${o.description}` : o.label)}
                   className={`flex min-h-10 cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm ${i === active ? "bg-bg-3 ring-1 ring-accent" : ""} ${selected ? "text-fg-0" : "text-fg-1"} aria-disabled:cursor-not-allowed aria-disabled:opacity-50`}
-                  onMouseEnter={() => setActive(i)}
+                  // A real pointer move, not the list scrolling under a resting pointer, makes an option active.
+                  onPointerMove={() => i !== active && setActive(i)}
                   onClick={() => {
                     setActive(i);
                     if (!full) toggle(o.value);
