@@ -24,6 +24,18 @@ export function safeLinkUrl(url: unknown): string | null {
   }
 }
 
+/**
+ * The host of a link as shown before it opens (embeds, link buttons): in full, an IDN stays in its `xn--` form so a
+ * look-alike name cannot pass for another one; a value that is no URL is shown as it is.
+ */
+export function urlHost(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
 /** A colour as `#rrggbb`, or null (never a CSS value that could load something, such as `url(…)`). */
 export function safeColor(c: unknown): string | null {
   return typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c) ? c : null;

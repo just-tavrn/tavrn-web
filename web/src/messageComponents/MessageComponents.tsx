@@ -10,12 +10,12 @@ import type { Button as ComponentButton, ButtonStyle, Message, Row, Select as Co
 import { useT } from "../i18n";
 import { describeError } from "../stores/toasts";
 import { PREVIEW_REFUSED } from "../lib/previewGuard";
-import { stripBidi } from "../lib/untrusted";
+import { stripBidi, urlHost } from "../lib/untrusted";
 import { Button, Dialog } from "../components/ui";
 import { MessageNotices } from "../components/InteractionNotices";
 import { ComponentEmoji, emojiName } from "./ComponentEmoji";
 import { useComponentsEnv, useUnusableComponents } from "./context";
-import { defaultValues, linkHost } from "./model";
+import { defaultValues } from "./model";
 
 const BUTTON_BASE =
   "inline-flex min-h-10 min-w-10 max-w-full items-center justify-center gap-1.5 rounded-md px-3 text-sm font-medium transition-colors motion-reduce:transition-none aria-disabled:cursor-not-allowed aria-disabled:opacity-50";
@@ -102,8 +102,8 @@ function ButtonControl({ button: b, usable, pending, blocked, onPress }: { butto
       <button
         type="button"
         className={`${BUTTON_BASE} ${BUTTON_STYLES[b.style]}`}
-        title={isLink && b.url ? `${label ? `${label} – ` : ""}${linkHost(b.url)}` : label || undefined}
-        aria-label={label ? undefined : isLink ? t("components.link_named", { name, host: linkHost(b.url ?? "") }) : name}
+        title={isLink && b.url ? `${label ? `${label} – ` : ""}${urlHost(b.url)}` : label || undefined}
+        aria-label={label ? undefined : isLink ? t("components.link_named", { name, host: urlHost(b.url ?? "") }) : name}
         aria-disabled={inactive || undefined}
         aria-busy={pending || undefined}
         aria-haspopup={isLink ? "dialog" : undefined}
@@ -123,7 +123,7 @@ function ButtonControl({ button: b, usable, pending, blocked, onPress }: { butto
             ↗
           </span>
         )}
-        {isLink && label && <span className="sr-only">{t("components.link_hint", { host: linkHost(b.url ?? "") })}</span>}
+        {isLink && label && <span className="sr-only">{t("components.link_hint", { host: urlHost(b.url ?? "") })}</span>}
       </button>
       {isLink && !!b.url && <LinkConfirm url={b.url} open={confirm} onClose={() => setConfirm(false)} />}
     </>
@@ -139,7 +139,7 @@ function LinkConfirm({ url, open, onClose }: { url: string; open: boolean; onClo
   const t = useT();
   return (
     <Dialog title={t("components.link_title")} open={open} onClose={onClose}>
-      <p className="text-sm text-fg-1">{t("components.link_text", { host: linkHost(url) })}</p>
+      <p className="text-sm text-fg-1">{t("components.link_text", { host: urlHost(url) })}</p>
       <p className="mt-2 break-all rounded-md border border-line bg-bg-0 px-3 py-2 font-mono text-xs text-fg-0" data-testid="component-link-url">
         {stripBidi(url)}
       </p>

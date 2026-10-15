@@ -5,6 +5,7 @@ import type { Reaction, User } from "@tavrn/sdk";
 import { useEmojiContext, useEmojiImage } from "../lib/emojis";
 import { useT } from "../i18n";
 import { useDismiss } from "../lib/dismiss";
+import { LONG_PRESS_MS } from "./ContextMenu";
 import { useNode } from "./NodeScope";
 import { InlineEmoji } from "./InlineEmoji";
 import { parseEmojiToken } from "../lib/markdown";
@@ -32,7 +33,6 @@ function EmojiGlyph({ emoji, roomId, customEmojis }: { emoji: string; roomId?: s
 
 /** How many reactors a chip's description names; the rest are "and n more". */
 export const REACTORS_SHOWN = 10;
-const LONG_PRESS_MS = 500;
 
 /**
  * The text describing who reacted: up to {@link REACTORS_SHOWN} names and "and n more" for the rest of `count` (the

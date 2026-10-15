@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { channelName } from "../lib/names";
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type HTMLAttributes, type ReactNode } from "react";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { isBotKind, type Message, type User } from "@tavrn/sdk";
 import { ThreadIndicator } from "../threads/ThreadIndicator";
@@ -11,6 +11,7 @@ import { useEmojiResolver } from "../lib/emojis";
 import { isGifUrl } from "../lib/gifs";
 import { GifView } from "./GifView";
 import { useT } from "../i18n";
+import { previewText } from "../lib/messagePreview";
 import { Avatar } from "./ui";
 import { MessageAttachments, fromEncrypted, fromPlain } from "./AttachmentView";
 import { ContextMenu, MenuButton, useContextMenu } from "./ContextMenu";
@@ -567,6 +568,28 @@ function KeyCheck({ address, at }: { address: string; at: string }) {
  * the avatar store ({@link AuthorProfiles}), so a profile change re-renders only these avatars, not the
  * rows. A button: it opens the profile card (the click is handled by `AuthorProfiles`).
  */
+/**
+ * The row of a system line: an icon, the avatar of whom it is about, the text with its time; the children (reactions,
+ * emoji picker, menu) follow the text.
+ */
+function SystemRow({ icon, who, at, text, rowProps, children }: { icon: string; who: { address: string; name: string }; at: string; text: ReactNode; rowProps: HTMLAttributes<HTMLDivElement> & { [data: `data-${string}`]: string | undefined }; children: ReactNode }) {
+  return (
+    <div className="group flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-2 py-1 text-sm text-fg-1 hover:bg-bg-3/60" {...rowProps}>
+      <span className="flex w-9 shrink-0 justify-center text-base" aria-hidden="true">
+        {icon}
+      </span>
+      <MessageAvatar address={who.address} name={who.name} small />
+      <span className="min-w-0 flex-1">
+        {text}
+        <time className="ml-2 text-xs text-fg-2" dateTime={at} title={formatFullTime(at)}>
+          {formatTime(at)}
+        </time>
+      </span>
+      {children}
+    </div>
+  );
+}
+
 function MessageAvatar({ address, name, small = false }: { address: string; name: string; small?: boolean }) {
   const t = useT();
   const avatar = useAuthorAvatar(address);
@@ -621,11 +644,7 @@ interface RowProps {
 
 /** The first line of a message for reply previews. */
 function snippet(m: Message, d: Decrypted | undefined): string | null {
-  const c = (m.encrypted ? (d?.ok ? d.content : null) : m.content) as AnyContent | null;
-  if (c?.type === "poll" && typeof (c as { question?: unknown }).question === "string") return `📊 ${String((c as { question: string }).question).slice(0, 99)}`;
-  if (!c || typeof c.body !== "string") return null;
-  const line = c.body.split("\n")[0]!.trim();
-  return line.length > 100 ? `${line.slice(0, 99)}…` : line;
+  return previewText(m.encrypted ? (d?.ok ? d.content : null) : m.content, 100);
 }
 
 /**
@@ -709,66 +728,23 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
       )
     : [];
 
-  if (c.kind === "member_event") {
-    return (
-      <div className="group flex items-center gap-3 rounded-md px-2 py-1 text-sm text-fg-1 hover:bg-bg-3/60" data-testid="member-event" data-event={c.event} data-message-id={m.id} {...menu.triggerProps}>
-        <span className="flex w-9 shrink-0 justify-center text-base" aria-hidden="true">
-          {c.event === "join" ? "→" : "←"}
-        </span>
-        <MessageAvatar address={c.user} name={c.name} small />
-        <span className="min-w-0 flex-1">
-          {t(c.event === "join" ? "members.joined_room" : "members.left_room", { name: c.name })}
-          <time className="ml-2 text-xs text-fg-2" dateTime={m.created_at} title={formatFullTime(m.created_at)}>
-            {formatTime(m.created_at)}
-          </time>
-        </span>
-        <ReactionBar reactions={m.reactions ?? []} canReact={canReact} roomId={roomId} customEmojis={customEmojis} onToggle={onToggleReaction} conversationId={m.conversation_id} messageId={m.id} usersById={usersById} />
-        {canReact && onReact && <EmojiPicker customEmojis={customEmojis} onPick={(e) => onReact(m, e, false)} />}
-        {menu.open && menu.anchor && <ContextMenu entries={menuEntries} anchor={menu.anchor} onClose={menu.close} label={t("menu.message.label")} testId="message-menu" />}
-      </div>
-    );
-  }
-
+  // System lines (member, key, history restore and bot events) share one row: icon, avatar, text and time, reactions.
+  const systemRow = (icon: string, who: { address: string; name: string }, data: { [data: `data-${string}`]: string | undefined }, text: ReactNode) => (
+    <SystemRow icon={icon} who={who} at={m.created_at} text={text} rowProps={{ ...data, "data-message-id": m.id, ...menu.triggerProps }}>
+      <ReactionBar reactions={m.reactions ?? []} canReact={canReact} roomId={roomId} customEmojis={customEmojis} onToggle={onToggleReaction} conversationId={m.conversation_id} messageId={m.id} usersById={usersById} />
+      {canReact && onReact && <EmojiPicker customEmojis={customEmojis} onPick={(e) => onReact(m, e, false)} />}
+      {menu.open && menu.anchor && <ContextMenu entries={menuEntries} anchor={menu.anchor} onClose={menu.close} label={t("menu.message.label")} testId="message-menu" />}
+    </SystemRow>
+  );
+  if (c.kind === "member_event") return systemRow(c.event === "join" ? "→" : "←", { address: c.user, name: c.name }, { "data-testid": "member-event", "data-event": c.event }, t(c.event === "join" ? "members.joined_room" : "members.left_room", { name: c.name }));
   if (c.kind === "key_event") {
-    return (
-      <div className="group flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-2 py-1 text-sm text-fg-1 hover:bg-bg-3/60" data-testid="key-event" data-rotated={c.rotated ? "true" : "false"} data-message-id={m.id} {...menu.triggerProps}>
-        <span className="flex w-9 shrink-0 justify-center text-base" aria-hidden="true">
-          🔑
-        </span>
-        <MessageAvatar address={c.user} name={c.name} small />
-        <span className="min-w-0 flex-1">
-          {t(c.rotated ? "members.key_rotated" : "members.key_changed", { name: c.name })} <KeyCheck address={c.user} at={m.created_at} />
-          <time className="ml-2 text-xs text-fg-2" dateTime={m.created_at} title={formatFullTime(m.created_at)}>
-            {formatTime(m.created_at)}
-          </time>
-        </span>
-        <ReactionBar reactions={m.reactions ?? []} canReact={canReact} roomId={roomId} customEmojis={customEmojis} onToggle={onToggleReaction} conversationId={m.conversation_id} messageId={m.id} usersById={usersById} />
-        {canReact && onReact && <EmojiPicker customEmojis={customEmojis} onPick={(e) => onReact(m, e, false)} />}
-        {menu.open && menu.anchor && <ContextMenu entries={menuEntries} anchor={menu.anchor} onClose={menu.close} label={t("menu.message.label")} testId="message-menu" />}
-      </div>
-    );
+    return systemRow("🔑", { address: c.user, name: c.name }, { "data-testid": "key-event", "data-rotated": c.rotated ? "true" : "false" }, (
+      <>
+        {t(c.rotated ? "members.key_rotated" : "members.key_changed", { name: c.name })} <KeyCheck address={c.user} at={m.created_at} />
+      </>
+    ));
   }
-
-  if (c.kind === "restore_event") {
-    return (
-      <div className="group flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-2 py-1 text-sm text-fg-1 hover:bg-bg-3/60" data-testid="restore-event" data-event={c.approved ? "restored" : "denied"} data-message-id={m.id} {...menu.triggerProps}>
-        <span className="flex w-9 shrink-0 justify-center text-base" aria-hidden="true">
-          {c.approved ? "🗝" : "⛔"}
-        </span>
-        <MessageAvatar address={c.user} name={c.name} small />
-        <span className="min-w-0 flex-1">
-          {t(c.approved ? "members.history_restored" : "members.history_restore_denied", { name: c.name, by: c.by })}
-          <time className="ml-2 text-xs text-fg-2" dateTime={m.created_at} title={formatFullTime(m.created_at)}>
-            {formatTime(m.created_at)}
-          </time>
-        </span>
-        <ReactionBar reactions={m.reactions ?? []} canReact={canReact} roomId={roomId} customEmojis={customEmojis} onToggle={onToggleReaction} conversationId={m.conversation_id} messageId={m.id} usersById={usersById} />
-        {canReact && onReact && <EmojiPicker customEmojis={customEmojis} onPick={(e) => onReact(m, e, false)} />}
-        {menu.open && menu.anchor && <ContextMenu entries={menuEntries} anchor={menu.anchor} onClose={menu.close} label={t("menu.message.label")} testId="message-menu" />}
-      </div>
-    );
-  }
-
+  if (c.kind === "restore_event") return systemRow(c.approved ? "🗝" : "⛔", { address: c.user, name: c.name }, { "data-testid": "restore-event", "data-event": c.approved ? "restored" : "denied" }, t(c.approved ? "members.history_restored" : "members.history_restore_denied", { name: c.name, by: c.by }));
   if (c.kind === "bot_event") {
     const reasonKey = `members.bot_reason.${c.reason}`;
     const reason = t(reasonKey) === reasonKey ? c.reason : t(reasonKey);
@@ -777,23 +753,11 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
         ? t("members.bot_added_by", { name: c.name, channel: c.channel, by: c.by })
         : t("members.bot_added", { name: c.name, channel: c.channel })
       : t("members.bot_removed", { name: c.name, channel: c.channel, reason });
-    return (
-      <div className="group flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-2 py-1 text-sm text-fg-1 hover:bg-bg-3/60" data-testid="bot-event" data-event={c.added ? "added" : "removed"} data-reason={c.added ? undefined : c.reason} data-message-id={m.id} {...menu.triggerProps}>
-        <span className="flex w-9 shrink-0 justify-center text-base" aria-hidden="true">
-          🤖
-        </span>
-        <MessageAvatar address={c.bot} name={c.name} small />
-        <span className="min-w-0 flex-1">
-          {text} <BotBadge />
-          <time className="ml-2 text-xs text-fg-2" dateTime={m.created_at} title={formatFullTime(m.created_at)}>
-            {formatTime(m.created_at)}
-          </time>
-        </span>
-        <ReactionBar reactions={m.reactions ?? []} canReact={canReact} roomId={roomId} customEmojis={customEmojis} onToggle={onToggleReaction} conversationId={m.conversation_id} messageId={m.id} usersById={usersById} />
-        {canReact && onReact && <EmojiPicker customEmojis={customEmojis} onPick={(e) => onReact(m, e, false)} />}
-        {menu.open && menu.anchor && <ContextMenu entries={menuEntries} anchor={menu.anchor} onClose={menu.close} label={t("menu.message.label")} testId="message-menu" />}
-      </div>
-    );
+    return systemRow("🤖", { address: c.bot, name: c.name }, { "data-testid": "bot-event", "data-event": c.added ? "added" : "removed", "data-reason": c.added ? undefined : c.reason }, (
+      <>
+        {text} <BotBadge />
+      </>
+    ));
   }
 
   if (c.kind === "call_event") {

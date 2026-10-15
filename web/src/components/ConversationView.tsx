@@ -12,6 +12,7 @@ import { useNode } from "./NodeScope";
 import { useT } from "../i18n";
 import { describeError, toastError, useToasts } from "../stores/toasts";
 import { confirmDialog } from "./Confirm";
+import { previewText } from "../lib/messagePreview";
 import { EmojiContext, useEmojiUrlMap, useRoomEmojis, type EmojiContextValue } from "../lib/emojis";
 import { Permission, hasPermission } from "@tavrn/sdk";
 import { useMlsUi } from "../stores/mls";
@@ -652,8 +653,7 @@ export function ConversationView(p: ConversationViewProps) {
     if (plainInEncrypted(m, p.encrypted)) return t("messages.not_e2ee_short");
     const c = m.encrypted ? (pinDecrypted[m.id]?.ok ? (pinDecrypted[m.id] as { content: Record<string, unknown> }).content : null) : (m.content as Record<string, unknown> | null);
     if (m.encrypted && !c) return t("messages.encrypted_short");
-    if (c?.type === "poll" && typeof c.question === "string") return `📊 ${c.question}`;
-    return typeof c?.body === "string" ? c.body : t("channel.attachment");
+    return previewText(c, 200) ?? t("channel.attachment");
   };
 
   return (
