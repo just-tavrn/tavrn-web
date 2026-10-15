@@ -61,3 +61,23 @@ describe("toast stack", () => {
     }
   });
 });
+
+describe("toastError and describeError", () => {
+  it("toasts show the translated text of WebAuthn and unlock errors, as forms do", () => {
+    useToasts.setState({ toasts: [] } as never);
+    toastError(Object.assign(new Error("The operation either timed out or was not allowed."), { name: "NotAllowedError" }));
+    expect(useToasts.getState().toasts.at(-1)!.detail).toBe(describeError(new DOMException("x", "NotAllowedError")));
+    expect(useToasts.getState().toasts.at(-1)!.detail).toContain("abgebrochen");
+    toastError(Object.assign(new Error("biometric_failed"), { name: "UnlockError", code: "cancelled" }));
+    expect(useToasts.getState().toasts.at(-1)!.detail).not.toBe("biometric_failed");
+  });
+
+  it("keeps the request id and the server's text of unknown codes", () => {
+    useToasts.setState({ toasts: [] } as never);
+    toastError(new TavrnApiError({ type: "x", title: "Abgelehnt", status: 400, detail: "Server sagt nein", code: "unknown.code", request_id: "req-1" } as never));
+    const shown = useToasts.getState().toasts.at(-1)!;
+    expect(shown.title).toBe("Abgelehnt");
+    expect(shown.detail).toContain("Server sagt nein");
+    expect(shown.detail).toContain("req-1");
+  });
+});
