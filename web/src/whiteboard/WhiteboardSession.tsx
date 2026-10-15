@@ -12,6 +12,7 @@ import { useLocale, useT } from "../i18n";
 import { api as homeApi } from "../lib/api";
 import { withBackupKey } from "../stores/mls";
 import { describeError, toastError, useToasts } from "../stores/toasts";
+import { confirmDialog } from "../components/Confirm";
 import { Button, Dialog, ErrorText, Input } from "../components/ui";
 import { loadDraft, useWhiteboardController, type BoardContext } from "./store";
 import { exportPng, exportSvg, loadExcalidraw } from "./excalidraw";
@@ -141,8 +142,8 @@ export function WhiteboardSession(p: WhiteboardSessionProps) {
     run(async () => {
       await openBoard(c, p.ctx);
     });
-  const close = () => {
-    if (!confirm(t("whiteboard.close_confirm"))) return;
+  const close = async () => {
+    if (!(await confirmDialog({ title: t("whiteboard.close"), text: t("whiteboard.close_confirm"), confirmLabel: t("whiteboard.close"), danger: true }))) return;
     void run(async () => {
       await c.close();
       setCurrent(null);
@@ -214,7 +215,7 @@ export function WhiteboardSession(p: WhiteboardSessionProps) {
           </Button>
         )}
         {p.canModerate && role !== "owner" && (
-          <Button variant="ghost" disabled={busy} onClick={close}>
+          <Button variant="ghost" disabled={busy} onClick={() => void close()}>
             {t("whiteboard.close")}
           </Button>
         )}
@@ -443,16 +444,16 @@ function ScenesPanel({ c, current, onCurrent, onClose }: { c: WhiteboardControll
                 variant="ghost"
                 className="min-h-8 px-2 text-xs"
                 disabled={busy}
-                onClick={() =>
-                  confirm(t("whiteboard.load_confirm", { name: s.name })) &&
+                onClick={async () => {
+                  if (!(await confirmDialog({ text: t("whiteboard.load_confirm", { name: s.name }), confirmLabel: t("whiteboard.load"), danger: true }))) return;
                   void act(async () => {
                     const scene = await library.load(s.id);
                     c.replaceScene(scene);
                     onCurrent({ id: s.id, name: s.name });
                     setName(s.name);
                     onClose();
-                  })
-                }
+                  });
+                }}
               >
                 {t("whiteboard.load")}
               </Button>
@@ -476,13 +477,13 @@ function ScenesPanel({ c, current, onCurrent, onClose }: { c: WhiteboardControll
                 variant="ghost"
                 className="min-h-8 px-2 text-xs text-danger"
                 disabled={busy}
-                onClick={() =>
-                  confirm(t("whiteboard.delete_confirm", { name: s.name })) &&
+                onClick={async () => {
+                  if (!(await confirmDialog({ text: t("whiteboard.delete_confirm", { name: s.name }), confirmLabel: t("whiteboard.delete"), danger: true }))) return;
                   void act(async () => {
                     await library.remove(s.id);
                     if (current?.id === s.id) onCurrent(null);
-                  })
-                }
+                  });
+                }}
               >
                 {t("whiteboard.delete")}
               </Button>

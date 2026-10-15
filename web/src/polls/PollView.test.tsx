@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Message, TavrnApi } from "@tavrn/sdk";
 import { pollHash, pollVoteContent, type Decrypted, type Poll } from "@tavrn/e2ee";
 import { MessageList } from "../components/MessageList";
+import { ConfirmHost } from "../components/Confirm";
 import { PollContext, pollVotesKey, type PollVoteRecord } from "./context";
 import { useConversationPolls } from "./env";
 import { slotText } from "./format";
@@ -61,6 +62,7 @@ function show(messages: Message[], api: TavrnApi, opts: { canManage?: boolean; c
       <Env api={api} canManage={opts.canManage} canVote={opts.canVote} onClosed={opts.onClosed}>
         <MessageList messages={messages} currentUserId="u1" canManage={false} hasMore={false} decrypted={opts.decrypted} encrypted={!!opts.decrypted} />
       </Env>
+      <ConfirmHost />
     </QueryClientProvider>,
   );
   return client;
@@ -224,11 +226,13 @@ describe("PollView", () => {
     const user = userEvent.setup();
     const api = fakeApi([]);
     const onClosed = vi.fn();
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     show([message(choicePoll, { author_id: "u1", author: ME, poll_closes_at: "2099-01-01T00:00:00Z" })], api, { onClosed });
     const poll = await screen.findByTestId("poll");
     expect(within(poll).getByTestId("poll-closes")).toHaveTextContent(/^Endet in [\d.,]+ Tagen$/);
     await user.click(within(poll).getByRole("button", { name: "Umfrage jetzt beenden" }));
+    // The app's own dialog asks (not the browser's blocking one).
+    expect(screen.getByTestId("confirm-text")).toHaveTextContent("Diese Umfrage jetzt beenden?");
+    await user.click(screen.getByTestId("confirm-ok"));
     expect(api.polls.close).toHaveBeenCalledWith("c1", "01POLL");
     await waitFor(() => expect(onClosed).toHaveBeenCalled());
   });
@@ -260,24 +264,24 @@ describe("PollView", () => {
   it("a moderator closes someone else's poll without a close time", async () => {
     const user = userEvent.setup();
     const api = fakeApi([]);
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     show([message(choicePoll)], api, { canManage: true });
     const poll = await screen.findByTestId("poll");
     expect(within(poll).queryByTestId("poll-closes")).toBeNull();
     await user.click(within(poll).getByRole("button", { name: "Umfrage jetzt beenden" }));
+    await user.click(screen.getByTestId("confirm-ok"));
     expect(api.polls.close).toHaveBeenCalledWith("c1", "01POLL");
   });
 
   it("the author of a poll without a close time can close it; a declined confirmation changes nothing", async () => {
     const user = userEvent.setup();
     const api = fakeApi([]);
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     show([message(choicePoll, { author_id: "u1", author: ME })], api);
     const poll = await screen.findByTestId("poll");
     await user.click(within(poll).getByRole("button", { name: "Umfrage jetzt beenden" }));
+    await user.click(screen.getByTestId("confirm-cancel"));
     expect(api.polls.close).not.toHaveBeenCalled();
-    confirm.mockReturnValue(true);
     await user.click(within(poll).getByRole("button", { name: "Umfrage jetzt beenden" }));
+    await user.click(screen.getByTestId("confirm-ok"));
     expect(api.polls.close).toHaveBeenCalledWith("c1", "01POLL");
   });
 

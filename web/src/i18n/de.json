@@ -1768,6 +1768,7 @@
   "badge.key_changed": "Sicherheitsschlüssel geändert",
   "badge.key_changed_hint": "Der Sicherheitsschlüssel von {address} hat sich geändert (Identität zurückgesetzt oder neuer Schlüssel vom Knoten). Zum Bestätigen klicken.",
   "badge.key_changed_confirm": "Der Sicherheitsschlüssel von {address} hat sich geändert. Das passiert nach einem Zurücksetzen der Identität; es kann aber auch bedeuten, dass jemand anderes das Konto kontrolliert. Frag im Zweifel {address} persönlich. Hinweis ausblenden?",
+  "badge.key_changed_hide": "Hinweis ausblenden",
   "channel.encrypted": "Ende-zu-Ende-verschlüsselt",
   "dm.title": "Direktnachrichten",
   "dm.new": "Neue Direktnachricht",

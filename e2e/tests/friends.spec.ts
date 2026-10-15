@@ -53,8 +53,8 @@ test.describe("Friends", () => {
     await incoming.getByRole("button", { name: "Annehmen" }).click();
     const friends = page.getByTestId("friends-list");
     await expect(friends).toContainText(`${carol.username}@localhost`);
-    page.once("dialog", (d) => d.accept());
     await friends.getByRole("button", { name: "Entfernen" }).click();
+    await page.getByTestId("confirm-ok").click();
     await expect(friends).not.toContainText(carol.username);
   });
 });

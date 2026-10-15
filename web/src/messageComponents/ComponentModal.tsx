@@ -11,6 +11,7 @@ import { stripBidi } from "../lib/untrusted";
 import { Button, Dialog, ErrorText } from "../components/ui";
 import type { Modal, ModalInput } from "@tavrn/sdk";
 import { BotBadge } from "../components/Badges";
+import { confirmDialog } from "../components/Confirm";
 
 const length = (v: string) => [...v].length;
 
@@ -47,9 +48,9 @@ export function ComponentModal({ modal, appName, onSubmit, onClose }: { modal: M
   const baseId = useId();
   const dirty = modal.inputs.some((i) => values[i.custom_id] !== initial[i.custom_id]);
   const errors = Object.fromEntries(modal.inputs.map((i) => [i.custom_id, inputError(i, values[i.custom_id] ?? "")]));
-  const close = () => {
+  const close = async () => {
     if (pending) return;
-    if (dirty && !done && !window.confirm(t("components.modal.discard"))) return;
+    if (dirty && !done && !(await confirmDialog({ text: t("components.modal.discard"), confirmLabel: t("common.discard"), danger: true }))) return;
     onClose();
   };
   const submit = async () => {
@@ -80,7 +81,7 @@ export function ComponentModal({ modal, appName, onSubmit, onClose }: { modal: M
     }
   };
   return (
-    <Dialog title={stripBidi(modal.title)} open onClose={close}>
+    <Dialog title={stripBidi(modal.title)} open onClose={() => void close()}>
       <form
         noValidate
         className="space-y-3"
@@ -143,7 +144,7 @@ export function ComponentModal({ modal, appName, onSubmit, onClose }: { modal: M
         })}
         <ErrorText id={formErrorId}>{error}</ErrorText>
         <div className="flex flex-wrap justify-end gap-2 pt-1">
-          <Button variant="ghost" onClick={close} disabled={pending} data-testid="component-modal-cancel">
+          <Button variant="ghost" onClick={() => void close()} disabled={pending} data-testid="component-modal-cancel">
             {done ? t("common.close") : t("common.cancel")}
           </Button>
           <Button type="submit" disabled={pending || done} aria-busy={pending || undefined} data-testid="component-modal-submit">

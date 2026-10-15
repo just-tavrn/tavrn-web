@@ -224,8 +224,8 @@ test.describe("Direct messages and groups", () => {
 
     // Carol leaves; the others go on without her.
     await openMembers(carolPage);
-    carolPage.once("dialog", (d) => d.accept());
     await carolPage.getByRole("button", { name: "Gruppe verlassen" }).click();
+    await carolPage.getByTestId("confirm-ok").click();
     await expect(carolPage).toHaveURL(/\/$/);
     await openNavIfMobile(carolPage);
     await expect(carolPage.getByTestId("dm-list")).not.toContainText("Kleeblatt");
@@ -337,8 +337,8 @@ test.describe("Trust and devices", () => {
     const badge = page.getByTestId("member-list").getByTestId("key-changed-badge");
     await expect(badge).toBeVisible();
     await expect(message(page, "Ich bin Bob").getByTestId("key-changed-badge")).toBeVisible();
-    page.once("dialog", (d) => d.accept());
     await badge.click();
+    await page.getByTestId("confirm-ok").click();
     await expect(page.getByTestId("key-changed-badge")).toHaveCount(0);
     await page.goto(roomUrl);
     await expect(page.getByTestId("key-changed-badge")).toHaveCount(0);
@@ -376,8 +376,8 @@ test.describe("Trust and devices", () => {
     // Acknowledging the changed key lets the device count: the warning goes, sending works.
     await openMembers(page);
     const badge = page.getByTestId("member-list").getByTestId("key-changed-badge");
-    page.once("dialog", (d) => d.accept());
     await badge.click();
+    await page.getByTestId("confirm-ok").click();
     await closeDrawers(page);
     await expect(warning).toHaveCount(0, { timeout: 30_000 });
     await send(page, "Willkommen zurück");

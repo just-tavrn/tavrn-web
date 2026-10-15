@@ -11,7 +11,8 @@ import { useEffect, useId, useMemo, useState } from "react";
 import type { Message } from "@tavrn/sdk";
 import { pollVisibility, tallyPoll, type ChoicePoll, type DatePoll, type Poll, type PollAnswer as Answer, type PollTally } from "@tavrn/e2ee";
 import { intlLocale, useLocale, useT } from "../i18n";
-import { toastError } from "../stores/toasts";
+import { useAction } from "../hooks/useAction";
+import { confirmDialog } from "../components/Confirm";
 import { ANSWER_CLASS, ANSWER_ICON, ANSWERS } from "./answers";
 import { usePollEnv } from "./context";
 import { DateResults } from "./DateResults";
@@ -61,19 +62,8 @@ export function PollView({ poll, raw, m, own, canManage }: { poll: Poll; raw: Re
   const mayClose = !!env && !closed && (own || canManage || env.canManage);
   const [request, setRequest] = useState<PollModeRequest>("auto");
   const mode = pollMode(request, { closed, canVote, voted: !!mine });
-  const [busy, setBusy] = useState(false);
-  const run = async (fn: () => Promise<unknown>): Promise<boolean> => {
-    setBusy(true);
-    try {
-      await fn();
-      return true;
-    } catch (e) {
-      toastError(e, t("polls.error.vote_failed"));
-      return false;
-    } finally {
-      setBusy(false);
-    }
-  };
+  const { run: act, busy } = useAction({ errorTitle: t("polls.error.vote_failed") });
+  const run = (fn: () => Promise<unknown>): Promise<boolean> => act(fn);
   const locale = intlLocale();
   const headingId = useId();
   const body: Omit<BodyProps<never, never>, "poll" | "mine" | "onVote"> = { tally, show, mode, setRequest, canVote, busy, onRetract: () => run(actions.retract) };
@@ -125,9 +115,8 @@ export function PollView({ poll, raw, m, own, canManage }: { poll: Poll; raw: Re
           <button
             type="button"
             disabled={busy}
-            onClick={() => {
-              if (!window.confirm(t("polls.close_confirm"))) return;
-              void run(actions.close);
+            onClick={async () => {
+              if (await confirmDialog({ title: t("polls.close_now"), text: t("polls.close_confirm"), confirmLabel: t("polls.close_now"), danger: true })) await run(actions.close);
             }}
             className="ml-auto min-h-11 rounded-md px-2 text-xs font-medium text-fg-1 hover:bg-bg-3 hover:text-fg-0"
             data-testid="poll-close-now"

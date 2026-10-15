@@ -1768,6 +1768,7 @@
   "badge.key_changed": "Security key changed",
   "badge.key_changed_hint": "The security key of {address} changed (identity reset or a new key from the node). Click to acknowledge.",
   "badge.key_changed_confirm": "The security key of {address} changed. This happens after an identity reset; it can also mean that someone else controls the account. If in doubt, ask {address} in person. Hide this notice?",
+  "badge.key_changed_hide": "Hide notice",
   "channel.encrypted": "End-to-end encrypted",
   "dm.title": "Direct messages",
   "dm.new": "New direct message",
