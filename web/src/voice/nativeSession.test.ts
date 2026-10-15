@@ -23,12 +23,18 @@ const h = vi.hoisted(() => {
       updateState: vi.fn(async () => undefined),
     },
   };
-  return { state, mls, api };
+  return { state, mls, api, flags: { locked: false } };
 });
 
 vi.mock("../stores/mls", async () => {
   const { create } = await import("zustand");
-  return { getMls: async () => h.mls, useMlsUi: create(() => ({ epochs: {} as Record<string, number> })) };
+  return {
+    getMls: async () => {
+      if (!h.flags.locked) return h.mls;
+      h.flags.locked = false;
+      throw new Error("the store is locked");
+    },
+    useMlsUi: create(() => ({ epochs: {} as Record<string, number> })) };
 });
 vi.mock("../stores/nodes", () => ({ apiFor: () => h.api }));
 vi.mock("../lib/leafCleanup", () => ({ cleanupBeforeVoice: async () => () => undefined, loadPending: async () => [] }));
@@ -221,6 +227,43 @@ describe("the native engine's session", () => {
     await returning;
     expect(h.api.voice.join).toHaveBeenCalledTimes(3);
     expect(useVoice.getState().target).toEqual(target);
+  });
+
+  it("leave while the node's answer is on the way: the shell never joins, the seat goes back, no error", async () => {
+    const f = fakeShell();
+    let answer!: () => void;
+    h.api.voice.join.mockImplementationOnce(
+      () =>
+        new Promise((r) =>
+          (answer = () => r({ url: "wss://voice.home.example", token: "lk-token", epoch: 5, limits: { audio_bitrate_kbps: 64, camera: { enabled: true }, screenshare: { enabled: true } }, reconnect_grace_secs: 30, participants: [] })),
+        ),
+    );
+    const joining = session.join(target, { canCreate: true });
+    await vi.waitFor(() => expect(h.api.voice.join).toHaveBeenCalled());
+    expect(useVoice.getState().status).toBe("joining");
+    await session.leave();
+    expect(useVoice.getState().status).toBe("idle");
+    answer();
+    await expect(joining).resolves.toBeUndefined();
+    expect(f.joins).toHaveLength(0);
+    expect(h.api.voice.leave).toHaveBeenCalledWith("r1", "c1");
+    expect(useVoice.getState()).toMatchObject({ status: "idle", error: null, target: null });
+  });
+
+  it("a locked device says so (as the browser engine does)", async () => {
+    fakeShell();
+    h.flags.locked = true;
+    await expect(session.join(target, { canCreate: true })).rejects.toMatchObject({ code: "locked" });
+  });
+
+  it("a participant event that changes nothing keeps the media (no re-render)", async () => {
+    const f = fakeShell();
+    await session.join(target, { canCreate: true });
+    const list = [{ identity: "me@home.example/1", mic: true, mic_muted: false, local: true }, { identity: "bob@b.example/2", mic: true, mic_muted: true, local: false }];
+    f.emit({ kind: "participants", participants: list });
+    const media = useVoice.getState().media;
+    f.emit({ kind: "participants", participants: list.map((p) => ({ ...p })) });
+    expect(useVoice.getState().media).toBe(media);
   });
 
   it("camera, screen and soundboard do nothing in this engine", async () => {
