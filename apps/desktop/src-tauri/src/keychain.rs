@@ -18,6 +18,7 @@ use std::sync::{Arc, Mutex};
 use keyring_core::{CredentialStore, Error};
 use serde::Serialize;
 use tauri::State;
+use zeroize::Zeroizing;
 
 use crate::commands::Settings;
 pub use crate::node_url::{MAX_ACCOUNT, valid_account};
@@ -155,10 +156,10 @@ impl Keychain {
         self.serial.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    /// The secret of `user`, or none.
-    pub fn get(&self, user: &str) -> Result<Option<Vec<u8>>, KeychainError> {
+    /// The secret of `user`, or none (wiped when dropped, also after it went to the client).
+    pub fn get(&self, user: &str) -> Result<Option<Zeroizing<Vec<u8>>>, KeychainError> {
         let _serial = self.serial();
-        match self.entry(user)?.get_secret() {
+        match self.entry(user)?.get_secret().map(Zeroizing::new) {
             Ok(secret) if secret.len() == SECRET_LEN => Ok(Some(secret)),
             Ok(_) => Err(KeychainError::Corrupt),
             Err(Error::NoEntry) => Ok(None),
@@ -225,7 +226,7 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, KeychainError
 
 /// The local storage key of `account` on the home node, or null.
 #[tauri::command]
-pub async fn keychain_get(settings: State<'_, Settings>, keychain: State<'_, Arc<Keychain>>, account: String) -> Result<Option<Vec<u8>>, String> {
+pub async fn keychain_get(settings: State<'_, Settings>, keychain: State<'_, Arc<Keychain>>, account: String) -> Result<Option<Zeroizing<Vec<u8>>>, String> {
     let user = user_for(&settings, &account)?;
     let keychain = Arc::clone(&keychain);
     blocking(move || keychain.get(&user)).await
@@ -233,7 +234,12 @@ pub async fn keychain_get(settings: State<'_, Settings>, keychain: State<'_, Arc
 
 /// Stores the local storage key of `account` on the home node (exactly 32 bytes).
 #[tauri::command]
-pub async fn keychain_set(settings: State<'_, Settings>, keychain: State<'_, Arc<Keychain>>, account: String, secret: Vec<u8>) -> Result<(), String> {
+pub async fn keychain_set(
+    settings: State<'_, Settings>,
+    keychain: State<'_, Arc<Keychain>>,
+    account: String,
+    secret: Zeroizing<Vec<u8>>,
+) -> Result<(), String> {
     let user = user_for(&settings, &account)?;
     let keychain = Arc::clone(&keychain);
     blocking(move || keychain.set(&user, &secret)).await
@@ -298,10 +304,10 @@ mod tests {
         let user = "local-key/https://tavrn.example/alice@tavrn.example";
         assert_eq!(k.get(user), Ok(None));
         assert_eq!(k.set(user, &KEY), Ok(()));
-        assert_eq!(k.get(user), Ok(Some(KEY.to_vec())));
+        assert_eq!(k.get(user), Ok(Some(Zeroizing::new(KEY.to_vec()))));
         assert_eq!(k.get("local-key/https://tavrn.example/bob@tavrn.example"), Ok(None), "entries do not leak between accounts");
         assert_eq!(k.set(user, &[9; SECRET_LEN]), Ok(()));
-        assert_eq!(k.get(user), Ok(Some(vec![9; SECRET_LEN])), "replaced");
+        assert_eq!(k.get(user), Ok(Some(Zeroizing::new(vec![9; SECRET_LEN]))), "replaced");
         assert_eq!(k.delete(user), Ok(()));
         assert_eq!(k.get(user), Ok(None));
         assert_eq!(k.delete(user), Ok(()), "deleting twice is fine");
@@ -354,7 +360,7 @@ mod tests {
         let user = format!("local-key/https://tavrn.example/test-{}@tavrn.example", std::process::id());
         assert_eq!(k.get(&user), Ok(None));
         assert_eq!(k.set(&user, &KEY), Ok(()));
-        assert_eq!(k.get(&user), Ok(Some(KEY.to_vec())));
+        assert_eq!(k.get(&user), Ok(Some(Zeroizing::new(KEY.to_vec()))));
         assert_eq!(k.delete(&user), Ok(()));
         assert_eq!(k.get(&user), Ok(None));
     }

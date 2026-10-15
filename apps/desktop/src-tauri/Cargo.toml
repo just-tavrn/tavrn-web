@@ -38,6 +38,8 @@ hickory-resolver = { version = "0.26", default-features = false, features = ["to
 semver = "1"
 # base64url of the native passkeys' WebAuthn JSON (src/passkey.rs).
 base64 = "0.23"
+# Frame keys and keychain secrets are wiped when dropped (src/voice/mod.rs, src/keychain.rs); already in the tree.
+zeroize = { version = "1.9", features = ["serde"] }
 
 # Desktop only (Windows, macOS, Linux): the Android app (docs/ANDROID.md) has no tray, hotkeys, keychain, updater, save
 # dialog or native voice engine; its platform pieces are Kotlin (src-tauri/gen/android) behind src/android.rs.
