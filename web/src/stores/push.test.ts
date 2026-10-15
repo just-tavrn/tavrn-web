@@ -154,6 +154,22 @@ describe("push store", () => {
     expect(usePush.getState().status).toBe("loading");
   });
 
+  it("a disable the node did not confirm keeps the registration's record, so a retry can delete it", async () => {
+    const s = setup();
+    await usePush.getState().init(s.ctx);
+    await usePush.getState().enable();
+    const stored = localStorage.getItem("tavrn.push:bob@chat.example.org");
+    expect(stored).not.toBeNull();
+    s.api.push.unsubscribe.mockRejectedValueOnce(new TavrnApiError({ type: "about:blank", title: "Service Unavailable", status: 503, code: "server.unavailable", detail: "" }));
+    await usePush.getState().disable();
+    expect(usePush.getState().error).toBeTruthy();
+    expect(localStorage.getItem("tavrn.push:bob@chat.example.org")).toBe(stored);
+    await usePush.getState().disable();
+    expect(s.api.push.unsubscribe).toHaveBeenLastCalledWith("sub1");
+    expect(localStorage.getItem("tavrn.push:bob@chat.example.org")).toBeNull();
+    expect(usePush.getState().status).toBe("off");
+  });
+
   it("the test push reports errors with their code", async () => {
     const s = setup({ permission: "granted" });
     await usePush.getState().init(s.ctx);
