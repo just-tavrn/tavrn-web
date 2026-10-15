@@ -1,12 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-import { expect, test, type Browser, type Page } from "@playwright/test";
-import { NODE, createRoomViaApi, inviteCode, loginAs, openNavIfMobile, registerViaApi, type Account } from "./helpers";
+import { expect, test, type Page } from "@playwright/test";
+import { NODE, createRoomViaApi, inviteCode, loginAs, openNavIfMobile, registerViaApi, type Account, newPage, closePages } from "./helpers";
 import { scaled } from "./timeouts";
 
-async function newPage(browser: Browser): Promise<Page> {
-  const context = await browser.newContext({ ...test.info().project.use });
-  return context.newPage();
-}
+test.afterEach(closePages);
 
 async function befriend(request: Page["request"], a: Account, b: Account) {
   await request.post(`${NODE}/api/v1/users/me/friends/requests`, { headers: { Authorization: `Bearer ${a.token}` }, data: { user: b.username } });

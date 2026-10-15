@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import sodium from "libsodium-wrappers";
-import { NODE, openNavIfMobile, registerViaUi, tokenOf, openRoomInvite } from "./helpers";
+import { NODE, openNavIfMobile, registerViaUi, tokenOf, openRoomInvite, newPage, message, closePages } from "./helpers";
 import { scaled } from "./timeouts";
+
+test.afterEach(closePages);
 
 // Write-only webhooks in encrypted channels (APPLICATIONS.md §6.1a, ENCRYPTION.md §5b): created in the room settings
 // with the sealing mode, a service seals with libsodium (`crypto_box_seal`) to the channel's inbox key, the node seals
@@ -12,12 +14,6 @@ import { scaled } from "./timeouts";
 const CRYPTO = { timeout: scaled(30_000) };
 const B64 = () => sodium.base64_variants.URLSAFE_NO_PADDING;
 
-async function newPage(browser: Browser): Promise<Page> {
-  const context = await browser.newContext({ ...test.info().project.use });
-  return context.newPage();
-}
-
-const message = (page: Page, text: string) => page.getByTestId("message").filter({ hasText: text });
 const pathOf = (url: string) => url.slice(url.indexOf("/api/v1/"));
 
 async function closeDrawers(page: Page) {
@@ -30,7 +26,7 @@ async function closeDrawers(page: Page) {
 async function send(page: Page, text: string) {
   await closeDrawers(page);
   const box = page.getByLabel("Nachricht", { exact: true });
-  await expect(box).toBeEnabled({ timeout: 15_000 });
+  await expect(box).toBeEnabled({ timeout: scaled(15_000) });
   await box.fill(text);
   await page.keyboard.press("Enter");
   await expect(box).toHaveValue("");

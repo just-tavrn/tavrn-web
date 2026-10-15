@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-import { expect, test, type Browser, type Page } from "@playwright/test";
-import { NODE, createRoomViaApi, inviteCode, loginAs, registerViaApi } from "./helpers";
+import { expect, test, type Page } from "@playwright/test";
+import { NODE, createRoomViaApi, inviteCode, loginAs, registerViaApi, newPage, closePages } from "./helpers";
 import { scaled } from "./timeouts";
+
+test.afterEach(closePages);
 
 // Rich presence (APPLICATIONS.md §7.2/§7.3): an activity with details, state, end and application shows
 // "via <application>" in the member list and the profile card; the privacy settings list the decisions of
@@ -11,11 +13,6 @@ import { scaled } from "./timeouts";
 const CONSENT_KEY = "tavrn.activity.consent";
 const APP_ID = "01J9Z8Y7X6W5V4T3S2R1Q0P9N8";
 const APP_REF = `games.example/${APP_ID}`;
-
-async function newPage(browser: Browser): Promise<Page> {
-  const context = await browser.newContext({ ...test.info().project.use });
-  return context.newPage();
-}
 
 async function openMembers(page: Page) {
   const width = page.viewportSize()?.width ?? 1280;

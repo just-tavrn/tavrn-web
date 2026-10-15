@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-import { expect, test, type Browser, type Page } from "@playwright/test";
-import { loginViaUi, openNavIfMobile, registerViaUi, tokenOf, type UiAccount, openRoomInvite } from "./helpers";
+import { expect, test, type Page } from "@playwright/test";
+import { loginViaUi, openNavIfMobile, registerViaUi, tokenOf, type UiAccount, openRoomInvite, newPage, message, closePages } from "./helpers";
 import { freshIdentityKey } from "./crypto-helpers";
 import { A, B, BROWSER_API_A, FEDERATION_BROWSER, NODE_A, NODE_B, WEB_A, WEB_B, chromiumOnly, indexOf } from "./federation-helpers";
 import { scaled } from "./timeouts";
+
+test.afterEach(closePages);
 
 test.use(FEDERATION_BROWSER);
 
@@ -12,15 +14,6 @@ test.use(FEDERATION_BROWSER);
 // both, key changes of a user of the other node, and a new device that restores everything from the
 // conversation index and the backups. Crypto-heavy steps (MLS joins, Welcomes) get longer timeouts.
 const CRYPTO = { timeout: scaled(20_000) };
-
-async function newPage(browser: Browser): Promise<Page> {
-  const context = await browser.newContext({ ...test.info().project.use });
-  return context.newPage();
-}
-
-function message(page: Page, text: string) {
-  return page.getByTestId("message").filter({ hasText: text });
-}
 
 /** Phones: close an open navigation or member drawer before using the message area. */
 async function closeDrawers(page: Page) {

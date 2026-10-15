@@ -108,8 +108,8 @@ async function joinVoice(page: Page, roomUrl: string) {
   await page.goto(roomUrl);
   await openNavIfMobile(page);
   await page.getByRole("link", { name: "Sprachkanal Sprache" }).click();
-  await expect(page.getByTestId("voice-stage")).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByTestId("voice-e2ee")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("voice-stage")).toBeVisible({ timeout: scaled(30_000) });
+  await expect(page.getByTestId("voice-e2ee")).toBeVisible({ timeout: scaled(30_000) });
 }
 
 const tile = (page: Page, address: string) => page.getByTestId("voice-tile").and(page.locator(`[data-user="${address}"]`));
@@ -160,18 +160,18 @@ test.describe("Whiteboard on the voice stage", () => {
     await joinVoice(alice.page, roomUrl);
     await joinVoice(bob.page, roomUrl);
     for (const p of [alice, bob]) {
-      await expect(tile(p.page, alice.address)).toBeVisible({ timeout: 30_000 });
-      await expect(tile(p.page, bob.address)).toBeVisible({ timeout: 30_000 });
+      await expect(tile(p.page, alice.address)).toBeVisible({ timeout: scaled(30_000) });
+      await expect(tile(p.page, bob.address)).toBeVisible({ timeout: scaled(30_000) });
     }
     // Alice's camera runs the whole time: her camera tile must stay as it is next to the board.
     await alice.page.getByTestId("voice-camera").click();
-    await expect(tile(bob.page, alice.address).getByTestId("video-camera")).toBeVisible({ timeout: 30_000 });
+    await expect(tile(bob.page, alice.address).getByTestId("video-camera")).toBeVisible({ timeout: scaled(30_000) });
 
     // Alice presents a board from the call controls: her preview tile with the board, and the "Whiteboard is open" bar.
     await alice.page.getByTestId("voice-whiteboard").click();
     const alicePreview = boardTile(alice.page);
-    await expect(alicePreview).toHaveAttribute("data-state", "preview", { timeout: 20_000 });
-    await expect(alicePreview.getByTestId("whiteboard-stage-tile")).toBeVisible({ timeout: 20_000 });
+    await expect(alicePreview).toHaveAttribute("data-state", "preview", { timeout: scaled(20_000) });
+    await expect(alicePreview.getByTestId("whiteboard-stage-tile")).toBeVisible({ timeout: scaled(20_000) });
     await expect(alice.page.getByTestId("whiteboard-indicator")).toContainText("Whiteboard ist geöffnet");
     await expect(board(alice.page)).toHaveAttribute("data-role", "owner");
     await expect(tile(alice.page, alice.address)).toBeVisible();
@@ -186,10 +186,10 @@ test.describe("Whiteboard on the voice stage", () => {
     // Bob sees the board as its own tile: badge, "Whiteboard · Alice", the live thumbnail and "Join whiteboard";
     // Alice's camera tile is unchanged, the member list marks her with the board badge.
     const bobsBoard = boardTile(bob.page);
-    await expect(bobsBoard).toHaveAttribute("data-state", "available", { timeout: 20_000 });
+    await expect(bobsBoard).toHaveAttribute("data-state", "available", { timeout: scaled(20_000) });
     await expect(bobsBoard.getByTestId("whiteboard-tile-title")).toHaveText("Whiteboard · Alice");
     await expect(bobsBoard.getByTestId("whiteboard-badge")).toBeVisible();
-    await expect(bobsBoard.getByTestId("whiteboard-thumbnail")).toBeVisible({ timeout: 30_000 });
+    await expect(bobsBoard.getByTestId("whiteboard-thumbnail")).toBeVisible({ timeout: scaled(30_000) });
     await expect(tile(bob.page, alice.address).getByTestId("video-camera")).toBeVisible();
     await expect(tile(bob.page, alice.address).getByTestId("whiteboard-badge")).toHaveCount(0);
     await expect(row(bob.page, alice.address).getByTestId("whiteboard-owner-badge")).toBeAttached();
@@ -199,12 +199,12 @@ test.describe("Whiteboard on the voice stage", () => {
 
     // Joined from the tile: the board fills a large tile and follows Alice live; her camera tile stays.
     await bobsBoard.getByTestId("whiteboard-join").click();
-    await expect(bobsBoard).toHaveAttribute("data-state", "joined", { timeout: 20_000 });
-    await expect(bobsBoard.getByTestId("whiteboard-stage-tile")).toBeVisible({ timeout: 20_000 });
+    await expect(bobsBoard).toHaveAttribute("data-state", "joined", { timeout: scaled(20_000) });
+    await expect(bobsBoard.getByTestId("whiteboard-stage-tile")).toBeVisible({ timeout: scaled(20_000) });
     await expect(board(bob.page)).toHaveAttribute("data-role", "viewer");
-    await expect(board(bob.page)).toHaveAttribute("data-elements", "1", { timeout: 20_000 });
+    await expect(board(bob.page)).toHaveAttribute("data-elements", "1", { timeout: scaled(20_000) });
     await drawRectangle(alice.page, ...second!);
-    await expect(board(bob.page)).toHaveAttribute("data-elements", "2", { timeout: 20_000 });
+    await expect(board(bob.page)).toHaveAttribute("data-elements", "2", { timeout: scaled(20_000) });
     await expect(tile(bob.page, alice.address).getByTestId("video-camera")).toBeVisible();
 
     // Remote cursors reach the canvas without re-rendering the call: Bob moves his pointer over the board for 5 s
@@ -223,9 +223,9 @@ test.describe("Whiteboard on the voice stage", () => {
     await axeStage(bob.page);
 
     // Alice sees who joined: in the board header and in her bar.
-    await expect(alice.page.getByTestId("whiteboard-role")).toContainText("1 schauen zu", { timeout: 20_000 });
+    await expect(alice.page.getByTestId("whiteboard-role")).toContainText("1 schauen zu", { timeout: scaled(20_000) });
     await alice.page.getByTestId("whiteboard-maximize").click();
-    await expect(alice.page.getByTestId("whiteboard-indicator").getByTestId("whiteboard-joined-count")).toHaveText("1 beigetreten", { timeout: 20_000 });
+    await expect(alice.page.getByTestId("whiteboard-indicator").getByTestId("whiteboard-joined-count")).toHaveText("1 beigetreten", { timeout: scaled(20_000) });
     await expect(tile(alice.page, alice.address).getByTestId("video-camera")).toBeVisible();
     await axeStage(alice.page);
     // She hides her preview (the board keeps running for Bob) and brings it back from the bar.
@@ -243,16 +243,16 @@ test.describe("Whiteboard on the voice stage", () => {
     await expect(bobsBoard).toHaveAttribute("data-state", "available");
     await expect(bob.page.getByTestId("whiteboard-stage-tile")).toHaveCount(0);
     await bobsBoard.dblclick({ position: { x: 24, y: 48 } });
-    await expect(bobsBoard).toHaveAttribute("data-state", "joined", { timeout: 20_000 });
-    await expect(board(bob.page)).toHaveAttribute("data-elements", "2", { timeout: 20_000 });
+    await expect(bobsBoard).toHaveAttribute("data-state", "joined", { timeout: scaled(20_000) });
+    await expect(board(bob.page)).toHaveAttribute("data-elements", "2", { timeout: scaled(20_000) });
     await action(bob.page, "Sitzung verlassen");
     await expect(bobsBoard).toHaveAttribute("data-state", "available");
 
     // From the member list: a double-click on Alice (the board badge next to her name) joins the board.
     await openNavIfMobile(bob.page);
     await row(bob.page, alice.address).dblclick();
-    await expect(bobsBoard).toHaveAttribute("data-state", "joined", { timeout: 20_000 });
-    await expect(board(bob.page)).toHaveAttribute("data-elements", "2", { timeout: 20_000 });
+    await expect(bobsBoard).toHaveAttribute("data-state", "joined", { timeout: scaled(20_000) });
+    await expect(board(bob.page)).toHaveAttribute("data-elements", "2", { timeout: scaled(20_000) });
 
     // Fullscreen as with streams: on phones the wide board turns the screen to landscape; "Leave whiteboard" in the
     // fullscreen controls ends both.
@@ -269,12 +269,12 @@ test.describe("Whiteboard on the voice stage", () => {
     // A whiteboard and a screen share side by side: Bob shares his screen while Alice's board is open.
     await bob.page.getByTestId("voice-screen").click();
     await bob.page.getByTestId("screen-share-start").click();
-    await expect(bob.page.getByTestId("streaming-indicator")).toBeVisible({ timeout: 30_000 });
+    await expect(bob.page.getByTestId("streaming-indicator")).toBeVisible({ timeout: scaled(30_000) });
     await expect(bobsBoard).toHaveAttribute("data-state", "available");
     const bobsStream = streamTile(alice.page, bob.address);
-    await expect(bobsStream).toHaveAttribute("data-state", "available", { timeout: 30_000 });
+    await expect(bobsStream).toHaveAttribute("data-state", "available", { timeout: scaled(30_000) });
     await bobsStream.getByTestId("stream-join").click();
-    await expect(bobsStream.getByTestId("video-screen")).toBeVisible({ timeout: 30_000 });
+    await expect(bobsStream.getByTestId("video-screen")).toBeVisible({ timeout: scaled(30_000) });
     await bobsStream.getByTestId("screen-focus").click();
     const large = alice.page.getByTestId("voice-large");
     await expect(large.getByTestId("whiteboard-tile")).toHaveAttribute("data-state", "preview");
@@ -287,16 +287,16 @@ test.describe("Whiteboard on the voice stage", () => {
     await expect(tile(alice.page, alice.address)).toBeVisible();
     await axeStage(alice.page);
     await bob.page.getByTestId("stream-stop").click();
-    await expect(bobsStream).toHaveCount(0, { timeout: 15_000 });
+    await expect(bobsStream).toHaveCount(0, { timeout: scaled(15_000) });
 
     // One presentation at a time: sharing the screen asks, then closes the board for everyone.
     await alice.page.getByTestId("voice-screen").click();
     await expect.poll(() => alice.dialogs.join("\n")).toContain("Whiteboard schließen und Bildschirm teilen?");
     await alice.page.getByTestId("screen-share-start").click();
-    await expect(alicePreview).toHaveCount(0, { timeout: 20_000 });
+    await expect(alicePreview).toHaveCount(0, { timeout: scaled(20_000) });
     await expect(alice.page.getByTestId("whiteboard-indicator")).toHaveCount(0);
-    await expect(bobsBoard).toHaveCount(0, { timeout: 20_000 });
+    await expect(bobsBoard).toHaveCount(0, { timeout: scaled(20_000) });
     await expect(row(bob.page, alice.address).getByTestId("whiteboard-owner-badge")).toHaveCount(0);
-    await expect(streamTile(bob.page, alice.address)).toBeVisible({ timeout: 30_000 });
+    await expect(streamTile(bob.page, alice.address)).toBeVisible({ timeout: scaled(30_000) });
   });
 });
