@@ -30,6 +30,8 @@ pub struct Mixer {
     gains: HashMap<String, f32>,
     /// Loudest RMS (dBFS) per identity since the last `take_levels`.
     levels: HashMap<String, f64>,
+    /// The last report was all silence (`take_report` stays quiet until someone is audible again).
+    quiet: bool,
     deafened: bool,
 }
 
@@ -56,9 +58,13 @@ impl Mixer {
     pub fn push(&mut self, key: &str, samples: &[f32]) {
         let Some(source) = self.sources.get_mut(key) else { return };
         let level = dbfs(samples);
-        let entry = self.levels.entry(source.identity.clone()).or_insert(f64::NEG_INFINITY);
-        if level > *entry {
-            *entry = level;
+        // Called for every 10 ms frame of every track: the identity is cloned only for its first frame.
+        match self.levels.get_mut(&source.identity) {
+            Some(entry) if level > *entry => *entry = level,
+            Some(_) => {}
+            None => {
+                self.levels.insert(source.identity.clone(), level);
+            }
         }
         source.buf.extend(samples);
         if source.buf.len() > MAX_BUFFERED {
@@ -115,6 +121,18 @@ impl Mixer {
             *v = f64::NEG_INFINITY;
         }
         out
+    }
+
+    /// The levels for the webview (`take_levels`), or `None` while nobody was audible since a report that already said
+    /// so: in silence nothing goes over IPC (the webview's speaking detector lets the rings fade by itself).
+    pub fn take_report(&mut self) -> Option<Vec<(String, f64)>> {
+        let levels = self.take_levels();
+        let silent = levels.iter().all(|(_, v)| !v.is_finite());
+        if levels.is_empty() || (silent && self.quiet) {
+            return None;
+        }
+        self.quiet = silent;
+        Some(levels)
     }
 
     pub fn track_count(&self) -> usize {
@@ -209,5 +227,22 @@ mod tests {
         m.remove("TR_a");
         assert_eq!(m.take_levels().len(), 1);
         assert_eq!(m.track_count(), 1);
+    }
+
+    #[test]
+    fn reports_go_out_while_someone_is_audible_and_once_when_all_fell_silent() {
+        let mut m = Mixer::default();
+        assert!(m.take_report().is_none(), "nobody in the mix");
+        m.add("TR_a", "alice/1");
+        m.push("TR_a", &frames(1, 0.0));
+        // Silence from the start: the first report says so, then nothing until someone is audible.
+        assert!(m.take_report().is_some());
+        let silent_ticks = (0..20).filter(|_| m.take_report().is_some()).count();
+        assert_eq!(silent_ticks, 0, "20 silent ticks (1 s) send nothing");
+        m.push("TR_a", &frames(1, 0.1));
+        assert!(m.take_report().is_some_and(|l| l[0].1.is_finite()), "audible");
+        // Silent again: one report with -inf, then quiet.
+        assert!(m.take_report().is_some_and(|l| l.iter().all(|(_, v)| *v == f64::NEG_INFINITY)));
+        assert!(m.take_report().is_none());
     }
 }

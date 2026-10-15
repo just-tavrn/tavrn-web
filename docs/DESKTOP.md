@@ -622,7 +622,8 @@ unencrypted (`voice.invalid_url` otherwise). The shell (`src-tauri/src/voice`):
 - **Playback** (`mix.rs`): every subscribed remote audio track is decoded (and decrypted) by libwebrtc and mixed with
   the per-participant gain the client computes (`volume.ts`: per-user volume × output volume, 0 while deafened); the
   mix is also the echo canceller's reference. The loudest 10 ms RMS of each participant goes to the webview every
-  50 ms, where the browser engine's `SpeakingDetector` turns it into speaking rings.
+  50 ms while someone is audible (once more when all fell silent, nothing in silence), where the browser engine's
+  `SpeakingDetector` turns it into speaking rings.
 - **Push-to-talk** follows the system-wide hotkey directly (a tap of `hotkeys.rs`, so it also works while the window
   is in the background) and the webview's key and hold button.
 - **Devices** of its own (`voice_devices`; Settings → Voice & video and the quick menus list them, kept apart from the

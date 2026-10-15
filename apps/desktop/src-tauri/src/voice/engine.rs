@@ -223,8 +223,9 @@ impl Engine {
             let mut tick = tokio::time::interval(LEVELS_EVERY);
             loop {
                 tick.tick().await;
-                let levels = lock(&level_parts.mixer).take_levels();
-                if !levels.is_empty() {
+                // Only while someone is audible (and once when all fell silent): no IPC every 50 ms in silence.
+                let report = lock(&level_parts.mixer).take_report();
+                if let Some(levels) = report {
                     level_parts.send(VoiceEvent::Speakers { levels: levels.into_iter().map(|(k, v)| (k, finite(v))).collect() });
                 }
             }
