@@ -66,6 +66,8 @@ function recordOrientationLocks() {
   };
 }
 
+const counts = (page: Page) => page.evaluate(() => ({ ...((window as unknown as { __tavrnCounts?: Record<string, number> }).__tavrnCounts ?? {}) }));
+
 const locks = (page: Page) => page.evaluate(() => (window as unknown as { __locks?: string[] }).__locks ?? []);
 
 /** axe on the stage: serious and critical WCAG violations fail. */
@@ -204,6 +206,20 @@ test.describe("Whiteboard on the voice stage", () => {
     await drawRectangle(alice.page, ...second!);
     await expect(board(bob.page)).toHaveAttribute("data-elements", "2", { timeout: 20_000 });
     await expect(tile(bob.page, alice.address).getByTestId("video-camera")).toBeVisible();
+
+    // Remote cursors reach the canvas without re-rendering the call: Bob moves his pointer over the board for 5 s
+    // while Alice counts her stage renders (development counters, devCounters.ts).
+    const before = await counts(alice.page);
+    const canvas = (await bob.page.getByTestId("whiteboard-canvas").boundingBox())!;
+    for (let i = 0; i < 50; i++) {
+      await bob.page.mouse.move(canvas.x + canvas.width / 2 + ((i % 10) - 5) * 8, canvas.y + canvas.height / 2 + (i % 7) * 6);
+      await bob.page.waitForTimeout(100); // a steady pointer stream, nothing is awaited
+    }
+    await expect.poll(async () => ((await counts(alice.page))["whiteboard.cursor_in"] ?? 0) - (before["whiteboard.cursor_in"] ?? 0), { timeout: scaled(10_000) }).toBeGreaterThanOrEqual(10);
+    const after = await counts(alice.page);
+    const delta = (k: string) => (after[k] ?? 0) - (before[k] ?? 0);
+    console.log(`[whiteboard cursors] cursor events ${delta("whiteboard.cursor_in")}, stage renders ${delta("voice.stage")}`);
+    expect(delta("voice.stage")).toBeLessThanOrEqual(5);
     await axeStage(bob.page);
 
     // Alice sees who joined: in the board header and in her bar.

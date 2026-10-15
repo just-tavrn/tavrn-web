@@ -16,7 +16,7 @@ const board = vi.hoisted(() => ({
   leave: vi.fn(),
   controller: { participants: new Map<string, unknown>(), elements: new Map<string, unknown>(), close: vi.fn(async () => undefined) },
 }));
-vi.mock("./store", () => ({ useWhiteboardSession: () => board, ownedBoards: () => [], loadDraft: async () => null }));
+vi.mock("./store", () => ({ useWhiteboardSession: () => board, useBoardContent: () => 0, ownedBoards: () => [], loadDraft: async () => null }));
 vi.mock("../components/NodeScope", () => ({ useNode: () => ({ domain: "n.test" }) }));
 vi.mock("../voice/index", () => ({ stopScreenShare: vi.fn(async () => undefined), toggleMute: vi.fn(), toggleDeafen: vi.fn(), leaveVoice: vi.fn() }));
 // The board itself (Excalidraw) is not part of these tests: the lazy tile renders its header extras only.

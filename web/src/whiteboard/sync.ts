@@ -59,18 +59,34 @@ export function stamp(e: Pick<WbElement, "version" | "versionNonce">): string {
   return `${e.version}:${e.versionNonce}`;
 }
 
+/** What the diff remembers per element id: the state last sent or received (numbers, compared without allocating). */
+export type Known = Map<string, { version: number; nonce: number }>;
+
+/** Records the state of `e` as known. */
+export function remember(known: Known, e: Pick<WbElement, "id" | "version" | "versionNonce">): void {
+  const k = known.get(e.id);
+  if (k) {
+    k.version = e.version;
+    k.nonce = e.versionNonce;
+  } else known.set(e.id, { version: e.version, nonce: e.versionNonce });
+}
+
 /**
  * The elements whose state differs from what is known (sent or received before); records them as known.
- * Excalidraw bumps `version` and `versionNonce` on every change, so this is the exact diff of `onChange`.
+ * Excalidraw bumps `version` and `versionNonce` on every change (also when it mutates an element in place), so
+ * this is the exact diff of `onChange`. It runs on every `onChange`, including the ones a remote cursor causes:
+ * two number comparisons per element, nothing allocated for unchanged ones.
  */
-export function diffElements(elements: readonly WbElement[], known: Map<string, string>): WbElement[] {
+export function diffElements(elements: readonly WbElement[], known: Known): WbElement[] {
   const changed: WbElement[] = [];
   for (const e of elements) {
-    const s = stamp(e);
-    if (known.get(e.id) !== s) {
-      known.set(e.id, s);
-      changed.push(e);
-    }
+    const k = known.get(e.id);
+    if (k && k.version === e.version && k.nonce === e.versionNonce) continue;
+    if (k) {
+      k.version = e.version;
+      k.nonce = e.versionNonce;
+    } else known.set(e.id, { version: e.version, nonce: e.versionNonce });
+    changed.push(e);
   }
   return changed;
 }
@@ -245,9 +261,14 @@ export function byteLength(s: string): number {
   return encoder.encode(s).length;
 }
 
-/** Splits a serialized payload into base64url parts of at most `chunkBytes` raw bytes. */
-export function splitPayload(json: string, chunkBytes: number = LIMITS.chunkBytes): string[] {
-  const bytes = encoder.encode(json);
+/** UTF-8 bytes of a string. */
+export function utf8(s: string): Uint8Array {
+  return encoder.encode(s);
+}
+
+/** Splits a serialized payload (text or its UTF-8 bytes) into base64url parts of at most `chunkBytes` raw bytes. */
+export function splitPayload(json: string | Uint8Array, chunkBytes: number = LIMITS.chunkBytes): string[] {
+  const bytes = typeof json === "string" ? encoder.encode(json) : json;
   const parts: string[] = [];
   for (let i = 0; i < bytes.length; i += chunkBytes) parts.push(b64urlEncode(bytes.subarray(i, i + chunkBytes)));
   return parts;

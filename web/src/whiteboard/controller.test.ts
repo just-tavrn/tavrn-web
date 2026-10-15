@@ -327,4 +327,76 @@ describe("WhiteboardController", () => {
     await settle(TIMING.cursorIdleMs + 1_100);
     expect(alice.cursors.size).toBe(0);
   });
+  it("cursor events and canvas echoes reach the canvas without notifying the views", async () => {
+    const bus = new Bus();
+    const alice = bus.add("alice@n.test", "DA");
+    const bob = bus.add("bob@n.test", "DB");
+    await alice.open();
+    bob.join();
+    await settle(TIMING.snapshotDebounceMs);
+    alice.localChange([el("r", 1)], "#ffffff", []);
+    await settle(TIMING.updateMs);
+    const view = recordingView();
+    let cursorsShown = 0;
+    view.setCursors = () => void cursorsShown++;
+    alice.attach(view);
+    let meta = 0;
+    let content = 0;
+    alice.subscribe(() => meta++);
+    alice.subscribeContent(() => content++);
+    const shown = cursorsShown;
+    for (let i = 0; i < 50; i++) {
+      alice.receive(WB.cursor, { user: "bob@n.test", device_id: "DB" }, { type: WB.cursor, x: i, y: i });
+      // Excalidraw reports every collaborator update as a change of the (unchanged) scene.
+      alice.localChange([el("r", 1)], "#ffffff", []);
+    }
+    await settle(1_000);
+    expect(cursorsShown - shown).toBe(50);
+    expect(meta).toBe(0);
+    expect(content).toBe(0);
+    expect(bus.sent(WB.update, "alice")).toHaveLength(1);
+  });
+
+  it("notifies content changes coalesced, session changes at once", async () => {
+    const bus = new Bus();
+    const alice = bus.add("alice@n.test", "DA");
+    await alice.open();
+    let meta = 0;
+    let content = 0;
+    alice.subscribe(() => meta++);
+    alice.subscribeContent(() => content++);
+    for (let v = 1; v <= 30; v++) {
+      alice.localChange([el("r", v)], "#ffffff", []);
+      await vi.advanceTimersByTimeAsync(10);
+    }
+    await settle(500);
+    // 30 strokes within 300 ms: a handful of content notifications, no session notification.
+    expect(content).toBeGreaterThan(0);
+    expect(content).toBeLessThanOrEqual(4);
+    expect(meta).toBe(0);
+    const before = alice.contentVersion;
+    await alice.setPermissions({ open_for_all: true, grants: [] });
+    expect(meta).toBeGreaterThan(0);
+    expect(alice.contentVersion).toBe(before);
+  });
+
+  it("builds element updates when the queue has room: nothing piles up behind a stalled uplink", async () => {
+    const sent: string[] = [];
+    const stalled: Transport = {
+      send: (type) => {
+        sent.push(type);
+        return type === WB.open ? Promise.resolve({ conversation_id: "C", owner: "alice@n.test", owner_id: "alice@n.test", device_id: "DA", open_for_all: false, grants: [], started_at: "t0" }) : new Promise(() => undefined);
+      },
+    };
+    const alice = new WhiteboardController({ me: { address: "alice@n.test", deviceId: "DA" }, transport: stalled });
+    await alice.open();
+    // Drawing for 2 s while no request ever completes.
+    for (let v = 1; v <= 120; v++) {
+      alice.localChange([el("r", v), el(`s${v % 5}`, v)], "#ffffff", []);
+      await vi.advanceTimersByTimeAsync(16);
+    }
+    expect(alice.queued).toBeLessThanOrEqual(2);
+    expect(sent.filter((t) => t === WB.update).length).toBeLessThanOrEqual(4);
+    alice.dispose();
+  });
 });

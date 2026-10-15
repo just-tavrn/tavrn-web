@@ -8,12 +8,12 @@
  */
 import { TavrnApiError, type SessionState, type WhiteboardSession } from "@tavrn/sdk";
 import { TIMING, WB, identityOf, type Sender } from "./protocol";
+import { devCount } from "../voice/devCounters";
 import {
   ChunkAssembler,
   LIMITS,
   RateBudget,
   Throttle,
-  byteLength,
   diffElements,
   isOwnerDevice,
   mayEdit,
@@ -23,8 +23,10 @@ import {
   sanitizeColor,
   sanitizeElements,
   sanitizeFiles,
+  remember,
   splitPayload,
-  stamp,
+  utf8,
+  type Known,
   type WbElement,
   type WbFile,
 } from "./sync";
@@ -90,6 +92,10 @@ const THUMBNAIL_URL = /^data:image\/(webp|png|jpeg);base64,[A-Za-z0-9+/=]+$/;
 const DEFAULT_BACKGROUND = "#ffffff";
 /** Concurrent requests of the send queue. */
 const IN_FLIGHT = 4;
+/** Views that show the elements (counts, the texts for screen readers, the tile's shape) hear of changes at most this often. */
+export const CONTENT_NOTIFY_MS = 200;
+/** Events of these types replace a queued event of the same type that has not been sent yet (only the newest matters). */
+const SUPERSEDED = new Set<string>([WB.thumbnail, WB.here]);
 
 export class WhiteboardController {
   session: WhiteboardSession | null = null;
@@ -107,18 +113,32 @@ export class WhiteboardController {
   readonly cursors = new Map<string, CursorInfo>();
   /** Mounted board views (the session is left when the last one goes). */
   views = 0;
-  /** Bumps on every visible change (for `useSyncExternalStore`). */
+  /**
+   * Bumps on every change of the session-level state: the session, joined, ended, role, synced, the background,
+   * the thumbnail and the set of participants (for `useSyncExternalStore`). Cursors and elements reach the canvas
+   * through the {@link CanvasView} and do not bump it.
+   */
   version = 0;
+  /** Bumps on every change of the elements or images; {@link subscribeContent} hears of it coalesced. */
+  contentVersion = 0;
 
   private readonly listeners = new Set<() => void>();
-  private readonly known = new Map<string, string>();
+  private readonly contentListeners = new Set<() => void>();
+  private readonly contentThrottle: Throttle;
+  private readonly known: Known = new Map();
   private readonly pendingIds = new Set<string>();
   private readonly proposedIds = new Set<string>();
   private backgroundDirty = false;
   private readonly sentFiles = new Set<string>();
   private readonly queue: Outgoing[] = [];
+  /** Owner: an element update is due; it is built when the queue has room (no stale diffs pile up). */
+  private updateDue = false;
+  /** Editor: a proposal is due (built like updates). */
+  private proposeDue = false;
   private inFlight = 0;
   private pumpTimer: ReturnType<typeof setTimeout> | null = null;
+  /** `pump` is running (events it builds are sent by the same loop). */
+  private pumping = false;
   private pendingCursor: { x: number; y: number } | null = null;
   /** The cursor throttle allows the next position to go out. */
   private cursorDue = false;
@@ -145,8 +165,23 @@ export class WhiteboardController {
     const now = deps.now ?? (() => Date.now());
     this.budget = new RateBudget(TIMING.sendPerSecond, now);
     this.assembler = new ChunkAssembler(now);
-    this.updateThrottle = new Throttle(TIMING.updateMs, () => this.flushUpdate(), now);
-    this.proposeThrottle = new Throttle(TIMING.updateMs, () => this.flushProposal(), now);
+    this.updateThrottle = new Throttle(
+      TIMING.updateMs,
+      () => {
+        this.updateDue = true;
+        this.pump();
+      },
+      now,
+    );
+    this.proposeThrottle = new Throttle(
+      TIMING.updateMs,
+      () => {
+        this.proposeDue = true;
+        this.pump();
+      },
+      now,
+    );
+    this.contentThrottle = new Throttle(CONTENT_NOTIFY_MS, () => this.contentListeners.forEach((l) => l()), now);
     this.cursorThrottle = new Throttle(
       TIMING.cursorMs,
       () => {
@@ -168,9 +203,25 @@ export class WhiteboardController {
     return () => this.listeners.delete(listener);
   }
 
+  /** Changes of the elements or images, coalesced to one call per {@link CONTENT_NOTIFY_MS}. */
+  subscribeContent(listener: () => void): () => void {
+    this.contentListeners.add(listener);
+    return () => this.contentListeners.delete(listener);
+  }
+
+  /** Events waiting in the send queue (tests). */
+  get queued(): number {
+    return this.queue.length;
+  }
+
   private notify(): void {
     this.version++;
     for (const l of this.listeners) l();
+  }
+
+  private contentChanged(): void {
+    this.contentVersion++;
+    if (!this.disposed) this.contentThrottle.schedule();
   }
 
   /** The role of this device in the current session (null without one). */
@@ -340,7 +391,7 @@ export class WhiteboardController {
     this.resetScene();
     for (const e of sanitizeElements(scene.elements)) {
       this.elements.set(e.id, e);
-      this.known.set(e.id, stamp(e));
+      remember(this.known, e);
     }
     for (const f of sanitizeFiles(scene.files)) this.files.set(f.id, f);
     this.background = sanitizeColor(scene.background) ?? DEFAULT_BACKGROUND;
@@ -355,8 +406,11 @@ export class WhiteboardController {
     this.sentFiles.clear();
     this.cursors.clear();
     this.background = DEFAULT_BACKGROUND;
+    this.updateDue = false;
+    this.proposeDue = false;
     this.view?.apply([], { replace: true });
     this.view?.setCursors([]);
+    this.contentChanged();
   }
 
   // ---- local changes --------------------------------------------------------------------------
@@ -374,6 +428,7 @@ export class WhiteboardController {
     const bgChanged = role === "owner" && !!color && color !== this.background;
     const newFiles = files.filter((f) => !this.files.has(f.id));
     if (changed.length === 0 && !bgChanged && newFiles.length === 0) return;
+    this.contentChanged();
     for (const f of sanitizeFiles(newFiles)) this.files.set(f.id, f);
     for (const e of changed) this.elements.set(e.id, e);
     if (role === "owner") {
@@ -393,7 +448,7 @@ export class WhiteboardController {
       for (const e of changed) this.proposedIds.add(e.id);
       this.proposeThrottle.schedule();
     }
-    this.notify();
+    if (bgChanged) this.notify();
   }
 
   /** Pointer position in scene coordinates (sent throttled while joined). */
@@ -408,7 +463,9 @@ export class WhiteboardController {
     return s ? `${s.owner}/${s.device_id}` : null;
   }
 
+  /** Owner: the update of everything changed since the last one (built when the send queue has room). */
   private flushUpdate(): void {
+    this.updateDue = false;
     if (this.role !== "owner") return;
     const elements = [...this.pendingIds].map((id) => this.elements.get(id)).filter((e): e is WbElement => !!e);
     this.pendingIds.clear();
@@ -420,6 +477,7 @@ export class WhiteboardController {
   }
 
   private flushProposal(): void {
+    this.proposeDue = false;
     if (this.role !== "editor") return;
     const elements = [...this.proposedIds].map((id) => this.elements.get(id)).filter((e): e is WbElement => !!e);
     this.proposedIds.clear();
@@ -466,25 +524,46 @@ export class WhiteboardController {
   /** Sends a payload in one event or, when large, in chunks. */
   private sendLarge(payload: Record<string, unknown>): void {
     const json = JSON.stringify(payload);
-    if (byteLength(json) <= LIMITS.directBytes) {
+    // At most 3 UTF-8 bytes per UTF-16 unit: short payloads need no encoding to know they fit.
+    const bytes = json.length * 3 <= LIMITS.directBytes ? null : utf8(json);
+    if (!bytes || bytes.length <= LIMITS.directBytes) {
       this.enqueue({ type: String(payload.type), content: payload });
       return;
     }
-    const parts = splitPayload(json);
+    const parts = splitPayload(bytes);
     const id = `${this.now().toString(36)}-${(this.chunkSeq++).toString(36)}`;
     parts.forEach((data, index) => this.enqueue({ type: WB.chunk, content: { type: WB.chunk, id, index, total: parts.length, data } }));
   }
 
   private enqueue(item: Outgoing): void {
     if (this.disposed) return;
+    if (SUPERSEDED.has(item.type)) {
+      const i = this.queue.findIndex((q) => q.type === item.type);
+      if (i >= 0) this.queue.splice(i, 1);
+    }
     this.queue.push(item);
     this.pump();
   }
 
-  /** Sends queued events within the rate budget; the newest cursor position only when there is room. */
+  /**
+   * Sends queued events within the rate budget. A due element update (or proposal) is built only when the queue is
+   * empty and a request slot is free, so it always carries the latest state of every changed element and a slow
+   * uplink never collects stale diffs; the newest cursor position goes out only when there is room.
+   */
   private pump(): void {
-    if (this.disposed || this.pumpTimer) return;
+    if (this.disposed || this.pumpTimer || this.pumping) return;
+    this.pumping = true;
+    try {
+      this.drain();
+    } finally {
+      this.pumping = false;
+    }
+  }
+
+  private drain(): void {
     while (this.inFlight < IN_FLIGHT) {
+      if (this.queue.length === 0 && this.updateDue) this.flushUpdate();
+      if (this.queue.length === 0 && this.proposeDue) this.flushProposal();
       let item = this.queue[0];
       if (!item && this.pendingCursor && this.cursorDue) {
         // Cursors only with budget to spare: updates go first.
@@ -567,14 +646,18 @@ export class WhiteboardController {
       case WB.update: {
         if (!fromOwner || !this.joined || role === "owner") return;
         const accepted = reconcile(this.elements, sanitizeElements(content.elements), { incomingWinsTies: true });
-        for (const e of accepted) this.known.set(e.id, stamp(e));
+        for (const e of accepted) remember(this.known, e);
         const color = "background" in content ? sanitizeColor(content.background) : null;
+        if (accepted.length) {
+          this.view?.apply(accepted, { replace: false });
+          this.contentChanged();
+        }
         if (color && color !== this.background) {
           this.background = color;
           this.view?.setBackground(color);
+          break;
         }
-        if (accepted.length) this.view?.apply(accepted, { replace: false });
-        break;
+        return;
       }
       case WB.snapshot: {
         if (!fromOwner || !this.joined || role === "owner") return;
@@ -587,12 +670,13 @@ export class WhiteboardController {
           this.known.clear();
         }
         reconcile(this.elements, incoming, { incomingWinsTies: true });
-        for (const e of this.elements.values()) this.known.set(e.id, stamp(e));
+        for (const e of this.elements.values()) remember(this.known, e);
         this.background = sanitizeColor(content.background) ?? this.background;
         this.synced = true;
         this.clearRequest();
         this.view?.setBackground(this.background);
         this.view?.apply(ordered(this.elements.values(), { withDeleted: true }), { replace: true });
+        this.contentChanged();
         break;
       }
       case WB.files: {
@@ -606,26 +690,28 @@ export class WhiteboardController {
           this.view?.addFiles(fresh);
           this.broadcastFiles();
         } else return;
-        break;
+        this.contentChanged();
+        return;
       }
       case WB.propose: {
         if (role !== "owner" || !fromEditor) return;
         const accepted = reconcile(this.elements, sanitizeElements(content.elements), { incomingWinsTies: false });
         if (accepted.length === 0) return;
         for (const e of accepted) {
-          this.known.set(e.id, stamp(e));
+          remember(this.known, e);
           this.pendingIds.add(e.id);
         }
         this.view?.apply(accepted, { replace: false });
+        this.contentChanged();
         this.updateThrottle.schedule();
         this.thumbDirty = true;
         this.scheduleDraft();
-        this.touch(from);
-        break;
+        if (this.touch(from)) break;
+        return;
       }
       case WB.request: {
         if (role !== "owner") return;
-        this.touch(from);
+        const joinedNow = this.touch(from);
         this.snapshotTargets.add(fromId);
         if (!this.snapshotTimer) {
           this.snapshotTimer = setTimeout(() => {
@@ -635,18 +721,17 @@ export class WhiteboardController {
             if (this.role === "owner" && targets.length) this.sendSnapshot(targets, false);
           }, TIMING.snapshotDebounceMs);
         }
-        break;
+        if (joinedNow) break;
+        return;
       }
       case WB.here: {
-        if (role !== "owner") return;
-        this.touch(from);
+        if (role !== "owner" || !this.touch(from)) return;
         break;
       }
       case WB.leave: {
-        if (role === "owner") this.participants.delete(fromId);
-        this.cursors.delete(fromId);
-        this.view?.setCursors([...this.cursors.values()]);
-        break;
+        if (this.cursors.delete(fromId)) this.view?.setCursors([...this.cursors.values()]);
+        if (role === "owner" && this.participants.delete(fromId)) break;
+        return;
       }
       case WB.thumbnail: {
         if (!fromOwner) return;
@@ -662,13 +747,15 @@ export class WhiteboardController {
       }
       case WB.cursor: {
         if (!this.joined && role !== "owner") return;
+        devCount("whiteboard.cursor_in");
         const { x, y } = content;
         if (typeof x !== "number" || typeof y !== "number" || !Number.isFinite(x) || !Number.isFinite(y)) return;
         if (Math.abs(x) > 1e7 || Math.abs(y) > 1e7) return;
         this.cursors.set(fromId, { id: fromId, user: from.user, x, y, at: this.now() });
-        if (role === "owner") this.touch(from);
         this.view?.setCursors([...this.cursors.values()]);
-        break;
+        // Cursors go to the canvas only; the views hear of a participant who is new.
+        if (role === "owner" && this.touch(from)) break;
+        return;
       }
       default:
         return;
@@ -676,8 +763,16 @@ export class WhiteboardController {
     this.notify();
   }
 
-  private touch(from: Sender): void {
-    this.participants.set(identityOf(from), { user: from.user, deviceId: from.device_id, lastSeen: this.now() });
+  /** Records a sign of life of a participant; true when the participant is new. */
+  private touch(from: Sender): boolean {
+    const id = identityOf(from);
+    const known = this.participants.get(id);
+    if (known) {
+      known.lastSeen = this.now();
+      return false;
+    }
+    this.participants.set(id, { user: from.user, deviceId: from.device_id, lastSeen: this.now() });
+    return true;
   }
 
   // ---- owner loops ----------------------------------------------------------------------------
@@ -754,10 +849,7 @@ export class WhiteboardController {
           changed = true;
         }
       }
-      if (changed) {
-        this.view?.setCursors([...this.cursors.values()]);
-        this.notify();
-      }
+      if (changed) this.view?.setCursors([...this.cursors.values()]);
     }, 1_000);
   }
 
@@ -781,6 +873,8 @@ export class WhiteboardController {
     this.clearRequest();
     this.proposeThrottle.cancel();
     this.cursorThrottle.cancel();
+    this.contentThrottle.cancel();
+    this.contentListeners.clear();
     if (this.pumpTimer) clearTimeout(this.pumpTimer);
     this.queue.length = 0;
     this.listeners.clear();

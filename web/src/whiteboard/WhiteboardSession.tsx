@@ -13,7 +13,7 @@ import { api as homeApi } from "../lib/api";
 import { withBackupKey } from "../stores/mls";
 import { describeError, toastError, useToasts } from "../stores/toasts";
 import { Button, Dialog, ErrorText, Input } from "../components/ui";
-import { loadDraft, useWhiteboardController, type BoardContext } from "./store";
+import { loadDraft, useBoardContent, useWhiteboardController, type BoardContext } from "./store";
 import { exportPng, exportSvg, loadExcalidraw } from "./excalidraw";
 import { openBoard } from "./stage";
 import { newSceneId, sceneLibrary, SceneError } from "./scenes";
@@ -81,6 +81,8 @@ const library = sceneLibrary(homeApi, withBackupKey);
 export function WhiteboardSession(p: WhiteboardSessionProps) {
   const t = useT();
   const c = useWhiteboardController(p.ctx);
+  // The element counts and the texts below follow the board coalesced (strokes and cursors alone do not re-render).
+  useBoardContent(c);
   const locale = useLocale((s) => s.locale);
   const [busy, setBusy] = useState(false);
   const [panel, setPanel] = useState<null | "permissions" | "scenes" | "background" | "export" | "share">(null);

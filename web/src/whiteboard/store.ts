@@ -207,11 +207,24 @@ export function useWhiteboardController(ctx: BoardContext): WhiteboardController
     // The context of a key never changes (same node, same conversation).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
+  // Session-level state only (controller.version): cursors and strokes do not re-render the views.
   useSyncExternalStore(
     (cb) => controller.subscribe(cb),
     () => controller.version,
   );
   return controller;
+}
+
+/**
+ * Re-renders on changes of the board's elements and images, at most every `CONTENT_NOTIFY_MS` (element
+ * counts, the texts for screen readers, the tile's shape); returns `contentVersion` for memo dependencies. The
+ * canvas itself never needs it (the controller applies changes through the CanvasView).
+ */
+export function useBoardContent(controller: WhiteboardController): number {
+  return useSyncExternalStore(
+    (cb) => controller.subscribeContent(cb),
+    () => controller.contentVersion,
+  );
 }
 
 export interface WhiteboardSessionState {

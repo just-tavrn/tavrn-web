@@ -9,7 +9,7 @@ import { describe, expect, it, vi } from "vitest";
 import { renderWithProviders } from "../test/render";
 
 const controller = vi.hoisted(() => ({ role: null, session: null, joined: false, ended: false, views: 0, elements: new Map(), participants: new Map(), leave: vi.fn() }));
-vi.mock("./store", () => ({ useWhiteboardController: () => controller, loadDraft: async () => null }));
+vi.mock("./store", () => ({ useWhiteboardController: () => controller, useBoardContent: () => 0, loadDraft: async () => null }));
 
 const { WhiteboardSession } = await import("./WhiteboardSession");
 

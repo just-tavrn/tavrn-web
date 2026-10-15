@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ChunkAssembler, LIMITS, RateBudget, Throttle, diffElements, isOwnerDevice, mayEdit, ordered, parseChunk, reconcile, sanitizeColor, sanitizeElements, sanitizeFiles, splitPayload, type WbElement } from "./sync";
+import { ChunkAssembler, LIMITS, type Known, RateBudget, Throttle, diffElements, isOwnerDevice, mayEdit, ordered, parseChunk, reconcile, sanitizeColor, sanitizeElements, sanitizeFiles, splitPayload, type WbElement } from "./sync";
 
 const el = (id: string, version: number, versionNonce = version * 7, extra: Partial<WbElement> = {}): WbElement => ({ id, type: "rectangle", version, versionNonce, ...extra });
 
@@ -8,7 +8,7 @@ afterEach(() => vi.useRealTimers());
 
 describe("element diffs", () => {
   it("reports only elements whose version or nonce changed and remembers them", () => {
-    const known = new Map<string, string>();
+    const known: Known = new Map();
     expect(diffElements([el("a", 1), el("b", 1)], known).map((e) => e.id)).toEqual(["a", "b"]);
     expect(diffElements([el("a", 1), el("b", 1)], known)).toEqual([]);
     expect(diffElements([el("a", 2), el("b", 1)], known).map((e) => e.id)).toEqual(["a"]);
@@ -16,6 +16,13 @@ describe("element diffs", () => {
     expect(diffElements([el("a", 2, 99)], known)).toHaveLength(1);
     // Deletions are element updates (isDeleted) with a new version.
     expect(diffElements([el("b", 2, 14, { isDeleted: true })], known)[0]!.isDeleted).toBe(true);
+    // Excalidraw also mutates elements in place (and bumps the version): the same object is compared by its state.
+    const a = el("m", 1);
+    diffElements([a], known);
+    a.version = 2;
+    a.versionNonce = 5;
+    expect(diffElements([a], known)).toEqual([a]);
+    expect(diffElements([a], known)).toEqual([]);
   });
 
   it("reconciles by version; ties go to the incoming state only when asked", () => {
