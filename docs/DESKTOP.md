@@ -1439,6 +1439,9 @@ rc build was a 404. The release workflow and the asset names are unchanged: the 
 its 503), `update.no_release` (the website's 404 `no_release`: the channel has no release of this app yet; also a
 release without this platform's build), `update.signature_invalid` (the update is not signed with the app's key) and
 `update.failed` (anything else). The shells log the underlying reason (`tavrn: the update check at <url> failed: …`).
+A check gives up after 30 s in both shells (`update.unreachable`), so a connection that never answers (a captive
+portal, a stalled proxy) does not leave Settings → App waiting; the Tauri shell allows an installer download 30 minutes
+(`updater::timeout_of`).
 
 **Development.** A development build of the Tauri shell takes another feed host from `TAVRN_UPDATE_BASE`, e.g.
 `http://127.0.0.1:18089/updates/desktop` for the website's container with its fake GitHub API (tavrn-website

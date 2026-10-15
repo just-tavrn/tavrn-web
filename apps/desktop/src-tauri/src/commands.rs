@@ -159,14 +159,15 @@ pub fn set_update_channel_in(settings: &Settings, channel: &str) -> Result<(), S
 /// The update check against the feed of the chosen channel; a failure becomes one of the client's four codes
 /// (`updater.rs`), its reason is logged.
 #[cfg(desktop)]
-async fn find_update<R: Runtime>(app: &AppHandle<R>, settings: &Settings) -> Result<Option<tauri_plugin_updater::Update>, String> {
+async fn find_update<R: Runtime>(app: &AppHandle<R>, settings: &Settings, purpose: updater::Purpose) -> Result<Option<tauri_plugin_updater::Update>, String> {
     if !updater::configured(app.config().plugins.0.get("updater")) {
         return Err("update.not_configured".into());
     }
     let version = app.package_info().version.to_string();
     let url = updater::endpoint(&updater::base(), update_channel_in(settings, &version));
     let endpoint = tauri::Url::parse(&url).map_err(|_| updater::FAILED.to_string())?;
-    let checker = app.updater_builder().endpoints(vec![endpoint]).and_then(|b| b.build()).map_err(|e| {
+    // The plugin waits forever without a timeout (a captive portal, a proxy that never answers).
+    let checker = app.updater_builder().timeout(updater::timeout_of(purpose)).endpoints(vec![endpoint]).and_then(|b| b.build()).map_err(|e| {
         eprintln!("tavrn: the updater could not be set up for {url}: {e}");
         updater::FAILED.to_string()
     })?;
@@ -191,7 +192,7 @@ async fn find_update<R: Runtime>(app: &AppHandle<R>, settings: &Settings) -> Res
 #[cfg(desktop)]
 #[tauri::command]
 pub async fn check_update<R: Runtime>(app: AppHandle<R>, settings: State<'_, Settings>) -> Result<Option<UpdateInfo>, String> {
-    let update = find_update(&app, &settings).await?;
+    let update = find_update(&app, &settings, updater::Purpose::Check).await?;
     Ok(update.map(|u| UpdateInfo { version: u.version, notes: u.body }))
 }
 
@@ -199,7 +200,7 @@ pub async fn check_update<R: Runtime>(app: AppHandle<R>, settings: State<'_, Set
 #[cfg(desktop)]
 #[tauri::command]
 pub async fn install_update<R: Runtime>(app: AppHandle<R>, settings: State<'_, Settings>) -> Result<(), String> {
-    let Some(update) = find_update(&app, &settings).await? else { return Err("update.none".into()) };
+    let Some(update) = find_update(&app, &settings, updater::Purpose::Install).await? else { return Err("update.none".into()) };
     if let Err(e) = update.download_and_install(|_, _| {}, || {}).await {
         eprintln!("tavrn: the update to {} failed: {e}", update.version);
         return Err(updater::code_of(&e).unwrap_or(updater::FAILED).to_string());
