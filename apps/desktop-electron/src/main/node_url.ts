@@ -11,7 +11,7 @@ const MAX_LENGTH = 300;
 /** Hosts that may be reached over plain HTTP (a node in development mode on this computer). */
 export const DEV_HOSTS: readonly string[] = ["localhost", "127.0.0.1"];
 
-export type NodeUrlCode = "node_url.invalid" | "node_url.insecure" | "node_url.credentials" | "node_url.path" | "node_url.domain";
+export type NodeUrlCode = "node_url.invalid" | "node_url.insecure" | "node_url.credentials" | "node_url.path" | "node_url.domain" | "node_url.web_unbound";
 
 /** A refused node URL; `code` is what the client translates (`node_picker.error.*`). */
 export class NodeUrlError extends Error {
@@ -58,4 +58,32 @@ export function validDomain(d: string): boolean {
 /** An identity domain worth storing: a node domain, or `localhost` (a development node). */
 export function validIdentityDomain(d: string): boolean {
   return d === "localhost" || validDomain(d);
+}
+
+function hostOf(origin: string): string | null {
+  try {
+    return new URL(origin).hostname.toLowerCase() || null;
+  } catch {
+    return null;
+  }
+}
+
+/** `host` is `parent` or one of its subdomains (whole labels). */
+const within = (host: string, parent: string) => host === parent || host.endsWith(`.${parent}`);
+
+/**
+ * May the web origin a node's document names stand for that node? It anchors the sign-in window and the origin of
+ * native passkey ceremonies, so a node must not name another site's origin: `web` is bound when its host is the node's
+ * host or a subdomain of it, or the identity domain or a subdomain of it while the node itself is on that domain or a
+ * subdomain of it. A development node's client may be on either name of this computer. As `node_url.rs` `web_bound`
+ * (apps/shared-vectors/node_url.json `web_binding`).
+ */
+export function webBound(node: string, web: string, domain: string | null | undefined): boolean {
+  const n = hostOf(node);
+  const w = hostOf(web);
+  if (!n || !w) return false;
+  if (DEV_HOSTS.includes(n) && DEV_HOSTS.includes(w)) return true;
+  if (within(w, n)) return true;
+  const d = domain?.toLowerCase();
+  return !!d && d.includes(".") && within(n, d) && within(w, d);
 }

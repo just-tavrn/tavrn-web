@@ -53,6 +53,32 @@ pub fn validate(input: &str) -> Result<String, NodeUrlError> {
     Ok(url.origin().ascii_serialization())
 }
 
+fn host_of(origin: &str) -> Option<String> {
+    Url::parse(origin).ok()?.host_str().filter(|h| !h.is_empty()).map(str::to_ascii_lowercase)
+}
+
+/// `host` is `parent` or one of its subdomains (whole labels).
+fn within(host: &str, parent: &str) -> bool {
+    host == parent || host.strip_suffix(parent).is_some_and(|rest| rest.ends_with('.'))
+}
+
+/// May the web origin a node's document names (`web`) stand for that node? It anchors the sign-in window and the
+/// origin of native passkey ceremonies, so a node must not name another site's origin: `web` is bound when its host is
+/// the node's host or a subdomain of it, or the identity domain or a subdomain of it while the node itself is on that
+/// domain or a subdomain of it (delegation within one domain: `api.tavrn.example` with `app.tavrn.example`). A
+/// development node's client may be on either name of this computer. Origins as [`validate`] returns them.
+pub fn web_bound(node: &str, web: &str, domain: Option<&str>) -> bool {
+    let (Some(node), Some(web)) = (host_of(node), host_of(web)) else { return false };
+    if DEV_HOSTS.contains(&node.as_str()) && DEV_HOSTS.contains(&web.as_str()) {
+        return true;
+    }
+    if within(&web, &node) {
+        return true;
+    }
+    let Some(domain) = domain.map(str::to_ascii_lowercase) else { return false };
+    domain.contains('.') && within(&node, &domain) && within(&web, &domain)
+}
+
 /// Longest account address accepted (local part, `@`, domain with an optional port).
 pub const MAX_ACCOUNT: usize = 320;
 
@@ -81,6 +107,7 @@ mod tests {
         accept: Vec<(String, String)>,
         refuse: Vec<(String, String)>,
         domains: Domains,
+        web_binding: Vec<(String, String, Option<String>, bool)>,
     }
 
     #[derive(serde::Deserialize)]
@@ -107,6 +134,17 @@ mod tests {
         }
         for d in &v.domains.invalid {
             assert!(!crate::resolve::valid_domain(d), "{d}");
+        }
+    }
+
+    /// The web origin a node names is bound to the node (apps/shared-vectors/node_url.json `web_binding`, also read by
+    /// the Electron shell and the client): never another site's origin, which would anchor passkeys for that site.
+    #[test]
+    fn a_web_origin_is_bound_to_its_node() {
+        let v: Vectors = serde_json::from_str(include_str!("../../../shared-vectors/node_url.json")).unwrap_or_else(|e| unreachable!("vectors: {e}"));
+        assert!(v.web_binding.iter().any(|c| c.3) && v.web_binding.iter().any(|c| !c.3));
+        for (node, web, domain, bound) in &v.web_binding {
+            assert_eq!(web_bound(node, web, domain.as_deref()), *bound, "{node} {web} {domain:?}");
         }
     }
 

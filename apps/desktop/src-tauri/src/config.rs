@@ -54,6 +54,12 @@ pub fn load(path: &Path) -> Config {
     // The web origin and the domain belong to the node: without it they mean nothing.
     config.web = config.web.filter(|_| config.node.is_some()).and_then(|w| node_url::validate(&w).ok());
     config.domain = config.domain.filter(|d| config.node.is_some() && valid_identity_domain(d));
+    // A web origin not bound to the node (stored by an older version) is dropped: the node's own origin is used.
+    if let (Some(node), Some(web)) = (config.node.as_deref(), config.web.as_deref()) {
+        if !node_url::web_bound(node, web, config.domain.as_deref()) {
+            config.web = None;
+        }
+    }
     config.update_channel = config.update_channel.filter(|c| crate::updater::Channel::parse(c).is_some());
     config
 }
@@ -131,6 +137,9 @@ mod tests {
         fs::write(&path, r#"{"node": "https://tavrn.example", "web": "http://evil.example", "domain": "Not A Domain"}"#)?;
         let c = load(&path);
         assert_eq!((c.web, c.domain), (None, None), "an invalid web origin or domain is dropped");
+        fs::write(&path, r#"{"node": "https://tavrn-org.example", "web": "https://tavrn.org", "domain": "tavrn-org.example"}"#)?;
+        let c = load(&path);
+        assert_eq!((c.web, c.domain.as_deref()), (None, Some("tavrn-org.example")), "a web origin not bound to the node is dropped");
         fs::write(&path, r#"{"web": "https://web.tavrn.example", "domain": "tavrn.example"}"#)?;
         assert_eq!(load(&path), Config::default(), "nothing without a node");
         fs::remove_dir_all(d)

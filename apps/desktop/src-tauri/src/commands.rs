@@ -69,6 +69,10 @@ pub fn set_node_with(settings: &Settings, url: &str, web: Option<&str>, domain: 
     if domain.as_deref().is_some_and(|d| !config::valid_identity_domain(d)) {
         return Err("node_url.domain".into());
     }
+    // The web origin anchors the sign-in window and native passkeys: only one bound to the node (node_url::web_bound).
+    if web.as_deref().is_some_and(|w| !node_url::web_bound(&node, w, domain.as_deref())) {
+        return Err("node_url.web_unbound".into());
+    }
     update_config(settings, |c| {
         c.node = Some(node.clone());
         c.web = web;
@@ -253,6 +257,9 @@ mod tests {
         assert_eq!((c.web.as_deref(), c.domain.as_deref()), (Some("https://web.tavrn.example"), Some("tavrn.example")));
         assert_eq!(set_node_with(&s, "https://x.example", Some("http://evil.example"), None), Err("node_url.insecure".into()));
         assert_eq!(set_node_with(&s, "https://x.example", None, Some("not a domain")), Err("node_url.domain".into()));
+        // Another site's origin (and a domain the node merely claims) never becomes the node's web client.
+        assert_eq!(set_node_with(&s, "https://tavrn-org.example", Some("https://tavrn.org"), Some("tavrn-org.example")), Err("node_url.web_unbound".into()));
+        assert_eq!(set_node_with(&s, "https://evil.example", Some("https://app.tavrn.org"), Some("tavrn.org")), Err("node_url.web_unbound".into()));
         assert_eq!(config::load(&s.path).domain.as_deref(), Some("tavrn.example"), "refusals keep the old settings");
         // The node URL alone (the advanced picker) forgets the old node's details.
         assert!(set_node_in(&s, "https://other.example").is_ok());

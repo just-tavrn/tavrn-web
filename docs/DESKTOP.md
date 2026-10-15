@@ -362,7 +362,13 @@ browser does on Windows (`src-tauri/src/passkey.rs`, the commands `passkey_creat
   `clientDataJSON` itself with the **web origin of the node the app is connected to** (the settings' `web`, else the
   node URL; never an origin from the page) and refuses a relying party id that this origin's host is not equal to or a
   subdomain of (`passkey.refused`). The node verifies the result as it verifies a browser's: no node setting is
-  needed for the Windows app.
+  needed for the Windows app. The settings keep a `web` origin only when it is **bound to the node**: on the node's
+  host or a subdomain of it, or on the identity domain or a subdomain of it while the node itself is on that domain
+  or a subdomain of it (`api.tavrn.example` with `app.tavrn.example`). Another site's origin named in a node's
+  document is replaced by the node's own origin (`resolve_node`), refused by `set_node` (`node_url.web_unbound`) and
+  dropped from a stored settings file; the cases are in `apps/shared-vectors/node_url.json` (`web_binding`), which
+  both shells and the client test. A node that delegates to a host outside its identity domain therefore serves its
+  sign-in page and passkeys from the node's own origin in the apps.
 - It answers with the credential as `PublicKeyCredential.toJSON()`; the PRF output (`prf.results.first`) travels
   apart, for the key store only, and never reaches the node.
 - `app_info` reports `passkeys: true` when webauthn.dll is there (it is loaded at the first use from System32, so the
@@ -398,9 +404,9 @@ over USB** itself, with the contract of the Windows app (`passkey_create`, `pass
 `passkeys.passkeyCreate`, `passkeys.passkeyGet`):
 
 - The client passes the node's options unchanged; the shell takes the **web origin of the node the app is connected
-  to** from its settings (`web`, else the node URL; never the page's), writes `clientDataJSON` with it as a browser
-  does and hands its SHA-256 to the key; a relying party id this origin's host is not equal to or a subdomain of is
-  refused (`passkey.refused`) before any key is asked. The node verifies the answer as a browser's; no node setting
+  to** from its settings (`web` when bound to the node as on Windows, else the node URL; never the page's), writes
+  `clientDataJSON` with it as a browser does and hands its SHA-256 to the key; a relying party id this origin's host
+  is not equal to or a subdomain of is refused (`passkey.refused`) before any key is asked. The node verifies the answer as a browser's; no node setting
   is needed. The answer is `PublicKeyCredential.toJSON()` (the attestation replaced by `none`, as browsers do when the
   node asks for none), the PRF output apart, for the key store only.
 - **CTAP2 over USB HID** through the native module `apps/desktop-electron/native/passkeys` (napi-rs, like the key

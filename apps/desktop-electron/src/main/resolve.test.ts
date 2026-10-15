@@ -62,6 +62,16 @@ test("the well-known on the domain, with delegation", async () => {
   assert.deepEqual(fake.srvAsked, [], "SRV only when the domain serves no document");
 });
 
+test("a web origin on another site is replaced by the API's origin", async () => {
+  const other = { ...doc("home.example", "app.home.example"), web: "https://tavrn.org" };
+  assert.equal((await run("home.example", new Fake().answer(WK, 200, other))).web, "https://app.home.example");
+  // Delegation to another domain: the web client only on the node's own host.
+  const hosted = { ...doc("home.example", "hosting.example"), web: "https://www.home.example" };
+  assert.equal((await run("home.example", new Fake().answer(WK, 200, hosted))).web, "https://hosting.example");
+  const within = { ...doc("home.example", "api.home.example"), web: "https://home.example" };
+  assert.equal((await run("home.example", new Fake().answer(WK, 200, within))).web, "https://home.example", "within the identity domain");
+});
+
 test("invalid documents are refused at their step", async () => {
   const bad: unknown[] = [];
   for (const [key, value] of [

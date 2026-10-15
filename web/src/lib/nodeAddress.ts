@@ -8,6 +8,7 @@ import { isNodeDomain } from "@tavrn/sdk";
 import { platform } from "../platform";
 import type { ResolveFailure, ResolvedNode } from "../platform";
 import { t } from "../i18n";
+import { webBoundToNode } from "../platform/nodeUrl";
 
 const USERNAME = /^[a-z0-9][a-z0-9_.-]{1,31}$/;
 /** A development node on this computer (the shell reaches it over plain http). */
@@ -46,7 +47,9 @@ export async function switchToNodeOf(domain: string): Promise<ResolvedNode> {
   const choice = platform().node;
   if (!choice?.resolve) throw new Error(t("resolve.error.unavailable"));
   const found = await choice.resolve(domain);
-  await choice.set(baseOf(found), { domain: found.domain, web: found.web });
+  // The shell resolved and bound the web origin already; checked again, another site's origin is never passed on.
+  const base = baseOf(found);
+  await choice.set(base, { domain: found.domain, web: webBoundToNode(base, found.web, found.domain) ? found.web : undefined });
   return found;
 }
 

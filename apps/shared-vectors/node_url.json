@@ -1,5 +1,5 @@
 {
- "_comment": "Node URLs and node domains (apps/desktop/src-tauri/src/node_url.rs and resolve.rs valid_domain, apps/desktop-electron/src/main/node_url.ts): both shells read these cases in their tests, so they accept exactly the same nodes.",
+ "_comment": "Node URLs and node domains (apps/desktop/src-tauri/src/node_url.rs and resolve.rs valid_domain, apps/desktop-electron/src/main/node_url.ts): both shells read these cases in their tests, so they accept exactly the same nodes. `web_binding`: [node origin, web origin, identity domain or null, bound?]: a web origin a node's document names anchors the app's sign-in window and native passkeys only when it is the node's host or a subdomain of it, or the identity domain or a subdomain of it while the node is on that domain or a subdomain of it (the client's web/src/platform/nodeUrl.ts reads these cases too).",
  "accept": [
   [
    "https://tavrn.example",
@@ -153,5 +153,115 @@
    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.example",
    "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.example"
   ]
- }
+ },
+ "web_binding": [
+  [
+   "https://tavrn.example",
+   "https://tavrn.example",
+   null,
+   true
+  ],
+  [
+   "https://tavrn.example",
+   "https://app.tavrn.example",
+   null,
+   true
+  ],
+  [
+   "https://tavrn.example:8443",
+   "https://tavrn.example",
+   "tavrn.example",
+   true
+  ],
+  [
+   "https://api.tavrn.example",
+   "https://app.tavrn.example",
+   "tavrn.example",
+   true
+  ],
+  [
+   "https://api.tavrn.example",
+   "https://tavrn.example",
+   "tavrn.example",
+   true
+  ],
+  [
+   "https://tavrn.example",
+   "https://web.tavrn.example",
+   "tavrn.example",
+   true
+  ],
+  [
+   "https://hosting.example",
+   "https://chat.hosting.example",
+   "example.org",
+   true
+  ],
+  [
+   "https://xn--bcher-kva.example",
+   "https://app.xn--bcher-kva.example",
+   null,
+   true
+  ],
+  [
+   "http://127.0.0.1:8500",
+   "http://localhost:5500",
+   "localhost",
+   true
+  ],
+  [
+   "https://tavrn-org.example",
+   "https://tavrn.org",
+   "tavrn-org.example",
+   false
+  ],
+  [
+   "https://tavrn-org.example",
+   "https://tavrn.org",
+   null,
+   false
+  ],
+  [
+   "https://evil.example",
+   "https://tavrn.org",
+   "tavrn.org",
+   false
+  ],
+  [
+   "https://evil.example",
+   "https://app.tavrn.org",
+   "tavrn.org",
+   false
+  ],
+  [
+   "https://api.tavrn.example",
+   "https://app.tavrn.example",
+   null,
+   false
+  ],
+  [
+   "https://tavrn.example",
+   "https://eviltavrn.example",
+   "tavrn.example",
+   false
+  ],
+  [
+   "https://hosting.example",
+   "https://example.org",
+   "example.org",
+   false
+  ],
+  [
+   "https://app.tavrn.example",
+   "https://tavrn.example",
+   null,
+   false
+  ],
+  [
+   "http://localhost:8080",
+   "https://tavrn.example",
+   "localhost",
+   false
+  ]
+ ]
 }
