@@ -93,6 +93,7 @@ pub fn open_connect_window<R: Runtime>(app: &AppHandle<R>, url: Url) -> tauri::R
         return window.set_focus();
     }
     let dev_url: Option<Url> = if cfg!(dev) { app.config().build.dev_url.clone() } else { None };
+    let new_window_dev_url = dev_url.clone();
     WebviewWindowBuilder::new(app, CONNECT_WINDOW, WebviewUrl::External(url))
         .title("tavrn")
         .inner_size(520.0, 760.0)
@@ -105,8 +106,8 @@ pub fn open_connect_window<R: Runtime>(app: &AppHandle<R>, url: Url) -> tauri::R
             }
             guard::Navigation::Deny => false,
         })
-        .on_new_window(|url, _features| {
-            if let Some(link) = guard::new_window(&url) {
+        .on_new_window(move |url, _features| {
+            if let Some(link) = guard::new_window(&url, new_window_dev_url.as_ref()) {
                 open_link(link);
             }
             NewWindowResponse::Deny
@@ -245,8 +246,8 @@ pub fn run() {
                     }
                     guard::Navigation::Deny => false,
                 })
-                .on_new_window(|url, _features| {
-                    if let Some(link) = guard::new_window(&url) {
+                .on_new_window(move |url, _features| {
+                    if let Some(link) = guard::new_window(&url, dev_url.as_ref()) {
                         let _ = tauri_plugin_opener::open_url(link, None::<&str>);
                     }
                     NewWindowResponse::Deny
@@ -322,8 +323,9 @@ pub fn run() {
             let dev_url: Option<Url> = if cfg!(dev) { app.config().build.dev_url.clone() } else { None };
             let nav_app = handle.clone();
             let new_window_app = handle.clone();
+            let nav_dev_url = dev_url.clone();
             WebviewWindowBuilder::from_config(handle, &window)?
-                .on_navigation(move |url| match guard::navigation(url, dev_url.as_ref()) {
+                .on_navigation(move |url| match guard::navigation(url, nav_dev_url.as_ref()) {
                     guard::Navigation::Allow => true,
                     guard::Navigation::External(link) => {
                         open_link_on(&nav_app, link);
@@ -332,7 +334,7 @@ pub fn run() {
                     guard::Navigation::Deny => false,
                 })
                 .on_new_window(move |url, _features| {
-                    if let Some(link) = guard::new_window(&url) {
+                    if let Some(link) = guard::new_window(&url, dev_url.as_ref()) {
                         open_link_on(&new_window_app, link);
                     }
                     NewWindowResponse::Deny

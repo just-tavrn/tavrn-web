@@ -93,7 +93,7 @@ export class ConnectWindow {
       if (connectNavigation(event.url, devUrl).kind !== "allow") event.preventDefault();
     });
     contents.setWindowOpenHandler(({ url: target }) => {
-      const link = newWindow(target);
+      const link = newWindow(target, devUrl);
       if (link) openExternal(link);
       return { action: "deny" };
     });

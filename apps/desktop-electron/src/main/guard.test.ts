@@ -37,9 +37,17 @@ test("embed frames and empty frames load", () => {
 });
 
 test("new windows never open in the app", () => {
-  assert.equal(newWindow("https://example.org/"), "https://example.org/");
-  assert.equal(newWindow("app://tavrn/rooms"), null);
-  assert.equal(newWindow("file:///etc/passwd"), null);
+  assert.equal(newWindow("https://example.org/", null), "https://example.org/");
+  assert.equal(newWindow("mailto:x@example.org", null), "mailto:x@example.org");
+  for (const bad of ["app://tavrn/rooms", "file:///etc/passwd", "javascript:alert(1)", "data:text/html,hi", "not a url"]) assert.equal(newWindow(bad, null), null, bad);
+});
+
+test("a modifier click on an app link never leaves the app", () => {
+  // Ctrl/Shift/Meta-click and middle click on a link of the client ask for a new window with the app's own URL.
+  assert.equal(newWindow("app://tavrn/settings/voice", null), null);
+  assert.equal(newWindow("http://localhost:5300/settings/voice", dev), null, "the dev server is the app");
+  assert.equal(newWindow("http://localhost:5301/", dev), "http://localhost:5301/");
+  assert.equal(newWindow("https://example.org/page", dev), "https://example.org/page");
 });
 
 test("openExternal accepts web links only", () => {
