@@ -18,7 +18,7 @@ import { toastError } from "../stores/toasts";
 import { confirmDialog } from "../components/Confirm";
 import { ScreenOffIcon } from "../voice/ui/icons";
 import { FullscreenButton, FullscreenControls, exitFullscreen, fullscreenElement, useFullscreen } from "../voice/ui/fullscreen";
-import { useWhiteboardSession } from "./store";
+import { useBoardContent, useWhiteboardSession } from "./store";
 import { boardIsWide, boardTileState, openBoard, presenterIdentity, setBoardPreview, useBoardPreview } from "./stage";
 
 /** The stage's view of the channel's board: which tile it is (`stage.ts` `boardTileState`) and who presents it. */
@@ -82,9 +82,10 @@ export function WhiteboardLargeTile({ roomId, channelId, name, focused, onFocus,
   const t = useT();
   const { isOwner, leave, controller } = useWhiteboardSession(channelId);
   const fs = useFullscreen<HTMLDivElement>();
-  // Recomputed with every change of the board (`version`).
+  // Recomputed when the elements change (coalesced, `useBoardContent`).
+  const content = useBoardContent(controller);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const wide = useMemo(() => boardIsWide(controller.elements.values()), [controller, controller.version]);
+  const wide = useMemo(() => boardIsWide(controller.elements.values()), [controller, content]);
   const leaveBoard = () => {
     if (fs.ref.current && fullscreenElement() === fs.ref.current) void exitFullscreen();
     leave();

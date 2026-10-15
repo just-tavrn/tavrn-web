@@ -4,26 +4,11 @@
 // state predates the DM, would join once more with the same device and throw the first tab out of the group.
 // Asserted through the existing test ids (no `e2ee-rejoined`, no `undecryptable`, no `ghost-warning`) and the
 // browser's own lock list.
-import { expect, test, type Browser, type Page } from "@playwright/test";
-import { NODE, openNavIfMobile, registerViaUi, tokenOf, type UiAccount } from "./helpers";
+import { expect, test, type Page } from "@playwright/test";
+import { NODE, openNavIfMobile, registerViaUi, tokenOf, type UiAccount, send, newPage, message, closePages } from "./helpers";
 import { scaled } from "./timeouts";
 
-async function newPage(browser: Browser): Promise<Page> {
-  const context = await browser.newContext({ ...test.info().project.use });
-  return context.newPage();
-}
-
-async function send(page: Page, text: string) {
-  const box = page.getByLabel("Nachricht", { exact: true });
-  await expect(box).toBeEnabled({ timeout: 15_000 });
-  await box.fill(text);
-  await page.keyboard.press("Enter");
-  await expect(box).toHaveValue("");
-}
-
-function message(page: Page, text: string) {
-  return page.getByTestId("message").filter({ hasText: text });
-}
+test.afterEach(closePages);
 
 async function befriend(a: Page, b: Page, bob: UiAccount) {
   const auth = async (p: Page) => ({ Authorization: `Bearer ${await tokenOf(p)}` });
@@ -61,7 +46,7 @@ test.describe("Several tabs of one browser", () => {
     const tab2 = await page.context().newPage();
     await tab2.goto("/");
     await expect(tab2.getByTestId("app-shell")).toBeVisible();
-    await expect.poll(async () => (await mlsLocks(tab2)).pending.length, { timeout: 15_000 }).toBe(1);
+    await expect.poll(async () => (await mlsLocks(tab2)).pending.length, { timeout: scaled(15_000) }).toBe(1);
     const before = await mlsLocks(page);
     expect(before.held).toHaveLength(1);
 
@@ -75,13 +60,13 @@ test.describe("Several tabs of one browser", () => {
     // Tab 2 opens the same DM in the app (no reload: its state is older than the group) and writes too.
     await openNavIfMobile(tab2);
     await tab2.getByTestId("dm-list").getByRole("link", { name: new RegExp(bob.username) }).click();
-    await expect(message(tab2, "Aus dem ersten Tab")).toBeVisible({ timeout: 20_000 });
+    await expect(message(tab2, "Aus dem ersten Tab")).toBeVisible({ timeout: scaled(20_000) });
     await send(tab2, "Aus dem zweiten Tab");
     await expect(message(page, "Aus dem zweiten Tab")).toBeVisible();
 
     // Bob reads both and answers; both tabs read the answer.
     await bobPage.goto(dmUrl.replace(/^https?:\/\/[^/]+/, ""));
-    await expect(message(bobPage, "Aus dem ersten Tab")).toBeVisible({ timeout: 20_000 });
+    await expect(message(bobPage, "Aus dem ersten Tab")).toBeVisible({ timeout: scaled(20_000) });
     await expect(message(bobPage, "Aus dem zweiten Tab")).toBeVisible();
     await send(bobPage, "Hallo, ihr beiden");
     await expect(message(page, "Hallo, ihr beiden")).toBeVisible();
@@ -90,7 +75,7 @@ test.describe("Several tabs of one browser", () => {
 
     // The first tab (the owner) closes: the second one takes the lock over and goes on alone.
     await page.close();
-    await expect.poll(async () => mlsLocks(tab2), { timeout: 15_000 }).toEqual({ held: [expect.any(String)], pending: [] });
+    await expect.poll(async () => mlsLocks(tab2), { timeout: scaled(15_000) }).toEqual({ held: [expect.any(String)], pending: [] });
     await send(tab2, "Nach dem Schließen");
     await expect(message(bobPage, "Nach dem Schließen")).toBeVisible();
     await send(bobPage, "Angekommen");

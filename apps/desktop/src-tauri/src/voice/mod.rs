@@ -29,6 +29,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 use tauri::ipc::Channel;
+use zeroize::Zeroizing;
 
 use self::audio::{AudioIo, Devices};
 use self::uplink::{Control, Processing, UplinkConfig};
@@ -151,7 +152,8 @@ impl VoiceConfig {
 pub struct JoinArgs {
     pub url: String,
     pub token: String,
-    pub key: Vec<u8>,
+    /// Wiped when the arguments are dropped (the engine hands LiveKit's key provider its own copy).
+    pub key: Zeroizing<Vec<u8>>,
     pub epoch: u64,
     pub bitrate_kbps: u32,
     pub config: VoiceConfig,
@@ -308,7 +310,7 @@ pub async fn voice_leave(voice: State<'_, VoiceShell>) -> Result<(), String> {
 
 /// Hands the frame key of a new epoch to the engine; false when it is not newer than the current one.
 #[tauri::command]
-pub async fn voice_set_key(voice: State<'_, VoiceShell>, key: Vec<u8>, epoch: u64) -> Result<bool, String> {
+pub async fn voice_set_key(voice: State<'_, VoiceShell>, key: Zeroizing<Vec<u8>>, epoch: u64) -> Result<bool, String> {
     e2ee::validate_key(&key)?;
     #[cfg(feature = "native-voice")]
     if let Some(engine) = voice.engine.lock().await.as_ref() {
@@ -395,7 +397,7 @@ mod tests {
         JoinArgs {
             url: "wss://voice.example".into(),
             token: "t".into(),
-            key: vec![7; 32],
+            key: Zeroizing::new(vec![7; 32]),
             epoch: 3,
             bitrate_kbps: 32,
             config: config(),
@@ -417,7 +419,7 @@ mod tests {
         }
         assert_eq!(JoinArgs { url: format!("wss://{}", "a".repeat(3000)), ..args() }.validate(), Err("voice.invalid_url".into()));
         assert_eq!(JoinArgs { token: String::new(), ..args() }.validate(), Err("voice.invalid_token".into()));
-        assert_eq!(JoinArgs { key: vec![1; 16], ..args() }.validate(), Err("voice.invalid_key".into()));
+        assert_eq!(JoinArgs { key: Zeroizing::new(vec![1; 16]), ..args() }.validate(), Err("voice.invalid_key".into()));
         assert_eq!(JoinArgs { bitrate_kbps: 0, ..args() }.validate(), Err("voice.invalid_bitrate".into()));
         assert_eq!(JoinArgs { config: VoiceConfig { input_volume: 900, ..config() }, ..args() }.validate(), Err("voice.invalid_config".into()));
         assert_eq!(JoinArgs { config: VoiceConfig { threshold: Some(f64::NAN), ..config() }, ..args() }.validate(), Err("voice.invalid_config".into()));
@@ -429,7 +431,7 @@ mod tests {
 
     #[test]
     fn debug_output_never_shows_the_key_or_the_token() {
-        let printed = format!("{:?}", JoinArgs { token: "secret-token".into(), key: vec![0xAB; 32], ..args() });
+        let printed = format!("{:?}", JoinArgs { token: "secret-token".into(), key: Zeroizing::new(vec![0xAB; 32]), ..args() });
         assert!(!printed.contains("secret-token"));
         assert!(!printed.contains("171"), "{printed}");
         assert!(printed.contains("wss://voice.example"));

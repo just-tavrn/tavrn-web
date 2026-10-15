@@ -7,16 +7,16 @@
  */
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { externalUrl, installLinkHandler } from "./links";
-import { runAppSession, runAppUnlock } from "./appSession";
+import { nodePageAuth } from "./appSession";
 import { shellMembers } from "./tauriShell";
 import { createShellEvents, linkEvents } from "./shellEvents";
 import { androidMembers, androidStatus } from "./tauriAndroid";
 import { createTauriSaveFile } from "./tauriFiles";
 import { voiceMember } from "./tauriVoice";
 import { nativePasskeys } from "./tauriPasskeys";
-import type { AppUpdater, HotkeyEvent, Platform, PlatformHotkeys, ResolvedNode, UpdateChannel } from "./types";
+import type { HotkeyEvent, Platform, PlatformHotkeys, ResolvedNode, UpdateChannel } from "./types";
 import { shellOs } from "./shellOs";
-import { updateFailure } from "./updateErrors";
+import { updaterOf } from "./shellGlue";
 
 /** Shared with the Electron shell (`links.ts`); kept here for the existing callers. */
 export { installLinkHandler };
@@ -43,20 +43,13 @@ interface UpdateInfo {
   notes?: string | null;
 }
 
-/** The update channel of the shell's settings (desktop and Android). */
-const tauriUpdateChannel: NonNullable<AppUpdater["channel"]> = {
-  get: () => invoke<UpdateChannel>("get_update_channel").catch(updateFailure),
-  set: (channel) => invoke<void>("set_update_channel", { channel }).catch(updateFailure),
-};
-
-const updater: AppUpdater = {
-  check: async () => {
-    const found = await invoke<UpdateInfo | null>("check_update").catch(updateFailure);
-    if (!found) return null;
-    return { version: found.version, notes: found.notes ?? null, install: () => invoke<void>("install_update").catch(updateFailure) };
-  },
-  channel: tauriUpdateChannel,
-};
+const updater = updaterOf<UpdateInfo>({
+  check: () => invoke<UpdateInfo | null>("check_update"),
+  install: () => invoke<void>("install_update"),
+  // The update channel of the shell's settings (desktop and Android).
+  getChannel: () => invoke<UpdateChannel>("get_update_channel"),
+  setChannel: (channel) => invoke<void>("set_update_channel", { channel }),
+});
 
 /**
  * Global hotkeys: the shell reports presses and releases over one channel (a reloaded page opens a new one, the
@@ -129,36 +122,8 @@ export async function createTauriPlatform(doc: Document = document): Promise<Pla
       domain: () => domain,
       resolve: (name) => invoke<ResolvedNode>("resolve_node", { domain: name }),
     },
-    auth: {
-      // The node's page in a window of the shell without any native API (FEDERATION.md §8 step 3, docs/DESKTOP.md).
-      signInOnNodePage: (req) =>
-        runAppSession({
-          api: req.api,
-          web: req.endpoints.web,
-          domain: req.endpoints.domain,
-          deviceName,
-          mode: req.mode,
-          method: req.method,
-          open: (url) => invoke<void>("open_connect", { url }),
-          close: () => invoke<void>("close_connect"),
-          onPage: req.onPage,
-          device: req.device,
-          signal: req.signal,
-        }),
-      // Passkey unlock of the signed-in app: the same window, an unlock session (FEDERATION.md §8 step 3).
-      unlockOnNodePage: (req) =>
-        runAppUnlock({
-          api: req.api,
-          web: req.endpoints.web,
-          domain: req.endpoints.domain,
-          deviceName,
-          open: (url) => invoke<void>("open_connect", { url }),
-          close: () => invoke<void>("close_connect"),
-          onPage: req.onPage,
-          signal: req.signal,
-        }),
-      reopen: (url) => invoke<void>("open_connect", { url }),
-    },
+    // The node's page in a window of the shell without any native API (FEDERATION.md §8 step 3, docs/DESKTOP.md).
+    auth: nodePageAuth({ deviceName, open: (url) => invoke<void>("open_connect", { url }), close: () => invoke<void>("close_connect") }),
     ...(info.updater ? { updater } : {}),
     // Windows: passkeys through the Windows WebAuthn API, with the node's web origin (tauriPasskeys.ts).
     ...(!android && info.passkeys ? { passkeys: nativePasskeys() } : {}),

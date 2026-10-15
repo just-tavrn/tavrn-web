@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
-import { NODE, createRoomViaApi, inviteCode, loginAs, openNavIfMobile, registerViaApi, registerViaUi, tokenOf } from "./helpers";
+import { NODE, createRoomViaApi, inviteCode, loginAs, openNavIfMobile, registerViaApi, registerViaUi, tokenOf, send, message } from "./helpers";
 import { scaled } from "./timeouts";
 
 // Search (design note 4.4): one search box over the node (unencrypted channels) and the local encrypted index
@@ -16,10 +16,6 @@ async function say(request: APIRequestContext, token: string, roomId: string, ch
   return api(request, `/rooms/${roomId}/channels/${channelId}/messages`, token, { content: { type: "text", body } });
 }
 
-function message(page: Page, text: string) {
-  return page.getByTestId("message").filter({ hasText: text });
-}
-
 const phone = (page: Page) => (page.viewportSize()?.width ?? 1280) < 768;
 
 async function openSearch(page: Page) {
@@ -28,14 +24,6 @@ async function openSearch(page: Page) {
   await expect(panel).toBeVisible();
   await expect(panel.getByTestId("search-input")).toBeFocused();
   return panel;
-}
-
-async function send(page: Page, text: string) {
-  const box = page.getByLabel("Nachricht", { exact: true });
-  await expect(box).toBeEnabled({ timeout: 20_000 });
-  await box.fill(text);
-  await page.keyboard.press("Enter");
-  await expect(box).toHaveValue("");
 }
 
 test.describe("Search", () => {
@@ -148,9 +136,9 @@ test.describe("Search", () => {
     // The index is written a moment after the messages were decrypted; the background sync then covers the channel.
     await expect(async () => {
       await panel.getByTestId("search-submit").click();
-      await expect(result).toHaveCount(1, { timeout: 2_000 });
-      await expect(status).toContainText("letzte 90 Tage von 1 verschlüsselten Unterhaltung(en)", { timeout: 2_000 });
-    }).toPass({ timeout: 45_000 });
+      await expect(result).toHaveCount(1, { timeout: scaled(2_000) });
+      await expect(status).toContainText("letzte 90 Tage von 1 verschlüsselten Unterhaltung(en)", { timeout: scaled(2_000) });
+    }).toPass({ timeout: scaled(45_000) });
     await expect(result).toHaveAttribute("data-source", "local");
     await expect(result.locator("mark")).toHaveText("Bergkristall");
     await expect(status).toContainText("1 verschlüsselte Unterhaltung(en) noch nicht synchronisiert");

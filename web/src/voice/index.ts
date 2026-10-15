@@ -58,10 +58,13 @@ export async function joinVoice(target: VoiceTarget, opts: { canCreate: boolean;
   // Join timings (docs/CLIENT.md "Voice troubleshooting"): only with the debug flag on.
   beginJoinTimings({ channel: target.channelId });
   try {
-    // Android: the microphone (and headsets) right before the first use (docs/ANDROID.md "Permissions").
+    // The session module loads while Android asks for the microphone (right before the first use, docs/ANDROID.md
+    // "Permissions"); headsets and notifications are asked after it without holding the join (`androidMedia.ts`).
+    const loading = loadSession();
+    loading.catch(() => undefined);
     await prepareAndroidMedia("microphone");
     vjMark("android_media");
-    const session = await loadSession();
+    const session = await loading;
     vjMark("session_module");
     await session.join(target, opts);
     vjMark("join_resolved");

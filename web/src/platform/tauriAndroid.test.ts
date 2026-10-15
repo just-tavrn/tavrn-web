@@ -15,7 +15,9 @@ function android(release: unknown = null, info: Record<string, unknown> = {}) {
   mockWindows("main");
   mockIPC((cmd, args) => {
     const a = (args ?? {}) as Record<string, unknown>;
-    calls.push({ cmd, args: a });
+    // Frame keys are recorded as sent: the client wipes its number arrays once a call is done (`keyBytes.ts`).
+    const share = a.share as { key?: number[] } | undefined;
+    calls.push({ cmd, args: { ...a, ...(Array.isArray(a.key) ? { key: [...(a.key as number[])] } : {}), ...(share?.key ? { share: { ...share, key: [...share.key] } } : {}) } });
     switch (cmd) {
       case "get_config":
         return { node: "https://tavrn.example", web: "https://app.tavrn.example", domain: "tavrn.example" };

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SpeakingBatcher, isWatched, useSpeaking, useWatchedStreams, watchStream } from "./store";
+import { SpeakingBatcher, isWatched, keepMedia, useSpeaking, useWatchedStreams, watchStream, type ParticipantMedia } from "./store";
 
 describe("speaking levels (design note 4.5 item 6)", () => {
   beforeEach(() => {
@@ -74,5 +74,26 @@ describe("watched streams (issue #20)", () => {
     second();
     expect(isWatched(useWatchedStreams.getState(), "bob@n/1")).toBe(false);
     expect(useWatchedStreams.getState().watching).toEqual({});
+  });
+});
+
+describe("participant media (the stage re-renders on real changes only)", () => {
+  const m = (micMuted: boolean, camera = false): ParticipantMedia => ({ camera, screen: false, screenVideo: false, micMuted, screenAudio: false });
+
+  it("keeps the previous objects when nothing changed, and the map itself", () => {
+    const prev = { a: m(false), b: m(true) };
+    expect(keepMedia(prev, { a: m(false), b: m(true) })).toBe(prev);
+  });
+
+  it("replaces only the participant that changed; joins and leaves change the map", () => {
+    const prev = { a: m(false), b: m(true) };
+    const next = keepMedia(prev, { a: m(false), b: m(false) });
+    expect(next).not.toBe(prev);
+    expect(next.a).toBe(prev.a);
+    expect(next.b).toEqual(m(false));
+    expect(keepMedia(prev, { a: m(false) })).toEqual({ a: m(false) });
+    expect(keepMedia(prev, { a: m(false), c: m(true) })).not.toBe(prev);
+    // Missing optional flags count as false.
+    expect(keepMedia({ a: { camera: false, screen: false, micMuted: true } }, { a: m(true) }).a).toEqual({ camera: false, screen: false, micMuted: true });
   });
 });

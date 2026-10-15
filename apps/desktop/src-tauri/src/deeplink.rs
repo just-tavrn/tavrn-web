@@ -139,86 +139,33 @@ pub fn from_args<I: IntoIterator<Item = S>, S: AsRef<str>>(args: I) -> Vec<Strin
 mod tests {
     use super::*;
 
-    fn s(n: usize) -> String {
-        "S".repeat(n)
+    #[derive(serde::Deserialize)]
+    struct Vectors {
+        accept: Vec<(String, String)>,
+        refuse: Vec<String>,
+    }
+
+    /// The cases both shells test against (apps/shared-vectors/deeplink.json, also read by the Electron shell's
+    /// `deeplink.test.ts`): invites, rooms and add links that name a node, the sign-in handoff with its session and
+    /// state only, everything else refused.
+    #[test]
+    fn the_shared_vectors_of_both_shells() {
+        let v: Vectors = serde_json::from_str(include_str!("../../../shared-vectors/deeplink.json")).unwrap_or_else(|e| unreachable!("vectors: {e}"));
+        assert!(!v.accept.is_empty() && !v.refuse.is_empty());
+        for (input, link) in &v.accept {
+            assert_eq!(deep_link(input).as_deref(), Some(link.as_str()), "{input}");
+        }
+        for input in &v.refuse {
+            assert_eq!(deep_link(input), None, "{input}");
+        }
     }
 
     #[test]
-    fn invites_rooms_and_add_links_name_a_node() {
-        assert_eq!(deep_link("tavrn://invite/chat.example/AbCd_123").as_deref(), Some("tavrn://invite/chat.example/AbCd_123"));
-        assert_eq!(deep_link("TAVRN://Invite/Chat.Example/AbCd_123/").as_deref(), Some("tavrn://invite/chat.example/AbCd_123"));
-        assert_eq!(deep_link("tavrn://room/chat.example/01J9ZQ").as_deref(), Some("tavrn://room/chat.example/01J9ZQ"));
-        assert_eq!(deep_link("tavrn://room/chat.example/01J9ZQ/01JA00").as_deref(), Some("tavrn://room/chat.example/01J9ZQ/01JA00"));
-        assert_eq!(deep_link("tavrn://add/chat.example/01J9ZQ").as_deref(), Some("tavrn://add/chat.example/01J9ZQ"));
-        assert_eq!(
-            deep_link("tavrn://add/chat.example/apps.example/01J9ZQ?room=chat.example%2F01AB").as_deref(),
-            Some("tavrn://add/chat.example/apps.example/01J9ZQ?room=chat.example%2F01AB")
-        );
+    fn links_parse_into_their_parts() {
         assert_eq!(
             DeepLink::parse("tavrn://room/chat.example/r1/c1"),
             Some(DeepLink::Room { node: "chat.example".into(), room: "r1".into(), channel: Some("c1".into()) })
         );
-    }
-
-    #[test]
-    fn the_sign_in_handoff_carries_the_session_and_its_state_only() {
-        let (id, state) = (s(43), "s".repeat(22));
-        let ok = format!("tavrn://connect?session={id}&state={state}");
-        assert_eq!(deep_link(&ok).as_deref(), Some(ok.as_str()));
-        assert_eq!(deep_link(&format!("tavrn://connect/?state={state}&session={id}")).as_deref(), Some(ok.as_str()));
-        for bad in [
-            format!("tavrn://connect?session={id}"),
-            format!("tavrn://connect?state={state}"),
-            format!("tavrn://connect?session={}&state={state}", s(42)),
-            format!("tavrn://connect?session={id}&state=short"),
-            format!("tavrn://connect?session={id}&state={}", "s".repeat(129)),
-            format!("tavrn://connect?session={id}&state={state}&code=abcd"),
-            format!("tavrn://connect?session={id}&session={id}&state={state}"),
-            format!("tavrn://connect?session={id}&state={state}#k={id}"),
-            format!("tavrn://connect/x?session={id}&state={state}"),
-            format!("tavrn://connect?session={id}&state={}", "+".repeat(22)),
-        ] {
-            assert_eq!(deep_link(&bad), None, "{bad}");
-        }
-    }
-
-    #[test]
-    fn everything_else_is_refused() {
-        for bad in [
-            "",
-            "not a url",
-            "https://chat.example/invite/code1234",
-            "tavrn:invite/chat.example/code1234",
-            "tavrn://chat.example/invite/code1234",
-            "tavrn://invite/chat.example/abc",
-            "tavrn://invite/chat.example/code1234/more",
-            "tavrn://invite/chat.example/code1234?next=/admin",
-            "tavrn://invite/chat.example/code1234#x",
-            "tavrn://invite/localhost/code1234",
-            "tavrn://invite/127.0.0.1/code1234",
-            "tavrn://invite/10.0.0.1/code1234",
-            "tavrn://invite/chat.example:8443/code1234",
-            "tavrn://invite:1/chat.example/code1234",
-            "tavrn://user@invite/chat.example/code1234",
-            "tavrn://invite/chat.example/code%2F1234",
-            "tavrn://invite/chat.example/../code1234",
-            "tavrn://room/chat.example",
-            "tavrn://room/chat.example/r1/c1/threads",
-            "tavrn://room/chat.example/r1?x=1",
-            "tavrn://room/chat.example/r%20 1",
-            "tavrn://add/chat.example",
-            "tavrn://add/chat.example/not_a_domain/01J9ZQ",
-            "tavrn://add/chat.example/01J9ZQ?room=a&room=b",
-            "tavrn://add/chat.example/01J9ZQ?room=a%20b",
-            "tavrn://add/chat.example/01J9ZQ?other=1",
-            "tavrn://settings/chat.example",
-            "tavrn://",
-            "javascript://invite/chat.example/code1234",
-        ] {
-            assert_eq!(deep_link(bad), None, "{bad}");
-        }
-        assert_eq!(deep_link(&format!("tavrn://invite/chat.example/{}", "a".repeat(65))), None);
-        assert_eq!(deep_link(&format!("tavrn://invite/{}.example/code1234", "a".repeat(500))), None);
     }
 
     #[test]

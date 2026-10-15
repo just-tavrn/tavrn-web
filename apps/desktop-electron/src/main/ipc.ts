@@ -78,10 +78,19 @@ export const check = {
     },
 };
 
-/** The refusal a handler threw, as the client receives it. */
-function refusal(e: unknown): unknown {
+/** An error code of the shells (`node_url.insecure`, `download.write_failed`): a refusal the handler meant. */
+const CODE = /^[a-z0-9_]+(\.[a-z0-9_]+)+$/;
+
+/**
+ * The refusal a handler threw, as the client receives it. An unexpected error (no code: a failing library, a bug)
+ * reaches the client with its message only, so its cause is logged here once.
+ */
+function refusal(channel: string, e: unknown): unknown {
   if (typeof e === "string") return e;
-  if (e instanceof Error) return e.message;
+  if (e instanceof Error) {
+    if (!CODE.test(e.message)) console.error(`tavrn: ${channel} failed:`, e);
+    return e.message;
+  }
   if (typeof e === "object" && e !== null) return { ...(e as Record<string, unknown>) };
   return String(e);
 }
@@ -113,7 +122,7 @@ export class IpcRegistry {
     try {
       return { ok: true, value: await (handler.fn as (...a: unknown[]) => unknown)(...args) };
     } catch (e) {
-      return { ok: false, error: refusal(e) };
+      return { ok: false, error: refusal(channel, e) };
     }
   }
 

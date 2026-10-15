@@ -14,6 +14,7 @@
 import { TavrnApiError, createPkce, randomUrlSafe, type AuthResponse, type ConnectSessionStatus, type DeviceProof, type TavrnApi } from "@tavrn/sdk";
 import { ensureCrypto } from "@tavrn/e2ee";
 import { createUnlockKeyPair, unlockFragment, type UnlockKeyPair, type UnlockMaterial } from "../crypto/sealedUnlock";
+import type { PlatformAuth } from "./types";
 
 /** The protocol allows a poll at most every 2 seconds. */
 export const APP_SESSION_POLL_MS = 2000;
@@ -253,4 +254,41 @@ export async function runAppUnlock(run: Omit<AppSessionRun, "mode" | "method" | 
   } finally {
     keys?.dispose();
   }
+}
+
+/**
+ * The shells' sign-in and unlock on the node's page (`PlatformAuth` of `tauri.ts` and `electron.ts`): the page in a
+ * window of the shell without any native API (FEDERATION.md §8 step 3, docs/DESKTOP.md); `open` and `close` are the
+ * shell's window commands.
+ */
+export function nodePageAuth(o: { deviceName: string; open: (url: string) => Promise<void>; close: () => Promise<void> }): Required<PlatformAuth> {
+  return {
+    signInOnNodePage: (req) =>
+      runAppSession({
+        api: req.api,
+        web: req.endpoints.web,
+        domain: req.endpoints.domain,
+        deviceName: o.deviceName,
+        mode: req.mode,
+        method: req.method,
+        open: o.open,
+        close: o.close,
+        onPage: req.onPage,
+        device: req.device,
+        signal: req.signal,
+      }),
+    // Passkey unlock of the signed-in app: the same window, an unlock session (FEDERATION.md §8 step 3).
+    unlockOnNodePage: (req) =>
+      runAppUnlock({
+        api: req.api,
+        web: req.endpoints.web,
+        domain: req.endpoints.domain,
+        deviceName: o.deviceName,
+        open: o.open,
+        close: o.close,
+        onPage: req.onPage,
+        signal: req.signal,
+      }),
+    reopen: o.open,
+  };
 }

@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-import { expect, test, type Browser, type Page } from "@playwright/test";
-import { openNavIfMobile, registerViaUi, tokenOf, openRoomInvite } from "./helpers";
+import { expect, test, type Page } from "@playwright/test";
+import { openNavIfMobile, registerViaUi, tokenOf, openRoomInvite, newPage, message, closePages } from "./helpers";
 import { A, B, FEDERATION_BROWSER, NODE_A, WEB_A, WEB_B, chromiumOnly } from "./federation-helpers";
 import { scaled } from "./timeouts";
+
+test.afterEach(closePages);
 
 test.use(FEDERATION_BROWSER);
 
@@ -10,15 +12,6 @@ test.use(FEDERATION_BROWSER);
 // the conversation, shares are addressed by user address, a member of another node gets them through its
 // federated session there.
 const CRYPTO = { timeout: scaled(30_000) };
-
-async function newPage(browser: Browser): Promise<Page> {
-  const context = await browser.newContext({ ...test.info().project.use });
-  return context.newPage();
-}
-
-function message(page: Page, text: string) {
-  return page.getByTestId("message").filter({ hasText: text });
-}
 
 async function send(page: Page, text: string) {
   const box = page.getByLabel("Nachricht", { exact: true });

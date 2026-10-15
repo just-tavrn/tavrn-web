@@ -475,7 +475,8 @@ the identity domain as for invites). **Rules** (`src-tauri/src/deeplink.rs`, the
 in the client's `platform/deepLinks.ts`): `<node>` is a domain name with a dot (no port, no address, no `localhost`, so
 a link never points the app at this computer), codes and ids are base64url of at most 64 characters, `connect` takes
 exactly the 43-character session id and a 16 to 128 character state (the rules of the sign-in window's
-`open_connect`), no fragment, no other parameter, at most 512 bytes. Everything else is dropped by the shell.
+`open_connect`), no fragment, no other parameter, at most 512 bytes. Everything else is dropped by the shell. Both
+shells test these rules against the same cases, `apps/shared-vectors/deeplink.json`.
 
 **The client shows the target before it acts.** A link never navigates by itself: a dialog names what it opens ("An
 invite to a room on chat.example", "A channel of a room on chat.example") and shows the link; only **Open** goes there,
@@ -614,14 +615,16 @@ unencrypted (`voice.invalid_url` otherwise). The shell (`src-tauri/src/voice`):
   the input volume, then the gate (`gate.rs`, the same DSP as `web/src/voice/gate.ts`: threshold, 6 dB hysteresis,
   hold, 5 ms attack, 40 ms release) for voice activation, the noise gate and push-to-talk with its release delay.
   Opus with DTX and without RED, the channel's bitrate, as in the browser.
-- **Subscriptions**: the room connects without auto-subscription; microphones (and every other track) are subscribed
-  as they are published, screen shares never (`wants_subscription` in `engine.rs`). Screen shares are opt-in in tavrn
-  (a viewer receives a stream only after joining it, docs/CLIENT.md "Streams are joined"), and this engine has no video
+- **Subscriptions**: the room connects without auto-subscription; microphones (every remote audio track) are
+  subscribed as they are published, cameras and screen shares never (`wants_subscription` in `engine.rs`): this engine
+  plays no video, so a camera would only cost download bandwidth and decoding. Screen shares are opt-in in tavrn (a
+  viewer receives a stream only after joining it, docs/CLIENT.md "Streams are joined"), and this engine has no video
   to join one with; joining a stream in the client says so.
 - **Playback** (`mix.rs`): every subscribed remote audio track is decoded (and decrypted) by libwebrtc and mixed with
   the per-participant gain the client computes (`volume.ts`: per-user volume × output volume, 0 while deafened); the
   mix is also the echo canceller's reference. The loudest 10 ms RMS of each participant goes to the webview every
-  50 ms, where the browser engine's `SpeakingDetector` turns it into speaking rings.
+  50 ms while someone is audible (once more when all fell silent, nothing in silence), where the browser engine's
+  `SpeakingDetector` turns it into speaking rings.
 - **Push-to-talk** follows the system-wide hotkey directly (a tap of `hotkeys.rs`, so it also works while the window
   is in the background) and the webview's key and hold button.
 - **Devices** of its own (`voice_devices`; Settings → Voice & video and the quick menus list them, kept apart from the
@@ -745,7 +748,7 @@ others (layout, bridge, profile, packages) exist for this shell only.
 | `src/main/guard.ts` | the decisions of navigations, new windows, external links, permissions and the dev server URL (pure functions, unit-tested) |
 | `src/main/ipc.ts` | the registry of the bridge's IPC channels: sender check, argument checks, handlers |
 | `src/main/events.ts` | the shell's events for the client (one channel) |
-| `src/main/config.ts`, `node_url.ts` | the settings file and the node URL rules (the Tauri shell's `config.rs` and `node_url.rs`, with their test cases) |
+| `src/main/config.ts`, `node_url.ts` | the settings file and the node URL rules (the Tauri shell's `config.rs` and `node_url.rs`; both shells test the node URL rules against `apps/shared-vectors/node_url.json`) |
 | `src/main/shell.ts` | the `shell` namespace: settings, version, external links, node resolution, the sign-in window |
 | `src/main/resolve.ts` | address first: well-known, SRV, direct (the Tauri shell's `resolve.rs`, with its test cases) |
 | `src/main/connect.ts` | the sign-in window |
@@ -1437,6 +1440,9 @@ rc build was a 404. The release workflow and the asset names are unchanged: the 
 its 503), `update.no_release` (the website's 404 `no_release`: the channel has no release of this app yet; also a
 release without this platform's build), `update.signature_invalid` (the update is not signed with the app's key) and
 `update.failed` (anything else). The shells log the underlying reason (`tavrn: the update check at <url> failed: …`).
+A check gives up after 30 s in both shells (`update.unreachable`), so a connection that never answers (a captive
+portal, a stalled proxy) does not leave Settings → App waiting; the Tauri shell allows an installer download 30 minutes
+(`updater::timeout_of`).
 
 **Development.** A development build of the Tauri shell takes another feed host from `TAVRN_UPDATE_BASE`, e.g.
 `http://127.0.0.1:18089/updates/desktop` for the website's container with its fake GitHub API (tavrn-website

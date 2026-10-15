@@ -2572,6 +2572,7 @@
   "whiteboard.load": "Load",
   "whiteboard.load_confirm": "Replace the board with \"{name}\" for everyone?",
   "whiteboard.rename": "Rename",
+  "whiteboard.rename_named": "Rename {name}",
   "whiteboard.delete": "Delete",
   "whiteboard.delete_confirm": "Delete the scene \"{name}\"?",
   "whiteboard.background": "Background",

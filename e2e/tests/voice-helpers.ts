@@ -74,15 +74,8 @@ export async function befriend(a: VoiceUser, b: VoiceUser): Promise<void> {
   for (const r of list.incoming) await b.page.request.post(`${NODE}/api/v1/users/me/friends/requests/${r.id}/accept`, { headers: { Authorization: `Bearer ${token}` } });
 }
 
-export async function send(page: Page, text: string): Promise<void> {
-  const box = page.getByLabel("Nachricht", { exact: true });
-  await expect(box).toBeEnabled({ timeout: scaled(20_000) });
-  await box.fill(text);
-  await page.keyboard.press("Enter");
-  await expect(box).toHaveValue("");
-}
-
-export const message = (page: Page, text: string) => page.getByTestId("message").filter({ hasText: text });
+// The composer helpers live in helpers.ts (one copy for every spec).
+export { message, send } from "./helpers.ts";
 
 /** Opens a DM or group from the conversation list (the drawer on phones). */
 export async function openConversation(page: Page, name: RegExp): Promise<void> {

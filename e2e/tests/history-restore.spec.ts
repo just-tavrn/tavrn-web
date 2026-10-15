@@ -5,20 +5,13 @@
 // and the History requests page are scanned with axe (serious and critical WCAG violations fail).
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { NODE, confirmRecoveryKey, loginViaUi, openNavIfMobile, openRoomInvite, registerViaUi, tokenOf, type UiAccount } from "./helpers";
+import { NODE, confirmRecoveryKey, loginViaUi, openNavIfMobile, openRoomInvite, registerViaUi, tokenOf, type UiAccount, newPage, message, closePages } from "./helpers";
 import { scaled } from "./timeouts";
+
+test.afterEach(closePages);
 
 const CRYPTO = { timeout: scaled(30_000) };
 const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22a", "wcag22aa"];
-
-async function newPage(browser: Browser): Promise<Page> {
-  const context = await browser.newContext({ ...test.info().project.use });
-  return context.newPage();
-}
-
-function message(page: Page, text: string) {
-  return page.getByTestId("message").filter({ hasText: text });
-}
 
 async function closeDrawers(page: Page) {
   const overlay = page.getByRole("button", { name: "Drawer schließen" });
@@ -30,7 +23,7 @@ async function closeDrawers(page: Page) {
 async function send(page: Page, text: string) {
   await closeDrawers(page);
   const box = page.getByLabel("Nachricht", { exact: true });
-  await expect(box).toBeEnabled({ timeout: 15_000 });
+  await expect(box).toBeEnabled({ timeout: scaled(15_000) });
   await box.fill(text);
   await page.keyboard.press("Enter");
   await expect(box).toHaveValue("");

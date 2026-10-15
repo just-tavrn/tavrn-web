@@ -159,6 +159,22 @@ describe("startJoin: failures", () => {
     expect(held).toHaveLength(2);
   });
 
+  it("a refused join commits no self update (the cleanup may run, nobody re-keys)", async () => {
+    const h = harness();
+    const started = startJoin(h.deps);
+    h.steps.ensure.resolve("joined");
+    h.steps.pending.resolve([]);
+    h.steps.cleanup.resolve(h.later);
+    await tick();
+    // The cleanup is done before the node answered: the self update waits for the answer.
+    expect(h.log).toContain("cleanup");
+    expect(h.log).not.toContain("selfUpdate");
+    h.steps.join.reject(Object.assign(new Error("no permission"), { code: "forbidden" }));
+    await expect(started).rejects.toThrow("no permission");
+    await tick();
+    expect(h.deps.mls.selfUpdate).not.toHaveBeenCalled();
+  });
+
   it("a refused join: the media are released, no leave", async () => {
     const h = harness();
     h.steps.ensure.resolve("joined");

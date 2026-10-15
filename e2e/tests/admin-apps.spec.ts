@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-import { mkdirSync, rmSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { expect, test } from "@playwright/test";
-import { NODE, adminAccount, createRoomViaApi, loginAs, registerViaApi, uniqueName } from "./helpers";
+import { NODE, adminAccount, createRoomViaApi, loginAs, registerViaApi, uniqueName, withFileLock } from "./helpers";
 
 // Node admin controls for applications (tavrn-protocol/APPLICATIONS.md §4.4), the approval of their commands (§5.2) and the
 // SSO group map (§8.5).
@@ -11,27 +10,8 @@ const DATA = resolve(dirname(new URL(import.meta.url).pathname), "../../data-dev
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 
 /** Serializes work on the node-wide group map across parallel workers (same lock as sso.spec.ts). */
-async function withLock<T>(name: string, fn: () => Promise<T>): Promise<T> {
-  const lock = resolve(DATA, `e2e/${name}.lock`);
-  mkdirSync(dirname(lock), { recursive: true });
-  for (;;) {
-    try {
-      mkdirSync(lock);
-      break;
-    } catch {
-      try {
-        if (Date.now() - statSync(lock).mtimeMs > 120_000) rmSync(lock, { recursive: true, force: true });
-      } catch {
-        /* vanished meanwhile */
-      }
-      await new Promise((r) => setTimeout(r, 250));
-    }
-  }
-  try {
-    return await fn();
-  } finally {
-    rmSync(lock, { recursive: true, force: true });
-  }
+function withLock<T>(name: string, fn: () => Promise<T>): Promise<T> {
+  return withFileLock(resolve(DATA, `e2e/${name}.lock`), fn);
 }
 
 test.describe("Node admin: applications and SSO", () => {

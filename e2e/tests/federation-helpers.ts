@@ -3,10 +3,10 @@
  * Two-node setup of the Playwright config (FEDERATION.md §13): nodes a.test and b.test with their own
  * web clients. The browser resolves both names to 127.0.0.1 (Chromium only).
  */
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
-import { ADULT_DOB, type Account, enrollTotp, ensureDateOfBirth, loginViaApi } from "./helpers";
+import { ADULT_DOB, type Account, enrollTotp, ensureDateOfBirth, loginViaApi, withFileLock } from "./helpers";
 
 const nodePort = process.env.E2E_NODE_PORT ?? "8080";
 const webPort = process.env.E2E_WEB_PORT ?? "5173";
@@ -79,28 +79,8 @@ export function dataDirOf(domain: string): string {
 }
 
 /** Serializes a section across workers and projects (they share the nodes), with a lock directory next to the node's data. */
-export async function withNodeLock<T>(domain: string, name: string, fn: () => Promise<T>): Promise<T> {
-  const dir = dataDirOf(domain);
-  mkdirSync(dir, { recursive: true });
-  const lock = resolve(dir, `${name}.lock`);
-  for (;;) {
-    try {
-      mkdirSync(lock);
-      break;
-    } catch {
-      try {
-        if (Date.now() - statSync(lock).mtimeMs > 120_000) rmSync(lock, { recursive: true, force: true });
-      } catch {
-        /* lock vanished meanwhile */
-      }
-      await new Promise((r) => setTimeout(r, 250));
-    }
-  }
-  try {
-    return await fn();
-  } finally {
-    rmSync(lock, { recursive: true, force: true });
-  }
+export function withNodeLock<T>(domain: string, name: string, fn: () => Promise<T>): Promise<T> {
+  return withFileLock(resolve(dataDirOf(domain), `${name}.lock`), fn);
 }
 
 /** The node admin of a.test or b.test (`TAVRN_ADMIN_USERS=fedadmin`), cached next to the node's database across runs. */

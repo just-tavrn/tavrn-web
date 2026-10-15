@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-import { expect, test, type Browser, type Page } from "@playwright/test";
-import { ADULT_DOB, confirmRecoveryCodes, confirmRecoveryKey, logoutViaUi, openNavIfMobile, registerViaUi, tokenOf, uniqueName, openRoomInvite } from "./helpers";
+import { expect, test, type Page } from "@playwright/test";
+import { ADULT_DOB, confirmRecoveryCodes, confirmRecoveryKey, logoutViaUi, openNavIfMobile, registerViaUi, tokenOf, uniqueName, openRoomInvite, newPage, message, closePages } from "./helpers";
 import { A, B, BROWSER_API_A, FEDERATION_BROWSER, NODE_A, NODE_B, NODE_PORT_A, WEB_A, WEB_B, chromiumOnly } from "./federation-helpers";
 import { scaled } from "./timeouts";
+
+test.afterEach(closePages);
 
 test.use(FEDERATION_BROWSER);
 
@@ -24,15 +26,6 @@ async function authenticator(page: Page): Promise<() => Promise<Array<{ rpId?: s
     ({ authenticatorId: id } = await cdp.send("WebAuthn.addVirtualAuthenticator", { options } as never));
   }
   return async () => ((await cdp.send("WebAuthn.getCredentials", { authenticatorId: id } as never)) as { credentials: Array<{ rpId?: string }> }).credentials;
-}
-
-async function newPage(browser: Browser): Promise<Page> {
-  const context = await browser.newContext({ ...test.info().project.use });
-  return context.newPage();
-}
-
-function message(page: Page, text: string) {
-  return page.getByTestId("message").filter({ hasText: text });
 }
 
 /** Phones: close an open navigation or member drawer before using the message area. */

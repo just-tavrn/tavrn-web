@@ -7,20 +7,17 @@
  * voice engine here (`voice` stays absent and the browser engine is used). Loaded only inside the app
  * (platform/index.ts).
  */
-import { runAppSession, runAppUnlock } from "./appSession";
+import { nodePageAuth } from "./appSession";
 import { electronBridge } from "./electronDetect";
 import type { BridgeEvent, TavrnShellBridge } from "./electronBridge";
 import { createElectronSaveFile } from "./electronFiles";
 import { externalUrl, installLinkHandler } from "./links";
-import { nativePasskeys } from "./tauriPasskeys";
-import { updateFailure } from "./updateErrors";
-import type { AppUpdater, HotkeyAction, HotkeyEvent, Platform, PlatformHotkeys, PlatformKeystore, PlatformNotifications, PlatformPasskeys, PlatformTray, TrayAction } from "./types";
+import { nativePasskeys } from "./nativePasskeys";
+import { isClientPath, isTrayAction, trayStatusOf, updaterOf } from "./shellGlue";
+import type { HotkeyAction, HotkeyEvent, Platform, PlatformHotkeys, PlatformKeystore, PlatformNotifications, PlatformPasskeys, PlatformTray, TrayAction } from "./types";
 import { shellOs } from "./shellOs";
 
-const TRAY_ACTIONS: readonly string[] = ["mute", "deafen", "leave"] satisfies TrayAction[];
 const HOTKEY_ACTIONS: readonly string[] = ["push_to_talk", "priority", "toggle_mute", "toggle_deafen"] satisfies HotkeyAction[];
-/** Only paths of the client (the shell validated them too). */
-const isClientPath = (path: unknown): path is string => typeof path === "string" && path.startsWith("/") && !path.startsWith("//");
 
 /** The shell's events, fanned out to the client's listeners by kind (one subscription to the bridge). */
 function eventHub(bridge: TavrnShellBridge) {
@@ -46,7 +43,7 @@ function eventHub(bridge: TavrnShellBridge) {
       if (ev?.kind === "link") takeLinks();
       if (ev?.kind === "game") for (const fn of games) fn(typeof ev.name === "string" ? ev.name : null);
       if (ev?.kind === "open" && isClientPath(ev.path)) for (const fn of opens) fn(ev.path);
-      if (ev?.kind === "tray" && TRAY_ACTIONS.includes(ev.action)) for (const fn of actions) fn(ev.action);
+      if (ev?.kind === "tray" && isTrayAction(ev.action)) for (const fn of actions) fn(ev.action);
     }
     if (e?.channel === "hotkeys" && HOTKEY_ACTIONS.includes(e.event?.action) && typeof e.event.pressed === "boolean") {
       for (const fn of hotkeys) fn({ action: e.event.action, pressed: e.event.pressed });
@@ -102,18 +99,13 @@ export async function createElectronPlatform(bridge: TavrnShellBridge | null = e
   const openExternal = async (url: string) => {
     await shell.openExternal(externalUrl(url));
   };
-  const updater: AppUpdater = {
-    check: async () => {
-      // The shell answers one of the update codes (apps/desktop-electron src/main/updater.ts), shown by Settings → App.
-      const found = await bridge.updater.checkUpdate().catch(updateFailure);
-      if (!found) return null;
-      return { version: found.version, notes: found.notes ?? null, install: () => bridge.updater.installUpdate().catch(updateFailure) };
-    },
-    channel: {
-      get: () => bridge.updater.getUpdateChannel().catch(updateFailure),
-      set: (channel) => bridge.updater.setUpdateChannel(channel).catch(updateFailure),
-    },
-  };
+  // The shell answers one of the update codes (apps/desktop-electron src/main/updater.ts), shown by Settings → App.
+  const updater = updaterOf({
+    check: () => bridge.updater.checkUpdate(),
+    install: () => bridge.updater.installUpdate(),
+    getChannel: () => bridge.updater.getUpdateChannel(),
+    setChannel: (channel) => bridge.updater.setUpdateChannel(channel),
+  });
   const hotkeys: PlatformHotkeys = {
     register: (action, combo) => bridge.hotkeys.registerHotkey(action, combo),
     unregister: (action) => bridge.hotkeys.unregisterHotkey(action),
@@ -133,10 +125,7 @@ export async function createElectronPlatform(bridge: TavrnShellBridge | null = e
   const tray: PlatformTray = {
     set: (state, labels) => bridge.tray.traySet(state, labels),
     onAction: events.onTray,
-    status: async () => {
-      const s = await bridge.tray.trayStatus();
-      return { state: s.state, tooltip: s.tooltip, available: s.available, closeToTray: s.close_to_tray };
-    },
+    status: async () => trayStatusOf(await bridge.tray.trayStatus()),
     setCloseToTray: (on) => bridge.tray.setCloseToTray(on),
     quit: () => bridge.tray.quitApp(),
   };
@@ -162,35 +151,8 @@ export async function createElectronPlatform(bridge: TavrnShellBridge | null = e
       domain: () => domain,
       resolve: (name) => shell.resolveNode(name),
     },
-    auth: {
-      // The node's page in a window of the shell without any bridge (FEDERATION.md §8 step 3, docs/DESKTOP.md).
-      signInOnNodePage: (req) =>
-        runAppSession({
-          api: req.api,
-          web: req.endpoints.web,
-          domain: req.endpoints.domain,
-          deviceName: "Desktop app",
-          mode: req.mode,
-          method: req.method,
-          open: (url) => shell.openConnect(url),
-          close: () => shell.closeConnect(),
-          onPage: req.onPage,
-          device: req.device,
-          signal: req.signal,
-        }),
-      unlockOnNodePage: (req) =>
-        runAppUnlock({
-          api: req.api,
-          web: req.endpoints.web,
-          domain: req.endpoints.domain,
-          deviceName: "Desktop app",
-          open: (url) => shell.openConnect(url),
-          close: () => shell.closeConnect(),
-          onPage: req.onPage,
-          signal: req.signal,
-        }),
-      reopen: (url) => shell.openConnect(url),
-    },
+    // The node's page in a window of the shell without any bridge (FEDERATION.md §8 step 3, docs/DESKTOP.md).
+    auth: nodePageAuth({ deviceName: "Desktop app", open: (url) => shell.openConnect(url), close: () => shell.closeConnect() }),
     ...(info.updater ? { updater } : {}),
     hotkeys,
     keystore,

@@ -1083,6 +1083,10 @@ the same shortcut), once connected:
 - the selected candidate pair: local and remote candidate type (`host`, `srflx`, `relay`), UDP or TCP and the
   round-trip time.
 
+The desktop app's native voice engine records the same MLS and node stages, then `shell_join_start` and
+`shell_join_done` (the shell's own LiveKit join, which also publishes the microphone) instead of the browser's
+LiveKit stages and peer connections.
+
 Reading it: slow MLS stages (`ensure_joined`, `cleanup`, `self_update`) point at the node or the network to it (each
 is one or two requests); a slow `/rtc` open or `lk_signal_connected` at the reverse proxy in front of the media server;
 a long ICE phase, a `relay` pair or TCP instead of UDP at blocked UDP ports (the connection test above tells which

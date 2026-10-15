@@ -76,7 +76,8 @@ the app says so and offers "Sign in again" (a new device, unlocked with the reco
 
 The client asks through the shell (`android_permission`), which answers `granted`, `denied` or `blocked` (Android no
 longer shows its dialog); for `blocked` the client says where to allow it (Settings → Apps → tavrn → Permissions) or
-opens the page (`android_open_settings`).
+opens the page (`android_open_settings`). Requests go out one at a time (Android shows one at a time); a join waits for
+the microphone's answer only, the nearby-devices and notification dialogs that follow it do not hold the call.
 
 ## The node picker and signing in
 

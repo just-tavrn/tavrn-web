@@ -1,22 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { NODE, loginViaUi, openNavIfMobile, registerViaUi, tokenOf, openRoomInvite, type UiAccount } from "./helpers";
+import { NODE, loginViaUi, openNavIfMobile, registerViaUi, tokenOf, openRoomInvite, type UiAccount, newPage, message, closePages } from "./helpers";
 import { scaled } from "./timeouts";
+
+test.afterEach(closePages);
 
 // History for new members of encrypted channels (design note 4.13 item 11, ENCRYPTION.md §7b): the channel policy
 // decides what the node serves from before a member's join, members' devices share the keys of older epochs
 // through `…/history-keys` (never as messages), the new member checks them and keeps them in its key store.
 
 const CRYPTO = { timeout: scaled(30_000) };
-
-async function newPage(browser: Browser): Promise<Page> {
-  const context = await browser.newContext({ ...test.info().project.use });
-  return context.newPage();
-}
-
-function message(page: Page, text: string) {
-  return page.getByTestId("message").filter({ hasText: text });
-}
 
 async function closeDrawers(page: Page) {
   const overlay = page.getByRole("button", { name: "Drawer schließen" });
@@ -28,7 +21,7 @@ async function closeDrawers(page: Page) {
 async function send(page: Page, text: string) {
   await closeDrawers(page);
   const box = page.getByLabel("Nachricht", { exact: true });
-  await expect(box).toBeEnabled({ timeout: 15_000 });
+  await expect(box).toBeEnabled({ timeout: scaled(15_000) });
   await box.fill(text);
   await page.keyboard.press("Enter");
   await expect(box).toHaveValue("");
