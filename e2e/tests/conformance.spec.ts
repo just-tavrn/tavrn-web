@@ -117,9 +117,6 @@ test.describe("Conformance check of other nodes", () => {
     const own = page.locator(`[data-testid="discover-node-card"][data-node="${A}"]`);
     await expect(own).toBeVisible({ timeout: 20_000 });
     await expect(own.getByTestId("discover-report")).toHaveCount(0);
-    // c.test (never listed) gets a report through the API, for the admin actions below.
-    const viaApi = await request.post(`${NODE_A}/api/v1/directory/reports`, { headers: { Authorization: `Bearer ${alice.token}` }, data: { domain: "c.test", check: "spam", detail: "" } });
-    expect(viaApi.status(), await viaApi.text()).toBe(201);
 
     // The admin of a.test sees the reports in the Federation tab.
     const admin = await adminOfA(request);
@@ -133,8 +130,14 @@ test.describe("Conformance check of other nodes", () => {
     await rowB.getByRole("button", { name: "Meldungen ausblenden" }).click();
     await expect(rowB.getByTestId("report-entries")).toHaveCount(0);
 
-    // Delisting, listing again and dismissing (on c.test, so b.test stays listed for the other specs).
+    // Delisting, listing again and dismissing (on c.test, so b.test stays listed for the other specs). The report
+    // of c.test is made inside the lock and the page loaded after it: the other project's run dismisses every
+    // report of c.test at its end, so one made (and shown) before the lock may be gone when it is our turn.
     await withLock("reports-c", async () => {
+      // c.test (never listed) gets a report through the API, for the admin actions below.
+      const viaApi = await request.post(`${NODE_A}/api/v1/directory/reports`, { headers: { Authorization: `Bearer ${alice.token}` }, data: { domain: "c.test", check: "spam", detail: "" } });
+      expect(viaApi.status(), await viaApi.text()).toBe(201);
+      await openAdmin(page, admin);
       const rowC = page.locator(`[data-testid="report-node"][data-domain="c.test"]`);
       await expect(rowC).toBeVisible();
       if (await rowC.getByRole("button", { name: "Wieder listen" }).count()) await rowC.getByRole("button", { name: "Wieder listen" }).click();

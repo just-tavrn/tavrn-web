@@ -106,23 +106,32 @@ export function ReportDialog({ domain, room, onClose }: { domain: string; room?:
   );
 }
 
+/** What a report is about: a node, or one of its rooms. */
+type ReportTarget = { domain: string; room?: { id: string; name: string } };
+
+/**
+ * The open report dialog of a tab. It lives in the tab, not in the card: the list behind it loads again (a changed
+ * search, a refetch) and may drop or remount the card, which must not close what the user is writing.
+ */
+function useReportDialog() {
+  const [target, setTarget] = useState<ReportTarget | null>(null);
+  const dialog = target && <ReportDialog domain={target.domain} room={target.room} onClose={() => setTarget(null)} />;
+  return { open: setTarget, dialog };
+}
+
 /** "Report" button of a card; hidden for the user's own home node (it cannot be reported to itself). */
-function ReportButton({ domain, room, label }: { domain: string; room?: { id: string; name: string }; label: string }) {
+function ReportButton({ target, label, onReport }: { target: ReportTarget; label: string; onReport: (target: ReportTarget) => void }) {
   const t = useT();
   const home = useAuth((s) => s.user?.domain);
-  const [open, setOpen] = useState(false);
-  if (!home || domain === home) return null;
+  if (!home || target.domain === home) return null;
   return (
-    <>
-      <Button variant="ghost" onClick={() => setOpen(true)} aria-label={label} data-testid="discover-report">
-        {t("discover.report")}
-      </Button>
-      {open && <ReportDialog domain={domain} room={room} onClose={() => setOpen(false)} />}
-    </>
+    <Button variant="ghost" onClick={() => onReport(target)} aria-label={label} data-testid="discover-report">
+      {t("discover.report")}
+    </Button>
   );
 }
 
-function RoomCard({ room, icon }: { room: VerifiedRoom; icon?: RoomIconUrls }) {
+function RoomCard({ room, icon, onReport }: { room: VerifiedRoom; icon?: RoomIconUrls; onReport: (target: ReportTarget) => void }) {
   const t = useT();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -157,7 +166,7 @@ function RoomCard({ room, icon }: { room: VerifiedRoom; icon?: RoomIconUrls }) {
       {room.description && <p className="line-clamp-3 break-words text-sm text-fg-1">{room.description}</p>}
       {room.verification === "unsupported" && <p className="text-xs text-warn">{t("discover.unverified")}</p>}
       <div className="mt-auto flex flex-wrap justify-end gap-2">
-        <ReportButton domain={room.node} room={{ id: room.room_id, name: room.name }} label={`${t("discover.report")}: ${room.name} (${room.node})`} />
+        <ReportButton target={{ domain: room.node, room: { id: room.room_id, name: room.name } }} label={`${t("discover.report")}: ${room.name} (${room.node})`} onReport={onReport} />
         <Button onClick={() => void join()} disabled={busy} aria-label={`${t("discover.join")}: ${room.name} (${room.node})`}>
           {busy ? t("discover.joining") : t("discover.join")}
         </Button>
@@ -209,6 +218,7 @@ function RoomsTab({ node, onClearNode }: { node: string | null; onClearNode: () 
   const list = useMemo(() => rooms.data?.pages.flatMap((p) => p.rooms) ?? [], [rooms.data]);
   const icons = useRoomIcons(list);
   const hidden = rooms.data?.pages.reduce((n, p) => n + p.hidden, 0) ?? 0;
+  const report = useReportDialog();
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
@@ -243,9 +253,10 @@ function RoomsTab({ node, onClearNode }: { node: string | null; onClearNode: () 
       )}
       <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" data-testid="discover-rooms">
         {list.map((r) => (
-          <RoomCard key={`${r.node}/${r.room_id}`} room={r} icon={icons[`${r.node}/${r.room_id}`]} />
+          <RoomCard key={`${r.node}/${r.room_id}`} room={r} icon={icons[`${r.node}/${r.room_id}`]} onReport={report.open} />
         ))}
       </ul>
+      {report.dialog}
       {rooms.hasNextPage && (
         <div className="flex justify-center">
           <Button variant="ghost" onClick={() => void rooms.fetchNextPage()} disabled={rooms.isFetchingNextPage}>
@@ -257,7 +268,7 @@ function RoomsTab({ node, onClearNode }: { node: string | null; onClearNode: () 
   );
 }
 
-function NodeCard({ node, onShowRooms }: { node: DirectoryNode; onShowRooms: () => void }) {
+function NodeCard({ node, onShowRooms, onReport }: { node: DirectoryNode; onShowRooms: () => void; onReport: (target: ReportTarget) => void }) {
   const t = useT();
   const mode = ["open", "invite", "closed"].includes(node.registration) ? t(`discover.registration.${node.registration}`) : node.registration;
   return (
@@ -283,7 +294,7 @@ function NodeCard({ node, onShowRooms }: { node: DirectoryNode; onShowRooms: () 
         <li>{t("discover.last_seen", { time: formatTime(node.last_seen) })}</li>
       </ul>
       <div className="mt-auto flex flex-wrap justify-end gap-2">
-        <ReportButton domain={node.domain} label={`${t("discover.report")}: ${node.domain}`} />
+        <ReportButton target={{ domain: node.domain }} label={`${t("discover.report")}: ${node.domain}`} onReport={onReport} />
         {node.public_rooms > 0 && (
           <Button variant="ghost" onClick={onShowRooms}>
             {t("discover.show_rooms")}
@@ -305,6 +316,7 @@ function NodesTab({ onShowRooms }: { onShowRooms: (domain: string) => void }) {
     getNextPageParam: (last) => last.next ?? null,
   });
   const list = nodes.data?.pages.flatMap((p) => p.items) ?? [];
+  const report = useReportDialog();
   return (
     <div className="space-y-4">
       <Field label={t("discover.search")}>
@@ -315,9 +327,10 @@ function NodesTab({ onShowRooms }: { onShowRooms: (domain: string) => void }) {
       {nodes.isSuccess && list.length === 0 && <p className="text-sm text-fg-2">{t("discover.no_nodes")}</p>}
       <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" data-testid="discover-nodes">
         {list.map((n) => (
-          <NodeCard key={n.domain} node={n} onShowRooms={() => onShowRooms(n.domain)} />
+          <NodeCard key={n.domain} node={n} onShowRooms={() => onShowRooms(n.domain)} onReport={report.open} />
         ))}
       </ul>
+      {report.dialog}
       {nodes.hasNextPage && (
         <div className="flex justify-center">
           <Button variant="ghost" onClick={() => void nodes.fetchNextPage()} disabled={nodes.isFetchingNextPage}>
