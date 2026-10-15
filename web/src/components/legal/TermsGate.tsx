@@ -15,7 +15,7 @@ import { useAuth } from "../../stores/auth";
 import { signOut } from "../../stores/e2ee";
 import { toastError } from "../../stores/toasts";
 import { Button, Dialog } from "../ui";
-import { LegalDocumentView } from "../../pages/legal/LegalPages";
+import { LegalDocumentView } from "../../pages/legal/LegalDocumentView";
 import { notifyStatement } from "../../hooks/useRealtime";
 
 const SEEN = "tavrn.legal.seen";

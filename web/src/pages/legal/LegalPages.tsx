@@ -4,18 +4,20 @@
  * every screen), a document `/legal/<kind>` rendered with the message sanitizer, the takedown form `/legal/notice`
  * and the reporter's status page `/legal/notice/<case>?token=`. They work signed out.
  */
-import { useMemo, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router";
 import type { NoticeRequest } from "@tavrn/sdk";
 import { publicApi } from "../../lib/api";
-import { renderDocument } from "../../lib/markdown";
+import { LegalDocumentView } from "./LegalDocumentView";
 import { intlLocale, useT } from "../../i18n";
 import { describeError } from "../../stores/toasts";
 import { Button, ErrorText, Field, Input } from "../../components/ui";
 import { Select, Textarea } from "../settings/common";
 import { Captcha } from "../../components/Captcha";
 import { LocaleSwitch } from "../../components/LocaleSwitch";
+
+export { LegalDocumentView };
 
 export const LEGAL_KINDS = ["imprint", "privacy", "terms", "cookies"] as const;
 
@@ -81,11 +83,6 @@ export function LegalIndexPage() {
   );
 }
 
-/** A rendered legal document (`.legal-doc` styles headings, lists and tables). */
-export function LegalDocumentView({ markdown }: { markdown: string }) {
-  const html = useMemo(() => renderDocument(markdown), [markdown]);
-  return <article className="legal-doc markdown text-sm leading-relaxed text-fg-1" data-testid="legal-document" dangerouslySetInnerHTML={{ __html: html }} />;
-}
 
 /** `/legal/<kind>`. */
 export function LegalDocumentPage() {
