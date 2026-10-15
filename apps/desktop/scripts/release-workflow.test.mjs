@@ -71,7 +71,7 @@ test("the Windows build makes no updater artifacts (release-assets signs the ins
 });
 
 test("the parser sees the jobs of desktop.yml", () => {
-  assert.deepEqual(Object.keys(desktop.jobs).sort(), ["android", "linux-electron", "macos", "release-assets", "tauri-linux", "windows", "windows-electron", "windows-nsis"]);
+  assert.deepEqual(Object.keys(desktop.jobs).sort(), ["android", "linux-electron", "macos", "release-assets", "route", "tauri-linux", "windows", "windows-electron", "windows-nsis"]);
 });
 
 test("no workflow passes the updater key through workflow-level env or `secrets: inherit`", () => {
@@ -196,4 +196,52 @@ test("macOS checkout disables credential helpers, has a short timeout and preced
   assert.ok(helper >= 0 && helper < checkout && checkout < auth);
   assert.match(steps[checkout], /timeout-minutes: 5/);
   assert.match(steps[checkout], /persist-credentials: false/);
+});
+
+test("release builds restore no Actions cache (built from the tag; nothing a cache of main's runs holds reaches them)", () => {
+  for (const job of ["linux-electron", "windows", "macos", "windows-electron", "android"]) {
+    const steps = code(desktop.jobs[job]).split(/\n(?= {6}- )/);
+    for (const s of steps.filter((x) => /actions\/setup-node@/.test(x))) {
+      assert.doesNotMatch(s, /cache: pnpm/, `${job}: setup-node caches the pnpm store unconditionally`);
+      assert.match(s, /package-manager-cache: false/, `${job}: setup-node's automatic cache`);
+      const cache = /cache: (.*)/.exec(s)?.[1];
+      if (cache) assert.equal(cache, "${{ !inputs.release-tag && 'pnpm' || '' }}", `${job}: the pnpm cache must be off for a release`);
+    }
+    for (const s of steps.filter((x) => /Swatinem\/rust-cache@/.test(x))) {
+      assert.match(s, /if: \$\{\{[^}]*!inputs\.release-tag[^}]*\}\}/, `${job}: rust-cache must be off for a release`);
+    }
+  }
+  const release = code(readFileSync(new URL("release.yml", WORKFLOWS), "utf8"));
+  assert.doesNotMatch(release, /cache: pnpm|rust-cache|actions\/cache@/, "release.yml restores a cache");
+});
+
+test("one web build per push: ci.yml uploads web/dist, the desktop jobs of its call download it", () => {
+  const ci = jobsOf(readFileSync(new URL("ci.yml", WORKFLOWS), "utf8"));
+  assert.match(code(ci.jobs.js), /artifact-name: \$\{\{ github\.event_name == 'push' && 'web-dist' \|\| '' \}\}/);
+  assert.match(code(ci.jobs.js), /artifact-path: web\/dist/);
+  assert.match(code(ci.jobs.desktop), /uses: \.\/\.github\/workflows\/desktop\.yml/);
+  assert.match(code(ci.jobs.desktop), /web-dist-artifact: web-dist/);
+  assert.match(code(ci.jobs.desktop), /needs: \[changes, js\]/);
+  for (const job of ["tauri-linux", "linux-electron", "windows-nsis"]) {
+    const steps = code(desktop.jobs[job]).split(/\n(?= {6}- )/);
+    const download = steps.find((x) => /actions\/download-artifact@/.test(x) && /name: \$\{\{ inputs\.web-dist-artifact \}\}/.test(x));
+    assert.ok(download, `${job}: downloads the CI run's web/dist`);
+    assert.match(download, /path: web\/dist/);
+    assert.match(download, /if: \$\{\{ inputs\.web-dist-artifact != ''/);
+  }
+  // A release builds web/dist from the tag itself, never from an artifact.
+  const electron = code(desktop.jobs["linux-electron"]).split(/\n(?= {6}- )/);
+  assert.match(electron.find((x) => /pnpm --filter @tavrn\/web build/.test(x)), /if: \$\{\{ inputs\.web-dist-artifact == '' \|\| inputs\.release-tag \}\}/);
+  assert.match(electron.find((x) => /download-artifact@/.test(x) && /web-dist-artifact/.test(x)), /!inputs\.release-tag/);
+});
+
+test("the self-hosted jobs take the organization's trust rule from route.yml, never a copy of it", () => {
+  assert.match(code(desktop.jobs.route), /uses: just-tavrn\/\.github\/\.github\/workflows\/route\.yml@main/);
+  assert.match(code(desktop.jobs.route), /if: \$\{\{ vars\.CI_ENABLED == 'true' && !inputs\.release-tag \}\}/);
+  assert.match(code(desktop.jobs["tauri-linux"]), /runs-on: \$\{\{ fromJSON\(needs\.route\.outputs\.runs-on\) \}\}/);
+  assert.match(code(desktop.jobs["linux-electron"]), /runs-on: \$\{\{ fromJSON\(inputs\.release-tag && '"ubuntu-latest"' \|\| needs\.route\.outputs\.runs-on\) \}\}/);
+  assert.match(code(desktop.jobs["windows-nsis"]), /needs\.route\.outputs\.self-hosted == 'true'/);
+  for (const file of files) {
+    assert.doesNotMatch(code(readFileSync(new URL(file, WORKFLOWS), "utf8")), /head\.repo\.full_name == github\.repository/, `${file} copies the trust rule`);
+  }
 });

@@ -7,10 +7,12 @@
 #   livekit-server, cargo-xwin, NSIS and LLVM; the Microsoft CRT and Windows SDK wait in the runner's cache,
 #   XWIN_CACHE_DIR) for trusted events only: pushes, manual runs and pull requests from branches of this repository.
 #   - `tauri-linux`: the Tauri shell's checks on Linux (cargo fmt, clippy, tests of src-tauri and the key listener
-#     crate, cargo deny, a round trip through the real Secret Service); Linux ships the Electron shell, so no bundles.
+#     crate, cargo deny bans, licenses and sources, a round trip through the real Secret Service); Linux ships the
+#     Electron shell, so no bundles. The workspace's typecheck and tests (the release scripts', the Electron shell's)
+#     and the SPDX and license checks run in ci.yml; the RustSec advisories in advisories.yml.
 #   - `windows-nsis`: the Tauri NSIS installer cross-compiled with cargo-xwin (artifact desktop-windows-nsis), so main
 #     always has a current Windows installer.
-#   - `linux-electron`: the Electron shell's checks, the key listener's Node-API module, .AppImage, .deb and
+#   - `linux-electron`: the native modules' checks, the key listener's Node-API module, .AppImage, .deb and
 #     latest-linux.yml, the Playwright specs under xvfb (the full smoke test against the AppImage, the real keyring in
 #     a D-Bus session of its own); artifact desktop-linux-electron.
 # - GitHub-hosted runners: forks, Dependabot and dependabot/* branches fall back to ubuntu-latest (`windows-nsis` is
@@ -32,18 +34,12 @@ name: Desktop
 
 on:
   # Development phase (2026-10-08): pull requests run the quick checks of ci.yml only. The Linux checks and packages
-  # with their tests and the NSIS cross-build run on pushes to main that touch the apps or the client, and by hand
+  # with their tests and the NSIS cross-build run on pushes to main that touch the apps or the client (ci.yml calls this
+  # workflow after its JavaScript job, with the web/dist that job built: one web build per push), and by hand
   # (`gh workflow run desktop.yml --ref <branch>` for a pull request branch whose diff you have read: the self-hosted
-  # runner executes that branch's code; dependabot/* branches go to ubuntu-latest). The windows-latest builds only by
-  # hand and on release tags. Changes to this file alone start nothing: dispatch to verify.
-  push:
-    branches: [main]
-    paths:
-      - apps/desktop/**
-      - apps/desktop-electron/**
-      - web/**
-      - pnpm-lock.yaml
-      - pnpm-workspace.yaml
+  # runner executes that branch's code; dependabot/* branches go to ubuntu-latest; the jobs build web/dist themselves).
+  # The windows-latest builds only by hand and on release tags. Changes to this file alone start nothing: dispatch to
+  # verify.
   workflow_dispatch:
     inputs:
       windows:
@@ -65,9 +61,13 @@ on:
   workflow_call:
     inputs:
       release-tag:
-        description: "The tag whose GitHub release receives the installers and the updater files"
+        description: "release.yml: the tag whose GitHub release receives the installers and the updater files (the jobs build from it, web/dist included)"
         type: string
-        required: true
+        default: ""
+      web-dist-artifact:
+        description: "ci.yml: the artifact of the calling run that holds web/dist (the Linux jobs and the NSIS cross-build use it instead of building it again)"
+        type: string
+        default: ""
     secrets:
       TAVRN_READ_PAT:
         required: false
@@ -100,14 +100,24 @@ env:
   RELEASE_TAG: ${{ inputs.release-tag || '' }}
 
 jobs:
+  # The organization's trust rule for the self-hosted runners in one place (just-tavrn/.github route.yml): where the
+  # jobs on tavrn-heavy go. Not for a release tag: the release jobs are GitHub-hosted anyway, and a release runs nothing
+  # of just-tavrn/.github's main branch.
+  route:
+    if: ${{ vars.CI_ENABLED == 'true' && !inputs.release-tag }}
+    uses: just-tavrn/.github/.github/workflows/route.yml@main
+    with:
+      runner: tavrn-heavy
+
   # The Tauri shell is Windows' (and later macOS'); its Rust code still builds and is tested on Linux, where the runner
   # has WebKitGTK. No bundles: Linux ships the Electron shell. `just desktop-check` is the local equivalent.
   tauri-linux:
     name: Tauri shell (Linux checks)
     if: ${{ vars.CI_ENABLED == 'true' && !inputs.release-tag }}
-    # tavrn-heavy for trusted events (the trust rule of the organization's rust-ci.yml: never forks, Dependabot or
-    # dependabot/* branches, whose code would run in the runner VM).
-    runs-on: ${{ fromJSON(github.event_name != 'pull_request_target' && github.actor != 'dependabot[bot]' && !startsWith(github.ref, 'refs/heads/dependabot/') && !startsWith(github.head_ref, 'dependabot/') && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && '["self-hosted","linux","x64","tavrn-heavy"]' || '"ubuntu-latest"') }}
+    # tavrn-heavy for trusted events (the organization's route.yml: never forks, Dependabot or dependabot/* branches,
+    # whose code would run in the runner VM), ubuntu-latest otherwise.
+    needs: route
+    runs-on: ${{ fromJSON(needs.route.outputs.runs-on) }}
     permissions:
       contents: read
     timeout-minutes: 45
@@ -168,7 +178,15 @@ jobs:
           rustc --version && cargo clippy --version && rustfmt --version && node --version
           echo "CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-unset}"
       - run: pnpm install --frozen-lockfile
+      # web/dist from the CI run that called this workflow (ci.yml builds it once per push), else built here.
+      - name: Web client (web/dist of the calling CI run, embedded by the shell)
+        if: ${{ inputs.web-dist-artifact != '' }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ inputs.web-dist-artifact }}
+          path: web/dist
       - name: Web client (web/dist, embedded by the shell)
+        if: ${{ inputs.web-dist-artifact == '' }}
         run: pnpm --filter @tavrn/web build
       - name: Checks (fmt, clippy, tests, cargo deny)
         working-directory: apps/desktop/src-tauri
@@ -178,14 +196,12 @@ jobs:
           cargo fmt --check
           cargo clippy --all-targets --locked -- -D warnings
           cargo test --locked
-          # Licenses, advisories, bans and sources (deny.toml).
-          cargo deny check
+          # Licenses, bans and sources (deny.toml); the advisories: advisories.yml.
+          cargo deny check bans licenses sources
       - name: The real Linux keychain (gnome-keyring in a D-Bus session)
         working-directory: apps/desktop/src-tauri
         run: |
           dbus-run-session -- bash -c 'echo ci-keyring | gnome-keyring-daemon --components=secrets --daemonize --unlock >/dev/null && cargo test --locked -- --ignored os_keychain'
-      - name: Release scripts (latest.json, checksums, the asset set, the installer licence)
-        run: pnpm --filter @tavrn/desktop test
 
   # The Linux app (apps/desktop-electron, docs/DESKTOP.md "The Linux shell (Electron)", "Builds and releases"): the
   # checks, the key listener's Node-API module, the .AppImage, .deb and latest-linux.yml, the full smoke test against
@@ -196,9 +212,11 @@ jobs:
   # tools of the specs): the specs test a copy, and release-assets takes only the artifact.
   linux-electron:
     name: Desktop (Linux, Electron)
-    if: ${{ vars.CI_ENABLED == 'true' }}
+    # A release runs it without the route (skipped for a release tag, nothing of just-tavrn/.github@main in a release).
+    needs: route
+    if: ${{ !cancelled() && vars.CI_ENABLED == 'true' && (inputs.release-tag != '' || needs.route.result == 'success') }}
     # tavrn-heavy for trusted events, the same rule as the Tauri job above; forks, Dependabot and releases on ubuntu-latest.
-    runs-on: ${{ fromJSON(github.event_name != 'pull_request_target' && github.actor != 'dependabot[bot]' && !startsWith(github.ref, 'refs/heads/dependabot/') && !startsWith(github.head_ref, 'dependabot/') && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && !inputs.release-tag && '["self-hosted","linux","x64","tavrn-heavy"]' || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(inputs.release-tag && '"ubuntu-latest"' || needs.route.outputs.runs-on) }}
     permissions:
       contents: read
       packages: read
@@ -225,16 +243,18 @@ jobs:
       # xdotool, gnome-keyring, livekit-server, Rust); the self-hosted job installs nothing.
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         if: ${{ runner.environment == 'github-hosted' }}
+      # No Actions cache for a release (built from the tag on ubuntu-latest): nothing a cache holds reaches a release.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         if: ${{ runner.environment == 'github-hosted' }}
         with:
           node-version: 24
-          cache: pnpm
+          cache: ${{ !inputs.release-tag && 'pnpm' || '' }}
+          package-manager-cache: false
       - name: Rust toolchain
         if: ${{ runner.environment == 'github-hosted' }}
         run: rustup toolchain install stable --profile minimal --component clippy,rustfmt && rustup default stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        if: ${{ runner.environment == 'github-hosted' }}
+        if: ${{ runner.environment == 'github-hosted' && !inputs.release-tag }}
         with:
           workspaces: |
             apps/desktop-electron/native/keywatch -> target
@@ -266,14 +286,16 @@ jobs:
           # Chromium's sandbox needs unprivileged user namespaces, which Ubuntu 24.04 restricts to AppArmor profiles that
           # allow them; the runner VM is thrown away after the job (the self-hosted VM sets the same, runner/README.md).
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+      # The shell's typecheck and node tests, the SPDX and license checks run in ci.yml (and in release.yml for a tag).
+      - name: Web client (web/dist of the calling CI run, bundled into the app)
+        if: ${{ inputs.web-dist-artifact != '' && !inputs.release-tag }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ inputs.web-dist-artifact }}
+          path: web/dist
       - name: Web client (web/dist, bundled into the app)
+        if: ${{ inputs.web-dist-artifact == '' || inputs.release-tag }}
         run: pnpm --filter @tavrn/web build
-      - name: Checks (typecheck, node --test, SPDX headers, licenses)
-        run: |
-          pnpm --filter @tavrn/desktop-electron typecheck
-          pnpm --filter @tavrn/desktop-electron test
-          scripts/check-spdx.sh
-          node scripts/check-js-licenses.mjs
       - name: Key listener module (fmt, clippy, cargo deny, napi build, crate and node tests under xvfb)
         working-directory: apps/desktop-electron/native/keywatch
         run: |
@@ -282,7 +304,7 @@ jobs:
           (cd ../../../desktop/crates/keywatch && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && xvfb-run -a cargo test --locked)
           cargo fmt --check
           cargo clippy --all-targets --locked -- -D warnings
-          cargo deny check
+          cargo deny check bans licenses sources
           pnpm run build
           xvfb-run -a pnpm test
       - name: Passkeys module (fmt, clippy, cargo deny, the mapping against a software authenticator, napi build, node test)
@@ -292,7 +314,7 @@ jobs:
           cargo fmt --all --check
           cargo clippy --workspace --all-targets --locked -- -D warnings
           cargo test -p tavrn-fido --locked
-          cargo deny check
+          cargo deny check bans licenses sources
           pnpm run build
           pnpm test
       - name: Packages (.AppImage, .deb, latest-linux.yml)
@@ -393,13 +415,9 @@ jobs:
   # Microsoft CRT and Windows SDK come from the runner's cache; the job never downloads them.
   windows-nsis:
     name: Desktop (Windows NSIS, cross-compiled)
-    if: >-
-      ${{ vars.CI_ENABLED == 'true' && !inputs.release-tag &&
-          github.event_name != 'pull_request_target' && github.actor != 'dependabot[bot]' &&
-          !startsWith(github.ref, 'refs/heads/dependabot/') && !startsWith(github.head_ref, 'dependabot/') &&
-          (github.event_name != 'pull_request' ||
-           (github.event.pull_request.head.repo.full_name == github.repository &&
-            github.event.pull_request.user.login != 'dependabot[bot]')) }}
+    # Only where the route sends a trusted run to the self-hosted runners; never GitHub-hosted (no Windows SDK there).
+    needs: route
+    if: ${{ vars.CI_ENABLED == 'true' && !inputs.release-tag && needs.route.outputs.self-hosted == 'true' }}
     runs-on: [self-hosted, linux, x64, tavrn-heavy]
     permissions:
       contents: read
@@ -442,13 +460,24 @@ jobs:
         with:
           persist-credentials: false
       - run: pnpm install --frozen-lockfile
+      - name: Web client (web/dist of the calling CI run)
+        if: ${{ inputs.web-dist-artifact != '' }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ inputs.web-dist-artifact }}
+          path: web/dist
       - name: Build (NSIS, cargo-xwin)
+        env:
+          WEB_DIST_GIVEN: ${{ inputs.web-dist-artifact != '' }}
         run: |
           target="${CARGO_TARGET_DIR:-$PWD/apps/desktop/src-tauri/target}/x86_64-pc-windows-msvc/release"
           echo "DESKTOP_TARGET=$target" >> "$GITHUB_ENV"
           # The target directory of the cache slot outlives the job: no installers of earlier builds in the artifact.
           rm -rf "$target/bundle"
-          pnpm --filter @tavrn/desktop tauri build --target x86_64-pc-windows-msvc --runner cargo-xwin --bundles nsis
+          # tauri.conf.json builds web/dist first (beforeBuildCommand), unless the CI run's build was downloaded.
+          extra=()
+          if [ "$WEB_DIST_GIVEN" = true ]; then extra=(--config '{"build":{"beforeBuildCommand":""}}'); fi
+          pnpm --filter @tavrn/desktop tauri build --target x86_64-pc-windows-msvc --runner cargo-xwin --bundles nsis "${extra[@]}"
       - name: Collect the installer
         run: |
           file "$DESKTOP_TARGET/tavrn.exe" | grep -q 'PE32+ executable.*x86-64' || { echo "::error::tavrn.exe is not a 64-bit Windows executable"; exit 1; }
@@ -498,13 +527,16 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.release-tag || github.ref }}
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      # No Actions cache for a release: nothing a cache holds reaches a release (by hand: the cache of main's runs).
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          cache: pnpm
+          cache: ${{ !inputs.release-tag && 'pnpm' || '' }}
+          package-manager-cache: false
       - name: Rust toolchain
         run: rustup toolchain install stable --profile minimal && rustup default stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: ${{ !inputs.release-tag }}
         with:
           workspaces: apps/desktop/src-tauri -> target
       - run: pnpm install --frozen-lockfile
@@ -571,13 +603,16 @@ jobs:
             git config --global --add url."https://x-access-token:${READ_TOKEN}@github.com/just-tavrn/".insteadOf "git@github.com:just-tavrn/"
           fi
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      # No Actions cache for a release: nothing a cache holds reaches a release (by hand: the cache of main's runs).
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          cache: pnpm
+          cache: ${{ !inputs.release-tag && 'pnpm' || '' }}
+          package-manager-cache: false
       - name: Rust toolchain with both macOS targets (the universal build)
         run: rustup toolchain install stable --profile minimal && rustup default stable && rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: ${{ !inputs.release-tag }}
         with:
           workspaces: apps/desktop/src-tauri -> target
       - run: pnpm install --frozen-lockfile
@@ -635,13 +670,16 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.release-tag || github.ref }}
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      # No Actions cache for a release: nothing a cache holds reaches a release (by hand: the cache of main's runs).
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          cache: pnpm
+          cache: ${{ !inputs.release-tag && 'pnpm' || '' }}
+          package-manager-cache: false
       - name: Rust toolchain
         run: rustup toolchain install stable --profile minimal && rustup default stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: ${{ !inputs.release-tag }}
         with:
           workspaces: apps/desktop-electron/native/keywatch -> target
       - run: pnpm install --frozen-lockfile
@@ -705,10 +743,12 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.release-tag || github.ref }}
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      # No Actions cache for a release: nothing a cache holds reaches a release (by hand: the cache of main's runs).
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          cache: pnpm
+          cache: ${{ !inputs.release-tag && 'pnpm' || '' }}
+          package-manager-cache: false
       - name: Rust toolchain with the Android target
         run: rustup toolchain install stable --profile minimal && rustup default stable && rustup target add aarch64-linux-android
       - name: Android NDK (pinned) and Java 21

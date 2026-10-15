@@ -1,0 +1,11 @@
+# Labels of this repository on top of the common set of scripts/github-labels.sh (name|colour|description).
+ui|1d76db|Screens, layout and interaction of the web client
+accessibility|0e8a16|Accessibility (WCAG 2.2 AA, docs/ACCESSIBILITY.md)
+e2ee|5319e7|End-to-end encryption in the client
+voice|c5def5|Voice, video, screen sharing, soundboard
+i18n|bfd4f2|Translations and locales (web/src/i18n)
+e2e|f9d0c4|Playwright end-to-end suite
+desktop|d4c5f9|Phase 6: the Tauri desktop and mobile shells
+node|e99695|Needs a change in tavrn-node
+protocol|fbca04|Needs a change or clarification in tavrn-protocol
+ci|ededed|Workflows and build tooling
