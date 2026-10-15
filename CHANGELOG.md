@@ -231,6 +231,10 @@ First public release of the web client and the desktop apps.
 
 ### Fixed
 
+- **Override editor hints**: the grey value under a neutral permission or file type of a category or channel override
+  now applies the edited layer's own `@everyone` override and, for a member, the overrides of the member's roles
+  (#182). A category that denies "View channel" to `@everyone` showed a neutral role as "allowed by the roles"; it now
+  reads "denied by @everyone here". The permissions themselves were always evaluated correctly.
 - **Message edits and uploads**: a refused edit keeps the editor open with the new text, an edit of a message that is
   not decrypted on this device is refused with a notice; removing a pending upload (or leaving the conversation)
   drops it and its key at once. A failed animated avatar falls back to the still, and a changed avatar shows again

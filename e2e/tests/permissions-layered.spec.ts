@@ -85,3 +85,29 @@ test("deny view on @everyone, allow it on one channel: a member sees exactly tha
   await expect(memberPage.getByText("Du hast keinen Zugriff mehr auf diesen Channel.")).toBeVisible();
   await ctx.close();
 });
+
+test("the category editor's hint under a neutral role names the category's own @everyone deny", async ({ page, request }) => {
+  test.setTimeout(scaled(60_000));
+  const owner = await registerViaApi(request, "own");
+  const room = await createRoomViaApi(request, owner.token, "Verborgen");
+  const auth = { Authorization: `Bearer ${owner.token}` };
+  const call = async (method: "post" | "put" | "get", path: string, data?: object) => {
+    const resp = await request[method](`${NODE}/api/v1/rooms/${room.id}${path}`, { headers: auth, data });
+    expect(resp.ok(), await resp.text()).toBeTruthy();
+    return resp.json();
+  };
+  const team = await call("post", "/categories", { name: "Team" });
+  await call("post", "/channels", { kind: "text", name: "intern", category_id: team.id });
+  await call("post", "/roles", { name: "Moderator", position: 1, permissions: "0" });
+  const everyone = ((await call("get", "")).roles as Array<{ id: string; is_everyone: boolean }>).find((r) => r.is_everyone)!.id;
+  // The category hides itself from @everyone; Moderator has no override of its own, so moderators cannot see it either.
+  await call("put", "/overrides", { target_type: "category", target_id: team.id, subject_type: "role", subject_id: everyone, allow: "0", deny: "1" });
+
+  await loginAs(page, owner);
+  await page.goto(`/rooms/${room.id}/settings/channels`);
+  await page.getByRole("button", { name: "Berechtigungen in der Kategorie Team" }).click();
+  const categoryEditor = page.getByTestId("category-editor");
+  await categoryEditor.getByRole("combobox", { name: "Rolle" }).selectOption({ label: "Moderator" });
+  await expect(categoryEditor.getByTestId("inherited-VIEW_CHANNEL")).toHaveText("Geerbt: von @everyone hier verboten");
+  await expect(categoryEditor.getByTestId("inherited-SEND_MESSAGES")).toHaveText("Geerbt: von den Rollen erlaubt");
+});
