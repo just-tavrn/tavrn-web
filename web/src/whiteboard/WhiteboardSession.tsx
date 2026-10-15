@@ -389,6 +389,8 @@ function ScenesPanel({ c, current, onCurrent, onClose }: { c: WhiteboardControll
   const [name, setName] = useState(current?.name ?? "");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** The scene being renamed in its row (inline, instead of the page-blocking `window.prompt`). */
+  const [renaming, setRenaming] = useState<string | null>(null);
   const reload = useCallback(async () => {
     try {
       const r = await library.list();
@@ -440,6 +442,21 @@ function ScenesPanel({ c, current, onCurrent, onClose }: { c: WhiteboardControll
         <ul className="max-h-72 space-y-1 overflow-y-auto" data-testid="scene-list">
           {list?.items.map((s) => (
             <li key={s.id} className="flex items-center gap-1 rounded-md border border-line px-2 py-1" data-testid="scene">
+              {renaming === s.id ? (
+                <SceneRename
+                  name={s.name}
+                  busy={busy}
+                  onCancel={() => setRenaming(null)}
+                  onSave={(next) => {
+                    setRenaming(null);
+                    void act(async () => {
+                      await library.rename(s.id, next);
+                      if (current?.id === s.id) onCurrent({ id: s.id, name: next });
+                    });
+                  }}
+                />
+              ) : (
+                <>
               <span className="min-w-0 flex-1 truncate text-sm">{s.name}</span>
               <Button
                 variant="ghost"
@@ -462,15 +479,9 @@ function ScenesPanel({ c, current, onCurrent, onClose }: { c: WhiteboardControll
                 variant="ghost"
                 className="min-h-8 px-2 text-xs"
                 disabled={busy}
-                onClick={() => {
-                  const next = prompt(t("whiteboard.scene_name"), s.name);
-                  if (next?.trim()) {
-                    void act(async () => {
-                      await library.rename(s.id, next.trim());
-                      if (current?.id === s.id) onCurrent({ id: s.id, name: next.trim() });
-                    });
-                  }
-                }}
+                onClick={() => setRenaming(s.id)}
+                aria-label={t("whiteboard.rename_named", { name: s.name })}
+                data-testid="scene-rename"
               >
                 {t("whiteboard.rename")}
               </Button>
@@ -488,6 +499,8 @@ function ScenesPanel({ c, current, onCurrent, onClose }: { c: WhiteboardControll
               >
                 {t("whiteboard.delete")}
               </Button>
+                </>
+              )}
             </li>
           ))}
         </ul>
@@ -498,6 +511,41 @@ function ScenesPanel({ c, current, onCurrent, onClose }: { c: WhiteboardControll
         </div>
       </div>
     </Dialog>
+  );
+}
+
+/**
+ * Renaming a scene in its row of the library: a field with the current name (selected), Save (or Enter) with a
+ * name of 1 to 64 characters, Cancel (or Escape) keeps the old one.
+ */
+export function SceneRename({ name, busy, onSave, onCancel }: { name: string; busy: boolean; onSave: (name: string) => void; onCancel: () => void }) {
+  const t = useT();
+  const [value, setValue] = useState(name);
+  const next = value.trim();
+  const valid = next.length > 0 && next.length <= 64;
+  return (
+    <form
+      className="flex min-w-0 flex-1 items-center gap-1"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (valid && !busy) onSave(next);
+      }}
+      onKeyDown={(e) => {
+        if (e.key !== "Escape") return;
+        // The library dialog stays open: only the rename is cancelled.
+        e.stopPropagation();
+        onCancel();
+      }}
+      data-testid="scene-rename-form"
+    >
+      <Input aria-label={t("whiteboard.scene_name")} value={value} maxLength={64} autoFocus onFocus={(e) => e.currentTarget.select()} onChange={(e) => setValue(e.target.value)} className="min-w-0 flex-1" />
+      <Button type="submit" className="min-h-8 px-2 text-xs" disabled={busy || !valid}>
+        {t("common.save")}
+      </Button>
+      <Button type="button" variant="ghost" className="min-h-8 px-2 text-xs" onClick={onCancel}>
+        {t("common.cancel")}
+      </Button>
+    </form>
   );
 }
 

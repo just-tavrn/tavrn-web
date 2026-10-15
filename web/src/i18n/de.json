@@ -2558,6 +2558,7 @@
   "whiteboard.load": "Laden",
   "whiteboard.load_confirm": "Das Board für alle durch „{name}“ ersetzen?",
   "whiteboard.rename": "Umbenennen",
+  "whiteboard.rename_named": "„{name}“ umbenennen",
   "whiteboard.delete": "Löschen",
   "whiteboard.delete_confirm": "Die Szene „{name}“ löschen?",
   "whiteboard.background": "Hintergrund",
