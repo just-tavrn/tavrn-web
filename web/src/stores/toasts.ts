@@ -12,6 +12,8 @@ export interface Toast {
   testId?: string;
   /** A button next to the text (e.g. "show in folder" after a download); a click runs it and closes the toast. */
   action?: { label: string; run: () => void };
+  /** Toasts with the same tag replace each other (notifications: one per conversation, the newest message). */
+  tag?: string;
 }
 
 interface ToastState {
@@ -20,16 +22,47 @@ interface ToastState {
   dismiss: (id: number) => void;
 }
 
-let counter = 0;
+/** Toasts shown at once; beyond that the oldest one goes (an informational one before warnings and errors). */
+export const MAX_TOASTS = 5;
 
-export const useToasts = create<ToastState>((set) => ({
+let counter = 0;
+const timers = new Map<number, ReturnType<typeof setTimeout>>();
+
+/** `list` without the toasts beyond the cap: the oldest informational one first, else the oldest. */
+function capped(list: Toast[]): Toast[] {
+  let out = list;
+  while (out.length > MAX_TOASTS) {
+    const drop = out.find((x) => x.kind === "info") ?? out[0]!;
+    out = out.filter((x) => x !== drop);
+  }
+  return out;
+}
+
+function forget(removed: Toast[]) {
+  for (const x of removed) {
+    clearTimeout(timers.get(x.id));
+    timers.delete(x.id);
+  }
+}
+
+export const useToasts = create<ToastState>((set, get) => ({
   toasts: [],
   push: (toast) => {
     const id = ++counter;
-    set((s) => ({ toasts: [...s.toasts, { ...toast, id }] }));
-    setTimeout(() => set((s) => ({ toasts: s.toasts.filter((x) => x.id !== id) })), toast.kind === "error" || toast.action ? 8000 : 5000);
+    const before = get().toasts;
+    const next = capped([...(toast.tag ? before.filter((x) => x.tag !== toast.tag) : before), { ...toast, id }]);
+    forget(before.filter((x) => !next.includes(x)));
+    set({ toasts: next });
+    timers.set(
+      id,
+      setTimeout(() => get().dismiss(id), toast.kind === "error" || toast.action ? 8000 : 5000),
+    );
   },
-  dismiss: (id) => set((s) => ({ toasts: s.toasts.filter((x) => x.id !== id) })),
+  dismiss: (id) => {
+    clearTimeout(timers.get(id));
+    timers.delete(id);
+    if (get().toasts.some((x) => x.id === id)) set((s) => ({ toasts: s.toasts.filter((x) => x.id !== id) }));
+  },
 }));
 
 /** Error of an API call as a toast: known codes translated, otherwise the server's description. */
