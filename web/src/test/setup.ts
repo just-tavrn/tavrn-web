@@ -24,5 +24,6 @@ if (typeof Element !== "undefined" && !("scrollIntoView" in Element.prototype)) 
 }
 
 // Tests run in German; the i18n tests themselves check both languages.
-import { useLocale } from "../i18n";
+import { loadLocale, useLocale } from "../i18n";
+await loadLocale("de");
 useLocale.setState({ locale: "de" });

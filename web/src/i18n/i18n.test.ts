@@ -1,12 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 import { PERMISSION_LABELS } from "@tavrn/sdk";
-import { describe, expect, it } from "vitest";
-import { DEFAULT_LOCALE, LOCALES, errorMessage, format, translate, useLocale } from "./index";
+import { beforeAll, describe, expect, it } from "vitest";
+import { DEFAULT_LOCALE, LOCALES, errorMessage, format, loadLocale, messagesOf, translate, useLocale, type Messages } from "./index";
+
+/** Every language with its messages (each one its own chunk, loaded here). */
+let all: Array<[string, { messages: Messages }]> = [];
+beforeAll(async () => {
+  for (const code of Object.keys(LOCALES)) await loadLocale(code);
+  all = Object.keys(LOCALES).map((code) => [code, { messages: messagesOf(code)! }]);
+});
 
 describe("i18n", () => {
   it("all languages have the same keys as English", () => {
-    const base = Object.keys(LOCALES[DEFAULT_LOCALE]!.messages).sort();
-    for (const [code, { messages }] of Object.entries(LOCALES)) {
+    const base = Object.keys(messagesOf(DEFAULT_LOCALE)!).sort();
+    for (const [code, { messages }] of all) {
       const keys = Object.keys(messages).sort();
       const missing = base.filter((k) => !keys.includes(k));
       const extra = keys.filter((k) => !base.includes(k));
@@ -15,7 +22,7 @@ describe("i18n", () => {
   });
 
   it("every permission the editors list is translated in every language (perm.<NAME>)", () => {
-    for (const [code, { messages }] of Object.entries(LOCALES)) {
+    for (const [code, { messages }] of all) {
       const missing = PERMISSION_LABELS.map((p) => `perm.${p.name}`).filter((k) => !(k in messages));
       expect({ code, missing }).toEqual({ code, missing: [] });
     }
@@ -39,7 +46,7 @@ describe("i18n", () => {
 
   it("user-visible strings carry no roadmap talk (phases, coming soon)", () => {
     const roadmap = /\b(phase \d|coming (soon|in)|roadmap|todo)\b|\b(kommt|kommen) (bald|in phase)|demnächst/i;
-    for (const [code, { messages }] of Object.entries(LOCALES)) {
+    for (const [code, { messages }] of all) {
       const hits = Object.entries(messages).filter(([, v]) => roadmap.test(v)).map(([k]) => k);
       expect({ code, hits }).toEqual({ code, hits: [] });
     }
@@ -47,7 +54,7 @@ describe("i18n", () => {
 
   it("writes the product name in lowercase, tavrn (HTTP header names like Tavrn-Signature excepted)", () => {
     const capital = /\bTavrn\b(?!-Signature)/;
-    for (const [code, { messages }] of Object.entries(LOCALES)) {
+    for (const [code, { messages }] of all) {
       const hits = Object.entries(messages).filter(([, v]) => capital.test(v)).map(([k]) => k);
       expect({ code, hits }).toEqual({ code, hits: [] });
     }
@@ -55,9 +62,24 @@ describe("i18n", () => {
 
   it("names no particular authenticator app (generic wording)", () => {
     const apps = /aegis|2fas|google authenticator|authy|microsoft authenticator|freeotp/i;
-    for (const [code, { messages }] of Object.entries(LOCALES)) {
+    for (const [code, { messages }] of all) {
       const hits = Object.entries(messages).filter(([, v]) => apps.test(v)).map(([k]) => k);
       expect({ code, hits }).toEqual({ code, hits: [] });
     }
+  });
+});
+
+describe("language loading", () => {
+  it("English is there from the start, another language once loaded; switching waits for its messages", async () => {
+    expect(messagesOf("en")?.["auth.login"]).toBe("Sign in");
+    await loadLocale("de");
+    useLocale.getState().setLocale("en");
+    expect(useLocale.getState().locale).toBe("en");
+    useLocale.getState().setLocale("de");
+    // Loaded already: the switch is immediate.
+    expect(useLocale.getState().locale).toBe("de");
+    expect(translate("de", "auth.login")).toBe("Anmelden");
+    useLocale.getState().setLocale("xx");
+    expect(useLocale.getState().locale).toBe("de");
   });
 });
