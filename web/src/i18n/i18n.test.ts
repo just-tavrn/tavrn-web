@@ -124,4 +124,10 @@ describe("language loading", () => {
     useLocale.getState().setLocale("xx");
     expect(useLocale.getState().locale).toBe("de");
   });
+  it("names the node's device and key rotation limits in every language (ENCRYPTION.md §3)", () => {
+    for (const code of ["auth.device_limit", "e2ee.rotation_limit"]) {
+      for (const [lang, { messages }] of all) expect({ lang, code, has: !!messages[`errors.${code}`] }).toEqual({ lang, code, has: true });
+      expect(errorMessage(code, "fallback")).not.toBe("fallback");
+    }
+  });
 });

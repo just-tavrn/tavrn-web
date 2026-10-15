@@ -1271,6 +1271,8 @@
   "notice.undeliverable_hint": "Ihr Knoten hat nicht geantwortet. Du kannst es später noch einmal versuchen.",
   "errors.auth.invalid_credentials": "Benutzername oder Passwort falsch",
   "errors.auth.session_revoked": "Deine Sitzung wurde auf diesem Gerät abgemeldet.",
+  "errors.auth.device_limit": "Bei diesem Konto ist bereits die höchste Zahl an Geräten angemeldet. Melde zuerst eines ab (Einstellungen → Geräte).",
+  "errors.e2ee.rotation_limit": "Dein Identitätsschlüssel wurde zu oft ersetzt. Setze deine Identität zurück, um eine neue Kette zu beginnen (Einstellungen → Sicherheit).",
   "errors.mail.unavailable": "Dieser Knoten kann gerade keine E-Mails senden; das Zurücksetzen des Passworts ist nicht verfügbar.",
   "errors.auth.username_taken": "Dieser Benutzername ist bereits vergeben",
   "errors.auth.password_weak": "Passwort: mindestens 10 Zeichen",

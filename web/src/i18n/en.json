@@ -1271,6 +1271,8 @@
   "notice.undeliverable_hint": "Their node did not answer. You can try again later.",
   "errors.auth.invalid_credentials": "Wrong username or password",
   "errors.auth.session_revoked": "Your session was signed out on this device.",
+  "errors.auth.device_limit": "This account already has the maximum number of devices signed in. Sign one out first (Settings → Devices).",
+  "errors.e2ee.rotation_limit": "Your identity key has been replaced too often. Reset your identity to start a new chain (Settings → Security).",
   "errors.mail.unavailable": "This node cannot send e-mail at the moment; password reset is unavailable.",
   "errors.auth.username_taken": "This username is already taken",
   "errors.auth.password_weak": "Password: at least 10 characters",
