@@ -11,13 +11,15 @@ test.use({ launchOptions: { args: FAKE_MEDIA }, permissions: ["microphone", "cam
 test.afterEach(closeOpened);
 
 test("leave while joining cancels the join: no call, no seat, no error", async ({ browser, request }) => {
+  test.setTimeout(scaled(120_000));
   const u = await voiceUser(browser, "vlj", undefined, { cuesOff: true });
   const room = await createRoomViaApi(request, await tokenOf(u.page), "Abbruch", "invite", { encrypted: true });
   let held = 0;
   await u.page.route("**/voice/join", async (route) => {
     if (route.request().method() !== "POST") return route.continue();
     held += 1;
-    await new Promise((r) => setTimeout(r, 3_000));
+    // Long enough for the phone, where the voice bar sits in the navigation drawer that has to be opened first.
+    await new Promise((r) => setTimeout(r, 6_000));
     await route.continue();
   });
   await u.page.goto(`/rooms/${room.id}`);
@@ -26,6 +28,9 @@ test("leave while joining cancels the join: no call, no seat, no error", async (
   const bar = u.page.getByTestId("voice-bar");
   await expect(bar).toHaveAttribute("data-status", "joining", { timeout: scaled(20_000) });
   await expect.poll(() => held, { timeout: scaled(20_000) }).toBe(1);
+  // While joining, only the voice bar offers Leave (the stage still shows its join panel); on phones it is in the
+  // navigation drawer, which closed when the channel opened.
+  await openNavIfMobile(u.page);
   await u.page.getByTestId("voice-bar-leave").click();
   await expect(bar).toHaveCount(0);
   // The held answer arrives meanwhile: the cancelled join neither connects nor comes back.
