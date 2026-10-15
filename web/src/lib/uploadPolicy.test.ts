@@ -49,6 +49,31 @@ describe("effective upload categories (permissions.md \"Upload categories\")", (
     expect(inheritedUpload(s, category, "documents")).toEqual({ allowed: true, source: "role" });
   });
 
+  it("a neutral category inherits @everyone and the member's roles of the edited layer, never the subject's own", () => {
+    const s: UploadSubject = { everyoneId: "e", everyone: ["images", "documents"], roles: [{ id: "mods", position: 3, categories: null }] };
+    const layer = [
+      { subject_type: "role", subject_id: "e", upload_allow: [], upload_deny: ["images"] },
+      { subject_type: "role", subject_id: "mods", upload_allow: ["video"], upload_deny: ["documents"] },
+    ];
+    const asRole = { overrides: layer, subject: { type: "role", id: "mods" } };
+    expect(inheritedUpload(s, null, "images", asRole)).toEqual({ allowed: false, source: "everyone" });
+    expect(inheritedUpload(s, null, "documents", asRole)).toEqual({ allowed: true, source: "role" });
+    // The channel's @everyone override comes after the category's.
+    const category = [{ subject_type: "role", subject_id: "mods", upload_allow: ["images"], upload_deny: [] }];
+    expect(inheritedUpload(s, category, "images", asRole)).toEqual({ allowed: false, source: "everyone" });
+    // @everyone itself skips its own override.
+    expect(inheritedUpload({ ...s, roles: [] }, null, "images", { overrides: layer, subject: { type: "role", id: "e" } })).toEqual({ allowed: true, source: "role" });
+    // A member: their roles' overrides in the layer decide after @everyone; their own override is skipped.
+    const member: UploadSubject = { ...s, memberId: "u" };
+    const withOwn = [...layer, { subject_type: "member", subject_id: "u", upload_allow: ["documents"], upload_deny: ["video"] }];
+    const asMember = { overrides: withOwn, subject: { type: "member", id: "u" } };
+    expect(inheritedUpload(member, null, "documents", asMember)).toEqual({ allowed: false, source: "roles" });
+    expect(inheritedUpload(member, null, "video", asMember)).toEqual({ allowed: true, source: "roles" });
+    expect(inheritedUpload(member, null, "images", asMember)).toEqual({ allowed: false, source: "everyone" });
+    // Owners and administrators keep everything.
+    expect(inheritedUpload({ ...s, privileged: true }, null, "images", asRole)).toEqual({ allowed: true, source: "role" });
+  });
+
   it("allow / neutral / deny of one category in an override", () => {
     const o = { upload_allow: ["images"], upload_deny: ["other"] };
     expect(overrideUploadState(o, "images")).toBe("allow");

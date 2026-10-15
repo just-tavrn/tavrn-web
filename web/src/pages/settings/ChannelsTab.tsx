@@ -365,6 +365,7 @@ function OverridesEditor({ target, room, onChanged }: { target: OverrideTarget; 
         subject={{ type: subjectType, id: subjectId }}
         layer={overrides}
         categoryOverrides={categoryOverrides}
+        memberRoles={memberRoles}
         value={uploads}
         onChange={setUploads}
         subjectName={subjects.find((s) => s.type === subjectType && s.id === subjectId)?.name ?? ""}
@@ -401,19 +402,21 @@ type UploadMasks = { upload_allow: string[]; upload_deny: string[] };
 
 /**
  * File types of an override (tavrn-protocol permissions.md "Upload categories"): allow / neutral / deny per category
- * with what a neutral one inherits (the roles' setting and, in a channel, the category's overrides), and the result
- * for the subject with the edits applied: the category's layer, then the channel's.
+ * with what a neutral one inherits (the roles' setting, in a channel the category's overrides, then @everyone and a
+ * member's roles in this layer), and the result for the subject with the edits applied: the category's layer, then
+ * the channel's. `memberRoles` are a member subject's role ids (empty until the member list is loaded).
  */
-function UploadOverrides({ room, subject, layer, categoryOverrides, value, onChange, subjectName }: { room: RoomDetail; subject: { type: "role" | "member"; id: string }; layer: UploadOverrideInput[]; categoryOverrides: UploadOverrideInput[] | null; value: UploadMasks; onChange: (next: UploadMasks) => void; subjectName: string }) {
+function UploadOverrides({ room, subject, layer, categoryOverrides, memberRoles, value, onChange, subjectName }: { room: RoomDetail; subject: { type: "role" | "member"; id: string }; layer: UploadOverrideInput[]; categoryOverrides: UploadOverrideInput[] | null; memberRoles: string[]; value: UploadMasks; onChange: (next: UploadMasks) => void; subjectName: string }) {
   const t = useT();
   const everyone = room.roles.find((r) => r.is_everyone);
-  const role = subject.type === "role" && subject.id !== everyone?.id ? room.roles.find((r) => r.id === subject.id) : undefined;
+  const roleIds = subject.type === "member" ? memberRoles : [subject.id];
+  const roles = room.roles.filter((r) => !r.is_everyone && roleIds.includes(r.id));
   const input: UploadSubject = {
     everyoneId: everyone?.id ?? "",
     everyone: everyone?.allowed_upload_categories,
-    roles: role ? [{ id: role.id, position: role.position, categories: role.allowed_upload_categories }] : [],
+    roles: roles.map((r) => ({ id: r.id, position: r.position, categories: r.allowed_upload_categories })),
     memberId: subject.type === "member" ? subject.id : undefined,
-    privileged: hasPermission(parsePermissions(everyone?.permissions) | parsePermissions(role?.permissions), Permission.ADMINISTRATOR),
+    privileged: hasPermission(roles.reduce((acc, r) => acc | parsePermissions(r.permissions), parsePermissions(everyone?.permissions)), Permission.ADMINISTRATOR),
   };
   const own = (o: UploadOverrideInput) => o.subject_type === subject.type && o.subject_id === subject.id;
   const edited = [...layer.filter((o) => !own(o)), { subject_type: subject.type, subject_id: subject.id, ...value }];
@@ -429,7 +432,7 @@ function UploadOverrides({ room, subject, layer, categoryOverrides, value, onCha
             label={t(`upload.category.${c}`)}
             state={overrideUploadState(value, c)}
             onChange={(state) => onChange(setOverrideUpload(value, c, state))}
-            inherited={inheritedUpload(input, categoryOverrides, c)}
+            inherited={inheritedUpload(input, categoryOverrides, c, { overrides: layer, subject })}
             inheritedTestId={`inherited-upload-${c}`}
             rowProps={{ "data-upload": c }}
           />

@@ -51,6 +51,19 @@ describe("ChannelsTab: file types in the overrides", () => {
     expect(within(block).getByTestId("upload-effective")).toHaveTextContent("Result for Artists: Videos, Documents");
   });
 
+  it("a neutral category inherits the @everyone override of the edited layer", async () => {
+    mockFetch({});
+    const layered = { ...room, overrides: [...room.overrides, { id: "o3", target_type: "channel", target_id: "c1", subject_type: "role", subject_id: "everyone", allow: "0", deny: "0", upload_allow: ["audio"], upload_deny: ["video"] }] } as unknown as RoomDetail;
+    renderWithProviders(<ChannelsTab room={layered} />, { route: "/rooms/r1/settings/channels" });
+    const editor = await screen.findByTestId("channel-editor");
+    await userEvent.setup().selectOptions(within(editor).getByRole("combobox", { name: "Role" }), "role:artists");
+    const block = within(editor).getByTestId("upload-overrides");
+    expect(within(block).getByTestId("inherited-upload-audio")).toHaveTextContent("Inherited: allowed by @everyone here");
+    // The channel's @everyone deny comes after the category's allow for the role.
+    expect(within(block).getByTestId("inherited-upload-video")).toHaveTextContent("Inherited: denied by @everyone here");
+    expect(within(block).getByTestId("upload-effective")).toHaveTextContent("Result for Artists: Audio, Documents");
+  });
+
   it("saves upload_allow and upload_deny with the override; the effective result follows the edits", async () => {
     const calls = mockFetch({ "/rooms/r1/overrides": { body: [] } });
     renderWithProviders(<ChannelsTab room={room} />, { route: "/rooms/r1/settings/channels" });
