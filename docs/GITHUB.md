@@ -104,7 +104,7 @@ macOS app on `macos-latest` (continue-on-error; DESKTOP.md "macOS").
 ## Settings applied through the API
 
 Default branch `main`, delete branches on merge, squash merges allowed, issues on, wiki off, projects off, the workflow
-token read-only. Labels from `scripts/github-labels.sh` (idempotent; rerun it after editing the list).
+token read-only. Labels from `scripts/github-labels.sh`: the common set plus `scripts/labels.txt` (idempotent; rerun it after editing the list).
 
 ## Settings the owner flips by hand
 

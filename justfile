@@ -13,7 +13,7 @@ dev: install
 # Every check of the JavaScript CI: licenses (SPDX headers, dependency licenses), typecheck, Vitest (the desktop shell: desktop-check)
 check: license-check typecheck test
 
-# scripts/check-spdx.sh (map in sync with LICENSE.md), scripts/check-js-licenses.mjs (no (A)GPL/LGPL)
+# scripts/check-spdx.sh (map: scripts/spdx-map.sh, in sync with LICENSE.md), scripts/check-js-licenses.mjs (no (A)GPL/LGPL)
 # SPDX headers and the licenses of the production dependencies
 license-check: install
     scripts/check-spdx.sh
