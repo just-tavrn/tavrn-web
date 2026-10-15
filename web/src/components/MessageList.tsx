@@ -176,6 +176,20 @@ export function MessageList({
   const onReact = useCallback((m: Message, emoji: string, active: boolean) => actionsRef.current.onReact?.(m, emoji, active), []);
   const onPin = useCallback((m: Message, pinned: boolean) => actionsRef.current.onPin?.(m, pinned), []);
   const onEdit = useCallback(async (m: Message, body: string) => actionsRef.current.onEdit?.(m, body), []);
+  // The mention tokens of a row (memoized row prop), once per message object while the bots, the reader and the
+  // role names stay the same: not rebuilt for every visible row on every list render.
+  const mentionsOf = useMemo(() => {
+    const cache = new WeakMap<Message, string>();
+    const opts = { bots, self: currentAddress, nodeDomain: currentAddress ? currentAddress.slice(currentAddress.lastIndexOf("@") + 1) : null, roles: mentionRoles };
+    return (m: Message) => {
+      let s = cache.get(m);
+      if (s === undefined) {
+        s = serializeMentionTokens(mentionTokens(m, opts));
+        cache.set(m, s);
+      }
+      return s;
+    };
+  }, [bots, currentAddress, mentionRoles]);
   const onDelete = useCallback((m: Message) => actionsRef.current.onDelete?.(m), []);
   const onReply = useCallback((m: Message) => actionsRef.current.onReply?.(m), []);
   const onReport = useCallback((m: Message) => actionsRef.current.onReport?.(m), []);
@@ -419,7 +433,7 @@ export function MessageList({
                   replyDecrypted={m.reply_to_id ? decrypted[m.reply_to_id] : undefined}
                   conversationEncrypted={encrypted}
                   mentioned={mentionsMe(m, currentAddress) && m.author_id !== currentUserId}
-                  mentions={serializeMentionTokens(mentionTokens(m, { bots, self: currentAddress, nodeDomain: currentAddress ? currentAddress.slice(currentAddress.lastIndexOf("@") + 1) : null, roles: mentionRoles }))}
+                  mentions={mentionsOf(m)}
                 />
               </article>
             );
