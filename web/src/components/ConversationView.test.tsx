@@ -199,3 +199,58 @@ describe("ConversationView: slash commands use the composer's send path", () => 
     expect(screen.getByLabelText("Nachricht")).toHaveValue("");
   });
 });
+
+describe("ConversationView: removing a running upload", () => {
+  /** XMLHttpRequest as the sdk drives it for uploads with progress; nothing answers until a test says so. */
+  class FakeXhr {
+    static all: FakeXhr[] = [];
+    upload: { onprogress: unknown } = { onprogress: null };
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    onabort: (() => void) | null = null;
+    responseType = "";
+    url = "";
+    sent = false;
+    aborted = false;
+    constructor() {
+      FakeXhr.all.push(this);
+    }
+    open(_method: string, url: string) {
+      this.url = url;
+    }
+    setRequestHeader() {}
+    getAllResponseHeaders() {
+      return "";
+    }
+    send() {
+      this.sent = true;
+    }
+    abort() {
+      this.aborted = true;
+      this.onabort?.();
+    }
+  }
+
+  it("aborts the request itself, not only the wait for its answer", async () => {
+    useAuth.setState({ token: "t", user: me });
+    e2ee = { ...e2ee, phase: "plain", ghosts: [] };
+    FakeXhr.all = [];
+    vi.stubGlobal("XMLHttpRequest", FakeXhr);
+    try {
+      mockFetch({ "/conversations/c1/messages": { body: [] }, "/.well-known/tavrn": { body: { policies: { upload_max_bytes: 1000, uploads_enabled: true } } }, "/node": { body: { gif_provider: null, dm_policy: "friends" } } });
+      renderWithProviders(
+        <ConversationView conversationId="c1" encrypted={false} header={<h1>x</h1>} placeholder="Nachricht" canSend canManage={false} canAttach canReact canPin members={["bob@t.local"]} mayManage={false} domain="t.local" />,
+      );
+      const u = userEvent.setup();
+      await u.upload(screen.getByLabelText("Datei auswählen") as HTMLInputElement, new File(["abc"], "a.txt", { type: "text/plain" }));
+      await waitFor(() => expect(FakeXhr.all.find((x) => x.url.includes("/conversations/c1/uploads"))?.sent).toBe(true));
+      const xhr = FakeXhr.all.find((x) => x.url.includes("/conversations/c1/uploads"))!;
+      expect(xhr.aborted).toBe(false);
+      await u.click(screen.getByRole("button", { name: "a.txt entfernen" }));
+      expect(xhr.aborted).toBe(true);
+      expect(screen.queryByTestId("pending-uploads")).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
