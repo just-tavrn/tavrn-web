@@ -45,6 +45,7 @@ import { roomEventHandlers } from "./roomEvents";
 import { roomOfChannel } from "../lib/roomCache";
 import { formatDate } from "../lib/format";
 import { scopeSocket } from "./socketScope";
+import { browserWebSocket } from "../lib/browserWebSocket";
 import { conversationsQuery, roomsQuery } from "../lib/queries";
 
 /**
@@ -414,6 +415,7 @@ export function useRealtime() {
     if (!session) return;
     const socket = new TavrnSocket({
       url: wsUrl(),
+      WebSocketImpl: browserWebSocket(),
       getToken: () => useAuth.getState().token,
       capabilities: ["content.v1", "reactions", "e2ee.mls1", "commands.v1"],
       onStatus: (status) => {
@@ -605,6 +607,7 @@ function openNodeSocket(domain: string, queryClient: QueryClient, navigate: (to:
   if (!session) return null;
   const socket = new TavrnSocket({
     url: session.ws,
+    WebSocketImpl: browserWebSocket(),
     getToken: () => useNodes.getState().sessions[domain]?.token ?? null,
     capabilities: ["content.v1", "reactions", "e2ee.mls1", "commands.v1"],
     onStatus: (status) => {
