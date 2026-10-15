@@ -44,6 +44,8 @@ export const LIMITS = {
   maxAssembledBytes: 16 * 1024 * 1024,
   /** Assemblies in progress per sender. */
   maxAssembliesPerSender: 4,
+  /** Bytes one sender's unfinished assemblies may hold together. */
+  maxSenderBytes: 16 * 1024 * 1024,
   /** An incomplete assembly is dropped after this. */
   chunkTimeoutMs: 30_000,
 } as const;
@@ -269,8 +271,8 @@ export function parseChunk(raw: Record<string, unknown>): Chunk | null {
 }
 
 /**
- * Reassembles chunked payloads per sender with bounds (assemblies per sender, total size, timeout), so a
- * sender cannot make the receiver keep unbounded state.
+ * Reassembles chunked payloads per sender with bounds (assemblies per sender, the size of one payload, the bytes
+ * of all unfinished assemblies of a sender, timeout), so a sender cannot make the receiver keep unbounded state.
  */
 export class ChunkAssembler {
   private readonly parts = new Map<string, { sender: string; total: number; got: Map<number, Uint8Array>; bytes: number; started: number }>();
@@ -296,11 +298,11 @@ export class ChunkAssembler {
       this.parts.delete(key);
       return null;
     }
-    entry.bytes += bytes.length;
-    if (entry.bytes > LIMITS.maxAssembledBytes) {
+    if (entry.bytes + bytes.length > LIMITS.maxAssembledBytes || this.bytesOf(sender) + bytes.length > LIMITS.maxSenderBytes) {
       this.parts.delete(key);
       return null;
     }
+    entry.bytes += bytes.length;
     entry.got.set(chunk.index, bytes);
     if (entry.got.size < entry.total) return null;
     this.parts.delete(key);
@@ -322,6 +324,13 @@ export class ChunkAssembler {
   prune(): void {
     const t = this.now();
     for (const [k, v] of this.parts) if (t - v.started > LIMITS.chunkTimeoutMs) this.parts.delete(k);
+  }
+
+  /** Bytes the unfinished assemblies of `sender` hold. */
+  bytesOf(sender: string): number {
+    let n = 0;
+    for (const p of this.parts.values()) if (p.sender === sender) n += p.bytes;
+    return n;
   }
 
   get pending(): number {

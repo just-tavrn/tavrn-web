@@ -157,4 +157,19 @@ describe("chunks", () => {
     expect(parseChunk({ id: "a", index: 0, total: 1, data: "x".repeat(50_000) })).toBeNull();
     expect(parseChunk({ id: "a", index: 0, total: 1, data: "AA" })).toEqual({ id: "a", index: 0, total: 1, data: "AA" });
   });
+
+  it("bounds the bytes one sender can keep across all of its assemblies", () => {
+    const a = new ChunkAssembler();
+    const data = splitPayload("x".repeat(LIMITS.chunkBytes))[0]!;
+    const total = Math.ceil(LIMITS.maxAssembledBytes / LIMITS.chunkBytes);
+    // Four assemblies of almost 16 MiB each are never completed: together they may not hold more than the budget.
+    let kept = 0;
+    for (let n = 0; n < LIMITS.maxAssembliesPerSender; n++) {
+      for (let i = 0; i < total - 1; i++) a.add("m/D", { id: `big${n}`, index: i, total, data });
+    }
+    kept = a.bytesOf("m/D");
+    expect(kept).toBeLessThanOrEqual(LIMITS.maxSenderBytes);
+    // Another sender is not affected.
+    expect(a.add("o/D", { id: "small", index: 0, total: 1, data: splitPayload("{}")[0]! })).toBe("{}");
+  });
 });
