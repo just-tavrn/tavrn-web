@@ -306,6 +306,9 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
   // Role preview (docs/CLIENT.md): nothing is uploaded, moved or changed; the rights of the roles are listed instead.
   const rights = preview ? { can_manage: false, can_attach: false } : { can_manage: !!i?.can_manage, can_attach: !!i?.can_upload };
   const canUpload = !preview && !!i?.can_upload;
+  // Encrypted channels: no upload before the channel's group is ready on this device; a file chosen earlier would be
+  // refused and lost (tavrn-web#169). The status line above the list says why meanwhile.
+  const uploadReady = !encrypted || !!e2ee.mls;
   const selected = entries.filter((e) => selection.ids.has(e.id));
   const modifiable = (list: FileEntry[]) => list.length > 0 && list.every((e) => canModify(e, me?.id, rights));
 
@@ -665,22 +668,24 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
               <Button variant="ghost" className="min-h-8 px-2 text-xs" onClick={() => setDialog({ kind: "new-folder" })} data-testid="files-new-folder">
                 {t("files.new_folder")}
               </Button>
-              <Button className="min-h-8 px-2 text-xs" onClick={() => fileInput.current?.click()} data-testid="files-upload-button">
+              <Button className="min-h-8 px-2 text-xs" onClick={() => fileInput.current?.click()} disabled={!uploadReady} title={uploadReady ? undefined : t("files.e2ee_not_ready")} data-testid="files-upload-button">
                 {t("files.upload")}
               </Button>
-              <input
-                ref={fileInput}
-                type="file"
-                multiple
-                hidden
-                aria-label={t("files.upload")}
-                data-testid="files-upload-input"
-                onChange={(e) => {
-                  const files = [...(e.target.files ?? [])];
-                  e.target.value = "";
-                  if (files.length) void uploadFiles(files);
-                }}
-              />
+              {uploadReady && (
+                <input
+                  ref={fileInput}
+                  type="file"
+                  multiple
+                  hidden
+                  aria-label={t("files.upload")}
+                  data-testid="files-upload-input"
+                  onChange={(e) => {
+                    const files = [...(e.target.files ?? [])];
+                    e.target.value = "";
+                    if (files.length) void uploadFiles(files);
+                  }}
+                />
+              )}
             </>
           )}
           {storeMissing &&
