@@ -13,9 +13,11 @@ on:
 permissions:
   contents: read
 
+# A newer push to a pull request replaces the run of the older one; on main every push finishes (the desktop builds of
+# a merge would otherwise be thrown away by the next one).
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   changes:
@@ -26,6 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       code: ${{ steps.classify.outputs.code }}
+      desktop: ${{ steps.classify.outputs.desktop }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -37,12 +40,17 @@ jobs:
           HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           code=true
+          desktop=true
           if [ -n "$BASE" ] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
             files="$(git diff --name-only "$BASE" "$HEAD")"
             if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -qvE '(^|/)[^/]+\.md$|^docs/'; then code=false; fi
+            # The desktop builds (desktop.yml): the apps, the client they embed, the workspace's dependencies.
+            if ! printf '%s\n' "$files" | grep -qE '^apps/desktop/|^apps/desktop-electron/|^web/|^pnpm-lock\.yaml$|^pnpm-workspace\.yaml$'; then desktop=false; fi
             printf '%s\n' "$files" | head -100
           fi
+          [ "$code" = true ] || desktop=false
           echo "code=$code" | tee -a "$GITHUB_OUTPUT"
+          echo "desktop=$desktop" | tee -a "$GITHUB_OUTPUT"
 
   js:
     name: JavaScript
@@ -58,10 +66,31 @@ jobs:
       typecheck: pnpm -r --if-present typecheck
       test: pnpm -r --if-present test
       build: pnpm --filter @tavrn/web build && test -f web/dist/index.html
+      # On pushes the bundle goes to the desktop job below, which builds the apps from it instead of building it again.
+      artifact-name: ${{ github.event_name == 'push' && 'web-dist' || '' }}
+      artifact-path: web/dist
       submodules: "false"
     secrets:
       # The @tavrn packages are git dependencies of private repositories until the repositories go public.
       READ_TOKEN: ${{ secrets.TAVRN_READ_PAT }}
+
+  # The desktop apps' Linux checks and packages and the NSIS cross-build (desktop.yml) on pushes to main that touch the
+  # apps, the client or the dependencies, with the web/dist the JavaScript job built. desktop.yml's release-assets job
+  # (skipped here, it runs for a release tag only) declares the release permissions, which a caller has to grant.
+  desktop:
+    name: Desktop
+    needs: [changes, js]
+    if: ${{ vars.CI_ENABLED == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.changes.outputs.desktop == 'true' }}
+    permissions:
+      contents: write
+      packages: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/desktop.yml
+    with:
+      web-dist-artifact: web-dist
+    secrets:
+      TAVRN_READ_PAT: ${{ secrets.TAVRN_READ_PAT }}
 
   publish-check:
     name: Publication hygiene

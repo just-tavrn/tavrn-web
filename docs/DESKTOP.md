@@ -1269,9 +1269,9 @@ like `just e2e`.
 
 | Job | Runner | When | What |
 |---|---|---|---|
-| `Tauri shell (Linux checks)` | self-hosted `tavrn-heavy` (`ubuntu-latest` for forks, Dependabot and `dependabot/*` branches) | pushes to `main` that touch `apps/desktop`, `apps/desktop-electron`, `web`, the lockfile or the workspace; by hand (also for a pull request's branch); not for release tags | the Tauri shell's checks on Linux: cargo fmt, clippy, the tests of `src-tauri` and of the key listener crate, `cargo deny check` (licenses, advisories, bans, sources), the real Secret Service, the release scripts' tests; no bundles and no artifact (Linux ships the Electron shell; `just desktop-check` is the local equivalent) |
+| `Tauri shell (Linux checks)` | self-hosted `tavrn-heavy` (`ubuntu-latest` for forks, Dependabot and `dependabot/*` branches) | pushes to `main` that touch `apps/desktop`, `apps/desktop-electron`, `web`, the lockfile or the workspace (`ci.yml` calls the workflow with the `web/dist` its JavaScript job built); by hand (also for a pull request's branch); not for release tags | the Tauri shell's checks on Linux: cargo fmt, clippy, the tests of `src-tauri` and of the key listener crate, `cargo deny check bans licenses sources` (the advisories: `advisories.yml`, daily), the real Secret Service; no bundles and no artifact (Linux ships the Electron shell; `just desktop-check` is the local equivalent) |
 | `Desktop (Windows NSIS, cross-compiled)` | self-hosted `tavrn-heavy` | as above, never for forks, Dependabot or release tags | `tauri build --target x86_64-pc-windows-msvc --runner cargo-xwin --bundles nsis`; artifact `desktop-windows-nsis` (the current Tauri installer of `main` is always there) |
-| `Desktop (Linux, Electron)` | self-hosted `tavrn-heavy` (`ubuntu-latest` for forks, Dependabot and release tags) | as above; release tags | the Electron shell's checks, the key listener module, `.AppImage`, `.deb` and `latest-linux.yml` (uploaded with their sums before the specs run), every Playwright spec (the full smoke test against a copy of the AppImage); artifact `desktop-linux-electron` ([Builds and releases (Electron)](#builds-and-releases-electron)) |
+| `Desktop (Linux, Electron)` | self-hosted `tavrn-heavy` (`ubuntu-latest` for forks, Dependabot and release tags) | as above; release tags | the native modules' checks, the key listener module, `.AppImage`, `.deb` and `latest-linux.yml` (uploaded with their sums before the specs run), every Playwright spec (the full smoke test against a copy of the AppImage); artifact `desktop-linux-electron` ([Builds and releases (Electron)](#builds-and-releases-electron)) |
 | `Desktop (Windows)` | GitHub-hosted `windows-latest` | release tags; by hand with `windows: true` | the Tauri `.msi` and NSIS installers, built without any secret; artifact `desktop-windows` |
 | `Desktop (Windows, Electron fallback)` | GitHub-hosted `windows-latest` | release tags; by hand with `electron-windows: true` | the Electron shell's NSIS installer `tavrn-electron_<version>_x64-setup.exe`, its block map and `latest.yml` (the key listener module built with the MSVC toolchain of the runner); artifact `desktop-windows-electron` |
 | `Desktop (macOS, universal, unsigned)` | GitHub-hosted `macos-latest` | release tags; by hand with `macos: true` | the Tauri app as one universal build (Apple Silicon and Intel): `Tavrn_<version>_universal.dmg` and the updater's app archive `Tavrn_<version>_universal.app.tar.gz`, signed ad hoc only, built without any secret; artifact `desktop-macos`. `continue-on-error`: a failure never fails a release ([macOS](#macos)) |
@@ -1287,11 +1287,11 @@ All artifacts are kept for 7 days.
   publishing it, so it is never part of an artifact either).
 - **Pull requests** start no desktop build: they run the quick checks of `ci.yml` only. A pull request's branch is
   built by hand (`gh workflow run desktop.yml --ref <branch>`); changes to the workflow file alone start nothing either.
-- **Trusted events only:** a self-hosted runner executes the code it checks out, so the jobs keep the trust rule of the
-  organization's `rust-ci.yml`: code from forks, from Dependabot and from `dependabot/*` branches builds on
+- **Trusted events only:** a self-hosted runner executes the code it checks out, so the jobs take the trust rule of the
+  organization's `route.yml` (job `route`, skipped for a release tag): code from forks, from Dependabot and from `dependabot/*` branches builds on
   `ubuntu-latest` and skips the cross-compiled installer. A manual run executes the dispatched branch on the runner:
   dispatch only branches you reviewed. **Release builds are GitHub-hosted throughout** (`ubuntu-latest`,
-  `windows-latest`), and **the build jobs hold no secret**: a compromised dependency in a build (a crate's build script,
+  `windows-latest`) and restore no Actions cache, and **the build jobs hold no secret**: a compromised dependency in a build (a crate's build script,
   an npm package) never sees the updater key. Only `Release assets` holds it, in the environment `release` (tags `v*`,
   the owner's approval): it installs the Tauri CLI alone without lifecycle scripts, runs no build, no cargo and no
   cache, and signs the finished files (`apps/desktop/scripts/release-workflow.test.mjs` fails when another job names
