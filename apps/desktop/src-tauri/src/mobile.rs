@@ -66,9 +66,23 @@ pub fn app_link(input: &str) -> Option<String> {
     Some(out.to_string())
 }
 
-/// A path of the client a notification click opens (the rule of the desktop's notifications, `notify.rs`).
+/// Views of the client a notification may open (besides `/`): rooms, other nodes' rooms and conversations, DMs and
+/// group DMs, the settings and the node's report inbox (`AppPaths.kt`, the client's `isClientPath`).
+const CLIENT_PREFIXES: [&str; 5] = ["/rooms/", "/n/", "/conversations/", "/dm/", "/settings/"];
+const REPORTS: &str = "/admin/reports";
+
+/// A path of the client a notification click opens: one of the app's views, never a page that acts on a sign-in
+/// (`/connect`, `/sso/…`, `/verify-email`), no dot segments.
 pub fn client_path(path: &str) -> bool {
-    path.starts_with('/') && !path.starts_with("//") && path.len() <= 512 && !path.chars().any(|c| c.is_control() || c == '\\' || c.is_whitespace())
+    let syntax = path.starts_with('/')
+        && !path.starts_with("//")
+        && path.len() <= 512
+        && !path.chars().any(|c| c.is_control() || c == '\\' || c.is_whitespace())
+        && !path.to_ascii_lowercase().contains("%2e");
+    let bare = path.split(['?', '#']).next().unwrap_or_default();
+    syntax
+        && !bare.split('/').any(|s| s == "." || s == "..")
+        && (bare == "/" || bare == REPORTS || bare.starts_with(&format!("{REPORTS}/")) || CLIENT_PREFIXES.iter().any(|p| bare.starts_with(p)))
 }
 
 fn text_ok(s: &str, max: usize) -> bool {
@@ -694,8 +708,22 @@ mod tests {
 
     #[test]
     fn notification_clicks_open_only_client_paths() {
-        assert!(client_path("/rooms/1/channels/2"));
-        for bad in ["rooms/1", "//evil.example", "/a b", "/a\\b", "https://x/"] {
+        for good in ["/", "/rooms/1/channels/2", "/n/chat.example/conversations/1", "/conversations/1", "/settings/legal", "/admin/reports"] {
+            assert!(client_path(good), "{good}");
+        }
+        for bad in [
+            "rooms/1",
+            "//evil.example",
+            "/a b",
+            "/a\\b",
+            "https://x/",
+            "/connect?session=s&state=t",
+            "/sso/callback?code=x",
+            "/verify-email?token=x",
+            "/admin/reportsx",
+            "/rooms/../connect",
+            "/n/x/%2E%2E/%2e%2e/connect",
+        ] {
             assert!(!client_path(bad), "{bad}");
         }
     }

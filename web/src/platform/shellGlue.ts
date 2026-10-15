@@ -12,8 +12,22 @@ export const TRAY_ACTIONS: readonly string[] = ["mute", "deafen", "leave"] satis
 
 export const isTrayAction = (action: unknown): action is TrayAction => typeof action === "string" && TRAY_ACTIONS.includes(action);
 
-/** Only paths of the client (the shell validated them too). */
-export const isClientPath = (path: unknown): path is string => typeof path === "string" && path.startsWith("/") && !path.startsWith("//");
+/** Views a notification may open besides `/` (the shells' `client_path` and Android's `AppPaths` have the same list). */
+const CLIENT_PREFIXES = ["/rooms/", "/n/", "/conversations/", "/dm/", "/settings/"];
+const REPORTS = "/admin/reports";
+
+/**
+ * Only the client's views (the shell validated them too): never a page that acts on a sign-in (`/connect`, `/sso/…`,
+ * `/verify-email`), no dot segments, no other origin.
+ */
+export const isClientPath = (path: unknown): path is string => {
+  if (typeof path !== "string" || !path.startsWith("/") || path.startsWith("//") || path.length > 512) return false;
+  // eslint-disable-next-line no-control-regex
+  if (/[\s\\\u0000-\u001f\u007f]/.test(path) || /%2e/i.test(path)) return false;
+  const bare = path.split(/[?#]/)[0]!;
+  if (bare.split("/").some((s) => s === "." || s === "..")) return false;
+  return bare === "/" || bare === REPORTS || bare.startsWith(`${REPORTS}/`) || CLIENT_PREFIXES.some((p) => bare.startsWith(p));
+};
 
 /** The shells' tray status (snake case) as the client's. */
 export function trayStatusOf(s: { state: TrayStatus["state"]; tooltip: string; available: boolean; close_to_tray: boolean }): TrayStatus {

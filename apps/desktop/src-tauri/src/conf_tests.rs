@@ -242,13 +242,19 @@ fn the_android_manifest_keeps_its_promises() {
     let network = include_str!("../gen/android/app/src/main/res/xml/network_security_config.xml");
     assert!(network.contains("<base-config cleartextTrafficPermitted=\"false\" />"));
     // Every service and receiver of the app is private (the connector's own receiver is the only door for pushes).
-    for component in ["\".VoiceService\"", "\".ConnectionService\"", "\".PushReceiver\"", "\".ActionReceiver\""] {
+    // The notification trampoline too: only the app's own pending intents may hand the client a path.
+    for component in ["\".VoiceService\"", "\".ConnectionService\"", "\".PushReceiver\"", "\".ActionReceiver\"", "\".NotificationTrampoline\""] {
         let at = manifest.find(component).unwrap_or_else(|| unreachable!("{component} missing"));
         let tag = &manifest[..at];
         let start = tag.rfind('<').unwrap_or(0);
         let element = &manifest[start..manifest[at..].find('>').map_or(manifest.len(), |e| at + e)];
         assert!(element.contains("android:exported=\"false\""), "{component} is exported");
     }
+    // The exported main activity takes no client path from an intent; notification taps go through the trampoline.
+    let plugin = include_str!("../gen/android/app/src/main/java/org/tavrn/app/ShellPlugin.kt");
+    assert!(!plugin.contains("getStringExtra(Notifier.EXTRA_PATH)"), "the main activity reads a path from its intent");
+    let notifier = include_str!("../gen/android/app/src/main/java/org/tavrn/app/Notifier.kt");
+    assert!(notifier.contains("Intent(context, NotificationTrampoline::class.java)"), "notification taps bypass the trampoline");
     // App links only for the paths the shell accepts (mobile::app_link).
     assert!(manifest.contains("android:autoVerify=\"true\""));
     for host in crate::mobile::APP_LINK_HOSTS {

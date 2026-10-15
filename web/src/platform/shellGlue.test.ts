@@ -37,8 +37,10 @@ describe("the shells' shared glue", () => {
   it("tray actions and client paths", () => {
     expect(["mute", "deafen", "leave"].every(isTrayAction)).toBe(true);
     expect(isTrayAction("quit")).toBe(false);
-    expect(isClientPath("/rooms/1")).toBe(true);
-    for (const bad of ["//evil.example", "https://x.example", 3, null]) expect(isClientPath(bad)).toBe(false);
+    for (const good of ["/", "/rooms/1", "/n/chat.example/conversations/1", "/conversations/1", "/settings/legal", "/admin/reports"]) expect(isClientPath(good), good).toBe(true);
+    // Never a page that acts on a sign-in, a dot segment or another origin.
+    for (const bad of ["//evil.example", "https://x.example", 3, null, "/connect?session=s&state=t", "/sso/callback?code=x", "/verify-email?token=x", "/admin/reportsx", "/rooms/../connect", "/n/x/%2E%2E/connect", "/rooms/a b", "/rooms/a\\b"])
+      expect(isClientPath(bad), String(bad)).toBe(false);
     expect(trayStatusOf({ state: "connected", tooltip: "t", available: true, close_to_tray: false })).toEqual({ state: "connected", tooltip: "t", available: true, closeToTray: false });
   });
 
