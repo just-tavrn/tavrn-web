@@ -7,7 +7,7 @@
  */
 import { useEffect, useId, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Permission, hasPermission, type BackendInfo, type BackendRequest, type Channel, type RoomDetail } from "@tavrn/sdk";
+import { Permission, hasPermission, type BackendInfo, type BackendRequest, type Channel, type FilesInfo, type RoomDetail } from "@tavrn/sdk";
 import { useT } from "../i18n";
 import { useNode } from "../components/NodeScope";
 import { Button, ErrorText, Field, Input } from "../components/ui";
@@ -61,6 +61,15 @@ export function initialKind(b: Pick<BackendInfo, "kind" | "external_allowed">): 
   return b.kind === "none" ? "webdav" : (b.kind as Kind);
 }
 
+/**
+ * The node's own storage may hold this channel's files: the room's effective `files_channels.internal` from the files
+ * usage (`internal_allowed`, FILES.md §5: the room owner's plan or override over the node default). Older nodes have
+ * no such field; their `GET backend` reports the node default (`TAVRN_FILES_INTERNAL`, `files_internal` of `GET /node`).
+ */
+export function internalAllowed(usage: Partial<Pick<FilesInfo, "internal_allowed">> | undefined, b: Pick<BackendInfo, "internal_allowed">): boolean {
+  return usage?.internal_allowed ?? b.internal_allowed;
+}
+
 function formOf(b: BackendInfo): Form {
   return { kind: initialKind(b), url: b.url, username: b.username, password: "", access_key: b.access_key, secret_key: "", region: b.region, bucket: b.bucket, prefix: b.prefix, encrypt_files: b.encrypt_files, limit: limitText(b.max_bytes ?? 0) };
 }
@@ -80,6 +89,8 @@ export function StorageSection({ room, channel }: { room: RoomDetail; channel: C
   const perms = channelPermissions(room, channel.id, me?.id ?? "");
   const allowed = hasPermission(perms, Permission.MANAGE_CHANNELS) && hasPermission(perms, Permission.MANAGE_FILES);
   const backend = useQuery({ queryKey: ["files-backend", domain, channel.id], queryFn: () => api.files.backend(room.id, channel.id), enabled: allowed });
+  // The same query as the files view (shared cache): the room's `internal_allowed`.
+  const usage = useQuery({ queryKey: ["files-usage", domain, channel.id], queryFn: () => api.files.usage(room.id, channel.id), enabled: allowed });
   const [form, setForm] = useState<Form | null>(null);
   const limitErrorId = useId();
   const [error, setError] = useState<string | null>(null);
@@ -90,8 +101,9 @@ export function StorageSection({ room, channel }: { room: RoomDetail; channel: C
   }, [backend.data]);
   if (!allowed) return null;
   if (backend.isError) return <Section title={t("files.storage")}><ErrorText>{describeError(backend.error)}</ErrorText></Section>;
-  if (!backend.data || !form) return null;
+  if (!backend.data || !form || usage.isPending) return null;
   const b = backend.data;
+  const internal = internalAllowed(usage.data, b);
   const set = (patch: Partial<Form>) => {
     setForm({ ...form, ...patch });
     setTested(null);
@@ -116,11 +128,14 @@ export function StorageSection({ room, channel }: { room: RoomDetail; channel: C
   return (
     <Section title={t("files.storage")} description={t("files.storage_hint")}>
       <div className="space-y-3" data-testid="files-storage">
-        <Field label={t("files.storage_kind")} hint={locked ? t("files.storage_locked") : !b.external_allowed ? t("files.external_off") : !b.internal_allowed ? t("files.internal_off") : undefined}>
+        <Field label={t("files.storage_kind")} hint={locked ? t("files.storage_locked") : !b.external_allowed ? t("files.external_off") : !internal ? t("files.internal_off") : undefined}>
           <Select value={form.kind} onChange={(e) => set({ kind: e.target.value as Kind })} data-testid="files-storage-kind">
-            <option value="internal" disabled={!b.internal_allowed || (locked && b.kind !== "internal")}>
-              {t("files.backend.internal")}
-            </option>
+            {/* "This node" only where the room may use it (or where the channel is stored there already). */}
+            {(internal || b.kind === "internal") && (
+              <option value="internal" disabled={locked && b.kind !== "internal"}>
+                {t("files.backend.internal")}
+              </option>
+            )}
             <option value="webdav" disabled={!b.external_allowed || (locked && b.kind !== "webdav")}>
               {t("files.backend.webdav")}
             </option>

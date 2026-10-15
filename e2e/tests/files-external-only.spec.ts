@@ -2,7 +2,7 @@
 /**
  * Files channels on external stores only (tavrn-protocol FILES.md §5): the node of `filesPolicy` in the Playwright
  * config runs with TAVRN_FILES_INTERNAL=off. A new files channel shows "choose a store first" instead of the upload
- * button; its storage settings refuse the node's own storage; once a WebDAV store (a small one in this spec) is set,
+ * button; its storage settings do not offer the node's own storage (the room's `internal_allowed` is false); once a WebDAV store (a small one in this spec) is set,
  * uploads go there.
  */
 import { createServer, type Server } from "node:http";
@@ -66,13 +66,17 @@ test("a files channel on a node without internal storage asks for a store before
     const choose = page.getByRole("link", { name: "Zuerst einen Speicher wählen" });
     await expect(choose).toBeVisible();
     await expect(page.getByTestId("files-upload-button")).toHaveCount(0);
-    await expect(page.getByTestId("files-empty")).toContainText("Dieser Knoten speichert selbst keine Dateien von Dateichannels");
+    await expect(page.getByTestId("files-empty")).toContainText("Dieser Knoten speichert selbst keine Dateien der Dateichannels dieses Raums");
 
     // The channel's storage settings: the node's own storage cannot be chosen; a WebDAV store can.
     await choose.click();
     const storage = page.getByTestId("files-storage");
     await expect(storage).toBeVisible();
-    await expect(storage.locator('option[value="internal"]')).toBeDisabled();
+    // "This node" is offered only where the room may use it (`internal_allowed` of the usage, files_channels.internal).
+    const before = await (await request.get(`${FILES_NODE}/api/v1/rooms/${room.id}/channels/${ch.id}/files/usage`, { headers: auth })).json();
+    expect(before.internal_allowed).toBe(false);
+    await expect(storage.locator('option[value="internal"]')).toHaveCount(0);
+    await expect(storage.getByText("Dieser Knoten speichert keine Dateien der Dateichannels dieses Raums")).toBeVisible();
     await expect(storage.getByTestId("files-storage-kind")).toHaveValue("webdav");
     await storage.getByTestId("files-storage-url").fill(store.url);
     await storage.getByTestId("files-storage-username").fill("team");

@@ -191,8 +191,9 @@ export function externalBackend(backend: string): boolean {
 }
 
 /**
- * The channel has no store yet: a node that keeps no files of files channels itself (`TAVRN_FILES_INTERNAL=off`,
- * FILES.md §5) takes uploads only once the channel's managers chose an external store.
+ * The channel has no store yet: where the node keeps no files of the room's files channels itself
+ * (`TAVRN_FILES_INTERNAL=off` or the room's `files_channels.internal`, FILES.md §5), a channel takes uploads only once
+ * its managers chose an external store.
  */
 export function needsStore(info: Pick<FilesInfo, "backend"> | undefined): boolean {
   return info?.backend === "none";
