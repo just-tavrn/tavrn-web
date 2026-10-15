@@ -669,7 +669,7 @@ export function ConversationView(p: ConversationViewProps) {
   return (
     <EmojiContext.Provider value={emojiContext}>
     <div className="relative flex min-h-0 flex-1 flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-4">
+      <header className="flex h-12 shrink-0 select-none items-center gap-2 border-b border-line px-4">
         {p.header}
         {p.encrypted && (
           <LockMark size={18} title={t("e2ee.encrypted_hint")} testId="encrypted-marker" />

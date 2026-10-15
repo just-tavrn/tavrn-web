@@ -33,6 +33,7 @@ export function InlineEmoji({ value, node, owner, size = 20, still = false }: { 
         title={`:${token.name}:`}
         width={size}
         height={size}
+        draggable={false}
         className="inline-block object-contain align-middle"
         onError={() => setMissing(true)}
         data-testid="inline-emoji"

@@ -153,7 +153,7 @@ export function WhiteboardSession(p: WhiteboardSessionProps) {
   };
 
   const header = (
-    <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line bg-bg-1 px-2 sm:px-3">
+    <header className="flex h-12 shrink-0 select-none items-center gap-2 border-b border-line bg-bg-1 px-2 sm:px-3">
       {p.headerStart ?? (
         <Link to={p.backTo} className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md text-fg-1 hover:bg-bg-3 hover:text-fg-0" aria-label={t("whiteboard.back")}>
           ←
@@ -298,7 +298,7 @@ function Toolbar(p: {
           ⋯
         </button>
         {p.menuOpen && (
-          <div role="menu" className="absolute right-0 top-11 z-50 w-56 rounded-md border border-line bg-bg-1 p-1 shadow-xl">
+          <div role="menu" className="absolute right-0 top-11 z-50 w-56 select-none rounded-md border border-line bg-bg-1 p-1 shadow-xl">
             {actions.map((a) => (
               <button
                 key={a.key}

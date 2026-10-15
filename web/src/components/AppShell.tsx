@@ -70,25 +70,27 @@ export function AppShell({ rail, sidebar, children, aside, headerExtra }: { rail
         {skipToMessages ? t("a11y.skip_to_messages") : t("a11y.skip_to_content")}
       </a>
       <div className={`relative flex h-full flex-col md:grid md:grid-cols-[312px_1fr] ${hasAside ? "xl:grid-cols-[72px_240px_1fr_240px]" : "xl:grid-cols-[72px_240px_1fr]"}`} data-testid="app-shell" style={{ paddingTop: "var(--safe-top)" }}>
+        {/* The app chrome (rail, sidebar, member list, top bar) is not selectable: a press and drag across it paints no
+            selection (tavrn-web#186). Message bodies, topics, code and fields stay selectable (docs/CLIENT.md "UI conventions"). */}
         <div
           className={`fixed bottom-[var(--safe-bottom)] left-0 top-[var(--safe-top)] z-40 flex w-[312px] max-w-[85vw] transform transition-transform md:static md:z-auto md:w-auto md:max-w-none md:translate-x-0 xl:contents ${navOpen ? "translate-x-0" : "-translate-x-full"}`}
           data-testid="nav-drawer"
           data-open={navOpen}
         >
-          <nav aria-label={t("shell.rooms")} className="flex w-[72px] shrink-0 flex-col items-center gap-2 overflow-y-auto border-r border-line bg-bg-0 py-3">
+          <nav aria-label={t("shell.rooms")} className="flex w-[72px] shrink-0 select-none flex-col items-center gap-2 overflow-y-auto border-r border-line bg-bg-0 py-3">
             {rail}
           </nav>
-          <aside aria-label={t("shell.channels")} className="flex min-w-0 flex-1 flex-col overflow-y-auto border-r border-line bg-bg-1 md:w-[240px] xl:w-auto">
+          <aside aria-label={t("shell.channels")} className="flex min-w-0 flex-1 select-none flex-col overflow-y-auto border-r border-line bg-bg-1 md:w-[240px] xl:w-auto">
             {sidebar}
           </aside>
         </div>
 
         <main id="main-content" tabIndex={-1} className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg-2">
-          <div className="flex h-11 shrink-0 items-center gap-2 border-b border-line px-2 xl:hidden">
+          <div className="flex h-11 shrink-0 select-none items-center gap-2 border-b border-line px-2 xl:hidden">
             <button type="button" data-testid="nav-toggle" aria-label={t("shell.open_nav")} aria-expanded={navOpen} onClick={() => setNavOpen((v) => !v)} className="min-h-11 min-w-11 rounded-md hover:bg-bg-3 md:hidden">
               ☰
             </button>
-            <img src="/icon-64.png" width={28} height={28} alt="" aria-hidden="true" className="rounded-md md:hidden" />
+            <img src="/icon-64.png" width={28} height={28} alt="" aria-hidden="true" draggable={false} className="rounded-md md:hidden" />
             <span className="flex-1" />
             {/* Phones: the footer (with the bell) is inside the closed drawer, so the bell is up here too. */}
             {headerExtra && <span className="md:hidden">{headerExtra}</span>}
@@ -105,7 +107,7 @@ export function AppShell({ rail, sidebar, children, aside, headerExtra }: { rail
             free; portrait keeps 240 px (tavrn-web#121). */}
         <aside
           aria-label={t("shell.members")}
-          className={`fixed bottom-[var(--safe-bottom)] right-0 top-[var(--safe-top)] z-40 w-[240px] max-w-[85vw] md:max-xl:landscape:w-[280px] transform overflow-y-auto border-l border-line bg-bg-1 p-3 transition-transform xl:static xl:z-auto xl:translate-x-0 ${membersOpen ? "translate-x-0" : "translate-x-full"} ${hasAside ? "" : "hidden"}`}
+          className={`fixed bottom-[var(--safe-bottom)] right-0 top-[var(--safe-top)] z-40 w-[240px] select-none max-w-[85vw] md:max-xl:landscape:w-[280px] transform overflow-y-auto border-l border-line bg-bg-1 p-3 transition-transform xl:static xl:z-auto xl:translate-x-0 ${membersOpen ? "translate-x-0" : "translate-x-full"} ${hasAside ? "" : "hidden"}`}
           data-testid="members-drawer"
           data-open={hasAside && membersOpen}
         >

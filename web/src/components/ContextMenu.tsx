@@ -289,7 +289,7 @@ function MenuPanel({ entries, anchor, prefer, onClose, onCloseSub, label, depth,
         aria-label={label}
         data-menu-depth={depth}
         data-testid={depth === 0 ? (testId ?? "context-menu") : "context-submenu"}
-        className="z-[70] min-w-52 overflow-y-auto rounded-lg border border-line bg-bg-1 p-1 shadow-xl"
+        className="z-[70] min-w-52 select-none overflow-y-auto rounded-lg border border-line bg-bg-1 p-1 shadow-xl"
         style={style}
         onKeyDown={onKeyDown}
         onContextMenu={(e) => e.preventDefault()}

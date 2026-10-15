@@ -69,6 +69,9 @@ body { @apply bg-bg-2 text-fg-0 font-sans antialiased; }
   /* Small check boxes never shrink below their size next to long labels (WCAG 2.5.8 target size). */
   input[type="checkbox"], input[type="radio"] { flex-shrink: 0; }
   ::selection { background: var(--color-brand-deep); color: var(--color-fg-0); }
+  /* The app chrome is not selectable (`select-none` on its containers, docs/CLIENT.md "UI conventions"); fields inside it
+     stay editable and selectable (older WebKit lets an inherited -webkit-user-select: none block typing). */
+  input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-select: text; }
 }
 
 /* Skip link (WCAG 2.4.1): off screen until it takes the keyboard focus, then a small accent chip top left. */

@@ -330,7 +330,7 @@ export function VoiceStage({ room, channel }: { room: RoomDetail; channel: Chann
   const sessionStart = useVoicePresence((s) => sessionStartOf(s, domain, channel.id));
   const canSetStatus = hasPermission(perms, Permission.VOICE_STATUS);
   const header = (
-    <header className="flex min-h-12 shrink-0 items-center gap-2 border-b border-line px-4 py-1">
+    <header className="flex min-h-12 shrink-0 select-none items-center gap-2 border-b border-line px-4 py-1">
       <SpeakerIcon size={16} className="shrink-0 text-fg-2" />
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">

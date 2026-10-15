@@ -1415,6 +1415,14 @@ writes English where it has no texts for the language.
   marks, muted, bot markers) are 16 px SVGs, the unread badges 20 px high. Category labels are 12 px semibold
   uppercase. Voice participants: 14 px names, 24 px avatars. Names truncate with an ellipsis; the sidebar stays 240 px
   wide on desktop.
+- **No text selection on the chrome**: the room rail, the sidebars (channel list, home, voice and account bars), the
+  member list, the phone top bar, the views' headers, the settings navigation, tab bars, the voice controls, context
+  menus and dialog titles carry Tailwind's `select-none` (`user-select: none` with the `-webkit-` prefix), so a press
+  and drag across them paints no selection. Selectable stay: message bodies and attachments, the channel topic and
+  the voice channel status in the headers (`select-text`), code blocks, dialog bodies, legal and Markdown documents,
+  settings values, the rules box and toasts; fields are always selectable (`styles.css`). Images in the chrome
+  (avatars, room icons, emoji) are not draggable, so a drag shows no ghost image; the rail's folder drag and drop and
+  the voice participants' drag are unaffected.
 
 ## Accessibility
 

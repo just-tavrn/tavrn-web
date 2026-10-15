@@ -120,14 +120,15 @@ export function ChannelPage() {
       <h1 className="truncate text-sm font-semibold" data-testid="channel-name">
         {channelName(channel)}
       </h1>
-      {channel.topic && <span className="hidden truncate text-sm text-fg-2 md:inline">· {channel.topic}</span>}
+      {/* The topic stays selectable inside the non-selectable header (worth copying). */}
+      {channel.topic && <span className="hidden select-text truncate text-sm text-fg-2 md:inline">· {channel.topic}</span>}
     </>
   );
   if (lock.pending) return <p className="p-4 text-sm text-fg-2">{t("room.loading")}</p>;
   if (lock.locked)
     return (
       <div className="flex min-h-0 flex-1 flex-col" data-testid="channel-page">
-        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-4">{header}</header>
+        <header className="flex h-12 shrink-0 select-none items-center gap-2 border-b border-line px-4">{header}</header>
         <LockedChannel name={channelName(channel)} />
       </div>
     );

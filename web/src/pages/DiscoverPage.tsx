@@ -351,7 +351,7 @@ export function DiscoverPage() {
     <div className="flex-1 overflow-y-auto p-4 sm:p-6">
       <h1 className="text-xl font-semibold">{t("discover.title")}</h1>
       <p className="mt-1 max-w-2xl text-sm text-fg-1">{t("discover.intro")}</p>
-      <div role="tablist" aria-label={t("discover.title")} className="mt-4 grid max-w-sm grid-cols-2 rounded-md bg-bg-0 p-1 text-sm">
+      <div role="tablist" aria-label={t("discover.title")} className="mt-4 grid select-none max-w-sm grid-cols-2 rounded-md bg-bg-0 p-1 text-sm">
         {(["rooms", "nodes"] as Tab[]).map((k) => (
           <button key={k} role="tab" type="button" aria-selected={tab === k} onClick={() => setTab(k)} className={`min-h-10 rounded ${tab === k ? "bg-bg-3 text-fg-0" : "text-fg-2"}`}>
             {k === "rooms" ? t("discover.tab_rooms") : t("discover.tab_nodes")}

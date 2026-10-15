@@ -88,10 +88,10 @@ export function Dialog({ title, open, onClose, children }: { title: string; open
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-xl border border-line bg-bg-1 p-5 shadow-xl sm:rounded-xl"
+        className="max-h-[90dvh] w-full max-w-md select-text overflow-y-auto rounded-t-xl border border-line bg-bg-1 p-5 shadow-xl sm:rounded-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 id={titleId} className="mb-4 text-base font-semibold">
+        <h2 id={titleId} className="mb-4 select-none text-base font-semibold">
           {title}
         </h2>
         {children}

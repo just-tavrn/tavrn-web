@@ -332,7 +332,7 @@ function ActiveCall() {
       data-testid="call-view"
       data-status={status}
     >
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-3 pt-[var(--safe-top)]">
+      <header className="flex h-12 shrink-0 select-none items-center gap-2 border-b border-line px-3 pt-[var(--safe-top)]">
         <PhoneIcon size={16} className="text-ok" />
         <h2 className="min-w-0 flex-1 truncate text-sm font-semibold" data-testid="call-title">
           {title}
