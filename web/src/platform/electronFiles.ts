@@ -8,25 +8,15 @@
  * save's id.
  */
 import type { TavrnShellBridge } from "./electronBridge";
-import { asBlob, SAVE_CHUNK_BYTES, type SaveFile } from "./files";
+import { chunkedSaveFile, type SaveFile } from "./files";
 
 /** Saving through the bridge's `files` namespace, the file streamed in 4 MiB pieces. */
 export function createElectronSaveFile(files: TavrnShellBridge["files"]): SaveFile {
-  return async (file) => {
-    const blob = asBlob(file);
-    const mime = file.mime || blob.type || "application/octet-stream";
-    const begin = await files.saveFileBegin(file.name, mime, blob.size);
-    if (begin.status !== "ready") return { status: "cancelled" };
-    const { id } = begin;
-    try {
-      for (let offset = 0; offset < blob.size; offset += SAVE_CHUNK_BYTES) {
-        await files.saveFileChunk(id, new Uint8Array(await blob.slice(offset, offset + SAVE_CHUNK_BYTES).arrayBuffer()));
-      }
-      const saved = await files.saveFileEnd(id);
-      return { status: "saved", name: file.name, path: saved.path, folder: saved.folder, reveal: () => files.saveFileReveal(id) };
-    } catch (e) {
-      await files.saveFileAbort(id).catch(() => {});
-      throw e;
-    }
-  };
+  return chunkedSaveFile({
+    begin: (name, mime, size) => files.saveFileBegin(name, mime, size),
+    chunk: (id, bytes) => files.saveFileChunk(id, bytes),
+    end: (id) => files.saveFileEnd(id),
+    abort: (id) => files.saveFileAbort(id),
+    reveal: (id) => files.saveFileReveal(id),
+  });
 }
