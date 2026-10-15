@@ -23,6 +23,7 @@ import { apiFor } from "../stores/nodes";
 import { onAccountChange } from "../stores/auth";
 import { roomOfChannel } from "./roomCache";
 import { roomsQuery } from "./queries";
+import { admits } from "./nodeScope";
 import { useUnread } from "../stores/unread";
 import { useThreads } from "../threads/store";
 import { platform } from "../platform";
@@ -160,7 +161,10 @@ async function findRooms(queryClient: QueryClient, node: string | null, conversa
   if (conversationId && (roomOfChannel(queryClient, conversationId) || (unknownUntil.get(negative) ?? 0) > Date.now())) return;
   const client = apiFor(node);
   const rooms = await queryClient.fetchQuery(roomsQuery(node));
-  const pending = rooms.filter((r) => !queryClient.getQueryData(["room", r.id]));
+  // Room details are cached under the bare id (`["room", id]`): another node's list may name only rooms that are its
+  // own, never one the home node (or a third node) lists, whose entry it would otherwise fill (lib/nodeScope.ts).
+  if (node) await queryClient.fetchQuery(roomsQuery(null)).catch(() => undefined);
+  const pending = rooms.filter((r) => !queryClient.getQueryData(["room", r.id]) && admits(queryClient, node, "room", r.id));
   let next = 0;
   let found = false;
   const worker = async () => {

@@ -9,6 +9,7 @@
  */
 import type { QueryClient } from "@tanstack/react-query";
 import type { Category, Channel, Member, PermissionOverride, Role, Room, RoomDetail, User } from "@tavrn/sdk";
+import { homeListsRoom } from "./nodeScope";
 
 /** A change of the cached room detail. */
 export type RoomPatch = (room: RoomDetail) => RoomDetail;
@@ -168,14 +169,16 @@ function channelIndex(queryClient: QueryClient): Map<string, RoomDetail> {
     channelIndexes.set(queryClient, created);
     // Any change of a room entry (patched, fetched, removed) drops the index; the next lookup builds it again.
     queryClient.getQueryCache().subscribe((event) => {
-      if (event.query.queryKey[0] === "room" && (event.type === "added" || event.type === "removed" || (event.type === "updated" && event.action.type === "success"))) created.rooms = null;
+      // The room lists too: which node lists a room decides between rooms that list the same channel.
+      if ((event.query.queryKey[0] === "room" || event.query.queryKey[0] === "rooms") && (event.type === "added" || event.type === "removed" || (event.type === "updated" && event.action.type === "success"))) created.rooms = null;
     });
   }
   if (!entry.rooms) {
     const rooms = new Map<string, RoomDetail>();
     for (const [, room] of queryClient.getQueriesData<RoomDetail>({ queryKey: ["room"] })) {
       if (!room || !Array.isArray(room.channels)) continue;
-      for (const c of room.channels) if (!rooms.has(c.id)) rooms.set(c.id, room);
+      // A channel listed by several cached rooms (ids are chosen by nodes): the room the home node lists wins.
+      for (const c of room.channels) if (!rooms.has(c.id) || (homeListsRoom(queryClient, room.id) && !homeListsRoom(queryClient, rooms.get(c.id)!.id))) rooms.set(c.id, room);
     }
     entry.rooms = rooms;
   }

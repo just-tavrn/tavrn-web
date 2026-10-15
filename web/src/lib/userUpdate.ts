@@ -10,6 +10,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { Conversation, FriendList, Member, Room, User } from "@tavrn/sdk";
 import { withUser } from "./roomCache";
+import { admits } from "./nodeScope";
 
 /** Is `u` a well-formed user of an event (from a node: checked before it touches the cache)? */
 export function isEventUser(u: unknown): u is User {
@@ -34,7 +35,8 @@ const changed = <T>(before: T, after: T): T | undefined => (after === before ? u
 
 /** `node`: the node whose socket delivered the event, null for the home node. */
 export function applyUserUpdate(queryClient: QueryClient, user: User, node: string | null): void {
-  const rooms = new Set((queryClient.getQueryData<Room[]>(node ? ["rooms", node] : ["rooms"]) ?? []).map((r) => r.id));
+  // Only the rooms and conversations this node alone lists (another node may name the home node's ids, lib/nodeScope.ts).
+  const rooms = new Set((queryClient.getQueryData<Room[]>(node ? ["rooms", node] : ["rooms"]) ?? []).map((r) => r.id).filter((id) => admits(queryClient, node, "room", id)));
   queryClient.setQueriesData<Member[]>({ queryKey: ["members"], predicate: (q) => rooms.has(q.queryKey[1] as string) }, (list) =>
     Array.isArray(list) ? changed(list, withUser(list, user, memberUser, withMemberUser) as Member[]) : undefined,
   );
@@ -43,7 +45,7 @@ export function applyUserUpdate(queryClient: QueryClient, user: User, node: stri
   if (Array.isArray(conversations)) {
     const next = conversations.map((c) => inConversation(c, user));
     if (next.some((c, i) => c !== conversations[i])) queryClient.setQueryData(listKey, next);
-    const ids = new Set(conversations.map((c) => c.id));
+    const ids = new Set(conversations.map((c) => c.id).filter((id) => admits(queryClient, node, "conversation", id)));
     queryClient.setQueriesData<Conversation>({ queryKey: ["conversation"], predicate: (q) => ids.has(q.queryKey[1] as string) }, (c) =>
       c && typeof c === "object" && !Array.isArray(c) ? changed(c, inConversation(c, user)) : undefined,
     );

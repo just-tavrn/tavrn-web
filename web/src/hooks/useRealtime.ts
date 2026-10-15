@@ -44,6 +44,8 @@ import { pollHandlers } from "../polls/votes";
 import { roomEventHandlers } from "./roomEvents";
 import { roomOfChannel } from "../lib/roomCache";
 import { formatDate } from "../lib/format";
+import { scopeSocket } from "./socketScope";
+import { conversationsQuery, roomsQuery } from "../lib/queries";
 
 /**
  * May this user commit removals of departed members in a conversation (`mls.remove_needed`)? DMs and group DMs:
@@ -144,8 +146,12 @@ export function mlsHandlers(socket: TavrnSocket, queryClient: QueryClient, domai
   ];
 }
 
-/** DM and group DM events of any node's socket (PROTOCOL.md §8a). */
-function conversationHandlers(socket: TavrnSocket, queryClient: QueryClient, navigate: (to: string, opts?: { replace?: boolean }) => void): Array<() => void> {
+/**
+ * DM and group DM events of any node's socket (PROTOCOL.md §8a), within that node's scope (hooks/socketScope.ts):
+ * `node` is the socket's node, null for the home node.
+ */
+export function conversationHandlers(socket: TavrnSocket, queryClient: QueryClient, navigate: (to: string, opts?: { replace?: boolean }) => void, node: string | null = null): Array<() => void> {
+  socket = scopeSocket(socket, queryClient, node);
   return [
     ...["conversation.create", "conversation.update"].map((type) =>
       socket.on<{ conversation: Conversation }>(type, (d) => {
@@ -225,6 +231,8 @@ interface PurgeData {
  * nodes. `me` is the user as that node knows it (user ids are node-local).
  */
 export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: () => { id: string; address: string } | null, node: string | null = null): Array<() => void> {
+  // A node's events change only that node's rooms and conversations (the keys are shared by every node).
+  socket = scopeSocket(socket, queryClient, node);
   /** Updates the loaded pages of a conversation if it is open (closed ones have no cache entry). */
   const updatePages = (conversationId: string, fn: (d: MessagePages<Message> | undefined) => MessagePages<Message> | undefined) => {
     // The channel's pages and those of its open threads (PROTOCOL.md §7e).
@@ -451,7 +459,7 @@ export function useRealtime() {
       socket.on("friend.remove", () => void queryClient.invalidateQueries({ queryKey: ["friends"] })),
       // ---- A statement of reasons about the user's content (design note 4.14 item 1)
       socket.on<{ case_id: string }>("legal.statement", (d) => notifyStatement(d.case_id, queryClient)),
-      ...conversationHandlers(socket, queryClient, navigate),
+      ...conversationHandlers(socket, queryClient, navigate, null),
       ...accountNoticeHandlers(socket, queryClient),
     ];
 
@@ -620,10 +628,14 @@ function openNodeSocket(domain: string, queryClient: QueryClient, navigate: (to:
     // A refused token renews the federated session (refresh, else a new federated login).
     refreshToken: () => refreshNode(domain),
   });
+  // The home node's lists tell its ids apart from this node's (lib/nodeScope.ts); this node's DM list names its DMs.
+  void queryClient.prefetchQuery(roomsQuery(null));
+  void queryClient.prefetchQuery(conversationsQuery(null));
+  void queryClient.prefetchQuery(conversationsQuery(domain));
   const offs = [
     ...roomHandlers(socket, queryClient, () => useNodes.getState().sessions[domain]?.user ?? null, domain),
     ...mlsHandlers(socket, queryClient, () => domain),
-    ...conversationHandlers(socket, queryClient, navigate),
+    ...conversationHandlers(socket, queryClient, navigate, domain),
     // Key changes of users this node knows (room co-members); our own is handled by the home socket.
     socket.on<{ user: string }>("identity.changed", (d) => {
       if (d.user !== useAuth.getState().user?.address) void contactIdentityChanged(d.user, queryClient);
