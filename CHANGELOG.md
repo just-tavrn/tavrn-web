@@ -28,6 +28,15 @@ First public release of the web client and the desktop apps.
 
 ### Added
 
+- **Message components** (protocol APPLICATIONS.md §5.10, `components.v1`): buttons (primary, secondary, success,
+  danger, link) and select menus (one or several choices) under the messages of applications' bots, and the forms
+  (modals) bots open in answer, drawn from the client's own controls and palette inside the message on every screen
+  (rows wrap, labels truncate with a tooltip, a hard height limit). Answers appear under the message they belong to:
+  "Only you can see this" replies, "… is thinking", the bot's errors, an updated message; forms check required fields
+  and lengths before sending. Link buttons name the full address before opening it; expired components and those of
+  removed applications stay visible but disabled with the reason. Values are encrypted for the members in encrypted
+  conversations. The role and channel permission editors list the new *Use buttons and menus of apps* permission
+  (docs/CLIENT.md "Message components").
 - **Log join timings** for slow voice joins: Settings → Voice & video → Connection test → "Log join timings" (or
   `localStorage` `tavrn.debug.voice=1`) prints one table to the browser console after each join with every stage's
   duration (`vj:*` performance marks), the opening of the `/rtc` WebSocket, each peer connection from creation through
