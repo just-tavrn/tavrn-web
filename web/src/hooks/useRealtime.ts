@@ -513,7 +513,8 @@ export function notifyStatement(caseId: string, queryClient: QueryClient) {
 /**
  * One socket per other node with a federated session: room, message, conversation and MLS events of
  * that node keep the same caches and groups current (`mls.*` of conversations hosted there arrive on
- * this socket, FEDERATION.md §3.6). A refused token (`4001`) renews the federated session.
+ * this socket, FEDERATION.md §3.6). A refused token (`4001`) renews the federated session. A session added or dropped
+ * opens or closes only that node's socket; the others stay connected.
  */
 export function useNodeRealtime() {
   const queryClient = useQueryClient();
@@ -522,62 +523,86 @@ export function useNodeRealtime() {
   navigateRef.current = navigateNow;
   const navigate = useCallback((to: string, opts?: { replace?: boolean }) => navigateRef.current(to, opts), []);
   const domains = useNodes((s) => Object.keys(s.sessions).sort().join(","));
+  const open = useRef(new Map<string, NodeSocket>());
 
   useEffect(() => {
-    const list = domains ? domains.split(",") : [];
-    const opened: Array<{ socket: TavrnSocket; offs: Array<() => void> }> = [];
-    const sockets: Record<string, TavrnSocket> = {};
-    for (const domain of list) {
-      const session = useNodes.getState().sessions[domain];
-      if (!session) continue;
-      const socket = new TavrnSocket({
-        url: session.ws,
-        getToken: () => useNodes.getState().sessions[domain]?.token ?? null,
-        capabilities: ["content.v1", "reactions", "e2ee.mls1", "commands.v1"],
-        onStatus: (status) => {
-          // Connected (again): DMs started on that node wait there as Welcomes (§6.1); own leaves to remove.
-          if (status === "ready") {
-            void queryClient.invalidateQueries({ queryKey: ["my-voice", domain] });
-            void loadFollowedThreads({ key: domain, client: apiFor(domain), queryClient });
-            void getMls()
-              .then(async (m) => {
-                await m?.processWelcomes(domain);
-                await cleanupOwnLeaves(domain);
-              })
-              .catch(() => undefined);
-          }
-        },
-        onResync: () => {
-          void queryClient.invalidateQueries({ queryKey: ["rooms", domain] });
-          void queryClient.invalidateQueries({ queryKey: ["conversations", domain] });
-          void queryClient.invalidateQueries({ queryKey: ["my-voice", domain] });
-        },
-        // A refused token renews the federated session (refresh, else a new federated login).
-        refreshToken: () => refreshNode(domain),
-      });
-      const offs = [
-        ...roomHandlers(socket, queryClient, () => useNodes.getState().sessions[domain]?.user ?? null, domain),
-        ...mlsHandlers(socket, queryClient, () => domain),
-        ...conversationHandlers(socket, queryClient, navigate),
-        // Key changes of users this node knows (room co-members); our own is handled by the home socket.
-        socket.on<{ user: string }>("identity.changed", (d) => {
-          if (d.user !== useAuth.getState().user?.address) void contactIdentityChanged(d.user, queryClient);
-        }),
-        socket.on<{ user: string }>("identity.rotated", (d) => {
-          if (d.user !== useAuth.getState().user?.address) void contactIdentityChanged(d.user, queryClient);
-        }),
-      ];
-      socket.connect();
-      sockets[domain] = socket;
-      opened.push({ socket, offs });
+    const wanted = new Set(domains ? domains.split(",") : []);
+    const current = open.current;
+    for (const [domain, entry] of current) {
+      if (wanted.has(domain)) continue;
+      closeNodeSocket(entry);
+      current.delete(domain);
     }
-    useNodeSockets.setState({ sockets });
+    for (const domain of wanted) {
+      if (current.has(domain)) continue;
+      const entry = openNodeSocket(domain, queryClient, navigate);
+      if (entry) current.set(domain, entry);
+    }
+    useNodeSockets.setState({ sockets: Object.fromEntries([...current].map(([d, e]) => [d, e.socket])) });
+  }, [domains, queryClient, navigate]);
+
+  // Unmount (sign-out leaves the layout): every node socket closes.
+  useEffect(() => {
+    const current = open.current;
     return () => {
-      for (const { socket, offs } of opened) {
-        offs.forEach((off) => off());
-        socket.close();
-      }
+      for (const entry of current.values()) closeNodeSocket(entry);
+      current.clear();
       useNodeSockets.setState({ sockets: {} });
     };
-  }, [domains, queryClient, navigate]);
+  }, []);
+}
+
+interface NodeSocket {
+  socket: TavrnSocket;
+  offs: Array<() => void>;
+}
+
+function closeNodeSocket({ socket, offs }: NodeSocket) {
+  offs.forEach((off) => off());
+  socket.close();
+}
+
+/** The socket of one node with a federated session and its handlers; null without a session. */
+function openNodeSocket(domain: string, queryClient: QueryClient, navigate: (to: string, opts?: { replace?: boolean }) => void): NodeSocket | null {
+  const session = useNodes.getState().sessions[domain];
+  if (!session) return null;
+  const socket = new TavrnSocket({
+    url: session.ws,
+    getToken: () => useNodes.getState().sessions[domain]?.token ?? null,
+    capabilities: ["content.v1", "reactions", "e2ee.mls1", "commands.v1"],
+    onStatus: (status) => {
+      // Connected (again): DMs started on that node wait there as Welcomes (§6.1); own leaves to remove.
+      if (status === "ready") {
+        void queryClient.invalidateQueries({ queryKey: ["my-voice", domain] });
+        void loadFollowedThreads({ key: domain, client: apiFor(domain), queryClient });
+        void getMls()
+          .then(async (m) => {
+            await m?.processWelcomes(domain);
+            await cleanupOwnLeaves(domain);
+          })
+          .catch(() => undefined);
+      }
+    },
+    onResync: () => {
+      void queryClient.invalidateQueries({ queryKey: ["rooms", domain] });
+      void queryClient.invalidateQueries({ queryKey: ["conversations", domain] });
+      void queryClient.invalidateQueries({ queryKey: ["my-voice", domain] });
+    },
+    // A refused token renews the federated session (refresh, else a new federated login).
+    refreshToken: () => refreshNode(domain),
+  });
+  const offs = [
+    ...roomHandlers(socket, queryClient, () => useNodes.getState().sessions[domain]?.user ?? null, domain),
+    ...mlsHandlers(socket, queryClient, () => domain),
+    ...conversationHandlers(socket, queryClient, navigate),
+    // Key changes of users this node knows (room co-members); our own is handled by the home socket.
+    socket.on<{ user: string }>("identity.changed", (d) => {
+      if (d.user !== useAuth.getState().user?.address) void contactIdentityChanged(d.user, queryClient);
+    }),
+    socket.on<{ user: string }>("identity.rotated", (d) => {
+      if (d.user !== useAuth.getState().user?.address) void contactIdentityChanged(d.user, queryClient);
+    }),
+  ];
+  socket.connect();
+  return { socket, offs };
 }
