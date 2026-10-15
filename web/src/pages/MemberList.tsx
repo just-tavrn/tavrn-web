@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-import { memo, useMemo } from "react";
-import { isBotKind, type Member, type RoomDetail } from "@tavrn/sdk";
+import { memo, useCallback, useMemo, useState } from "react";
+import { isBotKind, type Member, type RoomDetail, type User } from "@tavrn/sdk";
 import { useLocale, useT } from "../i18n";
 import { describeError } from "../stores/toasts";
 import { MemberEntry } from "../components/MemberEntry";
+import { ProfileCard } from "../components/ProfilePopover";
+import type { AnchorRect } from "../lib/position";
 import { BotBadge, KeyChangedBadge } from "../components/Badges";
 import { VerifiedBadge, VerifyButton } from "../components/Verification";
 import { MenuButton } from "../components/ContextMenu";
@@ -27,6 +29,11 @@ export function MemberList({ roomId }: { roomId: string }) {
   const me = useAuth((s) => s.user?.address);
   const presence = usePresence((s) => s.users);
   const mine = usePresence((s) => s.mine);
+  // The profile card lives here, not in the row: presence moves a row to another section (a new element), and a card
+  // owned by the row would close under the user's pointer (tavrn-web#171).
+  const [card, setCard] = useState<{ address: string; anchor: AnchorRect } | null>(null);
+  const openProfile = useCallback((user: User, anchor: AnchorRect) => setCard({ address: user.address, anchor }), []);
+  const closeProfile = useCallback(() => setCard(null), []);
   const sections = useMemo(() => {
     if (!members.data) return [];
     const online = (address: string) => {
@@ -48,22 +55,23 @@ export function MemberList({ roomId }: { roomId: string }) {
           </h3>
           <ul className="space-y-0.5">
             {section.members.map((m) => (
-              <MemberRow key={m.user.id} roomId={roomId} room={room.data} member={m} offline={section.kind === "offline"} />
+              <MemberRow key={m.user.id} roomId={roomId} room={room.data} member={m} offline={section.kind === "offline"} onOpenProfile={openProfile} />
             ))}
           </ul>
         </section>
       ))}
+      {card && <ProfileCard address={card.address} anchor={card.anchor} onClose={closeProfile} />}
     </div>
   );
 }
 
-const MemberRow = memo(function MemberRow({ roomId, room, member: m, offline }: { roomId: string; room: RoomDetail | undefined; member: Member; offline: boolean }) {
+const MemberRow = memo(function MemberRow({ roomId, room, member: m, offline, onOpenProfile }: { roomId: string; room: RoomDetail | undefined; member: Member; offline: boolean; onOpenProfile: (user: User, anchor: AnchorRect) => void }) {
   const t = useT();
   const name = memberName(m);
   const color = room ? memberColor(m, room.roles) : null;
   return (
     <li className={`group flex min-h-10 items-center gap-1 rounded-md px-1 text-sm text-fg-1 hover:bg-bg-3/60 ${offline ? "opacity-70" : ""}`} title={m.user.address} data-testid="member-row" data-address={m.user.address}>
-      {room ? <MemberWithMenu room={room} member={m} name={name} color={color} /> : <MemberEntry user={m.user} name={name} />}
+      {room ? <MemberWithMenu room={room} member={m} name={name} color={color} onOpenProfile={onOpenProfile} /> : <MemberEntry user={m.user} name={name} onOpenProfile={onOpenProfile} />}
       <SpeakerGlyph roomId={roomId} userId={m.user.id} address={m.user.address} />
       {isBotKind(m.user.kind) && <BotBadge />}
       <KeyChangedBadge address={m.user.address} />
@@ -78,13 +86,13 @@ const MemberRow = memo(function MemberRow({ roomId, room, member: m, offline }: 
   );
 });
 
-function MemberWithMenu({ room, member, name, color }: { room: RoomDetail; member: Member; name: string; color: string | null }) {
+function MemberWithMenu({ room, member, name, color, onOpenProfile }: { room: RoomDetail; member: Member; name: string; color: string | null; onOpenProfile: (user: User, anchor: AnchorRect) => void }) {
   const t = useT();
   const { menu, overlay } = useMemberMenu(room, member);
   return (
     <>
       <div className="flex min-w-0 flex-1 items-center" {...menu.triggerProps}>
-        <MemberEntry user={member.user} name={name} color={color} />
+        <MemberEntry user={member.user} name={name} color={color} onOpenProfile={onOpenProfile} />
       </div>
       <MenuButton menu={menu} label={t("menu.member.open", { name })} className="opacity-0 focus:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100" testId="member-menu-button" />
       {overlay}
