@@ -22,6 +22,8 @@ import { UserAvatar } from "../components/Avatar";
 import { DmRefusedNotice, ProfileTrigger } from "../components/ProfilePopover";
 import { MessageRequestsLink } from "../components/MessageRequests";
 import { MenuButton } from "../components/ContextMenu";
+import { UsersIcon } from "../components/icons";
+import { SIDEBAR_AVATAR_ROW, SIDEBAR_CATEGORY, SIDEBAR_ROW, sidebarRowTone } from "../components/sidebarRow";
 import { isClosed, useClosedDms, useDmMenu } from "../components/menus/DmMenu";
 import { useOriginDomain } from "../lib/origin";
 import { conversationsQuery, nodeInfoQuery } from "../lib/queries";
@@ -115,14 +117,12 @@ export function HomeSidebar() {
   return (
     <div className="flex flex-col">
       <div className="flex h-12 items-center border-b border-line px-3">
-        <h2 className="text-sm font-semibold">{t("shell.home")}</h2>
+        <h2 className="text-base font-semibold">{t("shell.home")}</h2>
       </div>
       <nav aria-label={t("dm.title")} className="p-2">
-        <NavLink to="/friends" onClick={closeNav} className={({ isActive }) => `flex min-h-10 items-center gap-2 rounded-md px-2 text-sm ${isActive ? "bg-accent-soft text-fg-0" : "text-fg-1 hover:bg-bg-3/60 hover:text-fg-0"}`}>
-          <span aria-hidden="true" className="w-5 text-center">
-            👥
-          </span>
-          <span className="flex-1">{t("friends.title")}</span>
+        <NavLink to="/friends" onClick={closeNav} className={({ isActive }) => `${SIDEBAR_ROW} ${sidebarRowTone(isActive)}`}>
+          <UsersIcon className="sidebar-icon text-fg-2" />
+          <span className="min-w-0 flex-1 truncate">{t("friends.title")}</span>
           {incoming > 0 && (
             <span className="rounded-full bg-accent px-1.5 text-xs text-accent-text" data-testid="friends-incoming-count">
               {incoming}
@@ -131,7 +131,7 @@ export function HomeSidebar() {
         </NavLink>
         <MessageRequestsLink />
         <div className="mt-3 flex items-center gap-1 px-2 pb-1">
-          <span className="flex-1 text-[11px] font-semibold uppercase tracking-wide text-fg-2">{t("dm.title")}</span>
+          <span className={`flex-1 ${SIDEBAR_CATEGORY}`}>{t("dm.title")}</span>
           <button type="button" aria-label={t("dm.new")} title={t("dm.new")} onClick={() => setDialog("dm")} className="min-h-8 min-w-8 rounded-md text-fg-2 hover:bg-bg-3 hover:text-fg-0">
             +
           </button>
@@ -141,7 +141,7 @@ export function HomeSidebar() {
         </div>
         {conversations.isError && <p className="px-2 text-xs text-danger">{describeError(conversations.error)}</p>}
         {visible?.length === 0 && <p className="px-2 text-xs text-fg-2">{t("dm.none")}</p>}
-        <ul data-testid="dm-list">
+        <ul className="space-y-0.5" data-testid="dm-list">
           {visible?.map((c) => (
             <li key={`${c.node}/${c.id}`}>
               <ConversationLink conversation={c} meAddress={me?.address} onClick={closeNav} />
@@ -164,12 +164,12 @@ function ConversationLink({ conversation: c, meAddress, onClick }: { conversatio
   const { menu, overlay } = useDmMenu(c, meAddress);
   return (
     <div className="group relative flex items-center" data-testid="dm-row" data-conversation={c.id}>
-    <NavLink to={conversationPath(c.node, c.id)} onClick={onClick} {...menu.triggerProps} data-unread={unread || undefined} data-node={c.node} title={c.kind === "dm" && others[0] ? others[0].address : title} className={({ isActive }) => `flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-sm ${isActive ? "bg-accent-soft text-fg-0" : unread ? "text-fg-0 hover:bg-bg-3/60" : "text-fg-1 hover:bg-bg-3/60 hover:text-fg-0"}`}>
-      {c.kind === "dm" && others[0] ? <UserAvatar user={others[0]} size={24} node={c.node} presence /> : <Avatar name={title} size={24} />}
+    <NavLink to={conversationPath(c.node, c.id)} onClick={onClick} {...menu.triggerProps} data-unread={unread || undefined} data-node={c.node} title={c.kind === "dm" && others[0] ? others[0].address : title} className={({ isActive }) => `${SIDEBAR_AVATAR_ROW} min-w-0 flex-1 ${sidebarRowTone(isActive, unread)}`}>
+      {c.kind === "dm" && others[0] ? <UserAvatar user={others[0]} size={32} node={c.node} presence /> : <Avatar name={title} size={32} />}
       <span className={`min-w-0 flex-1 truncate ${unread ? "font-semibold" : ""}`}>{title}</span>
       {/* Conversations hosted on another node always show its domain (design note 9d). */}
       {foreign && (
-        <span className="max-w-24 shrink truncate text-[10px] text-fg-2" title={t("dm.hosted_on", { domain: c.node })} data-testid="conversation-node">
+        <span className="max-w-24 shrink truncate text-xs font-normal text-fg-2" title={t("dm.hosted_on", { domain: c.node })} data-testid="conversation-node">
           {c.node}
         </span>
       )}

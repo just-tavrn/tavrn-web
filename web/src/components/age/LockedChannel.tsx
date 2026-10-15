@@ -25,7 +25,7 @@ export function LockedChannel({ name }: { name: string }) {
 export function AdultsOnlyBadge() {
   const t = useT();
   return (
-    <span className="rounded border border-line px-1 text-[10px] font-semibold text-fg-1" title={t("age.badge_label")} aria-label={t("age.badge_label")} role="img">
+    <span className="shrink-0 rounded border border-line px-1 text-xs font-semibold leading-4 text-fg-1" title={t("age.badge_label")} aria-label={t("age.badge_label")} role="img">
       {t("age.badge")}
     </span>
   );

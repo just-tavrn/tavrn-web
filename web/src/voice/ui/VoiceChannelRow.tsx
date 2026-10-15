@@ -27,6 +27,7 @@ import { useToasts } from "../../stores/toasts";
 import { voiceErrorMessage } from "../errors";
 import { useChannelMenu } from "../../components/menus/ChannelMenu";
 import { MenuButton } from "../../components/ContextMenu";
+import { SIDEBAR_ICON_SLOT, SIDEBAR_ROW, sidebarRowTone } from "../../components/sidebarRow";
 
 /** Drag-and-drop payload of a voice participant (moving between channels). */
 const DRAG_TYPE = "application/x-tavrn-voice-member";
@@ -178,7 +179,7 @@ export function VoiceChannelRow({ room, channel, onNavigate, access }: { room: R
           e.preventDefault();
           open();
         }}
-        className={({ isActive }) => `group/ch flex min-h-10 items-center gap-2 rounded-md px-2 text-sm ${isActive ? "bg-accent-soft text-fg-0" : connected ? "text-fg-0 hover:bg-bg-3/60" : "text-fg-1 hover:bg-bg-3/60 hover:text-fg-0"}`}
+        className={({ isActive }) => `group/ch ${SIDEBAR_ROW} ${sidebarRowTone(isActive, connected)}`}
         aria-label={[t("voice.channel_label", { name: channelName(channel) }), ...marks.map((m) => t(accessMarkKey(m)))].join(", ")}
         aria-description={tooltip}
         title={tooltip}
@@ -188,9 +189,9 @@ export function VoiceChannelRow({ room, channel, onNavigate, access }: { room: R
         onFocus={() => setTooltipOpen(true)}
         onBlur={() => setTooltipOpen(false)}
       >
-        {/* Voice is always end-to-end encrypted: the speaker and the 16 px lock, aligned with the text channels. */}
-        <span className="flex w-9 shrink-0 items-center gap-1">
-          <SpeakerIcon size={16} className={connected ? "text-accent" : "text-fg-2"} />
+        {/* Voice is always end-to-end encrypted: the 20 px speaker and the 16 px lock, aligned with the text channels. */}
+        <span className={SIDEBAR_ICON_SLOT}>
+          <SpeakerIcon className={`sidebar-icon ${connected ? "text-accent" : "text-fg-2"}`} data-testid="channel-kind-icon" data-icon="voice" />
           <LockMark testId="voice-channel-lock" />
         </span>
         <span className={`min-w-0 flex-1 truncate ${canConnect ? "" : "text-fg-2 group-aria-[current=page]/ch:text-fg-0"}`}>{channelName(channel)}</span>
@@ -198,7 +199,7 @@ export function VoiceChannelRow({ room, channel, onNavigate, access }: { room: R
           <AccessMark key={m} kind={m} />
         ))}
         {count && (
-          <span className="text-[11px] tabular-nums text-fg-2" data-testid="voice-count" title={limit > 0 ? t("voice.limit_hint", { limit }) : undefined}>
+          <span className="text-xs tabular-nums text-fg-2" data-testid="voice-count" title={limit > 0 ? t("voice.limit_hint", { limit }) : undefined}>
             {count}
           </span>
         )}
@@ -236,7 +237,7 @@ function ParticipantList({ room, channelId, participants, look, drag, onStage }:
   const { session, join } = useWhiteboardSession(channelId);
   const presenter = presenterIdentity(session, participants.map((p) => p.identity));
   return (
-    <ul className="mb-1 ml-7 space-y-0.5" data-testid="voice-participants">
+    <ul className="mb-1 ml-8 space-y-0.5" data-testid="voice-participants">
       {participants.map((p) => (
         <ParticipantRow key={p.identity} room={room} channelId={channelId} p={p} look={look(p.user)} drag={drag(p)} board={p.identity === presenter} joinBoard={join} onStage={onStage} />
       ))}
@@ -278,7 +279,7 @@ function ParticipantRow({ room, channelId, p, look, drag, board, joinBoard, onSt
   const rowHint = streaming ? t("voice.stream.row_hint") : board ? t("whiteboard.row_hint") : null;
   return (
     <li
-      className={`group flex min-h-8 items-center gap-2 rounded-md px-1 text-[13px] hover:bg-bg-3/60 ${priority ? "voice-priority-row" : ""}`}
+      className={`group flex min-h-8 items-center gap-2 rounded-md px-1 text-sm hover:bg-bg-3/60 ${priority ? "voice-priority-row" : ""}`}
       data-testid="voice-participant"
       data-user={p.user}
       data-speaking={speaking || undefined}
@@ -327,13 +328,13 @@ function ParticipantRow({ room, channelId, p, look, drag, board, joinBoard, onSt
       </span>
       {priority && (
         <span role="img" className="text-accent" title={t("voice.priority.active", { name })} aria-label={t("voice.priority.active", { name })} data-testid="priority-glyph">
-          <MegaphoneIcon size={13} />
+          <MegaphoneIcon size={14} />
         </span>
       )}
       {status === "poor" && <ConnectionGlyph status={status} />}
       {board && <WhiteboardRowBadge />}
-      <ParticipantFlags p={p} size={13} />
-      {localMuted && <LocalMuteMark address={p.user} name={name} size={13} />}
+      <ParticipantFlags p={p} size={14} />
+      {localMuted && <LocalMuteMark address={p.user} name={name} size={14} />}
       <MenuButton menu={menu} label={t("voice.participant_menu", { name })} className="min-h-7 min-w-7 opacity-0 focus:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100" testId="voice-participant-menu-button" />
       {overlay}
     </li>

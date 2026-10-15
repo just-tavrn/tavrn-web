@@ -45,6 +45,15 @@
   --safe-right: env(safe-area-inset-right, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
+  /* The kind icon of every sidebar row (text, voice, files, forum, announcement, welcome, create channel; docs/CLIENT.md
+     "UI conventions"): one size for all of them, the marks next to the name stay at 16 px. */
+  --sidebar-icon: 20px;
+}
+
+/* The shared size of the sidebar rows' kind icons (overrides the SVG's width and height attributes). */
+@utility sidebar-icon {
+  width: var(--sidebar-icon);
+  height: var(--sidebar-icon);
 }
 
 html, body, #root { height: 100%; }
