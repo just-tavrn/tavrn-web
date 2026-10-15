@@ -24,3 +24,22 @@ describe("MessageList: a failed edit", () => {
     expect(screen.getByLabelText("Neuer Text")).toHaveValue("neu");
   });
 });
+
+describe("MessageList: a jump to a message", () => {
+  it("finds the target without building a selector from its id", () => {
+    const scrolled: string[] = [];
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push((this as HTMLElement).dataset.messageId ?? "");
+    };
+    try {
+      const odd = { ...base, id: 'x"]y' };
+      // Opened first, then the jump (as from a link while the list is shown; jsdom has no layout: the plain list).
+      const { rerender } = render(<MessageList messages={[odd, base]} currentUserId="u1" canManage={false} hasMore={false} />);
+      expect(() => rerender(<MessageList messages={[odd, base]} currentUserId="u1" canManage={false} hasMore={false} focus={{ id: 'x"]y', n: 1 }} />)).not.toThrow();
+      expect(scrolled).toContain('x"]y');
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+});

@@ -278,7 +278,8 @@ export function MessageList({
       const index = orderedRef.current.findIndex((m) => m.id === focus.id);
       if (index < 0) return;
       if (measurable) virtualizer.scrollToIndex(index, { align: "center" });
-      else listRef.current?.querySelector(`[data-message-id="${focus.id}"]`)?.scrollIntoView({ block: "center" });
+      // Found by comparison, not by a selector built from the id (it comes from the URL).
+      else [...(listRef.current?.querySelectorAll<HTMLElement>("[data-message-id]") ?? [])].find((el) => el.dataset.messageId === focus.id)?.scrollIntoView({ block: "center" });
     };
     scroll();
     // Rows above the target are measured (and decrypted) after the first scroll and move it: aim again a few times
