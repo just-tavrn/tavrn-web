@@ -6,6 +6,7 @@
  */
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type { NativeVoiceEvent, PlatformVoice } from "./types";
+import { withKeyNumbers } from "./keyBytes";
 
 export function voiceMember(): PlatformVoice {
   return {
@@ -13,10 +14,10 @@ export function voiceMember(): PlatformVoice {
     devices: () => invoke<{ inputs: { id: string; label: string }[]; outputs: { id: string; label: string }[] }>("voice_devices"),
     join: (args, onEvent) => {
       const channel = new Channel<NativeVoiceEvent>(onEvent);
-      return invoke<{ identity: string; can_speak: boolean }>("voice_join", { args: { ...args, key: Array.from(args.key) }, onEvent: channel });
+      return withKeyNumbers(args.key, (key) => invoke<{ identity: string; can_speak: boolean }>("voice_join", { args: { ...args, key }, onEvent: channel }));
     },
     leave: () => invoke<void>("voice_leave"),
-    setKey: (key, epoch) => invoke<boolean>("voice_set_key", { key: Array.from(key), epoch }),
+    setKey: (key, epoch) => withKeyNumbers(key, (numbers) => invoke<boolean>("voice_set_key", { key: numbers, epoch })),
     setMuted: (muted) => invoke<void>("voice_set_muted", { muted }),
     setDeafened: (deafened) => invoke<void>("voice_set_deafened", { deafened }),
     setPtt: (pressed) => invoke<void>("voice_set_ptt", { pressed }),

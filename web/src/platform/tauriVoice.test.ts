@@ -12,8 +12,13 @@ describe("the native voice engine's commands", () => {
     const calls: Array<{ cmd: string; args: Record<string, unknown> }> = [];
     let channel: Channel<NativeVoiceEvent> | null = null;
     mockWindows("main");
+    const keysSent: number[][] = [];
     mockIPC((cmd, args) => {
-      calls.push({ cmd, args: args as Record<string, unknown> });
+      // What crosses the bridge is serialized at once: record a copy (the client wipes its array afterwards).
+      calls.push({ cmd, args: JSON.parse(JSON.stringify(args)) as Record<string, unknown> });
+      const a = args as { args?: { key?: number[] }; key?: number[] };
+      const key = a.args?.key ?? a.key;
+      if (key) keysSent.push(key);
       if (cmd === "voice_join") {
         channel = (args as { onEvent: Channel<NativeVoiceEvent> }).onEvent;
         return { identity: "me@home.example/1", can_speak: true };
@@ -33,6 +38,9 @@ describe("the native voice engine's commands", () => {
     expect(channel).not.toBeNull();
     expect(await voice.setKey(new Uint8Array([9, 9]), 5)).toBe(true);
     expect(calls.find((c) => c.cmd === "voice_set_key")!.args).toEqual({ key: [9, 9], epoch: 5 });
+    // The number arrays handed to the bridge are wiped once the calls are done.
+    expect(keysSent).toHaveLength(2);
+    for (const k of keysSent) expect(k.every((b) => b === 0)).toBe(true);
     await voice.setMuted(true);
     await voice.setDeafened(false);
     await voice.setPtt(true);

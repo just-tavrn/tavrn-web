@@ -8,6 +8,7 @@
  */
 import { invoke, type InvokeArgs, type InvokeOptions } from "@tauri-apps/api/core";
 import { asBlob, type SaveFile } from "./files";
+import { withKeyNumbers } from "./keyBytes";
 import type { ShellEvents } from "./shellEvents";
 import { updateFailure } from "./updateErrors";
 import { notificationOpens, trayActions } from "./tauriShell";
@@ -134,12 +135,14 @@ export function androidScreenShare(events: ShellEvents, sdk: number, call: Shell
     // AudioPlaybackCapture: Android 10 and newer.
     audio: sdk >= 29,
     start: async (a) => {
-      await call("android_screen_share_start", {
-        share: { url: a.url, token: a.token, key: Array.from(a.key), epoch: a.epoch, max_side: a.maxSide, fps: a.fps, max_bitrate: a.maxBitrate, audio: a.audio, title: a.notice.title, text: a.notice.text, stop: a.notice.stop },
-      });
+      await withKeyNumbers(a.key, (key) =>
+        call("android_screen_share_start", {
+          share: { url: a.url, token: a.token, key, epoch: a.epoch, max_side: a.maxSide, fps: a.fps, max_bitrate: a.maxBitrate, audio: a.audio, title: a.notice.title, text: a.notice.text, stop: a.notice.stop },
+        }),
+      );
     },
     setKey: async (key, epoch) => {
-      await call("android_screen_share_key", { key: Array.from(key), epoch });
+      await withKeyNumbers(key, (numbers) => call("android_screen_share_key", { key: numbers, epoch }));
     },
     stop: async () => {
       await call("android_screen_share_stop");

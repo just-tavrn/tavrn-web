@@ -7,6 +7,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { createShellEvents, type ShellEvents } from "./shellEvents";
 import type { KeychainStatus, PlatformKeystore, PlatformNotifications, PlatformTray, TrayAction, TrayStatus } from "./types";
+import { withKeyNumbers } from "./keyBytes";
 
 const TRAY_ACTIONS: readonly string[] = ["mute", "deafen", "leave"] satisfies TrayAction[];
 
@@ -32,9 +33,13 @@ export function shellMembers(events: ShellEvents = createShellEvents()): { keyst
     status: () => invoke<KeychainStatus>("keychain_status"),
     get: async (account) => {
       const secret = await invoke<number[] | null>("keychain_get", { account });
-      return secret ? Uint8Array.from(secret) : null;
+      if (!secret) return null;
+      const bytes = Uint8Array.from(secret);
+      // The number array of the IPC answer is a second copy of the key: wiped at once.
+      secret.fill(0);
+      return bytes;
     },
-    set: (account, secret) => invoke<void>("keychain_set", { account, secret: Array.from(secret) }),
+    set: (account, secret) => withKeyNumbers(secret, (numbers) => invoke<void>("keychain_set", { account, secret: numbers })),
     delete: (account) => invoke<void>("keychain_delete", { account }),
   };
 
