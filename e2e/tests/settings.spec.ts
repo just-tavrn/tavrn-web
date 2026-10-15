@@ -114,18 +114,33 @@ test.describe("Room settings", () => {
     await bobContext.close();
   });
 
-  test("Overview: set rules, a member without permissions only sees the permitted sections", async ({ page, request }) => {
+  test("Overview: set rules (Markdown, shown on the invite page), a member without permissions only sees the permitted sections", async ({ page, request }) => {
     const owner = await registerViaApi(request, "own");
     const bob = await registerViaApi(request, "bob");
     const room = await createRoomViaApi(request, owner.token, "Regel-Raum");
     await inviteAndJoin(request, owner, room.id, bob);
     await loginAs(page, owner);
     await openSettings(page, room.id, "overview");
-    await page.getByLabel("Regeln").fill("Sei nett.");
+    // Rules are Markdown (PROTOCOL.md `rules`): the preview renders them as the invite page will.
+    const rules = "Sei nett.\n\n- Kein Spam\n- **Keine** Werbung";
+    await page.getByLabel("Regeln").fill(rules);
+    await page.getByRole("button", { name: "Vorschau", exact: true }).click();
+    await expect(page.getByRole("region", { name: "Regeln" }).getByRole("listitem")).toHaveText(["Kein Spam", "Keine Werbung"]);
     await page.getByTestId("overview-save").click();
     await expect(page.getByRole("status").filter({ hasText: "Gespeichert" })).toBeVisible();
     const resp = await request.get(`${NODE}/api/v1/rooms/${room.id}`, { headers: { Authorization: `Bearer ${owner.token}` } });
-    expect((await resp.json()).rules).toBe("Sei nett.");
+    expect((await resp.json()).rules).toBe(rules);
+
+    // Someone invited sees the list on the invite page before accepting the rules.
+    const carol = await registerViaApi(request, "carol");
+    const invite = await (await request.post(`${NODE}/api/v1/rooms/${room.id}/invites`, { headers: { Authorization: `Bearer ${owner.token}` }, data: {} })).json();
+    const carolPage = await (await page.context().browser()!.newContext()).newPage();
+    await loginAs(carolPage, carol);
+    await carolPage.goto(`/invite/${invite.code}`);
+    const shown = carolPage.getByRole("region", { name: "Regeln" });
+    await expect(shown.locator("li").first()).toHaveText("Kein Spam");
+    await expect(shown.locator("strong")).toHaveText("Keine");
+    await carolPage.context().close();
 
     const bobPage = await (await page.context().browser()!.newContext()).newPage();
     await loginAs(bobPage, bob);

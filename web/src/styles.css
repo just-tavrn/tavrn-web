@@ -140,6 +140,9 @@ html[data-flag-font] :is(.markdown, .emoji-font) { font-family: "Twemoji Country
 .legal-doc table { border-collapse: collapse; display: block; overflow-x: auto; }
 .legal-doc th, .legal-doc td { border: 1px solid var(--color-line); padding: 0.25rem 0.5rem; text-align: left; }
 .legal-doc hr { border-color: var(--color-line); margin: 1rem 0; }
+/* Room rules (components/RoomRules.tsx): the legal styles, compact for the invite page and the join dialog. */
+.room-rules h1, .room-rules h2, .room-rules h3, .room-rules h4 { font-size: 1rem; margin: 0.75rem 0 0.25rem; font-weight: 600; }
+.room-rules > :first-child { margin-top: 0; }
 
 /* Message authors open the profile card (components/AuthorProfiles.tsx). */
 [data-author-profiles] li[data-message-id] .w-9 > span,

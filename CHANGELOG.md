@@ -47,6 +47,10 @@ First public release of the web client and the desktop apps.
   changed positions are saved and the sidebar follows at once; the sidebar itself stays without drag and drop. The
   tree in the settings now lists the channels without category first, as the sidebar does (docs/CLIENT.md
   "Reordering channels").
+- **Room rules as Markdown** (#180, tavrn-protocol#59): the rules on the invite page and in the join dialog show
+  paragraphs, lists, bold, links, quotes and headings (the legal pages' renderer: raw HTML stays text, no images), in
+  a scroll box when long; Room settings → Overview says that Markdown works and has a **Preview** toggle under the
+  field (docs/CLIENT.md "Room rules").
 - **Log join timings** for slow voice joins: Settings → Voice & video → Connection test → "Log join timings" (or
   `localStorage` `tavrn.debug.voice=1`) prints one table to the browser console after each join with every stage's
   duration (`vj:*` performance marks), the opening of the `/rtc` WebSocket, each peer connection from creation through

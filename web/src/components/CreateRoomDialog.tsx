@@ -15,6 +15,7 @@ import { describeError } from "../stores/toasts";
 import { useOriginDomain } from "../lib/origin";
 import { useT } from "../i18n";
 import { RoomIcon } from "./Avatar";
+import { RoomRules } from "./RoomRules";
 import { roomPath } from "./NodeScope";
 import { Button, Dialog, ErrorText, Field, Input } from "./ui";
 import { AddApplicationForm } from "./AddApplicationForm";
@@ -201,7 +202,7 @@ function JoinForm({ onClose, onJoined }: { onClose: () => void; onJoined: (path:
           </div>
           {preview.rules && (
             <>
-              <p className="whitespace-pre-wrap text-sm text-fg-1">{preview.rules}</p>
+              <RoomRules markdown={preview.rules} compact />
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} className="h-5 w-5" /> {t("invite.accept_rules")}
               </label>

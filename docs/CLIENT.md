@@ -1290,6 +1290,15 @@ the text once), and a lock next to the WEBHOOK badge says which.
 | Room settings | Overview, My profile here, Roles, Channels, Members, Bans, Invites, Webhooks, Applications, Emojis, Soundboard, Moderation, Audit log; Reports, Auto-moderation and History requests where the node announces them; each tab only with its permission |
 | Node administration | Overview, Users, Invites, Bans, Reports (with `reports.v1`), Entitlements, API tokens, Applications, SSO (when single sign-on is configured), Federation, Legal, Notices, Audit log |
 
+**Room rules** (Room settings → Overview → Rules, at most 10,000 characters) are Markdown, a subset like the profile
+bio ([PROTOCOL.md](https://github.com/just-tavrn/tavrn-protocol/blob/main/PROTOCOL.md), `rules`): paragraphs, lists,
+bold and italic, links, quotes, headings and tables. The field's hint says so, and **Preview** (a toggle under the
+field) shows the text being edited as invitees will see it. The invite page and the join dialog render the rules
+with the legal documents' renderer (`renderDocument` in `web/src/lib/markdown.ts`: raw HTML stays text, images are
+dropped, links keep only `http(s)`, `mailto` and same-site targets, DOMPurify), compact (headings at most the size of
+the text's third level) and in a scroll box when they are long, above "I accept the rules"
+(`web/src/components/RoomRules.tsx`).
+
 ## The desktop app
 
 The same client also runs as the desktop app for Linux and Windows ([DESKTOP.md](DESKTOP.md)): it is bundled into a
