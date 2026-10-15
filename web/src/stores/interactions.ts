@@ -2,7 +2,7 @@
 import { create } from "zustand";
 
 /**
- * What the invoker of an application command sees besides messages (tavrn-protocol/APPLICATIONS.md §5.7): "… is
+ * What the invoker of an application command or a message component sees besides messages (tavrn-protocol/APPLICATIONS.md §5.7): "… is
  * thinking" for a deferred interaction, ephemeral replies ("only you can see this") and error notices. Memory
  * only: dropped on reload, a deferred interaction is forgotten when it expires (15 minutes).
  */
@@ -11,6 +11,11 @@ export interface InteractionNotice {
   key: string;
   interactionId: string;
   conversationId: string;
+  /**
+   * The bot message whose component started the interaction (APPLICATIONS.md §5.10): the notice is shown under it.
+   * Null or absent: at the bottom of the conversation (commands).
+   */
+  messageId?: string | null;
   kind: "thinking" | "ephemeral" | "error";
   application: { ref: string; name: string; bot: string };
   /** Ephemeral: the content object, or ciphertext in encrypted conversations. */

@@ -9,6 +9,8 @@ import { Dialog, ErrorText, Field, Input } from "./ui";
 import { MessageList } from "./MessageList";
 import { useAccessibility } from "../stores/accessibility";
 import { tabListKeyDown } from "../lib/a11y";
+import { ComponentsContext } from "../messageComponents/context";
+import { ComponentModal } from "../messageComponents/ComponentModal";
 
 function DialogHarness() {
   const [open, setOpen] = useState(false);
@@ -165,5 +167,65 @@ describe("accessibility of shared widgets", () => {
     expect(items[0]).toHaveTextContent("Beitreten");
     expect(items[0]).toHaveTextContent("erlaubt");
     expect(items[1]).toHaveTextContent("nicht erlaubt");
+  });
+  it("message components: named controls in reading order, disabled ones still reachable, the select a listbox", async () => {
+    const user = userEvent.setup();
+    const m: Message = {
+      ...base,
+      id: "01F",
+      author: "raid-bot@t.local",
+      author_kind: "bot",
+      content: {
+        type: "text",
+        body: "Raid",
+        components: [
+          { type: "row", components: [{ type: "button", style: "primary", label: "Zusagen", custom_id: "yes" }, { type: "button", style: "danger", label: "Absagen", custom_id: "no", disabled: true }, { type: "button", style: "secondary", label: "", emoji: "🎲", custom_id: "dice" }] },
+          { type: "row", components: [{ type: "select", custom_id: "class", placeholder: "Klasse", options: [{ label: "Magier", value: "mage" }] }] },
+        ],
+      },
+    };
+    render(
+      <ComponentsContext.Provider value={{ conversationId: "c1", canUse: true, invoke: async () => undefined, qualified: "t.local/c1", encrypted: false, mls: null }}>
+        <MessageList messages={[m]} currentUserId="u1" canManage={false} hasMore={false} />
+      </ComponentsContext.Provider>,
+    );
+    const area = screen.getByTestId("message-components");
+    const controls = [...area.querySelectorAll<HTMLElement>("button")];
+    expect(controls.map((c) => c.getAttribute("aria-label") ?? c.textContent)).toEqual(["Zusagen", "Absagen", "🎲", "Klasse▾"]);
+    // Disabled controls stay in the tab order (announced as unavailable) instead of disappearing from it.
+    expect(controls[1]).toHaveAttribute("aria-disabled", "true");
+    expect(controls[1]).not.toHaveAttribute("disabled");
+    controls[0]!.focus();
+    await user.tab();
+    expect(controls[1]).toHaveFocus();
+    await user.tab();
+    expect(controls[2]).toHaveFocus();
+    await user.tab();
+    expect(controls[3]).toHaveFocus();
+    expect(controls[3]).toHaveAttribute("aria-haspopup", "listbox");
+    expect(controls[3]).toHaveAttribute("aria-expanded", "false");
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("listbox", { name: "Klasse" })).toHaveFocus();
+    expect(screen.getByRole("option", { name: "Magier" })).toHaveAttribute("aria-selected", "false");
+  });
+
+  it("the modal of an application is a dialog with labelled inputs, a focus trap, Escape and announced errors", async () => {
+    const user = userEvent.setup();
+    let closed = 0;
+    render(<ComponentModal modal={{ custom_id: "n", title: "Notiz", inputs: [{ custom_id: "a", label: "Name", style: "short" }, { custom_id: "b", label: "Text", style: "paragraph", required: false }] }} appName="Bot" onSubmit={async () => undefined} onClose={() => closed++} />);
+    const dialog = screen.getByRole("dialog", { name: "Notiz" });
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    const name = screen.getByLabelText(/Name/);
+    expect(name).toHaveFocus();
+    expect(screen.getByLabelText(/Text/).tagName).toBe("TEXTAREA");
+    await user.click(screen.getByTestId("component-modal-submit"));
+    expect(name).toHaveAttribute("aria-invalid", "true");
+    expect(name).toHaveAccessibleDescription(/Füll dieses Feld aus/);
+    // Tab cycles inside the dialog.
+    screen.getByTestId("component-modal-submit").focus();
+    await user.tab();
+    expect(name).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(closed).toBe(1);
   });
 });

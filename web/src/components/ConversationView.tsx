@@ -36,7 +36,6 @@ import { availableCommands, builtinRegistry } from "../commands/registry";
 import { CommandError, executeBuiltin, invokeRequest, resolveAppArgs } from "../commands/execute";
 import { appDefinitions, mergePalette } from "../commands/merge";
 import type { ArgValue, CommandDefinition } from "../commands/types";
-import { useInteractions } from "../stores/interactions";
 import { InteractionNotices } from "./InteractionNotices";
 import { fuzzyFilter } from "../commands/fuzzy";
 import { classifyFile, declaredCategory } from "../lib/uploads";
@@ -61,6 +60,10 @@ import { useRoomPreview } from "../stores/rolePreview";
 import { cutHistory, previewHistoryStart } from "../lib/previewRoom";
 import { assertNotPreviewing } from "../lib/previewGuard";
 import { PollComposer } from "../polls/PollComposer";
+import { ComponentsContext, type ComponentsEnv } from "../messageComponents/context";
+import { ComponentModal } from "../messageComponents/ComponentModal";
+import { USE_COMPONENTS } from "../messageComponents/permission";
+import { applyAnswer, componentBody, invokeComponent, modalBody, submitModal, type OpenModal } from "../messageComponents/invoke";
 import { PollContext } from "../polls/context";
 import { useConversationPolls } from "../polls/env";
 import type { PollContent, PollKind } from "../polls/model";
@@ -524,7 +527,10 @@ export function ConversationView(p: ConversationViewProps) {
     staleTime: 60_000,
   });
   const appCommands = useMemo(() => appDefinitions(palette.data), [palette.data]);
-  /** Invokes an application command; the answer is a message, an ephemeral reply, "thinking…" or an error notice. */
+  // Where answers to commands and components go (APPLICATIONS.md §5.7, §5.10); a modal opens the bot's form.
+  const [modal, setModal] = useState<OpenModal | null>(null);
+  const answerTarget = { conversationId, addMessage: (m: Message) => setPages((old) => prependMessage(old, m)), updateMessage, openModal: setModal };
+  /** Invokes an application command; the answer is a message, an ephemeral reply, "thinking…", an error notice or a modal. */
   const invokeApp = async (def: CommandDefinition, values: Record<string, ArgValue>) => {
     if (!def.ref || !def.application) return;
     const args = resolveAppArgs(def, values, { members: p.roomMembers, room: p.room });
@@ -537,19 +543,36 @@ export function ConversationView(p: ConversationViewProps) {
       sealed = { args };
     }
     const res = await api.commands.invoke(conversationId, invokeRequest(def.ref, sealed, threadId));
-    const notices = useInteractions.getState();
-    if (res.message) {
-      const m = res.message;
-      setPages((old) => prependMessage(old, m));
-    } else if (res.ephemeral) {
-      const r = res.ephemeral;
-      notices.add({ interactionId: r.interaction_id, conversationId, kind: "ephemeral", application: r.application, content: r.content, epoch: r.epoch, deviceId: r.device_id });
-    } else if (res.outcome === "defer") {
-      notices.add({ key: `${res.interaction_id}:thinking`, interactionId: res.interaction_id, conversationId, kind: "thinking", application: def.application });
-    } else if (res.outcome === "error") {
-      notices.add({ interactionId: res.interaction_id, conversationId, kind: "error", application: def.application, text: res.error ?? "" });
-    }
+    applyAnswer(res, { ...answerTarget, application: def.application, messageId: null });
   };
+  // Message components (APPLICATIONS.md §5.10): buttons and selects of bot messages, and the modals bots answer with.
+  const sealer = () => {
+    if (!p.encrypted) return { mls: null, conversation: null };
+    // Values are encrypted for the group like command arguments; the node sees only the component's id (§5.10).
+    if (!e2ee.mls) throw new Error(t("e2ee.composer_locked"));
+    return { mls: e2ee.mls, conversation: q };
+  };
+  const invokeMessageComponent = async (m: Message, customId: string, values: string[] | null) => {
+    const { mls, conversation } = sealer();
+    const body = await componentBody(mls, conversation, m, customId, values);
+    const res = await invokeComponent(api, conversationId, m.id, body);
+    const look = authors?.get(m.author);
+    applyAnswer(res, { ...answerTarget, application: res.ephemeral?.application ?? { ref: "", name: look?.name || (m.author.split("@")[0] ?? m.author), bot: m.author }, messageId: m.id });
+  };
+  const invokeComponentRef = useRef(invokeMessageComponent);
+  invokeComponentRef.current = invokeMessageComponent;
+  const submitOpenModal = async (open: OpenModal, values: Record<string, string>) => {
+    const { mls, conversation } = sealer();
+    const body = await modalBody(mls, conversation, open.interactionId, open.modal.custom_id, values);
+    const res = await submitModal(api, open.interactionId, body);
+    applyAnswer(res, { ...answerTarget, application: res.ephemeral?.application ?? open.application, messageId: open.messageId });
+  };
+  // DMs and group DMs grant every permission of a conversation to its members.
+  const canUseComponents = p.permissions === undefined || hasPermission(p.permissions, USE_COMPONENTS);
+  const componentsEnv = useMemo<ComponentsEnv>(
+    () => ({ conversationId, canUse: canUseComponents, invoke: (m, customId, values) => invokeComponentRef.current(m, customId, values), qualified: q, encrypted: p.encrypted, mls: e2ee.mls }),
+    [conversationId, canUseComponents, q, p.encrypted, e2ee.mls],
+  );
   const invokeRef = useRef(invokeApp);
   invokeRef.current = invokeApp;
   // Slash commands (design note 4.11): built-ins filtered by the user's permissions here, then application commands.
@@ -676,6 +699,7 @@ export function ConversationView(p: ConversationViewProps) {
       {messages.isError && <p className="p-4 text-sm text-danger">{describeError(messages.error)}</p>}
       <AuthorProfiles messages={loaded}>
       <PollContext.Provider value={pollEnv}>
+      <ComponentsContext.Provider value={componentsEnv}>
       <MessageList
         encrypted={p.encrypted}
         messages={loaded}
@@ -707,8 +731,10 @@ export function ConversationView(p: ConversationViewProps) {
         mentionRoles={mentionRoles}
         authors={authors}
       />
+      </ComponentsContext.Provider>
       </PollContext.Provider>
       </AuthorProfiles>
+      {modal && <ComponentModal key={modal.interactionId} modal={modal.modal} appName={modal.application.name} onSubmit={(values) => submitOpenModal(modal, values)} onClose={() => setModal(null)} />}
       <PollComposer open={!!pollComposer} kind={pollComposer?.kind} question={pollComposer?.question} onClose={() => setPollComposer(null)} onCreate={createPoll} />
       {reporting && (
         <ReportDialog
