@@ -18,6 +18,18 @@ const row = (page: Page, address: string) => page.getByTestId("voice-participant
 const channelBox = (page: Page, id: string) => page.getByTestId("voice-channel").and(page.locator(`[data-channel="${id}"]`));
 const phone = (page: Page) => (page.viewportSize()?.width ?? 1280) < 768;
 
+/**
+ * The call identity of `address` as `page`'s voice session sees it. The tile comes from the node's voice state, the
+ * session's remote participant from the media server, a moment later: wait for it (a direct read once found nothing).
+ */
+async function remoteIdentity(page: Page, address: string): Promise<string> {
+  let identity = "";
+  await expect
+    .poll(async () => (identity = (await hooks(page)).remote.find((r) => r.identity.startsWith(`${address}/`))?.identity ?? ""), { timeout: scaled(30_000), message: `${address} in the call` })
+    .not.toBe("");
+  return identity;
+}
+
 interface Setup {
   owner: Account;
   roomId: string;
@@ -133,7 +145,7 @@ test.describe("Voice UX round", () => {
     for (const u of [alice, bob]) await joinRoom(request, u, s.code);
     for (const u of [alice, bob]) await joinFromSidebar(u.page, s.roomId);
     await expect(tile(alice.page, bob.address)).toBeVisible({ timeout: scaled(30_000) });
-    const bobId = (await hooks(alice.page)).remote.find((r) => r.identity.startsWith(`${bob.address}/`))!.identity;
+    const bobId = await remoteIdentity(alice.page, bob.address);
     // Bob's fake microphone plays: Alice sees him speaking and hears him.
     await expect(tile(alice.page, bob.address)).toHaveAttribute("data-speaking", "true", { timeout: scaled(30_000) });
     const volumes = async () => ((await hooks(alice.page)) as unknown as { volumes: Record<string, { microphone: number; stream: number }> }).volumes[bobId];
@@ -193,7 +205,7 @@ test.describe("Voice UX round", () => {
     for (const u of [alice, bob]) await joinRoom(request, u, s.code);
     for (const u of [alice, bob]) await joinFromSidebar(u.page, s.roomId);
     await expect(tile(bob.page, alice.address)).toBeVisible({ timeout: scaled(30_000) });
-    const aliceId = (await hooks(bob.page)).remote.find((r) => r.identity.startsWith(`${alice.address}/`))!.identity;
+    const aliceId = await remoteIdentity(bob.page, alice.address);
     // Unmuted, Alice's fake microphone is heard by Bob.
     await expect.poll(() => inboundPeak(bob.page, aliceId), { timeout: scaled(20_000) }).toBeGreaterThan(0.01);
 
