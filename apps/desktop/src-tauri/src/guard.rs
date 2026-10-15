@@ -116,14 +116,17 @@ pub fn connect_url(url: &str, web: &str) -> Result<Url, ConnectUrlError> {
     if session { Ok(url) } else { Err(ConnectUrlError::Invalid) }
 }
 
-/// New windows (`window.open`, `target=_blank`) are never opened by the app; web links go to the system browser.
-pub fn new_window(url: &Url) -> Option<String> {
-    external(url)
+/// New windows (`window.open`, `target=_blank`) are never opened by the app; web links go to the system browser. A
+/// link of the app itself (a Ctrl/Shift/Meta-click or a middle click on an internal link asks for a new window with the
+/// app's own URL) is refused: the window stays where it is, the client navigates in place.
+pub fn new_window(url: &Url, dev_url: Option<&Url>) -> Option<String> {
+    if is_app_url(url, dev_url) { None } else { external(url) }
 }
 
-/// A link the system browser may open: http, https, mailto.
+/// A link the system browser may open: http, https, mailto, never the app's own origin (`https://tauri.localhost` on
+/// Windows).
 pub fn external(url: &Url) -> Option<String> {
-    matches!(url.scheme(), "http" | "https" | "mailto").then(|| url.to_string())
+    (matches!(url.scheme(), "http" | "https" | "mailto") && !is_app_url(url, None)).then(|| url.to_string())
 }
 
 /// `open_external` command: only absolute http, https and mailto links.
@@ -177,9 +180,29 @@ mod tests {
 
     #[test]
     fn new_windows_never_open_in_the_app() {
-        assert_eq!(new_window(&u("https://example.org/")), Some("https://example.org/".into()));
-        assert_eq!(new_window(&u("tauri://localhost/rooms")), None);
-        assert_eq!(new_window(&u("file:///etc/passwd")), None);
+        assert_eq!(new_window(&u("https://example.org/"), None), Some("https://example.org/".into()));
+        assert_eq!(new_window(&u("mailto:x@example.org"), None), Some("mailto:x@example.org".into()));
+        for bad in ["tauri://localhost/rooms", "file:///etc/passwd", "javascript:alert(1)", "data:text/html,hi", "blob:https://tauri.localhost/abc"] {
+            assert_eq!(new_window(&u(bad), None), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_modifier_click_on_an_app_link_never_leaves_the_app() {
+        // Ctrl/Shift/Meta-click and middle click on a link of the client ask for a new window with the app's own URL:
+        // Windows (WebView2) serves the client from https://tauri.localhost, Linux and macOS from tauri://localhost.
+        for app in ["https://tauri.localhost/settings/voice", "https://tauri.localhost/", "http://tauri.localhost/rooms/1", "tauri://localhost/settings/voice"]
+        {
+            assert_eq!(new_window(&u(app), None), None, "{app}");
+        }
+        let dev = u("http://localhost:5173");
+        assert_eq!(new_window(&u("http://localhost:5173/settings/voice"), Some(&dev)), None, "the dev server is the app");
+        assert_eq!(new_window(&u("http://localhost:5174/"), Some(&dev)), Some("http://localhost:5174/".into()));
+        assert_eq!(new_window(&u("https://tauri.localhost.evil.example/"), None), Some("https://tauri.localhost.evil.example/".into()));
+        // The system browser is never asked to open the app's origin, whatever the path that leads there.
+        assert_eq!(external(&u("https://tauri.localhost/settings")), None);
+        assert_eq!(external_str("https://tauri.localhost/settings"), None);
+        assert_eq!(external_str("http://tauri.localhost/"), None);
     }
 
     #[test]

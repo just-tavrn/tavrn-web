@@ -56,7 +56,7 @@ export function createMainWindow(options: MainWindowOptions): BrowserWindow {
     if (navigation(event.url, options.devUrl).kind !== "allow") event.preventDefault();
   });
   contents.setWindowOpenHandler(({ url }) => {
-    const link = newWindow(url);
+    const link = newWindow(url, options.devUrl);
     if (link) options.openExternal(link);
     return { action: "deny" };
   });
