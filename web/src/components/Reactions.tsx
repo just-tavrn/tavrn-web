@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { Reaction, User } from "@tavrn/sdk";
 import { useEmojiContext, useEmojiImage } from "../lib/emojis";
 import { useT } from "../i18n";
+import { useDismiss } from "../lib/dismiss";
 import { useNode } from "./NodeScope";
 import { InlineEmoji } from "./InlineEmoji";
 import { parseEmojiToken } from "../lib/markdown";
@@ -105,19 +106,7 @@ function ReactionChip({ reaction: r, canReact, onToggle, roomId, customEmojis, c
   }, []);
   useEffect(() => cancelPress, [cancelPress]);
   // Escape hides it (WCAG 1.4.13); after a long press on touch, the next touch elsewhere does.
-  useEffect(() => {
-    if (!shown) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    const onDown = (e: PointerEvent) => {
-      if (!item.current?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("keydown", onKey);
-    document.addEventListener("pointerdown", onDown);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.removeEventListener("pointerdown", onDown);
-    };
-  }, [shown]);
+  useDismiss(shown, () => setOpen(false), { inside: [item] });
   const touchStart = (e: ReactTouchEvent) => {
     // The chip's own long press: not the message's context menu.
     e.stopPropagation();

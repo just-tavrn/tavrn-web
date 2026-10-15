@@ -13,6 +13,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type TouchEvent as ReactTouchEvent } from "react";
 import { createPortal } from "react-dom";
+import { useDismiss } from "../lib/dismiss";
 import { useT } from "../i18n";
 import { pointAnchor, rectOf, useFloating, type AnchorRect } from "../lib/position";
 
@@ -391,36 +392,20 @@ function MenuPanel({ entries, anchor, prefer, onClose, onCloseSub, label, depth,
  */
 export function ContextMenu({ entries, anchor, onClose, label, testId, trigger }: { entries: MenuEntry[]; anchor: AnchorRect; onClose: () => void; label?: string; testId?: string; trigger?: Element | null }) {
   const layer = useRef<HTMLDivElement>(null);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
   const triggerRef = useRef(trigger);
   triggerRef.current = trigger;
+  useDismiss(true, onClose, {
+    inside: [layer],
+    // After the opening press or right-click; a right-click elsewhere and the window losing the focus close it too.
+    deferred: true,
+    contextMenu: true,
+    closeOnBlur: true,
+    // A toggling trigger (`useContextMenu({ toggle: true })`) closes the menu itself on its next right-click.
+    ignore: (e) => (e.type === "contextmenu" || (e as PointerEvent).button === 2) && !!triggerRef.current?.contains(e.target as Node),
+  });
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
-    const outside = (e: Event) => {
-      const target = e.target as Node;
-      if (layer.current?.contains(target)) return;
-      // A toggling trigger (`useContextMenu({ toggle: true })`) closes the menu itself on its next right-click.
-      const secondary = e.type === "contextmenu" || (e as PointerEvent).button === 2;
-      if (secondary && triggerRef.current?.contains(target)) return;
-      onCloseRef.current();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCloseRef.current();
-    };
-    // Registered after the opening event has finished, so the same click does not close it again.
-    const timer = setTimeout(() => {
-      document.addEventListener("pointerdown", outside, true);
-      document.addEventListener("contextmenu", outside, true);
-    }, 0);
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("blur", onCloseRef.current);
     return () => {
-      clearTimeout(timer);
-      document.removeEventListener("pointerdown", outside, true);
-      document.removeEventListener("contextmenu", outside, true);
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("blur", onCloseRef.current);
       if (previous && document.contains(previous)) previous.focus({ preventScroll: true });
     };
   }, []);

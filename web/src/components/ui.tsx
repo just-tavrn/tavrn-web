@@ -69,7 +69,8 @@ export function Dialog({ title, open, onClose, children }: { title: string; open
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
+      // An Escape handled inside (a popover or menu of the dialog, lib/dismiss.ts) closes only that.
+      if (e.key !== "Escape" || e.defaultPrevented) return;
       // Only the topmost modal closes (the last one in the document): a confirmation over a form closes alone.
       const modals = document.querySelectorAll('[role="dialog"][aria-modal="true"]');
       if (modals.length > 0 && modals[modals.length - 1] !== ref.current) return;
