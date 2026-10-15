@@ -68,7 +68,13 @@ export function Dialog({ title, open, onClose, children }: { title: string; open
   useFocusTrap(ref, open, { initial: () => ref.current?.querySelector<HTMLElement>("input:not([type=hidden]), textarea, select, button") });
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      // Only the topmost modal closes (the last one in the document): a confirmation over a form closes alone.
+      const modals = document.querySelectorAll('[role="dialog"][aria-modal="true"]');
+      if (modals.length > 0 && modals[modals.length - 1] !== ref.current) return;
+      onClose();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);

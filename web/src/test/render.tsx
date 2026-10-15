@@ -3,13 +3,20 @@ import type { ReactElement } from "react";
 import { render } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
+import { ConfirmHost } from "../components/Confirm";
 
-/** Renders with a fresh QueryClient without retries and a router, so error cases show up immediately. */
+/**
+ * Renders with a fresh QueryClient without retries and a router, so error cases show up immediately, plus the
+ * confirmation dialog's host (components/Confirm.tsx).
+ */
 export function renderWithProviders(ui: ReactElement, { route = "/" }: { route?: string } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={[route]}>{ui}</MemoryRouter>
+      <MemoryRouter initialEntries={[route]}>
+        {ui}
+        <ConfirmHost />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
