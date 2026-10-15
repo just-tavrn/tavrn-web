@@ -91,8 +91,10 @@ test.describe("Security settings", () => {
     await expect(page2.getByTestId("app-shell")).toBeVisible();
     // Same identity: no reset happened.
     expect((await (await request.get(`${NODE}/api/v1/users/${account.username}/keys`)).json()).identity_public_key).toBe(identity);
-    const factors = await (await request.get(`${NODE}/api/v1/auth/factors`, { headers: { Authorization: `Bearer ${await tokenOf(page2)}` } })).json();
-    expect(factors.totp).toBe(true);
+    // The status first: a refused token names its code (tavrn-web#168: another test once expired every token).
+    const res = await request.get(`${NODE}/api/v1/auth/factors`, { headers: { Authorization: `Bearer ${await tokenOf(page2)}` } });
+    expect(res.status(), await res.text()).toBe(200);
+    expect((await res.json()).totp).toBe(true);
     await other.close();
   });
 });

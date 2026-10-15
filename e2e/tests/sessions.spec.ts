@@ -6,11 +6,14 @@ import { scaled } from "./timeouts";
 // Sessions (PROTOCOL.md §5b): expired access tokens are refreshed once per node and shared across tabs, a refused
 // token never logs out on its own, and a new login on the same browser continues the same device.
 
-/** Ends every access token issued so far (development nodes only). */
-async function expireAccessTokens(page: Page) {
+/**
+ * Ends the access tokens of one account issued so far (development nodes only). Only this account's: the tests
+ * running in parallel on the same node keep their sessions (tavrn-web#168).
+ */
+async function expireAccessTokens(page: Page, username: string) {
   // Tokens carry whole seconds: make sure the current ones are older than the cut.
   await page.waitForTimeout(1100);
-  const resp = await page.request.post(`${NODE}/api/v1/dev/expire-access-tokens`);
+  const resp = await page.request.post(`${NODE}/api/v1/dev/expire-access-tokens`, { data: { username } });
   expect(resp.status()).toBe(204);
 }
 
@@ -25,7 +28,7 @@ test.describe("Sessions", () => {
     await expect(second.getByTestId("app-shell")).toBeVisible();
     const before = await stored(page);
 
-    await expireAccessTokens(page);
+    await expireAccessTokens(page, account.username);
     const old = await page.request.get(`${NODE}/api/v1/users/me`, { headers: { Authorization: `Bearer ${before.token}` } });
     expect(old.status()).toBe(401);
     expect((await old.json()).code).toBe("auth.token_expired");
@@ -53,7 +56,7 @@ test.describe("Sessions", () => {
     expect(me.ok()).toBeTruthy();
 
     // The app keeps working without a reload: an expiry while open is refreshed on the next request.
-    await expireAccessTokens(page);
+    await expireAccessTokens(page, account.username);
     await page.goto("/settings/profile");
     await page.getByLabel("Anzeigename").fill("Nach dem Ablauf");
     await page.getByRole("button", { name: "Speichern" }).click();
@@ -66,8 +69,8 @@ test.describe("Sessions", () => {
 
   test("Network errors during the refresh do not sign out", async ({ page }) => {
     test.setTimeout(scaled(90_000));
-    await registerViaUi(page, { prefix: "offline" });
-    await expireAccessTokens(page);
+    const account = await registerViaUi(page, { prefix: "offline" });
+    await expireAccessTokens(page, account.username);
     // The refresh route is unreachable for a while: requests fail, the session stays.
     let blocked = true;
     await page.route("**/api/v1/auth/refresh", (route) => (blocked ? route.abort("internetdisconnected") : route.continue()));

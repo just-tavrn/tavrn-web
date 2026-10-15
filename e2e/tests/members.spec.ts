@@ -39,11 +39,26 @@ test.describe("Member list and roles (design note 4.11)", () => {
     if (isTouch()) {
       await page.getByRole("button", { name: "Beta nach oben" }).click();
     } else {
-      await rows.nth(1).dragTo(rows.nth(0));
+      // The list's own drag events on the rows, not a pointer drag by coordinates: the page still lays out here (the
+      // banner of the account without encryption appears late and pushes the list down), and a mouse press that lands
+      // above the moved row starts no drag at all (tavrn-web#170).
+      const data = await page.evaluateHandle(() => new DataTransfer());
+      await rows.nth(1).dispatchEvent("dragstart", { dataTransfer: data });
+      await rows.nth(0).dispatchEvent("dragenter", { dataTransfer: data });
+      await rows.nth(0).dispatchEvent("dragover", { dataTransfer: data });
+      await rows.nth(0).dispatchEvent("drop", { dataTransfer: data });
+      await rows.nth(1).dispatchEvent("dragend", { dataTransfer: data });
     }
-    await expect(page.getByRole("status").filter({ hasText: "Rollenreihenfolge gespeichert" })).toBeVisible();
+    // The saved order, in the list and on the node (the confirmation toast is gone after a few seconds).
     await expect(rows.nth(0)).toHaveAttribute("data-role", "Beta");
     await expect(rows.nth(1)).toHaveAttribute("data-role", "Alpha");
+    await expect
+      .poll(async () => {
+        const detail = await (await request.get(`${NODE}/api/v1/rooms/${room.id}`, { headers: { Authorization: `Bearer ${owner.token}` } })).json();
+        const position = (name: string) => (detail.roles as { name: string; position: number }[]).find((r) => r.name === name)!.position;
+        return position("Beta") > position("Alpha");
+      })
+      .toBe(true);
 
     // @everyone: management bits are locked with an explanation, everyday bits stay editable.
     await page.getByTestId("role-list").getByRole("button", { name: "@everyone" }).click();
