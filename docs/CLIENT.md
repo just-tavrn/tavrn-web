@@ -549,7 +549,9 @@ device unlocked with the recovery key reads the history. Verified contacts carry
 of a message and in conversation headers, and a small shield icon (named "verified", with a tooltip) in member lists,
 where names keep the width. The pinned keys, the verified contacts and the account's own
 devices travel with them as an encrypted trust record (ENCRYPTION.md §7): after signing out and in again (a new
-device) a contact whose key changed meanwhile still shows "Security key changed", and verifications stay.
+device) a contact whose key changed meanwhile still shows "Security key changed", and verifications stay. A message
+whose sender's devices could not be looked up for the moment (the sender's node did not answer, a rate limit) shows
+"Not checked yet, trying again" and is decrypted again every 30 seconds until the lookup works.
 
 **Unknown devices** (ENCRYPTION.md §4.6). Every encrypted write path checks the roster first: messages and their edits,
 thread titles and renames, forum posts, file and folder records of files channels and whiteboard scenes. Conversations,

@@ -258,16 +258,18 @@ export function usePlainSignatures(conversationId: string, messages: Message[] |
 /**
  * Decrypted content of the encrypted messages in `messages` (message id → result). Plaintext messages
  * are not included. Results live in memory only. Incremental: a message is decrypted (or read from the archive) once
- * per message object; results without a key yet are tried again when the group changes.
+ * per message object; results without a key yet are tried again when the group changes, and results whose sender's
+ * devices could not be looked up for the moment (`retry`) also every {@link RETRY_NON_FINAL_MS} on their own.
  */
 export function useDecrypted(conversationId: string, messages: Message[] | undefined, mls: MlsManager | null, tick: number): Record<string, Decrypted> {
   const encrypted = useMemo(() => (messages ?? []).filter((m) => m.encrypted), [messages]);
-  return useIncremental<Decrypted>(
+  const [lookupRound, setLookupRound] = useState(0);
+  const decrypted = useIncremental<Decrypted>(
     conversationId,
     encrypted,
     true,
-    [mls, tick],
-    (v) => v !== null && (v.ok || (v.reason !== "missing_key" && v.reason !== "locked")),
+    [mls, tick, lookupRound],
+    (v) => v !== null && (v.ok || (v.reason !== "missing_key" && v.reason !== "locked" && v.reason !== "retry")),
     async (todo, isCancelled) => {
       // "Keep the full history on this device" (#4): content this device archived is used as it is (also offline,
       // before the session manager is there); the rest is decrypted.
@@ -293,4 +295,13 @@ export function useDecrypted(conversationId: string, messages: Message[] | undef
       return out;
     },
   );
+  // Nothing caches a `retry` (a device lookup that failed for the moment, e.g. the sender's node did not answer):
+  // a new round decrypts those messages again until the lookup works.
+  const lookupFailed = useMemo(() => Object.values(decrypted).some((d) => !d.ok && d.reason === "retry"), [decrypted]);
+  useEffect(() => {
+    if (!lookupFailed) return;
+    const timer = setTimeout(() => setLookupRound((r) => r + 1), RETRY_NON_FINAL_MS);
+    return () => clearTimeout(timer);
+  }, [lookupFailed, lookupRound]);
+  return decrypted;
 }

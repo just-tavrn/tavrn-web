@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Message } from "@tavrn/sdk";
 import type { Decrypted, MlsManager, PlainStatus } from "@tavrn/e2ee";
@@ -18,7 +18,7 @@ vi.mock("../history/local", () => ({
   },
 }));
 
-import { useDecrypted, usePlainSignatures } from "./useE2eeConversation";
+import { RETRY_NON_FINAL_MS, useDecrypted, usePlainSignatures } from "./useE2eeConversation";
 
 const enc = (id: string, content = `ct-${id}`): Message => ({ id, encrypted: true, content, device_id: "d1", author: "a@t", epoch: 1 }) as unknown as Message;
 const plain = (id: string, text = id): Message => ({ id, encrypted: false, content: { text }, device_id: "d1", author: "a@t", signature: `sig-${id}` }) as unknown as Message;
@@ -102,6 +102,37 @@ describe("useDecrypted", () => {
     await waitFor(() => expect(result.current.m1).toMatchObject({ ok: true }));
     expect(result.current.m0).toBe(m0);
     expect(mls.decryptCalls).toEqual(["m0", "m1", "m1"]);
+  });
+
+  it("tries a message again on its own when the sender's devices could not be looked up (reason retry, #175)", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const mls = fakeMls();
+      let lookups = 0;
+      (mls.decrypt as ReturnType<typeof vi.fn>).mockImplementation(async (_q: string, m: Message): Promise<Decrypted> => {
+        mls.decryptCalls.push(m.id);
+        if (m.id !== "m1") return { ok: true, content: { text: m.id } };
+        // The first two lookups fail for the moment, the third one works.
+        return ++lookups < 3 ? { ok: false, reason: "retry" } : { ok: true, content: { text: m.id } };
+      });
+      const messages = [enc("m0"), enc("m1")];
+      const { result } = renderHook(() => useDecrypted("n/c", messages, mls, 0));
+      await vi.waitFor(() => expect(result.current.m1).toEqual({ ok: false, reason: "retry" }));
+      const m0 = result.current.m0;
+      // No group change and no new message: the timer alone decrypts it again, as often as needed.
+      await act(() => vi.advanceTimersByTimeAsync(RETRY_NON_FINAL_MS));
+      await vi.waitFor(() => expect(lookups).toBe(2));
+      expect(result.current.m1).toEqual({ ok: false, reason: "retry" });
+      await act(() => vi.advanceTimersByTimeAsync(RETRY_NON_FINAL_MS));
+      await vi.waitFor(() => expect(result.current.m1).toMatchObject({ ok: true }));
+      expect(result.current.m0).toBe(m0);
+      expect(mls.decryptCalls).toEqual(["m0", "m1", "m1", "m1"]);
+      // Settled: no timer is left that would decrypt again.
+      await act(() => vi.advanceTimersByTimeAsync(3 * RETRY_NON_FINAL_MS));
+      expect(mls.decryptCalls).toHaveLength(4);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
