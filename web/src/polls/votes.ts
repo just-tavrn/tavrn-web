@@ -4,7 +4,7 @@
  * `poll.vote` / `poll.vote.delete` events, verified by the conversation's codec. The own vote is applied at once and
  * replaced by the node's record (or rolled back when the node refuses it); the last device wins.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { Message, TavrnSocket } from "@tavrn/sdk";
 import type { CheckedVote, Poll, PollSelection } from "@tavrn/e2ee";
@@ -20,6 +20,17 @@ export function removeVote(list: PollVoteRecord[] | undefined, user: string): Po
   return list?.filter((r) => r.user !== user);
 }
 
+/** Everything a record's check depends on (the query cache does not keep record objects across updates). */
+const recordKeys = new WeakMap<PollVoteRecord, string>();
+function recordKey(r: PollVoteRecord): string {
+  let k = recordKeys.get(r);
+  if (k === undefined) {
+    k = JSON.stringify([r.user, r.updated_at, r.created_at, r.device_id ?? null, r.epoch ?? null, r.signature ?? null, r.message_id ?? null, r.conversation_id ?? null, r.content ?? null, r.pending ?? null]);
+    recordKeys.set(r, k);
+  }
+  return k;
+}
+
 /** The records of a poll and what they say, verified (null while loading). */
 export function usePollVotes(m: Message, raw: Record<string, unknown> | null, poll: Poll | null, enabled = true): { records: PollVoteRecord[] | undefined; checked: CheckedVote[] | null; error: unknown } {
   const env = usePollEnv();
@@ -32,19 +43,41 @@ export function usePollVotes(m: Message, raw: Record<string, unknown> | null, po
   });
   const [checked, setChecked] = useState<CheckedVote[] | null>(null);
   const records = query.data;
+  // Checked votes per record version (a vote event replaces one record), valid for one poll version and one codec:
+  // only new or changed records are checked.
+  const cache = useRef<{ env: PollEnv | null; m: Message | null; raw: Record<string, unknown> | null; byRecord: Map<string, CheckedVote> }>({ env: null, m: null, raw: null, byRecord: new Map() });
   useEffect(() => {
     if (!env || !records || !poll || !raw) return;
+    if (cache.current.env !== env || cache.current.m !== m || cache.current.raw !== raw) cache.current = { env, m, raw, byRecord: new Map() };
+    const { byRecord } = cache.current;
     let cancelled = false;
-    void env.open(m, raw, poll, records).then(
-      (v) => !cancelled && setChecked(v),
+    const keys = records.map(recordKey);
+    const todo = records.filter((_, i) => !byRecord.has(keys[i]!));
+    const done = () => {
+      // Records that are gone (retracted, replaced) leave the cache.
+      if (byRecord.size > keys.length * 2) {
+        const present = new Set(keys);
+        for (const k of [...byRecord.keys()]) if (!present.has(k)) byRecord.delete(k);
+      }
+      return keys.map((k) => byRecord.get(k)).filter((c): c is CheckedVote => !!c);
+    };
+    if (todo.length === 0) {
+      setChecked(done());
+      return;
+    }
+    void env.open(m, raw, poll, todo).then(
+      (v) => {
+        todo.forEach((r, i) => v[i] && byRecord.set(recordKey(r), v[i]));
+        if (!cancelled) setChecked(done());
+      },
       () => !cancelled && setChecked([]),
     );
     return () => {
       cancelled = true;
     };
-    // `poll` is derived from the message's content: the message identity stands for it.
+    // `poll` is derived from the message's content: the message and the raw content stand for it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [env, records, m]);
+  }, [env, records, m, raw]);
   return { records, checked, error: query.error };
 }
 
