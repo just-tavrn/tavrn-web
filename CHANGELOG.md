@@ -242,6 +242,8 @@ First public release of the web client and the desktop apps.
 
 ### Fixed
 
+- The account bar shows the avatar and name set on another device: the own account is taken over from the home node on
+  every connection, not only at sign-in (#193).
 - **Android screen share after rotating the phone**: a share started in portrait came out the wrong way round, so a
   phone turned to landscape reached the viewers as a tiny picture letterboxed into a portrait frame (#190). The
   capture now follows the phone's orientation (and a fold or unfold) and a landscape screen fills the viewers' 16:9
