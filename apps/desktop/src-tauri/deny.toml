@@ -44,6 +44,10 @@ ignore = [
     # bindings (gtk-rs 0.18) that Tauri 2's Linux runtime (wry, tao, muda, webkit2gtk) is built on; not part
     # of the app's runtime code, and no Tauri 2 release leaves those bindings yet.
     { id = "RUSTSEC-2024-0370", reason = "unmaintained build-time macro crate of the GTK 3 bindings under Tauri 2 on Linux" },
+    # zip 0.6 was yanked as a whole (every 0.6.x) when the crate changed hands; webrtc-sys-build (LiveKit's Rust SDK,
+    # latest 0.3.19) still requires ^0.6 to unpack the prebuilt libwebrtc archive at build time. Build-time only, no
+    # advisory against it, nothing else to resolve to. Drop when webrtc-sys-build moves to a current zip.
+    { crate = "zip@0.6.6", reason = "yanked 0.6 line still required by webrtc-sys-build (build-time, libwebrtc archive)" },
 ]
 # Not an ignore, for the record: `cargo audit` also lists RUSTSEC-2024-0429 (glib 0.18 `VariantStrIter`
 # unsound) as a warning. Neither this crate nor any dependency in the tree calls `Variant::array_iter_str` or
