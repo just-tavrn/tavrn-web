@@ -32,6 +32,22 @@ object ScreenShareRules {
     return Pair(even(w * scale), even(h * scale))
   }
 
+  /**
+   * The box handed to the SDK as `captureParams`: [captureSize] of the display turned to landscape, long side first.
+   * The SDK's screencast track reads `captureParams` as landscape and turns it with the display itself ([oriented]),
+   * at the start and whenever the phone rotates; a portrait box would come out the wrong way round in both
+   * orientations (a landscape screen letterboxed into a portrait frame).
+   */
+  fun captureBox(displayWidth: Int, displayHeight: Int, maxSide: Int): Pair<Int, Int> =
+    captureSize(max(displayWidth, displayHeight), min(displayWidth, displayHeight), maxSide)
+
+  /** The box turned with the display as the SDK's screencast track turns it: the size the capturer runs at. */
+  fun oriented(box: Pair<Int, Int>, displayWidth: Int, displayHeight: Int): Pair<Int, Int> =
+    if (displayWidth > displayHeight) box else Pair(box.second, box.first)
+
+  /** A rotation or a fold changes the display several times in a row: the capture follows once it settled. */
+  const val DISPLAY_SETTLE_MS = 300L
+
   /** The frame key from the bridge (standard base64, checked in Rust already): exactly 32 bytes, else null. */
   fun key(base64: String): ByteArray? {
     if (base64.length > 64) return null

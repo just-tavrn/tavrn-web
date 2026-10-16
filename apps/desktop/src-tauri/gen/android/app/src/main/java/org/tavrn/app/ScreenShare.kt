@@ -9,9 +9,14 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.hardware.display.DisplayManager
 import android.media.projection.MediaProjectionManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.util.DisplayMetrics
 import android.util.Log
+import android.view.Display
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import app.tauri.plugin.JSObject
@@ -34,6 +39,7 @@ import io.livekit.android.room.participant.AudioTrackPublishOptions
 import io.livekit.android.room.participant.VideoTrackPublishDefaults
 import io.livekit.android.room.track.LocalAudioTrack
 import io.livekit.android.room.track.LocalAudioTrackOptions
+import io.livekit.android.room.track.LocalVideoTrack
 import io.livekit.android.room.track.LocalVideoTrackOptions
 import io.livekit.android.room.track.Track
 import io.livekit.android.room.track.VideoCaptureParameter
@@ -63,6 +69,8 @@ import livekit.org.webrtc.FrameCryptorKeyDerivationAlgorithm
  * - **Nothing else:** no subscription (the token forbids it), no microphone; LiveKit's audio handling is replaced by
  *   a no-op so the call's audio routing stays `AudioRouter`'s. The sound of other apps (Android 10+, off by default)
  *   goes out as the screen share's audio track; the microphone's own samples are cleared before they are mixed.
+ * - **Orientation:** the capture follows the display (a rotation, a fold or unfold) by resizing the running capture
+ *   in place: no new consent, no new publication ([DisplayFollower]).
  *
  * Its events (`screen_share` live / stopped with a reason) go to the Rust side like every other event.
  */
@@ -97,6 +105,63 @@ object ScreenShare {
     override fun getLatestKeyIndex(participantId: String): Int = index
   }
 
+  /**
+   * Keeps the capture at the display's shape while a share runs. The SDK's screencast track turns its landscape
+   * `captureParams` box with the display on rotation itself (an `OrientationEventListener`); this listener on the
+   * default display also covers a fold or unfold (another aspect ratio, so another box) and a device without an
+   * orientation sensor. Once the display settled it sets the box as the track's `captureParams` (so the SDK's own
+   * rotation handling turns the new box) and resizes the capturer (`changeCaptureFormat`: `ScreenCapturerAndroid`
+   * resizes its virtual display in place). Frame rate and bitrate stay as set: they belong to the box.
+   */
+  private class DisplayFollower(private val context: Context, private val track: LocalVideoTrack, private val maxSide: Int) : DisplayManager.DisplayListener {
+    private val manager = context.getSystemService(DisplayManager::class.java)
+    private val handler = Handler(Looper.getMainLooper())
+    private val settle = Runnable { follow() }
+    private var size = ScreenShare.realSize(context)?.let { (w, h) -> ScreenShareRules.oriented(ScreenShareRules.captureBox(w, h, maxSide), w, h) }
+
+    fun start() = manager.registerDisplayListener(this, handler)
+
+    fun stop() {
+      manager.unregisterDisplayListener(this)
+      handler.removeCallbacks(settle)
+    }
+
+    override fun onDisplayChanged(displayId: Int) {
+      if (displayId != Display.DEFAULT_DISPLAY) return
+      handler.removeCallbacks(settle)
+      handler.postDelayed(settle, ScreenShareRules.DISPLAY_SETTLE_MS)
+    }
+
+    override fun onDisplayAdded(displayId: Int) {}
+
+    override fun onDisplayRemoved(displayId: Int) {}
+
+    private fun follow() {
+      val (w, h) = ScreenShare.realSize(context) ?: return
+      val box = ScreenShareRules.captureBox(w, h, maxSide)
+      val target = ScreenShareRules.oriented(box, w, h)
+      if (target == size) return
+      try {
+        val params = track.options.captureParams
+        track.options = track.options.copy(captureParams = params.copy(width = box.first, height = box.second))
+        track.capturer.changeCaptureFormat(target.first, target.second, params.maxFps)
+        size = target
+      } catch (e: Exception) {
+        // The share is ending (a disposed capturer): nothing to resize.
+        Log.w(ScreenShare.TAG, "capture not resized: ${e.javaClass.simpleName}")
+      }
+    }
+  }
+
+  /** The default display's full size in its current orientation, as the SDK's screencast track measures it. */
+  @Suppress("DEPRECATION")
+  private fun realSize(context: Context): Pair<Int, Int>? {
+    val display = context.getSystemService(DisplayManager::class.java)?.getDisplay(Display.DEFAULT_DISPLAY) ?: return null
+    val metrics = DisplayMetrics()
+    display.getRealMetrics(metrics)
+    return Pair(metrics.widthPixels, metrics.heightPixels)
+  }
+
   /** The sound of other apps only: the microphone's samples are cleared, then the playback capture is mixed in. */
   private class AppsOnly(private val capturer: ScreenAudioCapturer) : AudioBufferCallback {
     override fun onBuffer(buffer: ByteBuffer, audioFormat: Int, channelCount: Int, sampleRate: Int, bytesRead: Int, captureTimeNs: Long): Long {
@@ -113,6 +178,7 @@ object ScreenShare {
   private var appAudio: LocalAudioTrack? = null
   private var appCapturer: ScreenAudioCapturer? = null
   private var watcher: Job? = null
+  private var follower: DisplayFollower? = null
 
   /** The sound of other apps can be captured (AudioPlaybackCapture). */
   fun audioSupported(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
@@ -159,8 +225,9 @@ object ScreenShare {
   }
 
   private suspend fun publish(context: Context, s: Start, consent: Intent) {
-    val metrics = context.resources.displayMetrics
-    val (width, height) = ScreenShareRules.captureSize(metrics.widthPixels, metrics.heightPixels, s.maxSide)
+    val (displayWidth, displayHeight) = realSize(context) ?: context.resources.displayMetrics.let { Pair(it.widthPixels, it.heightPixels) }
+    // Landscape, long side first: the SDK turns the box with the display (also on rotation).
+    val (width, height) = ScreenShareRules.captureBox(displayWidth, displayHeight, s.maxSide)
     val options = RoomOptions(
       adaptiveStream = false,
       dynacast = false,
@@ -187,6 +254,9 @@ object ScreenShare {
     }
     val params = ScreenCaptureParams(consent, NOTIFICATION_ID, notification(context, s), onStop = { if (state == "live") stop(ScreenShareRules.Stop.REVOKED) })
     if (!r.localParticipant.setScreenShareEnabled(true, params)) throw IllegalStateException("not published")
+    (r.localParticipant.getTrackPublication(Track.Source.SCREEN_SHARE)?.track as? LocalVideoTrack)?.let { video ->
+      follower = DisplayFollower(context, video, s.maxSide).also { it.start() }
+    }
     if (s.audio && audioSupported() && ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
       publishAppAudio(r)
     }
@@ -262,6 +332,8 @@ object ScreenShare {
 
   private suspend fun release() {
     state = "idle"
+    follower?.stop()
+    follower = null
     watcher?.cancel()
     watcher = null
     val r = room
