@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
-import { TavrnSocket, type Conversation, type EphemeralReply, type FriendRequest, type Member, type Message, type PendingInvite, type Presence, type SocketStatus, type User } from "@tavrn/sdk";
+import { TavrnSocket, type TavrnApi, type Conversation, type EphemeralReply, type FriendRequest, type Member, type Message, type PendingInvite, type Presence, type SocketStatus, type User } from "@tavrn/sdk";
 import { create } from "zustand";
 import { refreshHome, wsUrl } from "../lib/api";
 import { cleanupConversation, cleanupOwnLeaves } from "../lib/leafCleanup";
@@ -399,6 +399,23 @@ export function applyOwnProfile(user: User) {
   useAuth.getState().setUser({ ...current, ...patch });
 }
 
+/**
+ * The own account as the home node has it now (`GET /users/me`), taken over on every (re)connection: the stored
+ * account dates from the sign-in, and a `user.update` of another device (a new avatar set in the desktop app) is
+ * missed while this client is closed; member lists and messages show the current avatar, the account bar would
+ * keep the old one (tavrn-web#193). Only the same account is taken over; a failed request changes nothing.
+ */
+export async function refreshOwnProfile(client: Pick<TavrnApi, "users">): Promise<void> {
+  try {
+    const me = await client.users.me();
+    const current = useAuth.getState().user;
+    if (!current || me.id !== current.id || me.address !== current.address) return;
+    useAuth.getState().setUser({ ...current, ...me });
+  } catch {
+    // Offline or a token in refresh: the next connection tries again.
+  }
+}
+
 /** Connects the WebSocket while a token is present and keeps the query cache up to date. */
 export function useRealtime() {
   // One socket per signed-in account and device; refreshed tokens do not reconnect (the socket refreshes itself).
@@ -423,6 +440,8 @@ export function useRealtime() {
         // (Re)connected: Welcomes that arrived while the socket was down, and own leaves waiting for removal.
         const home = useAuth.getState().user?.domain;
         if (status === "ready" && home) {
+          // The own name and avatar as the home node has them (a change made on another device while this one was closed).
+          void refreshOwnProfile(api);
           // Who is in voice in every room (VOICE.md §5): events may have been missed while disconnected.
           void queryClient.invalidateQueries({ queryKey: ["my-voice", home] });
           // Followed threads of every room, so their messages count and notify before a room is opened (§7e).
