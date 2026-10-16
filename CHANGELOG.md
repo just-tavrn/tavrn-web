@@ -242,6 +242,10 @@ First public release of the web client and the desktop apps.
 
 ### Fixed
 
+- **Android screen share after rotating the phone**: a share started in portrait came out the wrong way round, so a
+  phone turned to landscape reached the viewers as a tiny picture letterboxed into a portrait frame (#190). The
+  capture now follows the phone's orientation (and a fold or unfold) and a landscape screen fills the viewers' 16:9
+  tile.
 - **Override editor hints**: the grey value under a neutral permission or file type of a category or channel override
   now applies the edited layer's own `@everyone` override and, for a member, the overrides of the member's roles
   (#182). A category that denies "View channel" to `@everyone` showed a neutral role as "allowed by the roles"; it now

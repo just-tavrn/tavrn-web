@@ -239,7 +239,10 @@ the voice.
    ends quietly), starts the SDK's foreground service of type `mediaProjection` (required since Android 14) with the
    app's notification "Sharing your screen" and **Stop sharing**, connects with the token (no subscriptions, no
    microphone; LiveKit's audio handling replaced by a no-op so `AudioRouter` keeps the call's audio) and publishes the
-   screen as VP8 in the resolution's 16:9 box, turned with the display (`ScreenShareRules.captureSize`).
+   screen as VP8 in the resolution's 16:9 box, turned with the display (`ScreenShareRules.captureBox`). The capture
+   follows the phone's orientation while the share runs: turned to landscape, the viewers get a landscape frame that
+   fills their 16:9 tile, and a fold or unfold gets a box of the new shape (the running capture is resized in place,
+   no new consent dialog, no new publication; frame rate and bitrate stay as chosen).
 3. **Encryption** (ENCRYPTION.md §5a): the publisher encrypts exactly like the client, one shared key per MLS epoch,
    HKDF with LiveKit's salt, a ring of 256 keys at `epoch mod 256`, no ratcheting, no failure limit. The publisher is
    no MLS member: the client hands it every epoch's 32 bytes over the bridge right after deriving them
