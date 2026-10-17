@@ -1002,8 +1002,10 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
             invisible column cost the text a third of a phone's width). Hidden ones ignore the pointer, so a tap on
             the text below never hits an invisible button; keyboard focus shows them. Plain `:hover` on purpose
             (Tailwind's group-hover only applies on devices with a hover pointer): on touch screens a tap on a
-            message makes it the hovered one, so its actions appear and the next tap reaches them. */}
-        <div className="pointer-events-none absolute right-1 top-0.5 z-10 flex items-start gap-0.5 rounded-md border border-line bg-bg-1 p-0.5 opacity-0 shadow-sm focus-within:pointer-events-auto focus-within:opacity-100 [.group:hover_&]:pointer-events-auto [.group:hover_&]:opacity-100" data-testid="message-actions">
+            message makes it the hovered one, so its actions appear and the next tap reaches them. There (no hover
+            pointer) they sit just above the row, so they never cover the tapped message's own text: a pill or link
+            in its first line stays tappable. */}
+        <div className="pointer-events-none absolute right-1 top-0.5 z-10 [@media(hover:none)]:top-auto [@media(hover:none)]:bottom-full flex items-start gap-0.5 rounded-md border border-line bg-bg-1 p-0.5 opacity-0 shadow-sm focus-within:pointer-events-auto focus-within:opacity-100 [.group:hover_&]:pointer-events-auto [.group:hover_&]:opacity-100" data-testid="message-actions">
           {canReact && onReact && <EmojiPicker customEmojis={customEmojis} onPick={(e) => onReact(m, e, false)} />}
           {canPin && onPin && (
             <button type="button" aria-label={m.pinned ? t("messages.unpin") : t("messages.pin")} onClick={() => onPin(m, !m.pinned)} className="min-h-8 min-w-8 rounded text-fg-2 hover:bg-bg-3 hover:text-fg-0">
