@@ -145,7 +145,7 @@ e2e-install: install
 
 # LiveKit version the node is tested with: the node image, tavrn-node's justfile and CI and the organization's runner
 # image pin the same one (tavrn-node README.md "Tool versions"); bump them together
-livekit_version := "1.13.8"
+livekit_version := "1.13.9"
 
 # Install livekit-server into ~/.local/bin for the voice tests with a node binary (an image brings its own); the
 # download is checked against the SHA-256 sums below (update them with livekit_version: the release's checksums.txt)
@@ -153,9 +153,9 @@ livekit-install:
     #!/usr/bin/env bash
     set -euo pipefail
     case "$(uname -m)" in
-      x86_64) arch=amd64 sum=059f6de65da11a57400e4646027da705d592ce42acb48c08570a397df446f869 ;;
-      aarch64|arm64) arch=arm64 sum=39883cb07f370057692139fcf500a763cfedae1e9934bd8a1815a144e2127bd2 ;;
-      armv7l) arch=armv7 sum=ccc859fea666a8f21444d27bff8e0e74f8f51ae4bb5bb37cb8e4073fbaaeed5d ;;
+      x86_64) arch=amd64 sum=0b7fa208b662d09cfdeae8c06cf4c481aead0556086558b48250501e2e2d6e20 ;;
+      aarch64|arm64) arch=arm64 sum=c5e4e5a6d6cf0a449651aa3178532ecc7a2bf2502538396ebe6e51ff13424056 ;;
+      armv7l) arch=armv7 sum=ef570f4898e8dc83ac303414fc0992afe3ac271cc9ceb57ed6baebb4fdee9f0a ;;
       *) echo "unsupported architecture $(uname -m)"; exit 1 ;;
     esac
     dir="${LIVEKIT_INSTALL_DIR:-$HOME/.local/bin}"
