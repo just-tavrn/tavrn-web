@@ -1293,6 +1293,9 @@ confirmation).
 ## Notifications
 
 Mentions and DMs show a toast with a jump link, a soft sound and an entry behind the bell next to the settings gear.
+Reading a message directly, marking its conversation as read, or receiving its read marker from another session
+clears the corresponding unseen bell count. Channel and thread markers stay separate, and newer messages remain
+unseen until read. Entries stay in the recent history until cleared; opening the bell acknowledges all shown entries.
 **Settings → Notifications** sets what rooms notify about ("Rooms notify me about"; direct messages always notify
 unless set to nothing), the sound (with a preview), lists the rooms and channels with their own settings (set from
 their context menus) with a Reset each, and has **Desktop notifications when tavrn is in the background**: the

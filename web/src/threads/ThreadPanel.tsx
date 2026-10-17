@@ -51,8 +51,8 @@ export function ThreadPanel({ threadId, channel, perms, onClose, view }: { threa
   // The server's follow state seeds the local one.
   useEffect(() => {
     const d = thread.data;
-    if (d?.me) useThreads.getState().state({ thread_id: d.id, channel_id: d.channel_id, room_id: d.room_id, following: d.me.following, last_read_message_id: d.me.last_read_message_id ?? null, unread_count: d.me.unread_count, mention_count: d.me.mention_count });
-  }, [thread.data]);
+    if (d?.me) useThreads.getState().state({ thread_id: d.id, channel_id: d.channel_id, room_id: d.room_id, following: d.me.following, last_read_message_id: d.me.last_read_message_id ?? null, unread_count: d.me.unread_count, mention_count: d.me.mention_count }, domain);
+  }, [thread.data, domain]);
   useEffect(() => {
     useThreads.setState({ open: threadId });
     return () => useThreads.setState((s) => (s.open === threadId ? { open: null } : s));
@@ -78,7 +78,7 @@ export function ThreadPanel({ threadId, channel, perms, onClose, view }: { threa
   };
   const toggleFollow = async () => {
     try {
-      useThreads.getState().state(following ? await api.threads.unfollow(threadId) : await api.threads.follow(threadId));
+      useThreads.getState().state(following ? await api.threads.unfollow(threadId) : await api.threads.follow(threadId), domain);
     } catch (e) {
       toastError(e);
     }

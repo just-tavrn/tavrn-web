@@ -45,7 +45,7 @@ export function useRoom(roomId: string) {
     queryKey: ["room", roomId],
     queryFn: async () => {
       const room = await api.rooms.get(roomId);
-      useUnread.getState().seed(room.read_states ?? []);
+      useUnread.getState().seed(room.read_states ?? [], domain);
       return room;
     },
   });

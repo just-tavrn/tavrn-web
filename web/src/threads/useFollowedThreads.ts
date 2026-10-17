@@ -9,6 +9,6 @@ export function useFollowedThreads(roomId: string) {
   const { api, domain } = useNode();
   const followed = useQuery({ queryKey: ["followed-threads", domain, roomId], queryFn: () => api.threads.followed(roomId), enabled: !!roomId, staleTime: 60_000 });
   useEffect(() => {
-    if (followed.data) useThreads.getState().seedRoom(roomId, followed.data.items);
-  }, [roomId, followed.data]);
+    if (followed.data) useThreads.getState().seedRoom(roomId, followed.data.items, domain);
+  }, [roomId, followed.data, domain]);
 }

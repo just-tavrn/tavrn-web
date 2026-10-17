@@ -154,6 +154,12 @@ test.describe("Threads", () => {
     await expect(toast).toBeVisible({ timeout: scaled(20_000) });
     await expect(toast).toContainText("Treffen um drei");
     await expect(toast).toContainText("Folgeraum");
+    const bell = page.getByTestId("notification-bell").locator("visible=true");
+    await expect(bell.getByTestId("notification-count")).toHaveText("1");
+    // Reading the thread directly acknowledges its mention without opening the bell.
+    await page.goto(`/rooms/${room.id}/channels/${channelId}/threads/${thread.id}`);
+    await expect(page.getByTestId("thread-panel")).toContainText("Treffen um drei");
+    await expect(bell.getByTestId("notification-count")).toHaveCount(0);
   });
 
   test("forum: a post with title, message and tags; the tag filter and the post card", async ({ page, request }) => {

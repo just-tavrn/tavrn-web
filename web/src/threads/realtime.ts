@@ -37,9 +37,9 @@ export function patchRoot(queryClient: QueryClient, channelId: string, rootId: s
 }
 
 /** Applies a thread's read state and keeps the channel's count (which includes followed threads) in step. */
-export function applyThreadState(s: ThreadReadState) {
+export function applyThreadState(s: ThreadReadState, node: string | null = null) {
   const before = useThreads.getState().followed[s.thread_id];
-  useThreads.getState().state(s);
+  useThreads.getState().state(s, node);
   const after = useThreads.getState().followed[s.thread_id];
   const delta = (after?.unread ?? 0) - (before?.unread ?? 0);
   const mentions = (after?.mentions ?? 0) - (before?.mentions ?? 0);
@@ -68,7 +68,7 @@ export function threadMessage(m: Message, queryClient: QueryClient, me: { id: st
  * `me`: the user as this node knows it. A thread the user started is followed from the start (the node sends no
  * `thread.read` for it), also when it was started on another connection.
  */
-export function threadHandlers(socket: TavrnSocket, queryClient: QueryClient, me: () => { id: string } | null = () => null): Array<() => void> {
+export function threadHandlers(socket: TavrnSocket, queryClient: QueryClient, me: () => { id: string } | null = () => null, node: string | null = null): Array<() => void> {
   const refreshLists = () => {
     void queryClient.invalidateQueries({ queryKey: ["threads"] });
     void queryClient.invalidateQueries({ queryKey: ["followed-threads"] });
@@ -85,7 +85,7 @@ export function threadHandlers(socket: TavrnSocket, queryClient: QueryClient, me
     socket.on<{ room_id: string; thread: Thread }>("thread.create", (d) => {
       const t = d.thread;
       if (t.created_by_id === me()?.id && !useThreads.getState().followed[t.id]) {
-        applyThreadState({ thread_id: t.id, channel_id: t.channel_id, room_id: t.room_id, following: true, last_read_message_id: t.last_message_id ?? null, unread_count: 0, mention_count: 0 });
+        applyThreadState({ thread_id: t.id, channel_id: t.channel_id, room_id: t.room_id, following: true, last_read_message_id: t.last_message_id ?? null, unread_count: 0, mention_count: 0 }, node);
       }
       changed(d);
     }),
@@ -95,9 +95,9 @@ export function threadHandlers(socket: TavrnSocket, queryClient: QueryClient, me
       queryClient.removeQueries({ queryKey: messagesKey(d.channel_id, d.id), exact: true });
       void queryClient.invalidateQueries({ queryKey: ["thread"] });
       const f = useThreads.getState().followed[d.id];
-      if (f) applyThreadState({ thread_id: d.id, channel_id: f.channelId, room_id: f.roomId, following: false, last_read_message_id: null, unread_count: 0, mention_count: 0 });
+      if (f) applyThreadState({ thread_id: d.id, channel_id: f.channelId, room_id: f.roomId, following: false, last_read_message_id: null, unread_count: 0, mention_count: 0 }, node);
       refreshLists();
     }),
-    socket.on<ThreadReadState>("thread.read", (s) => applyThreadState(s)),
+    socket.on<ThreadReadState>("thread.read", (s) => applyThreadState(s, node)),
   ];
 }

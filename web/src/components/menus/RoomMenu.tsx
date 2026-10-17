@@ -47,7 +47,7 @@ export function useRoomMenu(room: Pick<Room, "id" | "name">, node: string | null
     queryKey: ["room", room.id],
     queryFn: async () => {
       const r = await client.rooms.get(room.id);
-      useUnread.getState().seed(r.read_states ?? []);
+      useUnread.getState().seed(r.read_states ?? [], node);
       return r;
     },
     enabled: menu.open,
@@ -77,7 +77,7 @@ export function useRoomMenu(room: Pick<Room, "id" | "name">, node: string | null
           {
             ...notify.actions,
             markRead: () =>
-              void Promise.all(channelIds.map((id) => markConversationRead(client, id)))
+              void Promise.all(channelIds.map((id) => markConversationRead(client, id, node)))
                 .then(() => useToasts.getState().push({ kind: "info", title: t("menu.marked_read") }))
                 .catch(toastError),
             invite: () => setDialog("invite"),
