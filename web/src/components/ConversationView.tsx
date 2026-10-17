@@ -57,6 +57,7 @@ import { evidenceCandidates } from "../moderation/evidence";
 import { isAutomodBlock } from "../moderation/blocked";
 import { wasDeleted } from "../moderation/deletedIds";
 import { LockMark } from "./Badges";
+import { BotReaders } from "./BotReaders";
 import { sendsTyping, usePresence } from "../stores/presence";
 import { useRoomPreview } from "../stores/rolePreview";
 import { cutHistory, previewHistoryStart } from "../lib/previewRoom";
@@ -142,6 +143,9 @@ export function ConversationView(p: ConversationViewProps) {
   const nodeInfo = useQuery({ queryKey: home ? ["node"] : ["node", domain], queryFn: () => api.node.info(), staleTime: 10 * 60_000 });
   const threadId = p.threadId;
   const messageKey = useMemo(() => messagesKey(conversationId, threadId), [conversationId, threadId]);
+  // Welcome channel entries name only the channels in the viewer's list (APPLICATIONS.md §3.6).
+  const roomChannels = p.room?.channels;
+  const visibleChannels = useMemo(() => (roomChannels ? new Set(roomChannels.map((c) => c.id)) : undefined), [roomChannels]);
   // MLS names the conversation by its qualified id: the node hosting it and the ULID (ENCRYPTION.md §0.1).
   const q = qualify(domain, conversationId);
   // Lazy history (design note 4.4): newest page on open, older pages on demand; dropped when closed. With "keep the
@@ -674,6 +678,7 @@ export function ConversationView(p: ConversationViewProps) {
         {p.encrypted && (
           <LockMark size={18} title={t("e2ee.encrypted_hint")} testId="encrypted-marker" />
         )}
+        {p.encrypted && p.roomId && <BotReaders mls={e2ee.mls} conversation={q} tick={e2ee.tick} bots={p.bots} members={p.roomMembers} />}
         {!threadId && (
           <>
             <span className="flex-1" />
@@ -745,6 +750,7 @@ export function ConversationView(p: ConversationViewProps) {
         bots={p.bots}
         mentionRoles={mentionRoles}
         authors={authors}
+        visibleChannels={visibleChannels}
       />
       </ComponentsContext.Provider>
       </PollContext.Provider>
