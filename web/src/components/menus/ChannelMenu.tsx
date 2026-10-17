@@ -68,7 +68,7 @@ export function useChannelMenu(room: RoomDetail, channel: Channel): { menu: Cont
         {
           ...notify.actions,
           toggleFullHistory: fullHistory.toggle,
-          markRead: () => void markConversationRead(api, channel.id).catch(toastError),
+          markRead: () => void markConversationRead(api, channel.id, domain).catch(toastError),
           edit: () => {
             closeNav();
             navigate(roomPath(room.id, undefined, `settings/channels?channel=${encodeURIComponent(channel.id)}`));

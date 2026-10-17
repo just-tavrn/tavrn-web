@@ -53,7 +53,7 @@ export function loadFollowedThreads({ key, client, queryClient, sleep = wait, no
         if (e instanceof TavrnApiError && e.code === "route.not_found") return;
         continue;
       }
-      useThreads.getState().seedRoom(room.id, list.items);
+      useThreads.getState().seedRoom(room.id, list.items, key);
       queryClient.setQueryData(["followed-threads", key, room.id], list);
     }
   })();

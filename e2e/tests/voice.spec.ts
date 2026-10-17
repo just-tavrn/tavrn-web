@@ -918,21 +918,40 @@ test.describe("Voice channels", () => {
     const phone = (page.viewportSize()?.width ?? 1280) < 768;
     const warnings: string[] = [];
     page.on("console", (m) => m.type() === "warning" && warnings.push(m.text()));
+    const preview = page.getByTestId("camera-preview");
+    const previewState = () => preview.evaluate((v) => {
+      const video = v as HTMLVideoElement;
+      const track = (video.srcObject as MediaStream | null)?.getVideoTracks()[0];
+      // ProcessorWrapper outputs a generated track or its canvas capture fallback, never a capture-device track.
+      const processed = !!track && ["MediaStreamTrackGenerator", "CanvasCaptureMediaStreamTrack"].includes(track.constructor.name);
+      const quality = video.getVideoPlaybackQuality();
+      return { id: track?.id ?? "", label: track?.label ?? "", processed, live: track?.readyState === "live", width: video.videoWidth, height: video.videoHeight, frames: quality.totalVideoFrames - quality.droppedVideoFrames };
+    });
+    const expectWorkingPreview = async (previousTrackId?: string) => {
+      // Software GL can legitimately exceed the frame budget (SlowFrameDetector): the documented safe fallback
+      // stops the processor and keeps the raw camera running. A raw track alone is never proof of success.
+      await expect.poll(async () => {
+        const state = await previewState();
+        if (!state.id || !state.live || !state.width || !state.height || state.id === previousTrackId) return "waiting";
+        if (state.processed) return "processed";
+        return /fake/i.test(state.label) && await page.getByTestId("bg-auto-off").isVisible() ? "safe-fallback" : "waiting";
+      }, { timeout: 20_000 }).toMatch(/^(processed|safe-fallback)$/);
+      const before = await previewState();
+      // Decoded frames must keep advancing: dimensions or a surviving track label would also accept a frozen image.
+      await expect.poll(async () => (await previewState()).frames, { timeout: 20_000 }).toBeGreaterThan(before.frames + 1);
+    };
     if (!phone) {
       await page.getByTestId("camera-preview-toggle").click();
-      await expect.poll(() => page.getByTestId("camera-preview").evaluate((v) => (v as HTMLVideoElement).videoWidth), { timeout: 20_000 }).toBeGreaterThan(0);
-      // A few seconds of frames through the mask smoothing ("high"), which falls back with a warning on failure.
-      await page.waitForTimeout(3000);
+      await expectWorkingPreview();
       expect(warnings.filter((w) => w.includes("mask smoothing off"))).toEqual([]);
       await expect(page.getByText("background effects are not supported")).toHaveCount(0);
-      // The processor replaced the camera track with its own canvas output (its model may still be loading on a busy
-      // machine: the raw camera shows until then).
-      await expect.poll(() => page.getByTestId("camera-preview").evaluate((v) => ((v as HTMLVideoElement).srcObject as MediaStream | null)?.getVideoTracks()[0]?.label ?? ""), { timeout: 15_000 }).not.toMatch(/fake/i);
     }
+    const previousTrackId = phone ? undefined : (await previewState()).id;
     await page.getByTestId("blur-strength").fill("20");
     await page.getByTestId("bg-quality").selectOption("fast");
     if (!phone) {
-      await expect.poll(() => page.getByTestId("camera-preview").evaluate((v) => (v as HTMLVideoElement).videoWidth), { timeout: 20_000 }).toBeGreaterThan(0);
+      // A quality change restarts capture/processing: require a new live track and more decoded frames.
+      await expectWorkingPreview(previousTrackId);
       await page.getByTestId("camera-preview-toggle").click();
     }
     await page.reload();

@@ -315,10 +315,10 @@ export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: 
         );
       }
     }),
-    ...threadHandlers(socket, queryClient, me),
+    ...threadHandlers(socket, queryClient, me, node),
     // Poll votes (PROTOCOL.md §7g): the shown polls' vote records follow; votes never count as unread or notify.
     ...pollHandlers(socket, queryClient),
-    socket.on<{ conversation_id: string; last_read_message_id: string }>("read.update", (d) => useUnread.getState().read(d.conversation_id, d.last_read_message_id)),
+    socket.on<{ conversation_id: string; last_read_message_id: string }>("read.update", (d) => useUnread.getState().read(d.conversation_id, d.last_read_message_id, node)),
     // Room channels carry `channel_id`, DMs and group DMs `conversation_id`.
     socket.on<{ channel_id?: string; conversation_id?: string; user_id: string }>("typing", (d) => {
       const id = d.channel_id ?? d.conversation_id;
@@ -437,7 +437,7 @@ export function useRealtime() {
       url: wsUrl(),
       WebSocketImpl: browserWebSocket(),
       getToken: () => useAuth.getState().token,
-      capabilities: ["content.v1", "reactions", "e2ee.mls1", "commands.v1"],
+      capabilities: ["content.v1", "reactions", "e2ee.mls1", "commands.v1", "components.v1", "components.modal_select.v1"],
       onStatus: (status) => {
         useRealtimeState.setState({ status });
         // (Re)connected: Welcomes that arrived while the socket was down, and own leaves waiting for removal.
@@ -631,7 +631,7 @@ function openNodeSocket(domain: string, queryClient: QueryClient, navigate: (to:
     url: session.ws,
     WebSocketImpl: browserWebSocket(),
     getToken: () => useNodes.getState().sessions[domain]?.token ?? null,
-    capabilities: ["content.v1", "reactions", "e2ee.mls1", "commands.v1"],
+    capabilities: ["content.v1", "reactions", "e2ee.mls1", "commands.v1", "components.v1", "components.modal_select.v1"],
     onStatus: (status) => {
       // Connected (again): DMs started on that node wait there as Welcomes (§6.1); own leaves to remove.
       if (status === "ready") {

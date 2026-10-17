@@ -575,11 +575,14 @@ does), and a set of components that breaks one of the protocol's rules is not sh
   the maximum are unavailable, and **Confirm** sends them. Options can have an emoji and a description.
 - **Link buttons** never reach the node. A click first shows the full address and its host ("Open external link?");
   **Open link** opens it in the browser.
-- **Forms** open as a dialog with the application's name and the BOT badge: one to five labelled text fields (one
-  line or several), prefilled where the application says so, with a character counter. Required fields and the
-  minimum and maximum lengths are checked before anything is sent, with the error at the field; **Send** is
-  disabled while the form is on its way. A form that expired (15 minutes) or was sent already says so in the dialog;
-  Escape, Cancel or a click outside closes it, after asking once you typed something.
+- **Forms** open privately for the person who used the control, with the application's name and the BOT badge:
+  one to five labelled text fields (one line or several) or single-choice dropdowns, prefilled where the application
+  says so. Text fields have a character counter; dropdowns show the application's option labels, descriptions and
+  optional emoji. Required fields, text lengths and exact option values are checked before anything is sent, with
+  the error at the field. Optional dropdowns can be left empty. Other members keep their own form and choices, so a
+  bot can ask for a class on its card and the matching specialization in the person's form. **Send** is disabled
+  while the form is on its way. A form that expired (15 minutes) or was sent already says so in the dialog;
+  Escape, Cancel or a click outside closes it, after asking once you changed something.
 - **Unavailable controls** stay visible but disabled, with the reason under them: an application may disable a
   control itself; without the permission *Use buttons and menus of apps* (`use_components`, a channel permission
   that room managers can deny per channel like any other; `@everyone` has it by default, DMs always) nothing can be
@@ -1293,6 +1296,9 @@ confirmation).
 ## Notifications
 
 Mentions and DMs show a toast with a jump link, a soft sound and an entry behind the bell next to the settings gear.
+Reading a message directly, marking its conversation as read, or receiving its read marker from another session
+clears the corresponding unseen bell count. Channel and thread markers stay separate, and newer messages remain
+unseen until read. Entries stay in the recent history until cleared; opening the bell acknowledges all shown entries.
 **Settings → Notifications** sets what rooms notify about ("Rooms notify me about"; direct messages always notify
 unless set to nothing), the sound (with a preview), lists the rooms and channels with their own settings (set from
 their context menus) with a Reset each, and has **Desktop notifications when tavrn is in the background**: the

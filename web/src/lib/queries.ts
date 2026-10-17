@@ -48,7 +48,7 @@ export function conversationsQuery(node: string | null, client?: TavrnApi) {
     queryKey: node ? ["conversations", node] : ["conversations"],
     queryFn: async () => {
       const list = await (client ?? apiFor(node)).conversations.list();
-      useUnread.getState().seed(list.map((c) => ({ conversation_id: c.id, last_message_id: c.last_message_id, last_read_message_id: c.last_read_message_id, unread_count: c.unread_count ?? 0, mention_count: c.mention_count ?? 0 })));
+      useUnread.getState().seed(list.map((c) => ({ conversation_id: c.id, last_message_id: c.last_message_id, last_read_message_id: c.last_read_message_id, unread_count: c.unread_count ?? 0, mention_count: c.mention_count ?? 0 })), node);
       return list;
     },
     staleTime: 30_000,

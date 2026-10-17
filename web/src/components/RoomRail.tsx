@@ -125,7 +125,7 @@ function detailQuery(node: string | null, roomId: string) {
     queryKey: ["room", roomId],
     queryFn: async () => {
       const r = await apiFor(node).rooms.get(roomId);
-      useUnread.getState().seed(r.read_states ?? []);
+      useUnread.getState().seed(r.read_states ?? [], node);
       return r;
     },
     staleTime: 30_000,

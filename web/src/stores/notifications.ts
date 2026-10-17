@@ -12,6 +12,7 @@
  */
 import { create } from "zustand";
 import { TavrnApiError, type NotificationMode, type NotificationSettings } from "@tavrn/sdk";
+import { isHome } from "./nodes";
 
 export type { NotificationMode, NotificationSettings };
 
@@ -138,6 +139,8 @@ export interface NotificationEntry {
   body: string;
   /** Route to jump to. */
   path: string | null;
+  /** Message covered by this entry; absent on entries saved by older clients. */
+  messageId?: string;
   at: string;
   read: boolean;
 }
@@ -162,6 +165,7 @@ interface NotificationState {
   applyRemote: (settings: unknown) => void;
   push: (entry: Omit<NotificationEntry, "id" | "read" | "at"> & { at?: string }) => void;
   markAllRead: () => void;
+  markMessagesRead: (target: { node?: string | null; conversationId?: string; threadId?: string; messageId: string; caughtUp?: boolean }) => void;
   remove: (id: string) => void;
   clear: () => void;
   reset: () => void;
@@ -169,6 +173,19 @@ interface NotificationState {
 
 const SETTINGS_KEY = "tavrn.notify.settings";
 const ENTRIES_KEY = "tavrn.notify.entries";
+
+// A lookup may finish after the user read its message. Keep recent markers until account reset, so a late entry
+// does not restore the badge. Routes identify the node as well as the conversation/thread; calls stay independent.
+const MAX_READ_MARKERS = 500;
+const messageReads = new Map<string, { id: string; caughtUp: boolean }>();
+const readKey = (node: string | null, kind: "thread" | "conversation", id: string) => JSON.stringify([node, kind, id]);
+function acknowledge(entry: NotificationEntry): NotificationEntry {
+  if (entry.read || !["mention", "dm", "message"].includes(entry.kind) || !entry.path) return entry;
+  const route = /^(?:\/n\/([^/]+))?\/(?:conversations\/([^/]+)|rooms\/[^/]+\/channels\/([^/]+)(?:\/threads\/([^/]+))?)$/.exec(entry.path);
+  if (!route) return entry;
+  const marker = messageReads.get(readKey(route[1] ?? null, route[4] ? "thread" : "conversation", (route[4] ?? route[2] ?? route[3])!));
+  return marker && (entry.messageId ? entry.messageId <= marker.id : marker.caughtUp) ? { ...entry, read: true } : entry;
+}
 
 function readLocal<T>(key: string): T | null {
   try {
@@ -215,8 +232,9 @@ export const useNotifications = create<NotificationState>((set, get) => ({
     remoteRef = remote;
     accountRef = account;
     const local = normalizeSettings(readLocal(`${SETTINGS_KEY}:${account}`));
-    const entries = (readLocal<NotificationEntry[]>(`${ENTRIES_KEY}:${account}`) ?? []).slice(0, MAX_ENTRIES);
+    const entries = (readLocal<NotificationEntry[]>(`${ENTRIES_KEY}:${account}`) ?? []).slice(0, MAX_ENTRIES).map(acknowledge);
     set({ settings: local, entries });
+    writeLocal(`${ENTRIES_KEY}:${account}`, entries);
     try {
       const served = normalizeSettings(await remote.get());
       base = served;
@@ -279,13 +297,27 @@ export const useNotifications = create<NotificationState>((set, get) => ({
     writeLocal(`${SETTINGS_KEY}:${accountRef}`, settings);
   },
   push: (entry) => {
-    const next: NotificationEntry = { ...entry, at: entry.at ?? new Date().toISOString(), id: `${Date.now().toString(36)}-${++counter}`, read: false };
+    const next = acknowledge({ ...entry, at: entry.at ?? new Date().toISOString(), id: `${Date.now().toString(36)}-${++counter}`, read: false });
     const entries = [next, ...get().entries].slice(0, MAX_ENTRIES);
     set({ entries });
     writeLocal(`${ENTRIES_KEY}:${accountRef}`, entries);
   },
   markAllRead: () => {
     const entries = get().entries.map((e) => (e.read ? e : { ...e, read: true }));
+    set({ entries });
+    writeLocal(`${ENTRIES_KEY}:${accountRef}`, entries);
+  },
+  markMessagesRead: ({ node = null, conversationId, threadId, messageId, caughtUp = false }) => {
+    const id = threadId ?? conversationId;
+    if (!id || !messageId) return;
+    const key = readKey(isHome(node) ? null : node, threadId ? "thread" : "conversation", id);
+    const previous = messageReads.get(key);
+    messageReads.delete(key);
+    messageReads.set(key, { id: previous && previous.id > messageId ? previous.id : messageId, caughtUp: caughtUp || !!previous?.caughtUp });
+    if (messageReads.size > MAX_READ_MARKERS) messageReads.delete(messageReads.keys().next().value!);
+    const old = get().entries;
+    const entries = old.map(acknowledge);
+    if (entries.every((entry, i) => entry === old[i])) return;
     set({ entries });
     writeLocal(`${ENTRIES_KEY}:${accountRef}`, entries);
   },
@@ -305,6 +337,7 @@ export const useNotifications = create<NotificationState>((set, get) => ({
     accountRef = "";
     base = DEFAULT_SETTINGS;
     pending = [];
+    messageReads.clear();
     set({ settings: DEFAULT_SETTINGS, source: "loading", entries: [] });
   },
 }));

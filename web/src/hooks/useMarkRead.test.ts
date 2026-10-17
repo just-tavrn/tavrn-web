@@ -3,12 +3,14 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../lib/api";
 import { useUnread } from "../stores/unread";
+import { useNotifications } from "../stores/notifications";
 import { MARK_READ_DELAY_MS, useMarkRead } from "./useMarkRead";
 
 describe("useMarkRead", () => {
   let focused = true;
   beforeEach(() => {
     vi.useFakeTimers();
+    useNotifications.getState().reset();
     focused = true;
     vi.spyOn(document, "hasFocus").mockImplementation(() => focused);
     useUnread.setState({ states: { c1: { last: "05", read: "02", unread: 3, mentions: 1 } } });
@@ -32,6 +34,14 @@ describe("useMarkRead", () => {
     unmount();
     expect(markRead).toHaveBeenCalledTimes(2);
     expect(markRead).toHaveBeenLastCalledWith("c1", "08");
+  });
+
+  it("acknowledges saved entries even if the local conversation marker is already current", () => {
+    useUnread.setState({ states: { c1: { last: "05", read: "05", unread: 0, mentions: 0 } } });
+    useNotifications.getState().push({ kind: "dm", title: "Message", body: "", path: "/conversations/c1", messageId: "05" });
+    const { unmount } = renderHook(() => useMarkRead("c1", "05"));
+    expect(useNotifications.getState().entries[0]?.read).toBe(true);
+    unmount();
   });
 
   it("marks on opening even without focus, later only with focus", async () => {
