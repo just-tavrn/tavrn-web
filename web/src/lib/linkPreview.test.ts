@@ -85,3 +85,18 @@ describe("cardsOf", () => {
     expect(cardsOf(body, preview, P, { embeds: true, previews: false }).preview).toBeNull();
   });
 });
+
+describe("tavrn links get no preview (PROTOCOL.md §7h: chips instead)", () => {
+  const internal = (u: string) => u.startsWith("https://node.test/rooms/");
+  it("the sender does not unfurl them", () => {
+    expect(unfurlCandidate("https://node.test/rooms/01JAAAAAAAAAAAAAAAAAAAAAAA https://news.example/a", P, internal)).toBe("https://news.example/a");
+    expect(unfurlCandidate("only https://node.test/rooms/01JAAAAAAAAAAAAAAAAAAAAAAA", P, internal)).toBeNull();
+  });
+  it("readers drop a stored preview of one", () => {
+    const url = "https://node.test/rooms/01JAAAAAAAAAAAAAAAAAAAAAAA";
+    const preview = { url, title: "tavrn", description: "", site: "node.test" };
+    expect(cardsOf(url, preview, P, { embeds: true, previews: true, internal }).preview).toBeNull();
+    expect(cardsOf(url, preview, P, { embeds: true, previews: true, internal: () => false }).preview).toEqual(preview);
+  });
+});
+

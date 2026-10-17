@@ -2,7 +2,8 @@
 import DOMPurify from "dompurify";
 import { marked, type Tokens } from "marked";
 import { editHtml, replaceInText } from "./domText";
-import { markMentionsIn, type MentionToken } from "./mentionBadges";
+import { markMentionsIn, memberPill, mentionPill, type MentionDirectory, type MentionToken } from "./mentionBadges";
+import { parseTavrnLink, tavrnLinkPath, type KnownNode } from "./tavrnLinks";
 
 /**
  * Markdown (subset) → safe HTML for messages. No raw HTML (`<` and `>` are escaped before parsing), links open
@@ -18,6 +19,12 @@ import { markMentionsIn, type MentionToken } from "./mentionBadges";
  *
  * - **Unicode emojis** are wrapped in `span.emoji-text` (a little larger than the text); a paragraph of 1 … 3 emojis
  *   and nothing else is marked `emoji-only` and shown larger still (tavrn-web#117).
+ * - **Mentions are never e-mail links**: `@name@domain` stays text (GFM would autolink `name@domain`), so the mention
+ *   pass can mark it; a bare `name@domain` stays a `mailto:` link unless it is a member of the conversation (then a
+ *   user pill); explicit `[text](mailto:…)` links stay links.
+ * - **tavrn links** (PROTOCOL.md §7h, `lib/tavrnLinks.ts`) of nodes the client knows become in-app links: a bare one
+ *   an `a.tavrn-chip` (the message list fills in name and icon), a labelled one keeps its label; profile links
+ *   become user pills. Links in code stay literal.
  *
  * The rendering of a text is cached (least recently used entries go first), and so is the final result of the DOM
  * pass after it (emojis and mentions), per emoji map, resolver and mention set. Nothing edits the HTML string after sanitising: link attributes are set in a DOMPurify hook, emoji
@@ -32,7 +39,7 @@ const ALLOWED_ATTR = ["href", "class", "src", "alt", "role", "tabindex", "aria-l
 /** Attributes whose values are not URLs (with a custom URI pattern DOMPurify checks every other value against it). */
 const URI_SAFE = ["type", "tabindex", "aria-pressed", "data-code-action", "data-emoji-id", "data-emoji-host", "data-emoji-name"];
 /** Class names our renderers produce; anything else is dropped (highlight.js scopes only with the `hljs-` prefix). */
-const CLASS_OK = /^(hljs(-[a-z0-9_]+)*|language-[a-z0-9+#._-]{1,24}|spoiler|codeblock(-[a-z]+)?|emoji-token)$/;
+const CLASS_OK = /^(hljs(-[a-z0-9_]+)*|language-[a-z0-9+#._-]{1,24}|spoiler|codeblock(-[a-z]+)?|emoji-token|autolink|email-auto)$/;
 
 const purify = DOMPurify();
 /** True while a message is sanitised (the hooks below apply to messages, not to legal documents). */
@@ -216,8 +223,38 @@ function renderCode(raw: string, lang: string | undefined): string {
   );
 }
 
+/** `@name@domain` (a mention): kept as text so that GFM does not turn `name@domain` into an e-mail link. */
+const MENTION_ADDRESS = /^@[A-Za-z0-9][A-Za-z0-9_.-]{0,31}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+/;
+const MENTION_START = /(?:^|[^A-Za-z0-9_@])@[A-Za-z0-9][A-Za-z0-9_.-]{0,31}@[A-Za-z0-9]/;
+
+/** marked's `encodeURI` cleaning of link targets (its default link renderer). */
+function cleanHref(href: string): string | null {
+  try {
+    return encodeURI(href).replace(/%25/g, "%");
+  } catch {
+    return null;
+  }
+}
+
 marked.use({
   extensions: [
+    {
+      name: "mentionAddress",
+      level: "inline",
+      start(src: string) {
+        const m = MENTION_START.exec(src);
+        if (!m) return undefined;
+        return m.index + m[0].indexOf("@");
+      },
+      tokenizer(src: string) {
+        const m = MENTION_ADDRESS.exec(src);
+        return m ? { type: "mentionAddress", raw: m[0], text: m[0] } : undefined;
+      },
+      renderer(token) {
+        // Only letters, digits, `_.-@`: nothing to escape.
+        return token.text as string;
+      },
+    },
     {
       name: "spoiler",
       level: "inline",
@@ -236,6 +273,14 @@ marked.use({
     },
   ],
   renderer: {
+    // GFM autolinks are marked: a bare URL may become a tavrn chip, a bare address a member's pill (renderMarkdown).
+    link(token: Tokens.Link) {
+      if (!(token as Tokens.Link & { autolink?: boolean }).autolink) return false;
+      const href = cleanHref(token.href);
+      const text = this.parser.parseInline(token.tokens);
+      if (href === null) return text;
+      return `<a href="${href}" class="${href.startsWith("mailto:") ? "email-auto" : "autolink"}">${text}</a>`;
+    },
     code(token: Tokens.Code) {
       return renderCode(token.text, token.lang?.trim().split(/\s+/)[0]);
     },
@@ -368,27 +413,79 @@ export interface MarkdownMentions {
   tokens: readonly MentionToken[];
   key: string;
   botLabel: string;
+  /** Members of the conversation: mentions the message does not list become pills too (no notification). */
+  directory?: MentionDirectory;
+}
+
+/** tavrn links to recognise: the nodes the client knows (`key` names them for the cache) and which one is home. */
+export interface MarkdownLinks {
+  known: readonly KnownNode[];
+  key: string;
+  home: (domain: string) => boolean;
 }
 
 const NO_EMOJIS: Record<string, string> = {};
 
 /**
+ * Links to nodes the client knows become in-app links (PROTOCOL.md §7h): the `href` is the client's own route (a
+ * modified click opens it in a new tab of this client), the target is named in data attributes; a bare link becomes
+ * `a.tavrn-chip`, a labelled one keeps its label (`a.tavrn-link`), a profile link a user pill.
+ */
+function markTavrnLinks(root: DocumentFragment, links: MarkdownLinks, mentions: MarkdownMentions | undefined): void {
+  for (const a of Array.from(root.querySelectorAll<HTMLAnchorElement>("a[href]"))) {
+    if (a.closest("code, pre")) continue;
+    const href = a.getAttribute("href") ?? "";
+    if (href.startsWith("mailto:")) continue;
+    const link = parseTavrnLink(href, links.known);
+    if (!link) continue;
+    const bare = a.classList.contains("autolink");
+    const doc = a.ownerDocument;
+    if (link.kind === "user" && bare) {
+      a.replaceWith(...mentionPill(doc, `@${link.address}`, mentions?.directory?.kinds.get(link.address) ?? "user", link.address, mentions?.botLabel ?? "BOT"));
+      continue;
+    }
+    for (const name of [...a.getAttributeNames()]) a.removeAttribute(name);
+    a.setAttribute("href", tavrnLinkPath(link, links.home));
+    a.className = bare ? "tavrn-chip" : "tavrn-link";
+    a.setAttribute("data-tavrn-link", link.kind);
+    a.setAttribute("data-node", link.node);
+    if ("room" in link) a.setAttribute("data-room", link.room);
+    if ("channel" in link) a.setAttribute("data-channel", link.channel);
+    const target = link.kind === "message" ? link.message : link.kind === "file" ? link.file : link.kind === "invite" ? link.code : link.kind === "user" ? link.address : null;
+    if (target) a.setAttribute("data-target", target);
+    if (bare) a.setAttribute("data-testid", "tavrn-chip");
+  }
+}
+
+/** Bare addresses that GFM made e-mail links: a member of the conversation becomes their pill. */
+function memberAddresses(root: DocumentFragment, mentions: MarkdownMentions): void {
+  for (const a of Array.from(root.querySelectorAll<HTMLAnchorElement>("a.email-auto"))) {
+    const address = (a.getAttribute("href") ?? "").slice("mailto:".length);
+    if (a.textContent !== address) continue;
+    const nodes = memberPill(a.ownerDocument, address, mentions.directory, mentions.botLabel);
+    if (nodes) a.replaceWith(...nodes);
+  }
+}
+
+/**
  * Markdown → safe HTML. `:name:` tokens become the room's emojis (URLs from `emojiUrls`), `<:name:ID@host>`
  * tokens images from `resolve` (without a resolver, or when it returns null, the name stays as text); `mentions`
- * are marked in the same DOM pass. Pass stable `emojiUrls` and `resolve` (memoized): their identity is part of the
- * cache key of the final result.
+ * are marked in the same DOM pass, and `links` to known nodes become in-app links. Pass stable `emojiUrls`,
+ * `resolve` and directory (memoized): their identity is part of the cache key of the final result.
  */
-export function renderMarkdown(src: string, emojiUrls: Record<string, string> = NO_EMOJIS, resolve?: EmojiResolver, mentions?: MarkdownMentions): string {
+export function renderMarkdown(src: string, emojiUrls: Record<string, string> = NO_EMOJIS, resolve?: EmojiResolver, mentions?: MarkdownMentions, links?: MarkdownLinks): string {
   const html = sanitized(src);
-  const marks = !!mentions && mentions.tokens.length > 0 && html.includes("@");
-  const key = `${identity(emojiUrls)}|${identity(resolve)}|${marks ? `${mentions.botLabel}\u0001${mentions.key}` : ""}\u0001${src}`;
+  const marks = !!mentions && (mentions.tokens.length > 0 || !!mentions.directory?.kinds.size) && html.includes("@");
+  const linked = !!links && links.known.length > 0 && html.includes("<a ");
+  const key = `${identity(emojiUrls)}|${identity(resolve)}|${marks ? `${mentions.botLabel}\u0001${mentions.key}\u0001${identity(mentions.directory)}` : ""}|${linked ? links.key : ""}\u0001${src}`;
   const hit = lruGet(finalCache, key);
   if (hit !== undefined) return hit;
   const tokens = !!resolve && html.includes('class="emoji-token"');
   const room = hasRoomEmoji(html, emojiUrls);
   const unicode = HAS_EMOJI.test(html);
-  if (!tokens && !room && !unicode && !marks) return html;
+  if (!tokens && !room && !unicode && !marks && !linked) return html;
   const out = editHtml(html, (root) => {
+    if (linked) markTavrnLinks(root, links, mentions);
     if (tokens) {
       for (const span of root.querySelectorAll<HTMLElement>("span.emoji-token")) {
         const id = span.getAttribute("data-emoji-id") ?? "";
@@ -406,7 +503,10 @@ export function renderMarkdown(src: string, emojiUrls: Record<string, string> = 
     if (unicode) replaceInText(root, EMOJI, (m, doc) => emojiSpan(doc, m[0]), skipCodeAndTokens);
     markEmojiOnly(root);
     // Mentions last, as the separate pass did: on the text the emoji pass left.
-    if (marks) markMentionsIn(root, mentions.tokens, mentions.botLabel);
+    if (marks) {
+      if (mentions.directory?.kinds.size) memberAddresses(root, mentions);
+      markMentionsIn(root, mentions.tokens, mentions.botLabel, mentions.directory);
+    }
   });
   lruSet(finalCache, key, out);
   return out;

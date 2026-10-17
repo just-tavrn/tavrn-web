@@ -95,6 +95,8 @@ export function App() {
           {/* The thread panel is part of the channel page (it stays mounted while threads open and close). */}
           <Route path="rooms/:roomId/channels/:channelId" element={<ChannelPage />}>
             <Route path="threads/:threadId" element={null} />
+            {/* A file of a files channel (PROTOCOL.md §7h): the channel opens at the file. */}
+            <Route path="files/:fileId" element={null} />
           </Route>
           {/* The whiteboard of a conversation, full screen (design note 4.10). */}
           <Route path="rooms/:roomId/channels/:channelId/whiteboard" element={whiteboard} />
@@ -104,6 +106,8 @@ export function App() {
           {/* The thread panel is part of the channel page (it stays mounted while threads open and close). */}
           <Route path="n/:node/rooms/:roomId/channels/:channelId" element={<ChannelPage />}>
             <Route path="threads/:threadId" element={null} />
+            {/* A file of a files channel (PROTOCOL.md §7h): the channel opens at the file. */}
+            <Route path="files/:fileId" element={null} />
           </Route>
           <Route path="n/:node/rooms/:roomId/channels/:channelId/whiteboard" element={whiteboard} />
           <Route path="n/:node/rooms/:roomId/settings/:tab?" element={roomSettings} />
