@@ -29,6 +29,8 @@ import { applyFormat, formatForShortcut, type FormatId } from "../composer/forma
 import { textState, useEditHistory } from "../composer/textEdit";
 import { clearDraft, useDraft } from "../composer/drafts";
 import { useComposerPrefs } from "../stores/composerPrefs";
+import { StyledLayer } from "../composer/StyledLayer";
+import { STYLED_MAX } from "../composer/highlight";
 
 export interface PendingUpload {
   key: string;
@@ -162,6 +164,18 @@ export function Composer({
   const textarea = useRef<HTMLTextAreaElement>(null);
   const edits = useEditHistory(textarea);
   const formatBar = useComposerPrefs((s) => s.formatBar);
+  const styledInput = useComposerPrefs((s) => s.styledInput);
+  // ---- styled input (composer/StyledLayer.tsx): a highlight layer behind the transparent text, plain for long texts
+  const layer = useRef<HTMLDivElement>(null);
+  const styled = styledInput && !disabled && value.length <= STYLED_MAX;
+  const mentionInserts = useMemo(() => mentions?.map((m) => m.insert), [mentions]);
+  const syncLayer = () => {
+    if (layer.current && textarea.current && layer.current.scrollTop !== textarea.current.scrollTop) layer.current.scrollTop = textarea.current.scrollTop;
+  };
+  // The textarea scrolls itself to the caret while typing: the layer follows after every render.
+  useLayoutEffect(() => {
+    if (styled) syncLayer();
+  });
   const setPrefs = useComposerPrefs((s) => s.set);
   // ---- drafts (composer/drafts.ts): restored with the caret at the end
   const caretToEnd = useRef(false);
@@ -562,7 +576,7 @@ export function Composer({
           ))}
         </ul>
       )}
-      {formatBar && !disabled && <FormatBar id={formatBarId} onFormat={format} />}
+      {formatBar && !disabled && <FormatBar id={formatBarId} onFormat={format} styled={styledInput} onStyled={() => setPrefs({ styledInput: !styledInput })} />}
       <div ref={inputRow} className="flex items-end gap-1 rounded-lg border border-line-strong bg-bg-0 px-2 py-2 focus-within:border-accent">
         {(canAttach || onPoll) && (
           <>
@@ -613,6 +627,8 @@ export function Composer({
             )}
           </>
         )}
+        <div className="relative flex min-w-0 flex-1">
+        {styled && <StyledLayer ref={layer} text={value} mentions={mentionInserts} className="pointer-events-none absolute inset-0 emoji-font px-1 py-2.5 text-sm leading-5" />}
         <textarea
           ref={textarea}
           aria-label={t("composer.message")}
@@ -723,9 +739,12 @@ export function Composer({
               void submit();
             }
           }}
+          onScroll={styled ? syncLayer : undefined}
           style={growth.height ? { height: growth.height } : undefined}
-          className={`composer-text emoji-font ${growth.expanded ? "" : "max-h-40"} min-h-10 flex-1 resize-none bg-transparent px-1 py-2.5 text-sm leading-5 text-fg-0 outline-none placeholder:text-fg-2 disabled:opacity-50`}
+          className={`composer-text emoji-font ${styled ? "composer-styled relative" : ""} ${growth.expanded ? "" : "max-h-40"} min-h-10 flex-1 resize-none bg-transparent px-1 py-2.5 text-sm leading-5 text-fg-0 outline-none placeholder:text-fg-2 disabled:opacity-50`}
+          data-styled={styled || undefined}
         />
+        </div>
         {!disabled && (
           <button
             type="button"

@@ -41,6 +41,8 @@ describe("Composer: formatting bar", () => {
       "Zitat",
       "Aufzählung",
       "Nummerierte Liste",
+      // The styled input's toggle (Composer.styled.test.tsx).
+      "Formatierung beim Schreiben zeigen",
     ]);
     expect(barButton(/^Fett/)).toHaveAttribute("title", "Fett (Strg+B)");
     expect(barButton(/^Durchgestrichen/)).toHaveAttribute("title", "Durchgestrichen (Strg+Umschalt+X)");

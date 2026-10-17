@@ -214,6 +214,24 @@ html[data-flag-font] :is(.markdown, .emoji-font) { font-family: "Twemoji Country
 .composer-overlay { box-shadow: 0 -12px 20px -14px rgb(0 0 0 / 0.75); }
 .composer-overlay .composer-text { transition: height 120ms ease-out; }
 @media (prefers-reduced-motion: reduce) { .composer-overlay .composer-text { transition: none; } }
+/* Styled input (composer/StyledLayer.tsx): the textarea's text is transparent above a layer with the same text, font,
+   padding, line height and wrapping. Only width-neutral styles, so the caret never drifts: faux bold by text shadow,
+   decorations, backgrounds without padding. Neither scrolls with a visible scrollbar (it would narrow one of them). */
+.composer-styled { color: transparent; caret-color: var(--color-fg-0); scrollbar-width: none; }
+.composer-styled::-webkit-scrollbar { display: none; }
+.composer-styled::selection { background: color-mix(in srgb, var(--color-accent) 35%, transparent); color: transparent; }
+.composer-styled-layer { white-space: pre-wrap; overflow-wrap: break-word; overflow: hidden; color: var(--color-fg-0); }
+/* The textarea always shows a last (empty) line after a final line break; the layer needs content for it. */
+.composer-styled-layer::after { content: " "; }
+.composer-styled-layer span { -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.cs-mark { color: var(--color-fg-2); }
+.cs-bold { text-shadow: 0.035em 0 0 currentColor; }
+.cs-code, .cs-block { background: var(--color-bg-3); border-radius: 0.2em; }
+.cs-code:not(.cs-mark) { color: var(--color-accent-hover); }
+.cs-spoiler { background: var(--color-line); border-radius: 0.2em; }
+.cs-quote { color: var(--color-fg-1); box-shadow: inset 2px 0 0 var(--color-fg-2); }
+.cs-link:not(.cs-mark) { color: var(--color-accent); text-underline-offset: 2px; }
+.cs-mention { background: var(--color-accent-soft); color: var(--color-accent-hover); border-radius: 0.3em; }
 /* Reduced motion (WCAG 2.3.3): every remaining animation and transition (drawers, fades, pulses, the speaking
    glow, the composer growth, cue indicators) ends at once; the specific rules above keep their static looks. */
 @media (prefers-reduced-motion: reduce) {
