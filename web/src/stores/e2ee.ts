@@ -16,6 +16,7 @@ import { usePush } from "./push";
 import { forgetAttachments } from "../components/AttachmentView";
 import { forgetThumbnails } from "../files/e2ee";
 import { forgetRendered } from "../lib/markdown";
+import { clearDrafts } from "../composer/drafts";
 import { useInteractions } from "./interactions";
 
 interface E2eeState {
@@ -105,13 +106,15 @@ export async function e2eeContext(): Promise<E2eeContext> {
  * explicit sign-out, a session the node refused (revoked on another device, an expired refresh), another tab signing
  * out or in with another account. The key store is locked (signing in again needs the recovery key or a passkey when
  * the account asks for it every time), the session manager goes, decrypted attachments, thumbnails and rendered
- * messages are forgotten. The local data on disk stays unless the sign-out was explicit ({@link signOut}).
+ * messages and unsent composer drafts are forgotten. The local data on disk stays unless the sign-out was explicit
+ * ({@link signOut}).
  */
 export function forgetUnlocked(): void {
   resetMls();
   forgetAttachments();
   forgetThumbnails();
   forgetRendered();
+  clearDrafts();
   useInteractions.setState({ notices: [] });
   cryptoStore.lock();
   useE2ee.setState({ status: null, deviceLost: false });
