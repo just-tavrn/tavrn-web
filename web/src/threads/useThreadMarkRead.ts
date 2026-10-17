@@ -60,5 +60,5 @@ export function useThreadMarkRead(threadId: string | undefined, newestId: string
 
   useEffect(() => {
     check.current();
-  }, [threadId, newestId]);
+  }, [threadId, newestId, domain]);
 }
