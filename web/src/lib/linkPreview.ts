@@ -5,6 +5,7 @@
  * content within the node's size limit.
  */
 import { parseEmbed, type Embed } from "./embeds";
+import { isTavrnLink } from "./tavrnLinks";
 
 /** A link preview as stored in the message content. */
 export interface LinkPreview {
@@ -62,9 +63,12 @@ export function extractUrls(text: string): string[] {
   return out;
 }
 
-/** The URL the sender's client unfurls: the first link that is not an embed. */
-export function unfurlCandidate(text: string, parent: string): string | null {
-  return extractUrls(text).find((u) => !parseEmbed(u, parent)) ?? null;
+/**
+ * The URL the sender's client unfurls: the first link that is not an embed and not a tavrn link of a node the client
+ * knows (PROTOCOL.md §7h: readers show those as chips, and the page of a web client says nothing).
+ */
+export function unfurlCandidate(text: string, parent: string, internal: (url: string) => boolean = isTavrnLink): string | null {
+  return extractUrls(text).find((u) => !parseEmbed(u, parent) && !internal(u)) ?? null;
 }
 
 const text = (v: unknown, max: number): string =>
@@ -121,8 +125,8 @@ export function fitPreview(content: Record<string, unknown>, preview: LinkPrevie
   return rest;
 }
 
-/** The cards of a message: up to three embeds and the stored preview (if its link is not an embed). */
-export function cardsOf(body: string, preview: LinkPreview | null, parent: string, opts: { embeds: boolean; previews: boolean }): { embeds: Embed[]; preview: LinkPreview | null } {
+/** The cards of a message: up to three embeds and the stored preview (if its link is not an embed or a tavrn chip). */
+export function cardsOf(body: string, preview: LinkPreview | null, parent: string, opts: { embeds: boolean; previews: boolean; internal?: (url: string) => boolean }): { embeds: Embed[]; preview: LinkPreview | null } {
   const urls = extractUrls(body);
   const embeds: Embed[] = [];
   if (opts.embeds) {
@@ -132,6 +136,7 @@ export function cardsOf(body: string, preview: LinkPreview | null, parent: strin
       if (embeds.length >= MAX_CARDS) break;
     }
   }
-  const shown = opts.previews && preview && embeds.length < MAX_CARDS && !parseEmbed(preview.url, parent) ? preview : null;
+  const internal = opts.internal ?? isTavrnLink;
+  const shown = opts.previews && preview && embeds.length < MAX_CARDS && !parseEmbed(preview.url, parent) && !internal(preview.url) ? preview : null;
   return { embeds, preview: shown };
 }

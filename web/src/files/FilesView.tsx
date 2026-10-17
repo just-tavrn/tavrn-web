@@ -15,7 +15,7 @@
 import { useGhostGate } from "../components/GhostGate";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useSearchParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { Permission, type Channel, type FileEntry, type FilesInfo, type RoomDetail } from "@tavrn/sdk";
 import { previewing, useRoomPreview } from "../stores/rolePreview";
 import { toastPreviewRefused } from "../lib/previewGuard";
@@ -84,6 +84,8 @@ import {
   type SortState,
 } from "./model";
 import { formatDate } from "../lib/format";
+import { fileUrl } from "../lib/tavrnLinks";
+import { copyText } from "../components/ContextMenu";
 
 const MediaViewer = lazy(() => import("../components/MediaViewer"));
 
@@ -249,6 +251,37 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
     for (const e of fresh) indexed.current.add(`${e.id}|${e.record_at ?? ""}|${e.parent_id ?? ""}`);
     void indexMessages(docs).then(() => rememberFilesChannel(q, room.id));
   }, [encrypted, nodeSearch, raw, records, path, q, room.id, addresses]);
+  // A file link (`…/files/<id>`, PROTOCOL.md §7h) opens the entry's folder with the entry selected (a folder: the folder
+  // itself). The node answers only members with `view_channel` (FILES.md §3); otherwise the channel opens as it is.
+  const { fileId } = useParams();
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (!fileId) return;
+    let cancelled = false;
+    const channelPath = roomPath(room.id, channel.id);
+    api.files
+      .get(room.id, channel.id, fileId)
+      .then(({ entry }) => {
+        if (cancelled) return;
+        const next = new URLSearchParams();
+        if (entry.kind === "folder") next.set("folder", entry.id);
+        else {
+          if (entry.parent_id) next.set("folder", entry.parent_id);
+          next.set("entry", entry.id);
+        }
+        navigate(`${channelPath}?${next}`, { replace: true });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        useToasts.getState().push({ kind: "info", title: t("links.file_unavailable") });
+        navigate(channelPath, { replace: true });
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Once per linked file.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fileId]);
   // A search result opens the folder with its entry selected (`?entry=`).
   const wanted = params.get("entry");
   const handled = useRef<string | null>(null);
@@ -415,6 +448,8 @@ export default function FilesView({ room, channel }: { room: RoomDetail; channel
     return normalizeMenu([
       one && menuItem("open", one.kind === "folder" ? t("files.open_folder") : t("files.open"), () => open(one)),
       one?.kind === "file" && menuItem("download", t("files.download"), () => void download(one)),
+      // A link to paste into a chat of the room (PROTOCOL.md §7h): it opens only for members who may view this channel.
+      one && menuItem("copy-link", t("files.copy_link"), () => void copyText(fileUrl(domain, room.id, channel.id, one.id)).then((ok) => ok && useToasts.getState().push({ kind: "info", title: t("files.link_copied") }))),
       separator("s1"),
       one && menuItem("rename", t("files.rename"), () => setDialog({ kind: "rename", entry: one }), { disabled: !may, reason }),
       menuItem("move", t("files.move"), () => setDialog({ kind: "move", entries: list }), { disabled: !may, reason }),

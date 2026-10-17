@@ -24,7 +24,7 @@ import { useShell } from "../AppShell";
 import { ConfirmAction, copyWithToast } from "./common";
 import { useNotifyMenu } from "./useNotifyMenu";
 import { useFullHistory } from "../../search/useFullHistory";
-import { webOrigin } from "../../platform";
+import { channelUrl } from "../../lib/tavrnLinks";
 import { patchRoom, withChannel, withoutChannel } from "../../lib/roomCache";
 
 export function useChannelMenu(room: RoomDetail, channel: Channel): { menu: ContextMenuTrigger; overlay: ReactNode } {
@@ -80,7 +80,8 @@ export function useChannelMenu(room: RoomDetail, channel: Channel): { menu: Cont
               .then(() => useToasts.getState().push({ kind: "info", title: t("menu.channel.duplicated", { name }) }))
               .catch(toastError),
           remove: () => setConfirmDelete(true),
-          copyLink: () => void copyWithToast(`${webOrigin()}${roomPath(room.id, channel.id)}`, t("menu.copied")),
+          // The canonical link on the hosting node's web client (PROTOCOL.md §7h), also for rooms of other nodes.
+          copyLink: () => void copyWithToast(channelUrl(domain, room.id, channel.id), t("menu.copied")),
           copyId: () => void copyWithToast(channel.id, t("menu.copied")),
           moveEveryoneHere: () => setPendingMove({ to: channel, count: elsewhere }),
           moveEveryoneTo: (id) => {
