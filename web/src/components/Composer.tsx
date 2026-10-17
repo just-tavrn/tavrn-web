@@ -245,7 +245,9 @@ export function Composer({
     if (channels?.length) list.push(channelProvider(channels) as CompletionProvider<MentionCandidate | ChannelCandidate>);
     return list;
   }, [mentions, channels]);
-  const inCommand = !!line && (!line.complete || (!!def && !activeArg?.rest));
+  // A command the user does not have (or an unknown one) is sent as plain text: no completion there either, so Enter
+  // sends `/kick @alice` as typed instead of picking a mention.
+  const inCommand = !!line && (!line.complete || !def || !activeArg?.rest);
   const complete = useCompletion({
     providers,
     value,

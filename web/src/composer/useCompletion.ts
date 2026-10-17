@@ -33,7 +33,13 @@ export function useCompletion<T>({
     }
     return best;
   }, [enabled, caret, providers, value]);
-  const items = useMemo(() => (completion ? completion.provider.suggest(completion.trigger.query) : []), [completion]);
+  // A word that already is a suggestion's text (case-insensitive: `/kick @alice`) is not offered again, so Enter sends
+  // instead of re-picking it; the command arguments follow the same rule (Composer.tsx).
+  const items = useMemo(() => {
+    if (!completion) return [];
+    const typed = value.slice(completion.trigger.start, completion.trigger.end).toLowerCase();
+    return completion.provider.suggest(completion.trigger.query).filter((s) => s.insert.toLowerCase() !== typed);
+  }, [completion, value]);
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
   const [selected, setSelected] = useState(0);
   const open = !!completion && items.length > 0 && dismissedAt !== completion.trigger.start;

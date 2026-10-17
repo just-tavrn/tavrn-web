@@ -50,6 +50,24 @@ describe("Composer: mention autocomplete", () => {
     expect(options().map((o) => o.getAttribute("data-key"))).toEqual(["alice@a.example", "albert@a.example", "carol@b.example"]);
   });
 
+  it("a word that already is a candidate's mention exactly is not offered again: Enter sends", async () => {
+    const { box, u, onSend } = setup();
+    await u.type(box, "/kick @alice");
+    // "@alice" is alice's mention as typed (case-insensitive too): only other matches would stay offered.
+    expect(list()).toBeNull();
+    await u.keyboard("{Enter}");
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect((onSend.mock.calls[0] as unknown as [{ body: string }])[0].body).toBe("/kick @alice");
+    await u.type(box, "hi @ALICE");
+    expect(list()).toBeNull();
+    // A prefix is still completed with Enter.
+    await u.clear(box);
+    await u.type(box, "@ali");
+    expect(options().map((o) => o.getAttribute("data-key"))).toEqual(["alice@a.example"]);
+    await u.keyboard("{Enter}");
+    expect(box.value).toBe("@alice ");
+  });
+
   it("is a combobox: aria-expanded, aria-controls and aria-activedescendant follow the list", async () => {
     const { box, u } = setup();
     expect(box).toHaveAttribute("role", "combobox");
@@ -145,6 +163,14 @@ describe("Composer: mention autocomplete", () => {
     expect(list()).not.toBeNull();
     await u.keyboard("{Enter}");
     expect(box.value).toBe("/me winkt @alice ");
+  });
+
+  it("a command the user does not have is plain text: no mention list, Enter sends it as typed", async () => {
+    const { box, u, onSend } = setup({ commands: { available: BUILTIN_COMMANDS.filter((d) => ["me", "shrug"].includes(d.name)), run: vi.fn(async () => {}) } });
+    await u.type(box, "/kick @al");
+    expect(list()).toBeNull();
+    await u.keyboard("{Enter}");
+    expect(onSend).toHaveBeenCalledWith(expect.objectContaining({ body: "/kick @al" }));
   });
 
   it("without candidates the text box is no combobox (nothing to suggest)", () => {
