@@ -281,6 +281,8 @@
   "voice.connection_poor": "Schwache Verbindung",
   "voice.disconnected_by_moderator": "Ein Moderator hat dich aus dem Sprachkanal getrennt.",
   "voice.continued_elsewhere": "Der Sprachkanal läuft auf einem anderen deiner Geräte weiter.",
+  "voice.moved_to": "Du wurdest nach #{channel} verschoben",
+  "voice.moved": "Du wurdest in einen anderen Sprachkanal verschoben",
   "voice.status.idle": "Nicht verbunden",
   "voice.status.joining": "Verbinde…",
   "voice.status.connected": "Sprache verbunden",

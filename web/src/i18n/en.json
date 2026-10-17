@@ -281,6 +281,8 @@
   "voice.connection_poor": "Weak connection",
   "voice.disconnected_by_moderator": "A moderator disconnected you from voice.",
   "voice.continued_elsewhere": "Voice continues on another of your devices.",
+  "voice.moved_to": "Moved to #{channel}",
+  "voice.moved": "Moved to another voice channel",
   "voice.status.idle": "Not connected",
   "voice.status.joining": "Connecting…",
   "voice.status.connected": "Voice connected",

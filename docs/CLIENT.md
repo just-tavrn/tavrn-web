@@ -826,7 +826,10 @@ the other voice channels to this one; with a confirmation; the target's user lim
 every voice channel the moderator may move into, also channels the member may neither view nor join (VOICE.md §7
 "Moved participations"). A member moved into such a channel follows the move as usual: the channel shows up in their
 channel list while they are in it (with the stage and the whiteboard), and disappears again when they leave; they
-cannot rejoin by themselves. Everybody can drag their own row onto another voice channel they may join, which
+cannot rejoin by themselves. Once the moved client has rejoined, a toast says "Moved to #channel"; if the old
+voice channel was the open view, the main pane opens the target channel (same room, same node), otherwise the view
+stays and a click on the toast opens it. A move whose rejoin failed, or that the user left voice during, changes
+nothing. Everybody can drag their own row onto another voice channel they may join, which
 switches to it (the same as clicking the channel; `connect` there decides, the node has the last word); while a
 drag is over a channel it is highlighted, a channel that cannot take the drop (no `connect` for yourself, no
 `move_members` for a moderator's drag) shows a red outline and refuses it, and the source channel is no target.

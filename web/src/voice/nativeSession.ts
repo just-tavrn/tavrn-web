@@ -360,7 +360,7 @@ export function leave(): Promise<void> {
   return life.leave();
 }
 
-export function followMove(domain: string, data: { room_id: string; from_channel_id: string; channel_id: string }): Promise<void> {
+export function followMove(domain: string, data: { room_id: string; from_channel_id: string; channel_id: string }): Promise<boolean> {
   return life.followMove(domain, data);
 }
 

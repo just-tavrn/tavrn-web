@@ -868,6 +868,9 @@ test.describe("Voice channels", () => {
     expect(move.status(), await move.text()).toBe(204);
     await expect(bob.page.getByTestId("voice-bar")).toHaveAttribute("data-status", "connected", { timeout: 30_000 });
     await expect(bob.page.getByTestId("voice-bar-channel")).toContainText("Bühne");
+    // He had the old voice channel open: the view follows to the target channel, and a toast names it (issue #196).
+    await expect(bob.page).toHaveURL(new RegExp(`/rooms/${roomId}/channels/${stageId}$`), { timeout: 30_000 });
+    await expect(bob.page.getByTestId("voice-moved")).toContainText("#Bühne");
     await openNavIfMobile(bob.page);
     await stageLink.click();
     // The stage of the call, no "you may not join" panel.
