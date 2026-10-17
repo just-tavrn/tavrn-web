@@ -183,6 +183,21 @@ test.describe("Accessibility (axe, WCAG 2.2 AA)", () => {
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("emoji-picker")).toHaveCount(0);
 
+    // Composer with the formatting bar, the styled input and the open mention suggestions (docs/CLIENT.md "The composer").
+    const composerBox = page.getByLabel("Nachricht", { exact: true });
+    await page.getByTestId("composer-format-toggle").click();
+    await page.getByTestId("format-styled").click();
+    await composerBox.click();
+    await composerBox.pressSequentially(`**fett** \`code\` @${member.username.slice(0, 4)}`);
+    await expect(page.getByRole("listbox", { name: "Personen und Rollen zum Erwähnen" })).toBeVisible();
+    await expect(page.getByTestId("styled-layer")).toBeVisible();
+    await scan(page, "composer: formatting bar, styled input, mention suggestions");
+    await composerBox.press("Escape");
+    await composerBox.fill("");
+    await page.getByTestId("format-styled").click();
+    await page.getByTestId("composer-format-toggle").click();
+    await expect(page.getByRole("toolbar", { name: "Formatierung" })).toHaveCount(0);
+
     // Context menu of a message.
     await openContextMenu(page, page.getByTestId("message").filter({ hasText: "Danke!" }));
     await expect(page.getByTestId("message-menu")).toBeVisible();

@@ -216,7 +216,9 @@ test.describe("Emojis, sounds and formatting (design note 4.13)", () => {
     const box = page.getByLabel("Nachricht", { exact: true });
     await box.fill("geheim");
     await box.selectText();
-    await page.getByTestId("composer-spoiler").click();
+    // The spoiler button is in the formatting bar (the "Formatting" toggle shows it).
+    await page.getByTestId("composer-format-toggle").click();
+    await page.getByTestId("format-spoiler").click();
     await expect(box).toHaveValue("||geheim||");
     await box.fill("");
 

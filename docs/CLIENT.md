@@ -334,7 +334,7 @@ text nodes). Names and file names are shown without Unicode bidi controls and is
 they cannot display in a misleading order. Code blocks show their
 language, are highlighted and have "Copy code" and "Wrap long lines" buttons. Custom emojis (`:name:` of the room,
 `<:name:ID>` from other rooms and nodes) render as images. **Spoilers** `||text||` (inline, also in quotes and lists)
-stay hidden until clicked or activated with Enter or Space; the composer's spoiler button and Ctrl+Shift+S wrap the
+stay hidden until clicked or activated with Enter or Space; the composer's formatting bar and Ctrl+Shift+S wrap the
 selection, and every attachment can be marked as a spoiler, which covers images and videos until "Spoiler, click to
 reveal".
 **Emoji sizes**: Unicode emojis in message text are rendered at 1.25× the text size, aligned to the baseline without
@@ -350,7 +350,29 @@ composer; every other emoji keeps the platform's font. The font is served with t
 `@name` and `@name@domain` of the message's mentions list, `@everyone`/`@here` when the message mentions everyone, and
 the room's role names, only in text outside code. Mentions of yourself and `@everyone`/`@here` use the warning colour
 with a border, other mentions the accent colour; a message that mentions you keeps its left border with a stronger
-tint.
+tint. Members the text names without listing them (`@name@domain`, or `@name` of the conversation's node) are pills too,
+without notification: a bot's card carries no mentions list, so the raid helper's rosters show their members this way.
+`@name@domain` is never an e-mail link; a bare `name@domain` stays a `mailto:` link unless it is a member of the
+conversation (then their pill), and explicit `[text](mailto:…)` links stay links. User, bot and role pills are buttons
+(`role="button"`, Enter or Space): a user or bot opens the same profile card as the member list (mini profile with
+"Full profile"), a role a dialog with the role's members as the viewer's member list has them (at most 25, then "and N
+more"; a member opens their card). `@everyone` and `@here` open nothing.
+
+**Links into tavrn** (PROTOCOL.md §7h, `lib/tavrnLinks.ts`): `https://<web>/rooms/<room>[/channels/<channel>[/files/<file>]]`,
+`…/channels/<channel>?message=<id>`, `https://<web>/invite/<code>` and `https://<web>/u/<address>` on the web origin of
+the node hosting the target. They are recognised only for nodes the client already talks to (the home node and nodes
+with a federated session, by their web origin or by their identity domain over https), never with credentials in the
+URL, unknown query parameters or a fragment; everything else stays an external link and the client contacts no unknown
+host for it. A bare link becomes a chip (`chatLinks/`): a channel with its kind icon and name (plus the room when it is
+another room), "Message in #channel", a room with its icon, an invite with the room and "Join" (opens the invite page),
+a file with its name and size (records of encrypted files channels are decrypted on the device). Names come from the
+room cache, otherwise from the hosting node with the viewer's own session; without access (not a member, no
+`view_channel`, no right in the files channel, deleted) the chip says "Private channel", "Private room", "Invite not
+available" or "File not available", never a name the node did not give the viewer. A labelled link keeps its label;
+a profile link becomes the user's pill. A click navigates inside the client (no page load), a Ctrl/Cmd/Shift or
+middle click keeps the browser's behaviour (the link's `href` is the client's own route). The sender's client does not
+unfurl these links and readers show no stored preview for them. "Copy link" of channels and messages copies this form,
+also for rooms of other nodes; `?message=<id>` opens the channel at the message (like the search's `?m=`).
 
 **The composer** has the emoji picker, a GIF picker on nodes with a GIF provider (in encrypted messages the client
 itself accepts only the providers' media hosts), uploads by button, drag and drop or paste ("Uploads and downloads"),
@@ -368,6 +390,71 @@ and readers never load anything. Because the home node learns every link it load
 make previews while typing only with **"Fetch link previews in encrypted conversations"** switched on (off by default;
 the device-local setting `encryptedPreviews` in `tavrn.privacy.content`); plaintext channels keep the default above.
 Typing indicators are not sent while the status is "invisible".
+
+**Mention suggestions** (`composer/autocomplete.ts`, `composer/mentions.ts`, `composer/MentionSuggest.tsx`): an `@` at
+the start of a word (the start of the text, after a space, a line break, an opening bracket or quote) with the caret in
+that word opens a list of who can be mentioned here; `foo@bar`, addresses in URLs and anything inside code spans or
+blocks never open it, and with no match nothing is shown, so typing an `@` is never blocked. Candidates are only who is
+in this conversation: in a room channel the room members who can view the channel (the room's member list, filtered
+with the node's permission rules, `lib/memberPermissions.ts`), its mentionable roles (every role for members with
+*Mention everyone*) and `@everyone`/`@here` with that permission; in DMs and group DMs the participants. Never the
+node's user directory. Rows show the avatar, the name (nickname or display name), `@username` (with `@domain` for
+users of other nodes), the BOT badge, "you" for yourself (listed last); at most eight rows, matched by prefix and
+fuzzily on name and username (a query with a space only by prefix, for role names). ↑/↓ move, Enter or Tab picks,
+Escape closes the list and leaves the text exactly as typed (it stays closed for that word), a click or tap picks
+without taking the focus from the text box. The pick inserts `@username`, `@username@domain` or `@Role Name` plus a
+space, exactly what the send path's `extractMentions` recognises. The list is a listbox controlled by the text box
+(ARIA combobox: `aria-expanded`, `aria-controls`, `aria-activedescendant`); it sits above the input, so on phones it
+stays above the on-screen keyboard, with 44 px rows. The slash-command palette and its argument suggestions take
+precedence: both never open at once, and inside a command only its free text (`/me waves at @…`) gets mention
+suggestions. Further triggers plug in as providers (`CompletionProvider`); when two triggers are in the line, the one
+nearest to the caret wins.
+
+**Channel links** (`composer/channels.ts`): `#` at the start of a word followed by at least one character offers the
+channels of the current room the user can view (every kind, with its kind icon as in the channel list, the category
+as secondary text, default channels by their localized name; the same permission rules as the channel list), never
+channels of other rooms and nothing in DMs and group DMs. Only name prefixes match (also of words in the name), so
+`#1`, `C#`, a heading `# Title` or `##` are never taken over. Keys, mouse and the list's semantics are those of the
+mention suggestions. The pick inserts the channel's canonical link (`lib/tavrnLinks.ts` `channelUrl`) plus a space;
+readers see it as a `#name` chip, and the styled input shows it with the pill colours.
+
+**The formatting bar.** The "Formatting" button (the "Aa" glyph, `aria-pressed`) in the input row shows or hides a
+toolbar above the text box (a device preference, `tavrn.composer` in localStorage: a preference, never content). It has
+one button per format the renderer shows: bold, italic, strikethrough, spoiler, inline code, code block, link, quote,
+bulleted and numbered list (no headings: they render like plain text; no underline: Markdown has none). Each wraps the
+selection or inserts the markers with the caret between them and toggles off when the selection is already wrapped;
+line formats prefix every selected line (bullets and numbers replace each other), the code block puts its fences on
+their own lines, a link keeps the selection as its label and selects the `https://` placeholder (a selected URL
+becomes the target instead). Shortcuts: Ctrl/Cmd+B bold, Ctrl/Cmd+I italic, Ctrl/Cmd+Shift+X strikethrough, Ctrl/Cmd+E
+inline code, Ctrl/Cmd+Shift+S spoiler; the tooltips name them. The buttons keep the focus and selection in the text
+box; the toolbar has one tab stop and moves with the arrow keys, Home and End; on phones it scrolls sideways with
+40 px buttons. Formats, picked mentions and emojis are applied with `setRangeText` (never `execCommand`), so React
+never resets the text box; browsers do not record such edits in their undo history, so the composer keeps its own
+for them (`composer/textEdit.ts`): Ctrl/Cmd+Z right after one restores the text and selection before it,
+Ctrl/Cmd+Shift+Z or Ctrl+Y redoes it, and once you type, the browser's own undo takes over again.
+
+**Styled input** (the pen button at the end of the formatting bar, a device preference, off by default): the text box
+shows the Markdown formats while you type. The textarea stays the real input (caret, selection, IME, spell check,
+undo, paste and on-screen keyboards are untouched); its text is transparent above an `aria-hidden` layer with exactly
+the same characters (`composer/StyledLayer.tsx`), the same font, padding, line height and wrapping, scrolled with it
+(neither shows a scrollbar, which would narrow one of them). Only styles that keep every glyph's width are used, so
+the caret never drifts: bold is a faux bold (a text shadow), italics a dotted underline, strikethrough a line through,
+inline code and spoilers a background without padding, code blocks a background, quotes a lighter colour with an inset
+line, links the accent colour with an underline, mentions of the conversation the pill colours; the Markdown
+characters stay visible but dimmed. The tokenizer (`composer/highlight.ts`) follows the renderer's rules: fenced code
+blocks and code spans suppress everything inside, backslash escapes, quote and list markers per line, links and bare
+URLs, spoilers, and emphasis with the CommonMark delimiter rules within a paragraph (a test cross-checks it against the
+renderer). It runs on every input; texts over 4000 characters are shown plain.
+
+**Drafts.** Text written in a channel, thread, DM or group DM and not sent yet stays with that conversation while the
+app runs: switching to another conversation or the settings and back finds it in the box, with the caret at its end,
+and the reply target too (`composer/drafts.ts`). Drafts are keyed by account, node, conversation and thread, written
+while typing (debounced) and when the composer closes, and dropped after a successful send. They live **only in the
+client's memory**: never in localStorage, sessionStorage, IndexedDB or on disk, never sent anywhere, gone when the tab
+or the app closes. Encrypted conversations follow the same rule (a draft is the plaintext you typed, like the text
+box's own content). Signing out, a forced sign-out, another account signing in in this tab and the app locking drop
+every draft (with the other unlocked state in `stores/e2ee` `forgetUnlocked`); a composer still open at that moment
+cannot write its text back. Edits of sent messages are not drafted.
 
 **Messages** get reactions, replies, inline edits (marked "(edited)"), pins (the channel's "Pinned messages" panel) and
 threads. Hovering, focusing or long-pressing a reaction chip shows who reacted (up to ten names and "and n more", loaded
@@ -691,6 +778,12 @@ browser (`web/src/files/`): breadcrumbs, list and grid views, sorting, uploads b
 progress, folders, rename, move (dialog or dragging, with a non-drag equivalent), delete, download, media in the
 viewer, the context menu and keyboard navigation. Uploads follow the room's file types ("File types" below).
 
+**Referencing files**: "Copy link" in an entry's menu copies `https://<web>/rooms/<room>/channels/<channel>/files/<id>`
+(PROTOCOL.md §7h) with a notice to paste it into a chat of the room. In messages it becomes a file chip; opening it
+(`…/files/<id>`, a route of the channel page) asks the node for the entry (`GET …/files/{id}`, `view_channel`) and opens
+the channel in the entry's folder with the entry selected (a folder link opens the folder). A member without the right
+in that files channel sees "File not available" and the channel opens without anything.
+
 Where the node keeps no files of a room's files channels itself (`TAVRN_FILES_INTERNAL=off`, FILES.md §5;
 `files_internal: false` in `GET /node`, or the room's entitlement `files_channels.internal` set to 0), a channel
 without an external store reports its store as `none`: instead of "Upload" and "New folder" the toolbar shows "Choose
@@ -826,7 +919,10 @@ the other voice channels to this one; with a confirmation; the target's user lim
 every voice channel the moderator may move into, also channels the member may neither view nor join (VOICE.md §7
 "Moved participations"). A member moved into such a channel follows the move as usual: the channel shows up in their
 channel list while they are in it (with the stage and the whiteboard), and disappears again when they leave; they
-cannot rejoin by themselves. Everybody can drag their own row onto another voice channel they may join, which
+cannot rejoin by themselves. Once the moved client has rejoined, a toast says "Moved to #channel"; if the old
+voice channel was the open view, the main pane opens the target channel (same room, same node), otherwise the view
+stays and a click on the toast opens it. A move whose rejoin failed, or that the user left voice during, changes
+nothing. Everybody can drag their own row onto another voice channel they may join, which
 switches to it (the same as clicking the channel; `connect` there decides, the node has the last word); while a
 drag is over a channel it is highlighted, a channel that cannot take the drop (no `connect` for yourself, no
 `move_members` for a moderator's drag) shows a red outline and refuses it, and the source channel is no target.
@@ -1282,7 +1378,15 @@ exactly once, and the page says that a bot token is a single factor), transfers 
 node and resets a bot's identity. Room settings → **Applications** lists the bots installed in the room (removing one
 takes it out of the room and deletes its role), Admin → **Applications** the applications of the node (a disabled one
 cannot act). Bots carry the BOT badge; channels show whether bots are kept out ("No bots") or may read an encrypted
-channel. Room settings → **Webhooks** creates webhooks for services such as CI or monitoring; in end-to-end encrypted
+channel. **Who reads along** (APPLICATIONS.md §3.6): when a bot joins or leaves an encrypted channel's group, a line
+with its avatar and BOT badge says so. For a channel every member can see, it is an entry of the welcome channel ("X
+added bot Y to the encrypted channel #z"); for any other channel the line is in that channel itself ("Y can now read this
+channel (added by X)", "Y can no longer read this channel: reason"), so members who cannot see the channel never learn
+its name. Such a line is quiet: it counts as nothing unread and notifies nobody (`lib/securityNotice.ts`). Welcome
+channel entries name a channel only when it is in the viewer's channel list ("a private channel" otherwise, e.g. older
+entries about a channel that became private). Next to the lock in an encrypted channel's header, a robot head with a
+count shows the bots whose leaves are in the group right now, read from this device's roster (names in the tooltip and
+the accessible name; `components/BotReaders.tsx`). Room settings → **Webhooks** creates webhooks for services such as CI or monitoring; in end-to-end encrypted
 channels their messages are sealed for the channel's members, by the service itself or by the node (which then saw
 the text once), and a lock next to the WEBHOOK badge says which.
 
@@ -1291,7 +1395,7 @@ the text once), and a lock next to the WEBHOOK badge says which.
 | Page | Tabs |
 |---|---|
 | User settings | Profile, Privacy & safety, Security, Voice & video, Notifications, Emojis, Sounds, Applications, Language, Devices, Legal & privacy, and App in the desktop app |
-| Room settings | Overview, My profile here, Roles, Channels, Members, Bans, Invites, Webhooks, Applications, Emojis, Soundboard, Moderation, Audit log; Reports, Auto-moderation and History requests where the node announces them; each tab only with its permission |
+| Room settings | Overview, Privacy & legal (managers; other members while the room publishes a document), My profile here, Roles, Channels, Members, Bans, Invites, Webhooks, Applications, Emojis, Soundboard, Moderation, Audit log; Reports, Auto-moderation and History requests where the node announces them; each tab only with its permission |
 | Node administration | Overview, Users, Invites, Bans, Reports (with `reports.v1`), Entitlements, API tokens, Applications, SSO (when single sign-on is configured), Federation, Legal, Notices, Audit log |
 
 **Room rules** (Room settings → Overview → Rules, at most 10,000 characters) are Markdown, a subset like the profile
@@ -1302,6 +1406,30 @@ with the legal documents' renderer (`renderDocument` in `web/src/lib/markdown.ts
 dropped, links keep only `http(s)`, `mailto` and same-site targets, DOMPurify), compact (headings at most the size of
 the text's third level) and in a scroll box when they are long, above "I accept the rules"
 (`web/src/components/RoomRules.tsx`).
+
+**Joining a room** looks the same on every path (tavrn-web#195; `web/src/components/JoinRoomDialog.tsx`): the invite
+page, the "+" dialog's pasted link, the invite list on the home view (personal invitations) and the public rooms of
+the home view and of Discover. The invite list and the public room lists first load the room's preview from the
+hosting node (`GET /rooms/{room_id}/preview`, or the invite preview of the invitation's code; another node through
+its federated session). A room with rules opens a dialog with the room's icon, name and node, the rules and
+"I accept the rules": Join stays disabled until it is ticked, and `accept_rules` is exactly that answer (the client
+never sends `true` on its own). A room with a privacy notice or a legal notice shows a link to each in the same block;
+it opens the document below the link (a disclosure, the document in a focusable scroll box with the date of its last
+change). The documents are information, not a second checkbox. A room with neither rules nor documents is joined
+directly, as before. A direct join the node refuses for rules (added since the preview) opens the dialog; a node
+without the preview route is joined directly and a refusal is shown.
+
+**Privacy notice and legal notice of a room** (Room settings → Privacy & legal; PROTOCOL.md §6b "Room privacy notice
+and legal notice"): optional Markdown documents for rooms that are not purely private, up to 20,000 and 5,000
+characters, rendered like the rules. Members with *Manage room* edit both with **Preview** and **Load a template**
+(a short draft in English or German with `[[…]]` placeholders: who is responsible, what the room processes, the node
+operator as a separate controller with a link to the node's privacy policy when it publishes one;
+`web/src/lib/roomLegalTemplates.ts`; it asks before replacing a text). The tab's help text says when a room may need
+them, that this is not legal advice, and links the operator guide
+([tavrn/docs/room-legal.md](https://github.com/just-tavrn/tavrn/blob/main/docs/room-legal.md)). Other members see
+the tab read-only while the room publishes a document; the room menu (rail and room header) has "Privacy notice" and
+"Legal notice" entries while they are set, which open the document in a dialog. Members are not asked to accept a
+changed document; the date of the last change is shown with it.
 
 ## The desktop app
 
@@ -1415,6 +1543,12 @@ writes English where it has no texts for the language.
   marks, muted, bot markers) are 16 px SVGs, the unread badges 20 px high. Category labels are 12 px semibold
   uppercase. Voice participants: 14 px names, 24 px avatars. Names truncate with an ellipsis; the sidebar stays 240 px
   wide on desktop.
+- **Member list** (`web/src/components/MemberEntry.tsx`, `web/src/pages/MemberList.tsx`): names as large as channel
+  names (16 px medium on a 20 px line), the status line 12 px on a 16 px line, 28 px avatars with the presence dot,
+  rows at least 40 px high, section labels like the sidebar's category
+  labels (12 px semibold uppercase). Phones and tablets show the same list in the drawer. All sizes are in `rem`, so
+  the browser's or the system's text size scales the sidebar and the member list alike (there is no separate size
+  setting).
 - **No text selection on the chrome**: the room rail, the sidebars (channel list, home, voice and account bars), the
   member list, the phone top bar, the views' headers, the settings navigation, tab bars, the voice controls, context
   menus and dialog titles carry Tailwind's `select-none` (`user-select: none` with the `-webkit-` prefix), so a press

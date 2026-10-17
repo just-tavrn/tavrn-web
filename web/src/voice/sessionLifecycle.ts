@@ -218,16 +218,27 @@ export class SessionLifecycle<S extends LifecycleSession> {
     set({ ...IDLE, ...kept() });
   }
 
-  /** `voice.move` of the room's node: rejoin in the target channel (other MLS group, other key). */
-  async followMove(domain: string, data: { room_id: string; from_channel_id: string; channel_id: string }): Promise<void> {
+  /**
+   * `voice.move` of the room's node: rejoin in the target channel (other MLS group, other key). Resolves `true` once
+   * the call is in the target channel, `false` when the move is not this call's, the rejoin failed or a leave (or
+   * another join) came meanwhile: only a followed move changes the view (`moveFollow.ts`).
+   */
+  async followMove(domain: string, data: { room_id: string; from_channel_id: string; channel_id: string }): Promise<boolean> {
     // The current channel, or the one the media server just removed us from (the event may arrive after the removal).
     const recent = this.removed && Date.now() - this.removed.at < MOVE_GRACE_MS ? this.removed.target : null;
     const target = useVoice.getState().target ?? recent;
     this.removed = null;
-    if (!target || target.call || target.domain !== domain || target.roomId !== data.room_id || target.channelId !== data.from_channel_id) return;
+    if (!target || target.call || target.domain !== domain || target.roomId !== data.room_id || target.channelId !== data.from_channel_id) return false;
+    const generation = this.generation;
+    const next: VoiceTarget = { domain, roomId: data.room_id, channelId: data.channel_id };
     const s = this.current;
     if (s) await this.close(s);
-    await this.join({ domain, roomId: data.room_id, channelId: data.channel_id }, { canCreate: true }).catch(() => undefined);
+    const joined = await this.join(next, { canCreate: true }).then(
+      () => true,
+      () => false,
+    );
+    const state = useVoice.getState();
+    return joined && generation === this.generation && state.status === "connected" && sameTarget(state.target, next);
   }
 
   /** The media connection of `s` ended (VOICE.md §7): idle, a move to follow, or a rejoin within the grace period. */

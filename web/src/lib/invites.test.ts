@@ -5,7 +5,7 @@ import { useAuth } from "../stores/auth";
 import { useReach } from "../stores/reach";
 import { nodeDeps, resetNodeCaches, useNodes } from "../stores/nodes";
 import { entryKey, useConversationIndex, type IndexItem } from "../stores/conversationIndex";
-import { acceptFriendInvites, acceptInvite, autoAccepts } from "./invites";
+import { acceptFriendInvites, acceptInvite, autoAccepts, invitePreview } from "./invites";
 
 const ROOM = "01J0000000000000000000000A";
 const CONV = "01J0000000000000000000000C";
@@ -33,6 +33,7 @@ describe("accepting an invitation of another node", () => {
   const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
   let index: { version: number; items: IndexItem[] };
   let calls: Array<{ method: string; url: string; auth?: string }>;
+  let bodies: Record<string, unknown>;
   let pending: PendingInvite[];
 
   beforeEach(() => {
@@ -45,6 +46,7 @@ describe("accepting an invitation of another node", () => {
     nodeDeps.discover = async (domain) => ({ domain, base: `https://${domain}`, ws: `wss://${domain}/ws`, web: `https://${domain}` });
     index = { version: 1, items: [] };
     calls = [];
+    bodies = {};
     pending = [];
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input));
@@ -52,6 +54,7 @@ describe("accepting an invitation of another node", () => {
       calls.push({ method, url: url.href, auth: (init?.headers as Record<string, string> | undefined)?.Authorization });
       const path = url.pathname.replace("/api/v1", "");
       const body = init?.body ? JSON.parse(String(init.body)) : null;
+      bodies[`${method} ${url.href}`] = body;
       const host = url.hostname;
       if (host === "a.test" && path === "/users/me/conversations-index" && method === "PUT") {
         index = { version: index.version + 1, items: body.items };
@@ -64,6 +67,9 @@ describe("accepting an invitation of another node", () => {
       if (host === "a.test" && path.startsWith("/users/me/invites/") && method === "DELETE") return new Response(null, { status: 204 });
       if (host === "b.test" && path === "/auth/federated") return json(200, { status: "ok", user: user("a.test"), access_token: "b-token", refresh_token: "r", expires_in: 3600, device_id: "D", recovery_code_used: false, session_expires_at: "2099-01-01T00:00:00Z" });
       if (host === "b.test" && path === "/invites/CODE/join") return json(200, { id: ROOM, name: "Lounge", channels: [] });
+      if (host === "b.test" && path === `/rooms/${ROOM}/join`) return json(200, { id: ROOM, name: "Lounge", channels: [] });
+      if (host === "b.test" && path === "/invites/CODE") return json(200, { code: "CODE", room: { id: ROOM, name: "Lounge" }, rules: "Be kind.", privacy_notice: "", legal_notice: "" });
+      if (host === "b.test" && path === `/rooms/${ROOM}/preview`) return json(200, { room: { id: ROOM, name: "Lounge" }, rules: "", privacy_notice: "Privacy", legal_notice: "" });
       if (host === "b.test" && path === `/conversations/${CONV}`) return json(200, { id: CONV, kind: "dm", encrypted: true, created_at: "", members: [user("b.test", "bob"), user("a.test")] });
       return json(404, { type: "x", title: "", status: 404, detail: path, code: "route.not_found" });
     });
@@ -77,6 +83,26 @@ describe("accepting an invitation of another node", () => {
     expect(calls).toContainEqual({ method: "POST", url: "https://b.test/api/v1/invites/CODE/join", auth: "Bearer b-token" });
     expect(index.items.map(entryKey)).toEqual([`b.test|room|${ROOM}`]);
     expect(calls.at(-1)).toMatchObject({ method: "DELETE", url: "https://a.test/api/v1/users/me/invites/I1" });
+  });
+
+  it("room: the rules answer is the user's (false unless the join dialog's checkbox was ticked), never assumed", async () => {
+    const room = invite({ kind: "room", conversation: null, room: { id: ROOM, name: "Lounge" }, invite_code: "CODE", inviter: "carol@b.test" });
+    await acceptInvite(room);
+    expect(bodies["POST https://b.test/api/v1/invites/CODE/join"]).toEqual({ accept_rules: false });
+    await acceptInvite(room, true);
+    expect(bodies["POST https://b.test/api/v1/invites/CODE/join"]).toEqual({ accept_rules: true });
+    // Without a code (a public room): the room's own join route.
+    await acceptInvite(invite({ kind: "room", conversation: null, room: { id: ROOM, name: "Lounge" }, inviter: "carol@b.test" }), true);
+    expect(bodies[`POST https://b.test/api/v1/rooms/${ROOM}/join`]).toEqual({ accept_rules: true });
+  });
+
+  it("room preview before the join: the invite preview of the code on the hosting node, the room preview without one", async () => {
+    const withCode = await invitePreview(invite({ kind: "room", conversation: null, room: { id: ROOM, name: "Lounge" }, invite_code: "CODE" }));
+    expect(withCode.rules).toBe("Be kind.");
+    expect(calls).toContainEqual({ method: "GET", url: "https://b.test/api/v1/invites/CODE", auth: "Bearer b-token" });
+    const withoutCode = await invitePreview(invite({ kind: "room", conversation: null, room: { id: ROOM, name: "Lounge" } }));
+    expect(withoutCode.privacy_notice).toBe("Privacy");
+    expect(calls).toContainEqual({ method: "GET", url: `https://b.test/api/v1/rooms/${ROOM}/preview`, auth: "Bearer b-token" });
   });
 
   it("conversation: checked on the hosting node, indexed with the peer from the node's member list", async () => {

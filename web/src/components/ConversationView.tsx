@@ -5,7 +5,7 @@ import { plainInEncrypted } from "../lib/unverified";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "react-router";
-import type { Attachment, Member, Message, RoomDetail } from "@tavrn/sdk";
+import type { Attachment, Member, Message, RoomDetail, User } from "@tavrn/sdk";
 import { TypingIndicator } from "./TypingIndicator";
 import { useNodeSockets, useRealtimeState } from "../hooks/useRealtime";
 import { useNode } from "./NodeScope";
@@ -57,6 +57,7 @@ import { evidenceCandidates } from "../moderation/evidence";
 import { isAutomodBlock } from "../moderation/blocked";
 import { wasDeleted } from "../moderation/deletedIds";
 import { LockMark } from "./Badges";
+import { BotReaders } from "./BotReaders";
 import { sendsTyping, usePresence } from "../stores/presence";
 import { useRoomPreview } from "../stores/rolePreview";
 import { cutHistory, previewHistoryStart } from "../lib/previewRoom";
@@ -66,8 +67,12 @@ import { ComponentsContext, type ComponentsEnv } from "../messageComponents/cont
 import { ComponentModal } from "../messageComponents/ComponentModal";
 import { applyAnswer, componentBody, modalBody, type OpenModal, type Sealer } from "../messageComponents/invoke";
 import { PollContext } from "../polls/context";
+import { ChatLinksContext, type ChatLinksValue } from "../chatLinks/context";
 import { useConversationPolls } from "../polls/env";
 import type { PollContent, PollKind } from "../polls/model";
+import { channelMentionCandidates, directMentionCandidates } from "../composer/mentions";
+import { channelCandidates } from "../composer/channels";
+import { draftKey, useDraftReply } from "../composer/drafts";
 
 /** An error that was already shown to the user. */
 class AlreadyReported extends Error {}
@@ -107,7 +112,7 @@ export interface ConversationViewProps {
   room?: RoomDetail;
   roomMembers?: Member[];
   /** DMs and group DMs: the members with their display names (message authors are shown with them). */
-  people?: { address: string; display_name?: string | null }[];
+  people?: ({ address: string; display_name?: string | null } & Partial<Pick<User, "username" | "domain" | "kind" | "avatar" | "avatar_still">>)[];
   /**
    * Thread mode (PROTOCOL.md §7e): the view pages and writes this thread of the channel. Its root message (text
    * threads) is shown first once the thread's history is loaded; pins, search and the whiteboard stay with the channel.
@@ -142,6 +147,9 @@ export function ConversationView(p: ConversationViewProps) {
   const nodeInfo = useQuery({ queryKey: home ? ["node"] : ["node", domain], queryFn: () => api.node.info(), staleTime: 10 * 60_000 });
   const threadId = p.threadId;
   const messageKey = useMemo(() => messagesKey(conversationId, threadId), [conversationId, threadId]);
+  // Welcome channel entries name only the channels in the viewer's list (APPLICATIONS.md §3.6).
+  const roomChannels = p.room?.channels;
+  const visibleChannels = useMemo(() => (roomChannels ? new Set(roomChannels.map((c) => c.id)) : undefined), [roomChannels]);
   // MLS names the conversation by its qualified id: the node hosting it and the ULID (ENCRYPTION.md §0.1).
   const q = qualify(domain, conversationId);
   // Lazy history (design note 4.4): newest page on open, older pages on demand; dropped when closed. With "keep the
@@ -186,8 +194,11 @@ export function ConversationView(p: ConversationViewProps) {
   /** Plaintext uploads until the message is sent: size and hash are covered by the signature. */
   const uploads = useRef(new Map<string, Attachment>());
   const verification = useMlsUi((s) => s.verification);
+  // Unsent text and the reply target per conversation and thread, in memory while the app runs (composer/drafts.ts).
+  const account = useAuth((s) => s.user?.address);
+  const draft = draftKey(account, domain, conversationId, threadId);
   /** The message being replied to (design note 4.11, message menu "Reply"). */
-  const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [replyTo, setReplyTo] = useDraftReply<Message>(draft);
   // Reports (MODERATION.md §1.1): room channels go to the room's node, DMs and group DMs to the home node (with the
   // hosting node named when the conversation lives elsewhere).
   const [reporting, setReporting] = useState<Message | null>(null);
@@ -248,8 +259,12 @@ export function ConversationView(p: ConversationViewProps) {
     if (p.roomId && e2ee.phase === "ready") void rememberRoom(q, p.roomId);
   }, [q, p.roomId, e2ee.phase]);
 
-  // Jump to a message (`?m=<id>`, a search result): load the page around it unless it is loaded already.
-  const focusParam = p.jumpEnabled === false ? null : (new URLSearchParams(location.search).get("m")?.toUpperCase() ?? null);
+  // Jump to a message (`?m=<id>`, a search result; `?message=<id>`, a message link opened in the browser, PROTOCOL.md
+  // §7h): load the page around it unless it is loaded already.
+  const searchParams = new URLSearchParams(location.search);
+  const focusParam = p.jumpEnabled === false ? null : ((searchParams.get("m") ?? searchParams.get("message"))?.toUpperCase() ?? null);
+  // Pills and chips in the message bodies (chatLinks/): the room, its members, the conversation's addresses.
+  const chatLinks = useMemo<ChatLinksValue>(() => ({ room: p.room, roomMembers: p.roomMembers, members: p.members }), [p.room, p.roomMembers, p.members]);
   const [focus, setFocus] = useState<{ id: string; n: number } | null>(null);
   useEffect(() => {
     if (!focusParam) return;
@@ -290,6 +305,17 @@ export function ConversationView(p: ConversationViewProps) {
   const authors = useMemo<Map<string, AuthorLook> | undefined>(() => authorLooks({ roomMembers: p.roomMembers, roles, people: p.people }), [p.roomMembers, roles, p.people]);
   const usersById = useMemo(() => (p.roomMembers ? new Map(p.roomMembers.map((m) => [m.user.id, m.user])) : undefined), [p.roomMembers]);
   const verificationBlock = !!p.direct && broken.length > 0;
+  // `@` suggestions (composer/mentions.ts): who can view this channel and its roles, or the DM's participants; none
+  // where no mentions are sent.
+  const mentionCandidates = useMemo(() => {
+    const ctx = p.mentionContext;
+    if (!ctx) return undefined;
+    if (p.room && p.roomMembers) return channelMentionCandidates({ room: p.room, channelId: conversationId, members: p.roomMembers, domain: ctx.domain, self: user?.address, canMentionEveryone: ctx.canMentionEveryone });
+    if (p.people) return directMentionCandidates({ people: p.people, domain: ctx.domain, self: user?.address });
+    return undefined;
+  }, [p.mentionContext, p.room, p.roomMembers, p.people, conversationId, user?.address]);
+  // `#` links (composer/channels.ts): the channels of this room the user can view; none in DMs.
+  const linkableChannels = useMemo(() => (p.room && user?.id ? channelCandidates({ room: p.room, userId: user.id, domain }) : undefined), [p.room, user?.id, domain]);
 
   // History for new members (ENCRYPTION.md §7b): every encrypted room channel, `since_join` included.
   const historyChannel = p.room?.channels.find((c) => c.id === conversationId);
@@ -674,6 +700,7 @@ export function ConversationView(p: ConversationViewProps) {
         {p.encrypted && (
           <LockMark size={18} title={t("e2ee.encrypted_hint")} testId="encrypted-marker" />
         )}
+        {p.encrypted && p.roomId && <BotReaders mls={e2ee.mls} conversation={q} tick={e2ee.tick} bots={p.bots} members={p.roomMembers} />}
         {!threadId && (
           <>
             <span className="flex-1" />
@@ -715,6 +742,7 @@ export function ConversationView(p: ConversationViewProps) {
       <AuthorProfiles messages={loaded} members={p.roomMembers}>
       <PollContext.Provider value={pollEnv}>
       <ComponentsContext.Provider value={componentsEnv}>
+      <ChatLinksContext.Provider value={chatLinks}>
       <MessageList
         encrypted={p.encrypted}
         messages={loaded}
@@ -745,7 +773,9 @@ export function ConversationView(p: ConversationViewProps) {
         bots={p.bots}
         mentionRoles={mentionRoles}
         authors={authors}
+        visibleChannels={visibleChannels}
       />
+      </ChatLinksContext.Provider>
       </ComponentsContext.Provider>
       </PollContext.Provider>
       </AuthorProfiles>
@@ -772,6 +802,9 @@ export function ConversationView(p: ConversationViewProps) {
         disabledReason={canSendNow ? undefined : disabledReason}
         onSend={send}
         encrypted={p.encrypted}
+        mentions={mentionCandidates}
+        channels={linkableChannels}
+        draftKey={draft}
         onTyping={() => {
           // Invisible users appear offline: no typing indicator either; the role preview sends none.
           if (!sendsTyping(usePresence.getState().mine) || preview) return;

@@ -132,6 +132,9 @@ test.describe("Voice UX round", () => {
     const aliceRow = channelBox(mod, raidId).locator(`[data-testid="voice-participant"][data-user="${alice.address}"]`);
     await expect(aliceRow).toHaveCount(1, { timeout: scaled(20_000) });
     await aliceRow.dragTo(channelBox(mod, s.voiceId));
+    // Alice still shows "Sprache" (her own drag to "Raid" kept the view), not the channel she was moved out of: the
+    // view stays, a toast names the new channel (issue #196).
+    await expect(alice.page.getByTestId("voice-moved")).toContainText("#Sprache", { timeout: scaled(30_000) });
     await expect(channelBox(mod, s.voiceId).locator(`[data-testid="voice-participant"][data-user="${alice.address}"]`)).toHaveCount(1, { timeout: scaled(30_000) });
     await expect(alice.page.getByTestId("voice-bar-channel")).toContainText("Sprache", { timeout: scaled(30_000) });
     await expect(alice.page.getByTestId("voice-bar")).toHaveAttribute("data-status", "connected", { timeout: scaled(30_000) });

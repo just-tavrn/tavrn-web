@@ -10,7 +10,7 @@
  * - Joining a room of another node opens a federated session there first (§3.1), then the room lands
  *   in the conversation index like every other join.
  */
-import { discoverNode, verifyDirectoryRooms, type DirectoryNodeList, type DirectoryRoom, type PublicKeyInfo, type TavrnApi, type VerifiedRoom, type WellKnown } from "@tavrn/sdk";
+import { discoverNode, verifyDirectoryRooms, type DirectoryNodeList, type DirectoryRoom, type PublicKeyInfo, type RoomPreview, type TavrnApi, type VerifiedRoom, type WellKnown } from "@tavrn/sdk";
 import { api, publicApi } from "../lib/api";
 import { useAuth } from "./auth";
 import { roomPath } from "../components/NodeScope";
@@ -92,14 +92,25 @@ export async function loadNodes(filter: { q?: string; cursor?: string } = {}): P
 }
 
 /**
- * Joins a room from the directory: on the home node directly, on any other node through a federated
- * session. Returns the route of the joined room.
+ * The preview of a directory room on its hosting node (rules, privacy notice, legal notice; PROTOCOL.md §6b), shown
+ * before the join (components/JoinRoomDialog.tsx); another node through a federated session.
  */
-export async function joinRoom(room: Pick<DirectoryRoom, "node" | "room_id">): Promise<string> {
+export async function previewRoom(room: Pick<DirectoryRoom, "node" | "room_id">): Promise<RoomPreview> {
+  const home = isHome(room.node);
+  if (!home) await connectNode(room.node);
+  return apiFor(home ? null : room.node).rooms.preview(room.room_id);
+}
+
+/**
+ * Joins a room from the directory: on the home node directly, on any other node through a federated
+ * session. `acceptRules` is the user's answer to the rules the join dialog showed (never assumed, tavrn-web#195).
+ * Returns the route of the joined room.
+ */
+export async function joinRoom(room: Pick<DirectoryRoom, "node" | "room_id">, acceptRules = false): Promise<string> {
   const home = isHome(room.node);
   if (!home) await connectNode(room.node);
   const node = home ? null : room.node;
-  const joined = await apiFor(node).rooms.join(room.room_id, { accept_rules: true });
+  const joined = await apiFor(node).rooms.join(room.room_id, { accept_rules: acceptRules });
   await indexJoinedRoom(node, joined.id);
   return roomPath(node, joined.id);
 }

@@ -6,7 +6,7 @@ import { isBotKind, type Message, type User } from "@tavrn/sdk";
 import { ThreadIndicator } from "../threads/ThreadIndicator";
 import { formatFullTime, formatTime } from "../lib/format";
 import { MAX_CACHED, PAGE } from "../lib/messagePages";
-import { configureMarkdown, handleMarkdownClick, handleMarkdownKey, markdownVersion, renderMarkdown, subscribeMarkdown } from "../lib/markdown";
+import { configureMarkdown, handleMarkdownClick, handleMarkdownKey, markdownVersion, renderMarkdown, subscribeMarkdown, type MarkdownLinks } from "../lib/markdown";
 import { useEmojiResolver } from "../lib/emojis";
 import { isGifUrl } from "../lib/gifs";
 import { GifView } from "./GifView";
@@ -17,7 +17,12 @@ import { MessageAttachments, fromEncrypted, fromPlain } from "./AttachmentView";
 import { ContextMenu, MenuButton, useContextMenu } from "./ContextMenu";
 import { messageMenu } from "../lib/menus";
 import { mentionsMe } from "../lib/mentions";
-import { mentionTokens, parseMentionTokens, serializeMentionTokens } from "../lib/mentionBadges";
+import { mentionDirectory, mentionTokens, parseMentionTokens, serializeMentionTokens, type MentionDirectory } from "../lib/mentionBadges";
+import { messageUrl, useKnownNodes } from "../lib/tavrnLinks";
+import { isHome } from "../stores/nodes";
+import { useNode } from "./NodeScope";
+import { useChatLinks } from "../chatLinks/context";
+import { hasInteractiveParts, MessageBodyLinks } from "../chatLinks/MessageBodyLinks";
 import { copyText } from "./ContextMenu";
 import { useToasts } from "../stores/toasts";
 import { useAccessibility } from "../stores/accessibility";
@@ -110,6 +115,7 @@ export function MessageList({
   canStartThreads = false,
   encrypted = false,
   historyCut,
+  visibleChannels,
 }: {
   /** Newest first, as delivered by the API. */
   messages: Message[];
@@ -118,6 +124,8 @@ export function MessageList({
    * replaces "load older" at the top (nothing older is loaded).
    */
   historyCut?: string;
+  /** The channels in the viewer's channel list (room channels): welcome channel entries name only these. */
+  visibleChannels?: ReadonlySet<string>;
   currentUserId: string | undefined;
   canManage: boolean;
   canReact?: boolean;
@@ -191,6 +199,15 @@ export function MessageList({
       return s;
     };
   }, [bots, currentAddress, mentionRoles]);
+  // Members the text names without listing them (a bot card's roster) become pills too, without notification; tavrn
+  // links of the nodes this client talks to become chips (lib/markdown.ts).
+  const { members: participants } = useChatLinks();
+  const mentionMembers = useMemo(
+    () => (participants?.length ? mentionDirectory(participants, { bots, self: currentAddress, nodeDomain: currentAddress ? currentAddress.slice(currentAddress.lastIndexOf("@") + 1) : null }) : undefined),
+    [participants, bots, currentAddress],
+  );
+  const known = useKnownNodes();
+  const links = useMemo<MarkdownLinks>(() => ({ known: known.nodes, key: known.key, home: (d) => isHome(d) }), [known]);
   const onDelete = useCallback((m: Message) => actionsRef.current.onDelete?.(m), []);
   const onReply = useCallback((m: Message) => actionsRef.current.onReply?.(m), []);
   const onReport = useCallback((m: Message) => actionsRef.current.onReport?.(m), []);
@@ -435,6 +452,9 @@ export function MessageList({
                   conversationEncrypted={encrypted}
                   mentioned={mentionsMe(m, currentAddress) && m.author_id !== currentUserId}
                   mentions={mentionsOf(m)}
+                  mentionDirectory={mentionMembers}
+                  links={links}
+                  visibleChannels={visibleChannels}
                 />
               </article>
             );
@@ -480,7 +500,8 @@ type Shown =
   | { kind: "member_event"; event: "join" | "leave"; user: string; name: string }
   | { kind: "key_event"; user: string; name: string; rotated: boolean }
   | { kind: "restore_event"; approved: boolean; user: string; name: string; by: string }
-  | { kind: "bot_event"; added: boolean; bot: string; name: string; channel: string; by: string | null; reason: string }
+  /** `inChannel`: a security notice in the channel it is about (APPLICATIONS.md §3.6), else a welcome channel entry. */
+  | { kind: "bot_event"; added: boolean; bot: string; name: string; channel: string; channelId: string; inChannel: boolean; by: string | null; reason: string }
   | { kind: "call_event"; outcome: "missed" | "ended"; by: string; name: string; duration: number }
   | { kind: "cipher" }
   /** A poll (PROTOCOL.md §7g) that passed the shape check. */
@@ -543,14 +564,16 @@ function contentOf(m: Message, d: Decrypted | undefined, signature: PlainStatus 
     const name = typeof raw.display_name === "string" && raw.display_name ? raw.display_name : (user.split("@")[0] ?? user);
     return { kind: "restore_event", approved: c.type === "system.history_restored", user, name, by: typeof raw.by === "string" ? raw.by : "?" };
   }
-  // The security log names every bot that joins or leaves an encrypted channel's group (design note 4.7).
+  // The security log names every bot that joins or leaves an encrypted channel's group (design note 4.7): in the welcome
+  // channel for channels everyone can view, else as a notice in the channel itself (APPLICATIONS.md §3.6).
   if (c?.type === "system.bot_added" || c?.type === "system.bot_removed") {
-    const raw = c as AnyContent & { bot?: unknown; display_name?: unknown; channel_name?: unknown; channel_system_name?: unknown; by?: unknown; reason?: unknown };
+    const raw = c as AnyContent & { bot?: unknown; display_name?: unknown; channel?: unknown; channel_name?: unknown; channel_system_name?: unknown; by?: unknown; reason?: unknown };
     const bot = typeof raw.bot === "string" ? raw.bot : m.author;
     const name = typeof raw.display_name === "string" && raw.display_name ? raw.display_name : (bot.split("@")[0] ?? bot);
     const channel = typeof raw.channel_name === "string" ? channelName({ name: raw.channel_name, system_name: typeof raw.channel_system_name === "string" ? raw.channel_system_name : null }) : "?";
+    const channelId = typeof raw.channel === "string" ? raw.channel : "";
     const by = typeof raw.by === "string" && raw.by !== bot ? raw.by : null;
-    return { kind: "bot_event", added: c.type === "system.bot_added", bot, name, channel, by, reason: typeof raw.reason === "string" ? raw.reason : "" };
+    return { kind: "bot_event", added: c.type === "system.bot_added", bot, name, channel, channelId, inChannel: channelId === m.conversation_id, by, reason: typeof raw.reason === "string" ? raw.reason : "" };
   }
   // Calls in DMs and group DMs (VOICE.md §11.2): missed and ended calls, in the viewer's language.
   if (c?.type === "system.call.missed" || c?.type === "system.call.ended") {
@@ -655,6 +678,12 @@ interface RowProps {
   mentioned?: boolean;
   /** The message's mentions with their kinds (`serializeMentionTokens`: a string, so the memoized row compares it). */
   mentions?: string;
+  /** Members of the conversation (stable object): mentions the message does not list become pills too. */
+  mentionDirectory?: MentionDirectory;
+  /** The nodes whose tavrn links become chips (stable object). */
+  links?: MarkdownLinks;
+  /** The channels in the viewer's channel list (room channels): welcome channel entries name only these. */
+  visibleChannels?: ReadonlySet<string>;
 }
 
 /** The first line of a message for reply previews. */
@@ -666,7 +695,7 @@ function snippet(m: Message, d: Decrypted | undefined): string | null {
  * One message. Memoized: with stable props from the list, a new message (20/s under load) renders only
  * its own row instead of every loaded one (design note 9e).
  */
-const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, grouped, own, bot, author, replyAuthor, decrypted, signature, editing, setEditingId, canManage, canReact, canPin, roomId, customEmojis, emojiUrls, onReact, onPin, onEdit, onDelete, onReply, onReport, onThread, usersById, canStartThreads, onMarkUnread, replyTo, replyDecrypted, mentioned, mentions }: RowProps) {
+const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, grouped, own, bot, author, replyAuthor, decrypted, signature, editing, setEditingId, canManage, canReact, canPin, roomId, customEmojis, emojiUrls, onReact, onPin, onEdit, onDelete, onReply, onReport, onThread, usersById, canStartThreads, onMarkUnread, replyTo, replyDecrypted, mentioned, mentions, mentionDirectory: directory, links, visibleChannels }: RowProps) {
   const t = useT();
   const [draft, setDraft] = useState("");
   const c = useMemo(() => contentOf(m, decrypted, signature, t, conversationEncrypted), [m, decrypted, signature, t, conversationEncrypted]);
@@ -676,10 +705,11 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
   const mdVersion = useSyncExternalStore(subscribeMarkdown, markdownVersion);
   const botLabel = t("badge.bot");
   const html = useMemo(
-    () => (body ? renderMarkdown(body, emojiUrls, resolve, mentions ? { tokens: parseMentionTokens(mentions), key: mentions, botLabel } : undefined) : ""),
+    () => (body ? renderMarkdown(body, emojiUrls, resolve, mentions || directory ? { tokens: parseMentionTokens(mentions ?? ""), key: mentions ?? "", botLabel, directory } : undefined, links) : ""),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [body, emojiUrls, resolve, mdVersion, mentions, botLabel],
+    [body, emojiUrls, resolve, mdVersion, mentions, botLabel, directory, links],
   );
+  const { domain } = useNode();
   // Custom emojis whose bytes are gone everywhere become a muted `:name:` chip (design note 4.13).
   const markdownRef = useRef<HTMLDivElement>(null);
   const unavailable = t("emoji.unavailable");
@@ -731,7 +761,8 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
           replyInThread: () => onThread?.(m, "reply", body),
           react: (emoji) => onReact?.(m, emoji, !!m.reactions?.some((r) => r.emoji === emoji && r.me)),
           copyText: () => void copyText(c.kind === "text" ? c.body : "").then((ok) => ok && useToasts.getState().push({ kind: "info", title: t("menu.copied") })),
-          copyLink: () => void copyText(`${webOrigin()}${window.location.pathname}?message=${m.id}`).then((ok) => ok && useToasts.getState().push({ kind: "info", title: t("menu.copied") })),
+          // Room channels: the canonical link on the hosting node (PROTOCOL.md §7h); elsewhere (DMs, threads) the route.
+          copyLink: () => void copyText(roomId && !m.thread_id ? messageUrl(domain, roomId, m.conversation_id, m.id) : `${webOrigin()}${window.location.pathname}?message=${m.id}`).then((ok) => ok && useToasts.getState().push({ kind: "info", title: t("menu.copied") })),
           copyId: () => void copyText(m.id).then((ok) => ok && useToasts.getState().push({ kind: "info", title: t("menu.copied") })),
           pin: (pinned) => onPin?.(m, pinned),
           edit: startEdit,
@@ -763,12 +794,14 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
   if (c.kind === "bot_event") {
     const reasonKey = `members.bot_reason.${c.reason}`;
     const reason = t(reasonKey) === reasonKey ? c.reason : t(reasonKey);
-    const text = c.added
-      ? c.by
-        ? t("members.bot_added_by", { name: c.name, channel: c.channel, by: c.by })
-        : t("members.bot_added", { name: c.name, channel: c.channel })
-      : t("members.bot_removed", { name: c.name, channel: c.channel, reason });
-    return systemRow("🤖", { address: c.bot, name: c.name }, { "data-testid": "bot-event", "data-event": c.added ? "added" : "removed", "data-reason": c.added ? undefined : c.reason }, (
+    // A welcome channel entry names its channel only when the viewer can see it (an older entry about a channel that
+    // became private, or no channel list known): "a private channel" otherwise (APPLICATIONS.md §3.6).
+    const hidden = !c.inChannel && !visibleChannels?.has(c.channelId);
+    const key = c.inChannel
+      ? c.added ? (c.by ? "members.bot_reads_channel_by" : "members.bot_reads_channel") : "members.bot_stopped_reading"
+      : `${c.added ? (c.by ? "members.bot_added_by" : "members.bot_added") : "members.bot_removed"}${hidden ? "_private" : ""}`;
+    const text = t(key, { name: c.name, channel: c.channel, by: c.by ?? "", reason });
+    return systemRow("🤖", { address: c.bot, name: c.name }, { "data-testid": c.inChannel ? "bot-notice" : "bot-event", "data-event": c.added ? "added" : "removed", "data-reason": c.added ? undefined : c.reason, "data-hidden-channel": hidden ? "true" : undefined }, (
       <>
         {text} <BotBadge />
       </>
@@ -923,6 +956,7 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
               />
             )
           )}
+          {html && !editing && hasInteractiveParts(html) && <MessageBodyLinks containerRef={markdownRef} html={html} />}
           {c.kind === "text" && c.gif?.url && <GifView gif={{ url: c.gif.url, width: c.gif.width, height: c.gif.height }} author={m.author} own={own} inRoom={!!roomId} />}
           {c.kind === "text" && !editing && <LinkPreviews body={c.body} content={c.raw ?? m.content} />}
           {componentRows && !editing && <MessageComponents m={m} rows={componentRows} />}
@@ -968,8 +1002,10 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
             invisible column cost the text a third of a phone's width). Hidden ones ignore the pointer, so a tap on
             the text below never hits an invisible button; keyboard focus shows them. Plain `:hover` on purpose
             (Tailwind's group-hover only applies on devices with a hover pointer): on touch screens a tap on a
-            message makes it the hovered one, so its actions appear and the next tap reaches them. */}
-        <div className="pointer-events-none absolute right-1 top-0.5 z-10 flex items-start gap-0.5 rounded-md border border-line bg-bg-1 p-0.5 opacity-0 shadow-sm focus-within:pointer-events-auto focus-within:opacity-100 [.group:hover_&]:pointer-events-auto [.group:hover_&]:opacity-100" data-testid="message-actions">
+            message makes it the hovered one, so its actions appear and the next tap reaches them. There (no hover
+            pointer) they sit just above the row, so they never cover the tapped message's own text: a pill or link
+            in its first line stays tappable. */}
+        <div className="pointer-events-none absolute right-1 top-0.5 z-10 [@media(hover:none)]:top-auto [@media(hover:none)]:bottom-full flex items-start gap-0.5 rounded-md border border-line bg-bg-1 p-0.5 opacity-0 shadow-sm focus-within:pointer-events-auto focus-within:opacity-100 [.group:hover_&]:pointer-events-auto [.group:hover_&]:opacity-100" data-testid="message-actions">
           {canReact && onReact && <EmojiPicker customEmojis={customEmojis} onPick={(e) => onReact(m, e, false)} />}
           {canPin && onPin && (
             <button type="button" aria-label={m.pinned ? t("messages.unpin") : t("messages.pin")} onClick={() => onPin(m, !m.pinned)} className="min-h-8 min-w-8 rounded text-fg-2 hover:bg-bg-3 hover:text-fg-0">

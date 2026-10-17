@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Accessibility behaviour of shared widgets (design note 4.14 item 4, docs/ACCESSIBILITY.md).
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useRef, useState } from "react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { Message } from "@tavrn/sdk";
 import { Dialog, ErrorText, Field, Input } from "./ui";
 import { MessageList } from "./MessageList";
@@ -13,6 +13,10 @@ import { ComponentsContext } from "../messageComponents/context";
 import { ComponentModal } from "../messageComponents/ComponentModal";
 import { ConfirmHost, confirmDialog } from "./Confirm";
 import { useDismiss } from "../lib/dismiss";
+import { JoinRoomDialog } from "./JoinRoomDialog";
+import { Composer } from "./Composer";
+import { t as translate, useLocale } from "../i18n";
+import { useComposerPrefs } from "../stores/composerPrefs";
 
 function DialogHarness() {
   const [open, setOpen] = useState(false);
@@ -285,5 +289,115 @@ describe("accessibility of shared widgets", () => {
     expect(name).toHaveFocus();
     await user.keyboard("{Escape}");
     expect(closed).toBe(1);
+  });
+
+  it("the composer: mention suggestions are a labelled listbox the text box controls; the formatting bar a named toolbar", async () => {
+    const user = userEvent.setup();
+    act(() => useComposerPrefs.getState().set({ formatBar: true, styledInput: true }));
+    try {
+      render(<Composer placeholder="Nachricht" onSend={() => undefined} mentions={[{ kind: "user", key: "ann@a", insert: "@ann", name: "Ann", username: "ann", remote: null }]} />);
+      const box = screen.getByRole("combobox", { name: "Nachricht" });
+      await user.type(box, "@an");
+      const list = screen.getByRole("listbox", { name: "Personen und Rollen zum Erwähnen" });
+      const option = screen.getByRole("option", { name: /Ann/ });
+      expect(box).toHaveAttribute("aria-autocomplete", "list");
+      expect(box).toHaveAttribute("aria-expanded", "true");
+      expect(box).toHaveAttribute("aria-controls", list.id);
+      expect(document.getElementById(box.getAttribute("aria-activedescendant")!)).toBe(option);
+      expect(option).toHaveAttribute("aria-selected", "true");
+      // The focus never leaves the text box while choosing.
+      await user.keyboard("{ArrowDown}");
+      expect(box).toHaveFocus();
+      const bar = screen.getByRole("toolbar", { name: "Formatierung" });
+      for (const b of within(bar).getAllByRole("button")) expect(b).toHaveAccessibleName();
+      expect(screen.getByRole("button", { name: "Formatierung" })).toHaveAttribute("aria-pressed", "true");
+      // The styled layer duplicates the text: hidden from assistive technology.
+      expect(screen.getByTestId("styled-layer")).toHaveAttribute("aria-hidden", "true");
+    } finally {
+      act(() => useComposerPrefs.getState().set({ formatBar: false, styledInput: false }));
+    }
+  });
+});
+
+describe("accessibility of pills and chips in messages (PROTOCOL.md §7h)", () => {
+  // The test switches to English; later blocks expect the suite default (German, test/setup.ts).
+  afterEach(() => useLocale.setState({ locale: "de" }));
+
+  it("mentions are named buttons, chips named links; the role list is a labelled dialog that gives the focus back", async () => {
+    const { renderWithProviders, mockFetch } = await import("../test/render");
+    const { ChatLinksContext } = await import("../chatLinks/context");
+    const { useAuth } = await import("../stores/auth");
+    useLocale.setState({ locale: "en" });
+    useAuth.setState({ token: "t", user: { id: "u9", username: "me", domain: "t.local", address: "me@t.local", display_name: "Me", kind: "user", is_node_admin: false, created_at: "", email: null, email_verified: false, has_identity_key: true } as never });
+    const R = "01JAAAAAAAAAAAAAAAAAAAAAAA";
+    const C = "01JCCCCCCCCCCCCCCCCCCCCCCC";
+    const room = { id: R, name: "Guild", roles: [{ id: "r1", name: "Raid Leads", is_everyone: false, color: null }], channels: [{ id: C, name: "raids", kind: "text", encrypted: false }], read_states: [] };
+    const alice = { user: { id: "u1", username: "alice", domain: "t.local", address: "alice@t.local", display_name: "Alice", kind: "user", avatar: null, avatar_still: null }, roles: ["r1"], nickname: null };
+    mockFetch({ [`/rooms/${R}`]: { body: room } });
+    const m = { ...base, content: { type: "text", body: `@alice and @Raid Leads: https://t.local/rooms/${R}/channels/${C}` }, mentions: ["alice@t.local"] } as Message;
+    renderWithProviders(
+      <ChatLinksContext.Provider value={{ room: room as never, roomMembers: [alice] as never, members: ["alice@t.local"] }}>
+        <MessageList messages={[m]} currentUserId="u9" currentAddress="me@t.local" roomId={R} canManage={false} hasMore={false} mentionRoles={["Raid Leads"]} />
+      </ChatLinksContext.Provider>,
+    );
+    const user = userEvent.setup();
+    expect(await screen.findByRole("button", { name: "@alice" })).toHaveAttribute("aria-haspopup", "dialog");
+    expect(await screen.findByRole("link", { name: "Channel: raids" })).toBeInTheDocument();
+    const role = screen.getByRole("button", { name: "@Raid Leads" });
+    await user.click(role);
+    const dialog = await screen.findByRole("dialog", { name: "Members with the role Raid Leads" });
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    expect(screen.getByRole("button", { name: "Show the profile of Alice" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(role).toHaveFocus();
+  });
+
+  it("the composer: #channel suggestions are a labelled listbox the text box controls", async () => {
+    const user = userEvent.setup();
+    render(<Composer placeholder="Nachricht" onSend={() => undefined} channels={[{ key: "C1", insert: "https://n.example/rooms/R/channels/C1", name: "allgemein", kind: "text", category: "Textkanäle" }]} />);
+    const box = screen.getByRole("combobox", { name: translate("composer.message") });
+    await user.type(box, "#al");
+    const list = screen.getByRole("listbox", { name: translate("composer.suggest.channel") });
+    const option = within(list).getByRole("option", { name: /allgemein/ });
+    expect(box).toHaveAttribute("aria-expanded", "true");
+    expect(box).toHaveAttribute("aria-controls", list.id);
+    expect(document.getElementById(box.getAttribute("aria-activedescendant")!)).toBe(option);
+    // The kind icon is decorative; the name carries the meaning.
+    expect(within(option).getByTestId("channel-kind-icon")).toHaveAttribute("aria-hidden", "true");
+    expect(box).toHaveFocus();
+  });
+});
+
+describe("accessibility of the join dialog (tavrn-web#195)", () => {
+  const info = {
+    room: { id: "R1", name: "Lounge", description: "", icon_animated: false, member_count: 3, age_gate: "none" },
+    rules: "Be kind.",
+    privacy_notice: "We keep messages.",
+    privacy_notice_updated_at: "2026-10-01T10:00:00Z",
+    legal_notice: "Run by Alice",
+    legal_notice_updated_at: null,
+  };
+
+  it("is a labelled modal: the checkbox has its name and the focus, documents are disclosures with a labelled, focusable region", async () => {
+    const user = userEvent.setup();
+    render(<JoinRoomDialog info={info} node="b.test" onJoin={async () => {}} onClose={() => {}} />);
+    const dialog = screen.getByRole("dialog", { name: "Lounge beitreten" });
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    const checkbox = screen.getByRole("checkbox", { name: "Ich akzeptiere die Regeln" });
+    expect(checkbox).toHaveFocus();
+    expect(screen.getByRole("region", { name: "Regeln" })).toHaveAttribute("tabindex", "0");
+    const privacy = screen.getByRole("button", { name: /Datenschutzhinweise/ });
+    expect(privacy).toHaveAttribute("aria-expanded", "false");
+    await user.tab();
+    expect(privacy).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(privacy).toHaveAttribute("aria-expanded", "true");
+    const region = screen.getByRole("region", { name: "Datenschutzhinweise" });
+    expect(region).toHaveAttribute("tabindex", "0");
+    expect(document.getElementById(privacy.getAttribute("aria-controls") ?? "")).toContainElement(region);
+    // The decorative arrow stays out of the name; Join names its action and is disabled until the rules are accepted.
+    expect(privacy.querySelector('[aria-hidden="true"]')).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Beitreten" })).toBeDisabled();
   });
 });

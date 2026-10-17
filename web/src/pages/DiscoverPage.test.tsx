@@ -12,6 +12,7 @@ const discover = vi.hoisted(() => ({
   loadRoomIcons: vi.fn(async () => ({})),
   iconClient: vi.fn(() => null),
   joinRoom: vi.fn(),
+  previewRoom: vi.fn(),
 }));
 vi.mock("../stores/discover", () => discover);
 

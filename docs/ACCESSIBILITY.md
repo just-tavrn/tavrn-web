@@ -18,7 +18,8 @@ tokens and the few styles that failed a contrast or size criterion were nudged (
 
 Screens scanned (each on phone, tablet and desktop): sign-in, sign-in with an error, registration, forgot
 password, the e-mail confirmation page (without a link and with an invalid one), invite; a text channel with messages (formatting, a reply, a code block, an image attachment, a link),
-the navigation drawer (phone), the composer with the emoji picker, a message context menu, the media viewer, the
+the navigation drawer (phone), the composer with the emoji picker, the composer with the formatting bar, the styled
+input and open mention suggestions, a message context menu, the media viewer, the
 member list, a modal dialog (create channel), the search panel with results, a files channel with entries, all
 room settings tabs, all user settings tabs, Discover, Home; friends with an incoming request, a direct message,
 the whiteboard, a joined voice channel (fake microphone and camera) muted and unmuted, the voice bar and account
@@ -161,6 +162,14 @@ Before: 3 critical + 325 serious + 241 moderate + 25 minor nodes. After: 0 criti
   their domain as visible text in the item's name). The result is a toast (`status`, or `alert` for a refusal), so it
   is announced. `e2e/tests/friend-invite.spec.ts` scans the friend menu with the open submenu with axe on the desktop
   and the phone project.
+- **Joining a room and the room's documents** (`components/JoinRoomDialog.tsx`, `components/RoomDocuments.tsx`,
+  `pages/settings/RoomLegalTab.tsx`): the join dialog is the shared modal `Dialog` (labelled "Join <room>", focus
+  trapped, Escape cancels, the first control takes the focus); the rules are a labelled, focusable scroll region and
+  "I accept the rules" a labelled checkbox that enables Join. The privacy notice and the legal notice are disclosure
+  buttons (`aria-expanded`, `aria-controls`, a decorative arrow, 40 px high) that open the document as a labelled,
+  focusable region with its date as text. The settings tab's editors are labelled fields with their limits as hints.
+  `e2e/tests/room-legal.spec.ts` scans the editor, the join dialog, the member's document dialog and the read-only tab
+  with axe; `web/src/components/a11y.test.tsx` checks names, focus and the disclosure.
 - **History restore after a key reset** (`components/HistoryRestoreBanner.tsx`, `pages/settings/HistoryRequestsTab.tsx`):
   the requester's banner is a labelled region with real buttons and a labelled message field; each request on the
   settings page is a labelled section with a definition list for the dates, the channels as a list and the identity
@@ -179,8 +188,13 @@ Before: 3 critical + 325 serious + 241 moderate + 25 minor nodes. After: 0 criti
   `tabListKeyDown`); the settings and admin sections are navigation links with `aria-current="page"`.
 - **Pickers**: the emoji picker is a dialog with a menu grid (arrow keys, Escape, focus return) and one tab stop
   for its section bar; it has a fixed size bounded by the viewport (at most 384 px high) and opens below or above its
-  button, so it never reaches outside the viewport; the composer is a combobox for slash commands (`aria-activedescendant`); search results
-  are a list box driven from the search field.
+  button, so it never reaches outside the viewport; the composer is a combobox for slash commands and mention
+  suggestions (`aria-controls`, `aria-activedescendant`; the focus stays in the text box, 44 px rows above the input);
+  search results are a list box driven from the search field.
+- **The composer's formatting bar** is a labelled toolbar with one tab stop (arrow keys, Home, End), named buttons
+  with their shortcuts in the tooltip and `aria-keyshortcuts`, and the "Formatting" and "styled input" toggles carry
+  `aria-pressed`. The styled input's highlight layer duplicates the text and is `aria-hidden`; screen readers read the
+  textarea, whose own text stays the input (`web/src/components/a11y.test.tsx`, `e2e/tests/a11y.spec.ts`).
 - **The Linux app's screen-share picker** (`apps/desktop-electron/src/main/picker.ts`, `src/preload/picker.ts`): a
   window of its own, outside the client, with a heading, the screens and the windows as two lists labelled by their
   headings, and one button per source named "Share \<name>" (the thumbnail is decorative); the first source has the

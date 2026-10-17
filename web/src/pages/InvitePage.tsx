@@ -13,7 +13,7 @@ import { useT } from "../i18n";
 import { describeError } from "../stores/toasts";
 import { Button, ErrorText } from "../components/ui";
 import { RoomIcon } from "../components/Avatar";
-import { RoomRules } from "../components/RoomRules";
+import { RoomJoinBlock, hasRules } from "../components/JoinRoomDialog";
 import { LegalLink } from "../components/legal/LegalLink";
 import { isAdult } from "@tavrn/sdk";
 import { useAgeStatus } from "../lib/age";
@@ -73,22 +73,17 @@ export function InvitePage() {
               {preview.data.room.name}
             </h1>
             <p className="text-xs text-fg-2">{t("invite.members", { count: preview.data.room.member_count })}</p>
-            {preview.data.rules && (
-              <div className="mt-4 rounded-md border border-line bg-bg-0 p-3 text-left text-sm">
-                <p className="mb-1 font-medium">{t("invite.rules")}</p>
-                <RoomRules markdown={preview.data.rules} />
-                <label className="mt-3 flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} className="h-5 w-5" /> {t("invite.accept_rules")}
-                </label>
-              </div>
-            )}
+            {/* The join block of every join path (components/JoinRoomDialog.tsx): rules with the checkbox, documents. */}
+            <div className="mt-4">
+              <RoomJoinBlock info={preview.data} node={node} accepted={accepted} onAcceptedChange={setAccepted} head={false} page />
+            </div>
             {preview.data.room.age_gate === "adults_only" && !isAdult(ageStatus) && ageStatus !== undefined && (
               <p role="status" className="mt-4 rounded-md border border-line bg-bg-0 px-3 py-2 text-sm text-fg-1" data-testid="invite-age-restricted">
                 {t("age.invite.restricted")}
               </p>
             )}
             <ErrorText>{error}</ErrorText>
-            <Button className="mt-4 w-full" onClick={() => void join()} disabled={(!!preview.data.rules && !accepted) || (preview.data.room.age_gate === "adults_only" && !isAdult(ageStatus))}>
+            <Button className="mt-4 w-full" onClick={() => void join()} disabled={(hasRules(preview.data) && !accepted) || (preview.data.room.age_gate === "adults_only" && !isAdult(ageStatus))}>
               {t("invite.join")}
             </Button>
           </>

@@ -103,7 +103,7 @@ describe("welcome channel", () => {
       { ...base, id: "m6", author: "echo@x", content: { type: "system.bot_added", bot: "echo@x", display_name: "Echo", channel: "c1", channel_name: "geheim", by: "carol@x" } },
       { ...base, id: "m5", author: "echo@x", content: { type: "system.bot_added", bot: "echo@x", display_name: "Echo", channel: "c0", channel_name: "general", channel_system_name: "general", by: "echo@x" } },
     ] as Message[];
-    render(<MessageList messages={messages} currentUserId="u1" canManage={false} canReact hasMore={false} />);
+    render(<MessageList messages={messages} currentUserId="u1" canManage={false} canReact hasMore={false} visibleChannels={new Set(["c0", "c1", "w1"])} />);
     const events = screen.getAllByTestId("bot-event");
     expect(events.map((e) => e.getAttribute("data-event"))).toEqual(["added", "added", "removed"]);
     expect(events[0]).toHaveTextContent("Bot Echo ist dem verschlüsselten Channel #allgemein beigetreten");
@@ -111,6 +111,47 @@ describe("welcome channel", () => {
     expect(events[2]).toHaveTextContent("Bot Echo hat den verschlüsselten Channel #geheim verlassen: Bots sind in diesem Channel nicht mehr erlaubt");
     expect(events[2]).toHaveAttribute("data-reason", "bots_not_allowed");
     expect(within(events[0]!).getByTestId("message-avatar")).toHaveAttribute("data-address", "echo@x");
+  });
+
+  it("names the channel of a bot entry only when the viewer can see it (APPLICATIONS.md §3.6)", () => {
+    const base = { conversation_id: "w1", author_id: "b1", device_id: null, encrypted: false, format: 1, epoch: null, reply_to_id: null, thread_id: null, mentions: [], mentions_everyone: false, created_at: new Date().toISOString(), edited_at: null, attachments: [], reactions: [], pinned: false };
+    const messages = [
+      { ...base, id: "m7", author: "echo@x", content: { type: "system.bot_removed", bot: "echo@x", display_name: "Echo", channel: "hidden", channel_name: "vorstand", reason: "no_access" } },
+      { ...base, id: "m6", author: "echo@x", content: { type: "system.bot_added", bot: "echo@x", display_name: "Echo", channel: "hidden", channel_name: "vorstand", by: "carol@x" } },
+      { ...base, id: "m5", author: "echo@x", content: { type: "system.bot_added", bot: "echo@x", display_name: "Echo", channel: "c1", channel_name: "geheim", by: "echo@x" } },
+    ] as Message[];
+    const { rerender } = render(<MessageList messages={messages} currentUserId="u1" canManage={false} canReact hasMore={false} visibleChannels={new Set(["c1", "w1"])} />);
+    const events = screen.getAllByTestId("bot-event");
+    expect(events[0]).toHaveTextContent("Bot Echo ist dem verschlüsselten Channel #geheim beigetreten");
+    expect(events[0]).not.toHaveAttribute("data-hidden-channel");
+    expect(events[1]).toHaveTextContent("carol@x hat Bot Echo zu einem privaten verschlüsselten Channel hinzugefügt");
+    expect(events[2]).toHaveTextContent("Bot Echo hat einen privaten verschlüsselten Channel verlassen: kein Zugriff mehr auf den Channel");
+    expect(events[1]).toHaveAttribute("data-hidden-channel", "true");
+    for (const e of events) expect(e).not.toHaveTextContent("vorstand");
+    // No channel list known: nothing is named.
+    rerender(<MessageList messages={messages} currentUserId="u1" canManage={false} canReact hasMore={false} />);
+    expect(screen.getAllByTestId("bot-event").every((e) => e.getAttribute("data-hidden-channel") === "true")).toBe(true);
+    expect(document.body).not.toHaveTextContent("geheim");
+  });
+
+  it("renders a bot entry in its own channel as a quiet notice with avatar and BOT badge (APPLICATIONS.md §3.6)", () => {
+    const base = { conversation_id: "c9", author_id: "b1", device_id: null, encrypted: false, format: 1, epoch: null, reply_to_id: null, thread_id: null, mentions: [], mentions_everyone: false, created_at: new Date().toISOString(), edited_at: null, attachments: [], reactions: [], pinned: false };
+    const messages = [
+      { ...base, id: "m3", author: "echo@x", content: { type: "system.bot_removed", bot: "echo@x", display_name: "Echo", channel: "c9", channel_name: "vorstand", reason: "bots_not_allowed" } },
+      { ...base, id: "m2", author: "echo@x", content: { type: "system.bot_added", bot: "echo@x", display_name: "Echo", channel: "c9", channel_name: "vorstand", by: "carol@x" } },
+      { ...base, id: "m1", author: "echo@x", content: { type: "system.bot_added", bot: "echo@x", display_name: "Echo", channel: "c9", channel_name: "vorstand", by: "echo@x" } },
+    ] as Message[];
+    // Plaintext from the node in an encrypted channel: a system line, never the "not end-to-end encrypted" warning.
+    render(<MessageList messages={messages} currentUserId="u1" canManage canReact hasMore={false} encrypted visibleChannels={new Set(["c9"])} actions={{ onDelete: () => undefined }} />);
+    expect(screen.queryAllByTestId("bot-event")).toHaveLength(0);
+    const notices = screen.getAllByTestId("bot-notice");
+    expect(notices.map((e) => e.getAttribute("data-event"))).toEqual(["added", "added", "removed"]);
+    expect(notices[0]).toHaveTextContent("Echo kann diesen Channel jetzt mitlesen");
+    expect(notices[1]).toHaveTextContent("Echo kann diesen Channel jetzt mitlesen (hinzugefügt von carol@x)");
+    expect(notices[2]).toHaveTextContent("Echo kann diesen Channel nicht mehr mitlesen: Bots sind in diesem Channel nicht mehr erlaubt");
+    expect(within(notices[0]!).getByTestId("message-avatar")).toHaveAttribute("data-address", "echo@x");
+    expect(within(notices[0]!).getByTestId("bot-badge")).toBeInTheDocument();
+    expect(screen.queryByTestId("message-unencrypted")).toBeNull();
   });
 
   it("marks encrypted channels that allow bots in a per_channel room, and explicit no-bots zones only", async () => {

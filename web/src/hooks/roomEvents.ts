@@ -85,8 +85,14 @@ export function roomEventHandlers(socket: TavrnSocket, queryClient: QueryClient,
     }),
     socket.on<Room>("room.update", (r) => {
       // `room.update` carries the room without the viewer's fields: a new owner changes them.
-      const owner = queryClient.getQueryData<{ owner_id?: string }>(["room", r.id])?.owner_id;
+      const before = queryClient.getQueryData<{ owner_id?: string; privacy_notice_updated_at?: string | null; legal_notice_updated_at?: string | null }>(["room", r.id]);
+      const owner = before?.owner_id;
       patchRoom(queryClient, r.id, withRoom(r));
+      // The room's documents changed (PROTOCOL.md §6b): open document views load them again.
+      const changed = (a?: string | null, b?: string | null) => (a ?? null) !== (b ?? null);
+      if (before && (changed(before.privacy_notice_updated_at, r.privacy_notice_updated_at) || changed(before.legal_notice_updated_at, r.legal_notice_updated_at))) {
+        void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === "room-preview" && q.queryKey[2] === r.id });
+      }
       if (owner !== undefined && r.owner_id !== undefined && owner !== r.owner_id) refetch.schedule(r.id);
       rooms();
     }),
