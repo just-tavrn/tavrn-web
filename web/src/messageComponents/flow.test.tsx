@@ -152,6 +152,35 @@ describe("message components: interaction flow", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("refuses a malformed select modal with a visible action error", async () => {
+    view({ body: { interaction_id: "i1", outcome: "modal", modal: { custom_id: "choice", title: "Choice", inputs: [{ custom_id: "choice", label: "Choice", style: "select", options: [{ label: "A", value: "a" }], value: "unknown" }] } } });
+    const row = await rowOf();
+    await userEvent.click(within(row).getByRole("button", { name: "Sign up" }));
+    const error = await within(row).findByTestId("interaction-error");
+    expect(error).toHaveAttribute("role", "alert");
+    expect(error).toHaveTextContent("Die Aktion ist fehlgeschlagen");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it.each([false, true])("modal selects submit scalar values with encryption=%s", async (encrypted) => {
+    const message = botMessage(encrypted ? { encrypted: true, content: "ciphertext", epoch: 6 } : {});
+    if (encrypted) decrypted = { m1: { ok: true, content: { type: "text", body: "Raid on Friday", components: ROWS } } };
+    const calls = view({ body: { interaction_id: "i1", outcome: "modal", modal: { custom_id: "choice", title: "Private choice", inputs: [
+      { custom_id: "choice", label: "Choice", style: "select", options: [{ label: "First", value: "first" }, { label: "Second", value: "second" }] },
+      { custom_id: "backup", label: "Backup", style: "select", required: false, options: [{ label: "Backup", value: "backup" }] },
+    ] } } }, { encrypted, message });
+    const row = await rowOf();
+    await userEvent.click(within(row).getByRole("button", { name: "Sign up" }));
+    const dialog = await screen.findByRole("dialog", { name: "Private choice" });
+    await userEvent.selectOptions(within(dialog).getByRole("combobox", { name: "Choice" }), "second");
+    await userEvent.click(within(dialog).getByTestId("component-modal-submit"));
+    await waitFor(() => expect(calls.submit).toHaveLength(1));
+    if (encrypted) {
+      expect(calls.submit).toEqual([{ values: null, values_ciphertext: "sealed:modal.values", epoch: 7 }]);
+      expect(encrypt.mock.calls[1]![1]).toMatchObject({ type: "modal.values", interaction: "i1", custom_id: "choice", values: { choice: "second", backup: "" } });
+    } else expect(calls.submit).toEqual([{ values: { choice: "second", backup: "" }, values_ciphertext: null, epoch: null }]);
+  });
+
   it("encrypted conversations: the values are sealed as component.values / modal.values, the node sees only the id", async () => {
     decrypted = { m1: { ok: true, content: { type: "text", body: "Raid on Friday", components: ROWS } } };
     const message = botMessage({ encrypted: true, content: "ciphertext", epoch: 6 });

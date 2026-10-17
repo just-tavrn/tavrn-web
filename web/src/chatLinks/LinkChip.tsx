@@ -67,7 +67,7 @@ function useLinkRoom(node: string, roomId: string) {
     queryKey: shared ? ["room", roomId] : ["linkRoom", node, roomId],
     queryFn: async (): Promise<RoomDetail> => {
       const room = await apiFor(node).rooms.get(roomId);
-      if (shared) useUnread.getState().seed(room.read_states ?? []);
+      if (shared) useUnread.getState().seed(room.read_states ?? [], node);
       return room;
     },
     retry: false,

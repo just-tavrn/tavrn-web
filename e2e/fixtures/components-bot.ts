@@ -6,7 +6,7 @@
  * with a stored reply. Configured like fixtures/echo-bot.ts (TAVRN_BOT_NODE, TAVRN_BOT_TOKEN, TAVRN_BOT_KEY_FILE,
  * TAVRN_BOT_STATE_DIR).
  */
-import { button, createBot, modal, row, select, textInput, withComponents } from "@tavrn/bot";
+import { button, createBot, modal, row, select, selectInput, textInput, withComponents } from "@tavrn/bot";
 
 function env(name: string, fallback?: string): string {
   const v = process.env[name]?.trim() || fallback;
@@ -44,6 +44,7 @@ function card(chosen?: string) {
       button({ label: "Closed", customId: "raid:closed", disabled: true }),
     ),
     row(select("raid:class", classes, { placeholder: "Your class" })),
+    row(button({ label: "Private choice", customId: "choice:open", style: "secondary" })),
   );
 }
 
@@ -67,6 +68,20 @@ bot.component("raid:note", async (i) => {
 });
 bot.modal("raid:note-form", async (i) => {
   await i.reply(`Note from ${i.user.split("@")[0]}: ${i.fields.note ?? ""}`);
+});
+
+// A generic private single-choice form; the raid module itself is tested separately.
+bot.component("choice:open", async (i) => {
+  await i.modal(modal("choice:form", "Your private choice",
+    selectInput("choice", "Choice", [
+      { label: "First option", value: "first", description: "One" },
+      { label: "Second option", value: "second", emoji: "⭐", description: "Two" },
+    ], { placeholder: "Pick one" }),
+    selectInput("backup", "Backup", [{ label: "Optional backup", value: "backup" }], { required: false }),
+  ));
+});
+bot.modal("choice:form", async (i) => {
+  await i.ephemeral(`Private choice: ${i.fields.choice}; backup: ${i.fields.backup || "none"}`);
 });
 
 bot.on("error", (e) => bot.logger.error("bot error", { error: e }));

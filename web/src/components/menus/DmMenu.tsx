@@ -91,7 +91,7 @@ export function useDmMenu(c: Conversation & { node: string }, meAddress: string 
         {
           ...notify.actions,
           toggleFullHistory: fullHistory.toggle,
-          markRead: () => void markConversationRead(apiFor(node), c.id).catch(toastError),
+          markRead: () => void markConversationRead(apiFor(node), c.id, node).catch(toastError),
           profile: () => setProfile(menu.anchor),
           copyAddress: () => peer && void copyWithToast(peer.address, t("menu.copied")),
           close: () => {

@@ -99,7 +99,7 @@ export async function notifyMessage(m: Message, ctx: NotifyContext): Promise<voi
   const body = plainInEncrypted(m, conversationEncrypted) ? t("messages.not_e2ee_short") : (plainPreview(m, conversationEncrypted) ?? (m.encrypted ? t("notify.encrypted") : t("notify.attachment")));
   const channelPath = where.room ? roomPath(ctx.node, where.room.id, m.conversation_id) : conversationPath(ctx.node, m.conversation_id);
   const path = m.thread_id && where.room ? `${channelPath}/threads/${m.thread_id}` : channelPath;
-  if (d.important) useNotifications.getState().push({ kind: where.room ? "mention" : "dm", title, body, path });
+  if (d.important) useNotifications.getState().push({ kind: where.room ? "mention" : "dm", title, body, path, messageId: m.id });
   // One toast per conversation or thread (a mention keeps its own): a burst of messages shows the newest, not a stack.
   useToasts.getState().push({ kind: "info", title, detail: body, path, testId: d.important ? "notify-toast-mention" : "notify-toast", tag: `notify:${ctx.node ?? ""}:${m.thread_id ?? m.conversation_id}:${d.important ? "mention" : "message"}` });
   if (state.settings.global.sound) playNotifySound();
@@ -175,7 +175,7 @@ async function findRooms(queryClient: QueryClient, node: string | null, conversa
           queryKey: ["room", r.id],
           queryFn: async () => {
             const room = await client.rooms.get(r.id);
-            useUnread.getState().seed(room.read_states ?? []);
+            useUnread.getState().seed(room.read_states ?? [], node);
             return room;
           },
           staleTime: ROOM_REFRESH_MS,

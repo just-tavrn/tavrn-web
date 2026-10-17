@@ -47,7 +47,7 @@ function useRoomDetail(room: CardRoom, node: string | null, enabled: boolean) {
     queryKey: ["room", room.id],
     queryFn: async (): Promise<RoomDetail> => {
       const r = await apiFor(node).rooms.get(room.id);
-      useUnread.getState().seed(r.read_states ?? []);
+      useUnread.getState().seed(r.read_states ?? [], node);
       return r;
     },
     enabled,

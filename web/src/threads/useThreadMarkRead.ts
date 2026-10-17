@@ -5,6 +5,7 @@ import { isAttentive, MARK_READ_DELAY_MS } from "../hooks/useMarkRead";
 import { useThreads } from "./store";
 import { applyThreadState } from "./realtime";
 import { useUnread } from "../stores/unread";
+import { useNotifications } from "../stores/notifications";
 
 /**
  * Marks an open thread read up to `newestId` (PROTOCOL.md §7e), like `useMarkRead` does for conversations: once when
@@ -15,7 +16,7 @@ export function useThreadMarkRead(threadId: string | undefined, newestId: string
   const newest = useRef(newestId);
   newest.current = newestId;
   const check = useRef<() => void>(() => undefined);
-  const { api } = useNode();
+  const { api, domain } = useNode();
   const apiRef = useRef(api);
   apiRef.current = api;
 
@@ -30,7 +31,7 @@ export function useThreadMarkRead(threadId: string | undefined, newestId: string
       timer = null;
       const id = pending;
       pending = null;
-      if (id) apiRef.current.threads.markRead(threadId, id).then(applyThreadState).catch(() => undefined);
+      if (id) apiRef.current.threads.markRead(threadId, id).then((state) => applyThreadState(state, domain)).catch(() => undefined);
     };
     check.current = () => {
       const id = newest.current;
@@ -41,6 +42,7 @@ export function useThreadMarkRead(threadId: string | undefined, newestId: string
       const f = useThreads.getState().followed[threadId];
       if (f && (f.unread || f.mentions)) useUnread.getState().bump(f.channelId, -f.unread, -f.mentions);
       useThreads.getState().read(threadId, id);
+      useNotifications.getState().markMessagesRead({ node: domain, threadId, messageId: id });
       pending = id;
       if (timer) clearTimeout(timer);
       timer = setTimeout(flush, MARK_READ_DELAY_MS);
@@ -54,9 +56,9 @@ export function useThreadMarkRead(threadId: string | undefined, newestId: string
       check.current = () => undefined;
       flush();
     };
-  }, [threadId]);
+  }, [threadId, domain]);
 
   useEffect(() => {
     check.current();
-  }, [threadId, newestId]);
+  }, [threadId, newestId, domain]);
 }

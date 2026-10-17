@@ -8,6 +8,7 @@
 import { create } from "zustand";
 import type { Message, ThreadReadState } from "@tavrn/sdk";
 import { UNREAD_CAP } from "../stores/unread";
+import { useNotifications } from "../stores/notifications";
 
 export interface FollowedThread {
   threadId: string;
@@ -64,8 +65,8 @@ interface ThreadState {
   followed: Followed;
   /** The thread shown in the thread panel (one at a time). */
   open: string | null;
-  seedRoom: (roomId: string, list: ThreadReadState[]) => void;
-  state: (s: ThreadReadState) => void;
+  seedRoom: (roomId: string, list: ThreadReadState[], node?: string | null) => void;
+  state: (s: ThreadReadState, node?: string | null) => void;
   message: (m: Message, me: { id: string; address: string }, active: boolean) => void;
   read: (threadId: string, messageId: string) => void;
 }
@@ -73,11 +74,21 @@ interface ThreadState {
 export const useThreads = create<ThreadState>((set) => ({
   followed: {},
   open: null,
-  seedRoom: (roomId, list) => set((s) => ({ followed: applyRoom(s.followed, roomId, list) })),
-  state: (st) => set((s) => ({ followed: applyState(s.followed, st) })),
+  seedRoom: (roomId, list, node) => {
+    set((s) => ({ followed: applyRoom(s.followed, roomId, list) }));
+    for (const state of list) acknowledgeRead(state, node);
+  },
+  state: (st, node) => {
+    set((s) => ({ followed: applyState(s.followed, st) }));
+    acknowledgeRead(st, node);
+  },
   message: (m, me, active) => set((s) => ({ followed: applyMessage(s.followed, m, me, active) })),
   read: (threadId, messageId) => set((s) => ({ followed: applyRead(s.followed, threadId, messageId) })),
 }));
+
+function acknowledgeRead(state: ThreadReadState, node?: string | null) {
+  if (state.last_read_message_id) useNotifications.getState().markMessagesRead({ node, threadId: state.thread_id, messageId: state.last_read_message_id, caughtUp: state.unread_count === 0 && state.mention_count === 0 });
+}
 
 /** Does a thread message concern the user (followed thread, or a direct mention)? */
 export function concernsMe(m: Pick<Message, "thread_id" | "mentions">, me: { address: string }): boolean {

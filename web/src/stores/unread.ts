@@ -6,6 +6,7 @@
  */
 import { create } from "zustand";
 import type { Message } from "@tavrn/sdk";
+import { useNotifications } from "./notifications";
 
 /** The node caps counts here; the UI shows "999+". */
 export const UNREAD_CAP = 999;
@@ -100,9 +101,9 @@ interface UnreadState {
   states: States;
   /** Conversations marked unread by hand: the open view does not mark them read until it is left. */
   held: Record<string, true>;
-  seed: (list: ServerReadState[]) => void;
+  seed: (list: ServerReadState[], node?: string | null) => void;
   message: (m: MessageMeta, me: { id: string; address: string }, active: boolean) => void;
-  read: (conversationId: string, messageId: string) => void;
+  read: (conversationId: string, messageId: string, node?: string | null) => void;
   bump: (conversationId: string, unread: number, mentions: number) => void;
   markUnread: (conversationId: string, previousId: string | null, count: number) => void;
   release: (conversationId: string) => void;
@@ -111,9 +112,16 @@ interface UnreadState {
 export const useUnread = create<UnreadState>((set) => ({
   states: {},
   held: {},
-  seed: (list) => set((st) => ({ states: applyServer(st.states, list) })),
+  seed: (list, node) => {
+    set((st) => ({ states: applyServer(st.states, list) }));
+    for (const s of list) if (s.last_read_message_id) useNotifications.getState().markMessagesRead({ node, conversationId: s.conversation_id, messageId: s.last_read_message_id, caughtUp: s.unread_count === 0 && s.mention_count === 0 });
+  },
   message: (m, me, active) => set((st) => ({ states: applyMessage(st.states, m, me, active) })),
-  read: (conversationId, messageId) => set((st) => ({ states: applyRead(st.states, conversationId, messageId) })),
+  read: (conversationId, messageId, node) => {
+    const last = useUnread.getState().states[conversationId]?.last;
+    set((st) => ({ states: applyRead(st.states, conversationId, messageId) }));
+    useNotifications.getState().markMessagesRead({ node, conversationId, messageId, caughtUp: !!last && messageId >= last });
+  },
   bump: (conversationId, unread, mentions) => set((st) => ({ states: applyBump(st.states, conversationId, unread, mentions) })),
   markUnread: (conversationId, previousId, count) => set((st) => ({ states: applyUnread(st.states, conversationId, previousId, count), held: { ...st.held, [conversationId]: true } })),
   release: (conversationId) =>
@@ -128,11 +136,11 @@ export const useUnread = create<UnreadState>((set) => ({
  * "Mark as read" from a menu: moves the marker to the newest known message, locally at once and on the
  * node (`PUT …/read`). Returns false when there is nothing to mark.
  */
-export async function markConversationRead(client: { conversations: { markRead: (id: string, messageId: string) => Promise<unknown> } }, conversationId: string): Promise<boolean> {
+export async function markConversationRead(client: { conversations: { markRead: (id: string, messageId: string) => Promise<unknown> } }, conversationId: string, node?: string | null): Promise<boolean> {
   const s = useUnread.getState().states[conversationId];
   if (!s?.last) return false;
   useUnread.getState().release(conversationId);
-  useUnread.getState().read(conversationId, s.last);
+  useUnread.getState().read(conversationId, s.last, node);
   await client.conversations.markRead(conversationId, s.last);
   return true;
 }

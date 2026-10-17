@@ -154,6 +154,11 @@ Ports follow `E2E_NODE_PORT` (default 8080) and `E2E_WEB_PORT` (default 5173): t
 (+1 to +6) and LiveKit, ICE over TCP and TURN ports derived from them, so several checkouts can run at once
 with different base ports. `E2E_VOICE=false` skips voice where no `livekit-server` is available.
 
+`components.spec.ts` also supports the real raid module's optional integration fixture. Set
+`E2E_RAID_BOT_SCRIPT=/path/to/tavrn-bot-platform/e2e/raid-bot.ts` with the bot platform's dependencies installed
+(the test starts it with that repository's `tsx` loader). This adds the two-member class → private specialization →
+roster flow; without it, the generic modal-select flows still cover plaintext and encrypted channels.
+
 Waits scale with `TAVRN_TEST_TIMEOUT_FACTOR` (default 1; the organization's self-hosted runners set 3): the test and
 `expect` timeouts and the explicit limits of the specs go through `scaled()` (`e2e/tests/timeouts.ts`), here and in
 the Electron shell's specs. A spec waits for a condition, never for a fixed time. In CI each test gets one retry as a

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test } from "@playwright/test";
-import { createRoomViaApi, loginAs, registerViaApi } from "./helpers";
+import { NODE, createRoomViaApi, loginAs, registerViaApi } from "./helpers";
 import { joinRoom, postMessage } from "./menu-helpers";
 
 test.describe("Notifications (design note 4.11)", () => {
@@ -37,6 +37,38 @@ test.describe("Notifications (design note 4.11)", () => {
     await entry.click();
     await expect(page).toHaveURL(new RegExp(`/rooms/${room.id}/channels/${channelId}`));
     await expect(page.getByTestId("message").filter({ hasText: "kommst du?" })).toBeVisible();
+  });
+
+  test("Reading directly or on another session clears only the matching message badges", async ({ page, request }) => {
+    const alice = await registerViaApi(request, "readalice");
+    const bob = await registerViaApi(request, "readbob");
+    const room = await createRoomViaApi(request, alice.token, "Read markers");
+    await joinRoom(request, alice, room.id, bob);
+    const channelId = room.channels.find((c: { kind: string }) => c.kind === "text").id as string;
+    await loginAs(page, alice);
+    await page.goto("/");
+    await expect(page.getByTestId("ws-status").first()).toHaveAttribute("data-status", "ready");
+    const first = await postMessage(request, bob.token, channelId, `@${alice.username} first`, { mentions: [`${alice.username}@localhost`] });
+    await postMessage(request, bob.token, channelId, `@${alice.username} second`, { mentions: [`${alice.username}@localhost`] });
+    const bell = page.getByTestId("notification-bell").locator("visible=true");
+    await expect(bell.getByTestId("notification-count")).toHaveText("2");
+
+    // The same account advances its read marker from another connection. The newer mention stays unseen.
+    const response = await request.put(`${NODE}/api/v1/conversations/${channelId}/read`, {
+      headers: { Authorization: `Bearer ${alice.token}` }, data: { last_read_message_id: first.id },
+    });
+    expect(response.ok(), await response.text()).toBeTruthy();
+    await expect(bell.getByTestId("notification-count")).toHaveText("1");
+
+    // Go straight to the channel, without opening the notification panel or clicking its toast.
+    await page.goto(`/rooms/${room.id}/channels/${channelId}`);
+    await expect(page.getByTestId("message").filter({ hasText: "second" })).toBeVisible();
+    await expect(bell.getByTestId("notification-count")).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByTestId("message").filter({ hasText: "second" })).toBeVisible();
+    await expect(bell.getByTestId("notification-count")).toHaveCount(0);
+    await bell.click();
+    await expect(page.getByTestId("notification-panel").getByTestId("notification-entry")).toHaveCount(2);
   });
 
   test("Settings: mode, sound and browser notifications; stored locally without the node route", async ({ page, request }) => {

@@ -274,7 +274,7 @@ describe("accessibility of shared widgets", () => {
   it("the modal of an application is a dialog with labelled inputs, a focus trap, Escape and announced errors", async () => {
     const user = userEvent.setup();
     let closed = 0;
-    render(<ComponentModal modal={{ custom_id: "n", title: "Notiz", inputs: [{ custom_id: "a", label: "Name", style: "short" }, { custom_id: "b", label: "Text", style: "paragraph", required: false }] }} appName="Bot" onSubmit={async () => undefined} onClose={() => closed++} />);
+    render(<ComponentModal modal={{ custom_id: "n", title: "Notiz", inputs: [{ custom_id: "a", label: "Name", style: "short" }, { custom_id: "b", label: "Text", style: "paragraph", required: false }, { custom_id: "c", label: "Spec", style: "select", options: [{ label: "Tank", value: "tank" }] }] }} appName="Bot" onSubmit={async () => undefined} onClose={() => closed++} />);
     const dialog = screen.getByRole("dialog", { name: "Notiz" });
     expect(dialog).toHaveAttribute("aria-modal", "true");
     const name = screen.getByLabelText(/Name/);
@@ -283,6 +283,9 @@ describe("accessibility of shared widgets", () => {
     await user.click(screen.getByTestId("component-modal-submit"));
     expect(name).toHaveAttribute("aria-invalid", "true");
     expect(name).toHaveAccessibleDescription(/Füll dieses Feld aus/);
+    const choice = screen.getByRole("combobox", { name: "Spec" });
+    expect(choice).toHaveAccessibleDescription("Wähle eine Option aus.");
+    expect(choice).toBeRequired();
     // Tab cycles inside the dialog.
     screen.getByTestId("component-modal-submit").focus();
     await user.tab();

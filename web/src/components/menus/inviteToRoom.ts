@@ -34,7 +34,7 @@ export function useInviteRooms(enabled: boolean): InviteRoomCandidate[] {
       queryKey: ["room", r.id],
       queryFn: async () => {
         const room = await apiFor(r.node).rooms.get(r.id);
-        useUnread.getState().seed(room.read_states ?? []);
+        useUnread.getState().seed(room.read_states ?? [], r.node);
         return room;
       },
       staleTime: 30_000,

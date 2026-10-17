@@ -28,6 +28,8 @@ First public release of the web client and the desktop apps.
 
 ### Added
 
+- **Private select forms** (#209): application forms support single-choice dropdowns with required or optional
+  choices, preselection and exact option validation; values stay encrypted in encrypted conversations.
 - **Message components** (protocol APPLICATIONS.md §5.10, `components.v1`): buttons (primary, secondary, success,
   danger, link) and select menus (one or several choices) under the messages of applications' bots, and the forms
   (modals) bots open in answer, drawn from the client's own controls and palette inside the message on every screen
@@ -242,6 +244,9 @@ First public release of the web client and the desktop apps.
 
 ### Fixed
 
+- Restoring and focusing the Windows app from the tray no longer deadlocks its window (#207).
+- The notification bell acknowledges messages read directly, marked read from menus or read on another session,
+  preserving recent history and newer unread messages (#208).
 - The account bar shows the avatar and name set on another device: the own account is taken over from the home node on
   every connection, not only at sign-in (#193).
 - **Android screen share after rotating the phone**: a share started in portrait came out the wrong way round, so a

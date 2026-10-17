@@ -107,3 +107,81 @@ describe("component modal (APPLICATIONS.md §5.10)", () => {
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 });
+
+const SELECT_MODAL: Modal = {
+  custom_id: "spec",
+  title: "Choose a specialization",
+  inputs: [
+    { custom_id: "spec", label: "Specialization", style: "select", placeholder: "Your specialization", options: [
+      { label: "Protection", value: "protection", emoji: "🛡️", description: "Tank" },
+      { label: "Retribution", value: "retribution", description: "Damage" },
+    ] },
+    { custom_id: "backup", label: "Backup", style: "select", required: false, value: "healing", options: [{ label: "Healing", value: "healing" }] },
+  ],
+};
+
+describe("select inputs in component modals", () => {
+  it("renders labelled native selects, placeholders and a prefilled option", () => {
+    render(<ComponentModal modal={SELECT_MODAL} appName="Raid Bot" onSubmit={vi.fn()} onClose={vi.fn()} />);
+    const spec = screen.getByRole("combobox", { name: /Specialization/ });
+    expect(spec).toHaveFocus();
+    expect(spec).toBeRequired();
+    expect(spec).toHaveValue("");
+    expect(screen.getByRole("option", { name: "Your specialization" })).toBeDisabled();
+    expect(screen.getByRole("option", { name: /Protection.*Tank/ })).toBeVisible();
+    expect(screen.getByRole("combobox", { name: "Backup" })).toHaveValue("healing");
+    expect(screen.queryByText("0/4000")).toBeNull();
+  });
+
+  it("requires a choice and submits only opaque scalar option values", async () => {
+    const submitted = vi.fn(async () => undefined);
+    render(<ComponentModal modal={SELECT_MODAL} appName="Raid Bot" onSubmit={submitted} onClose={vi.fn()} />);
+    const spec = screen.getByRole("combobox", { name: /Specialization/ });
+    await userEvent.click(screen.getByTestId("component-modal-submit"));
+    expect(submitted).not.toHaveBeenCalled();
+    expect(spec).toHaveFocus();
+    expect(spec).toHaveAttribute("aria-invalid", "true");
+    expect(spec).toHaveAccessibleDescription("Wähle eine Option aus.");
+    await userEvent.selectOptions(spec, "retribution");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Backup" }), "");
+    await userEvent.click(screen.getByTestId("component-modal-submit"));
+    expect(submitted).toHaveBeenCalledWith({ spec: "retribution", backup: "" });
+  });
+
+  it("validates exact option membership and accepts whitespace tokens when offered", () => {
+    const spec = SELECT_MODAL.inputs[0]!;
+    expect(inputError(spec, "retribution")).toBeNull();
+    expect(inputError(spec, "RETRIBUTION")).toEqual({ key: "components.modal.option_invalid" });
+    expect(inputError(spec, " retribution ")).toEqual({ key: "components.modal.option_invalid" });
+    expect(inputError(SELECT_MODAL.inputs[1]!, "")).toBeNull();
+    const whitespace = { custom_id: "space", label: "Token", style: "select", options: [{ label: "Space", value: " " }] } satisfies Modal["inputs"][number];
+    expect(inputError(whitespace, " ")).toBeNull();
+  });
+
+  it("asks before discarding a changed selection", async () => {
+    const close = vi.fn();
+    render(<><ComponentModal modal={SELECT_MODAL} appName="Raid Bot" onSubmit={vi.fn()} onClose={close} /><ConfirmHost /></>);
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: /Specialization/ }), "protection");
+    await userEvent.keyboard("{Escape}");
+    expect(screen.getByTestId("confirm-text")).toBeVisible();
+    expect(close).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByTestId("confirm-ok"));
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("disables selects while sending and preserves the choice after a server rejection", async () => {
+    let reject!: (error: Error) => void;
+    const submitted = vi.fn(() => new Promise<void>((_resolve, fail) => { reject = fail; }));
+    render(<ComponentModal modal={SELECT_MODAL} appName="Raid Bot" onSubmit={submitted} onClose={vi.fn()} />);
+    const spec = screen.getByRole("combobox", { name: /Specialization/ });
+    await userEvent.selectOptions(spec, "protection");
+    await userEvent.click(screen.getByTestId("component-modal-submit"));
+    expect(spec).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: "Backup" })).toBeDisabled();
+    reject(apiError("interaction.values_invalid", 400, { path: "values.spec" }));
+    await screen.findByRole("alert");
+    expect(spec).toHaveValue("protection");
+    expect(spec).toBeEnabled();
+    expect(spec).toHaveAttribute("aria-invalid", "true");
+  });
+});
