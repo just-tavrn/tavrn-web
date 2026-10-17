@@ -77,9 +77,16 @@ export function channelMentionCandidates(src: {
   return [...users, ...roleCandidates(src.room.roles, src.canMentionEveryone)];
 }
 
+/** A DM participant: a user object, of which only the address is certain. */
+export type Person = { address: string; display_name?: string | null } & Partial<Pick<User, "username" | "domain" | "kind" | "avatar" | "avatar_still">>;
+
 /** DMs and group DMs: the participants. */
-export function directMentionCandidates(src: { people: Pick<User, "address" | "username" | "domain" | "display_name" | "kind" | "avatar" | "avatar_still">[]; domain: string; self?: string }): MentionCandidate[] {
-  return src.people.map((u) => userCandidate(u, u.display_name, src.domain, src.self));
+export function directMentionCandidates(src: { people: Person[]; domain: string; self?: string }): MentionCandidate[] {
+  return src.people.map((p) => {
+    const [local = p.address, host = ""] = p.address.split("@");
+    const name = p.display_name || local;
+    return userCandidate({ address: p.address, username: p.username ?? local, domain: p.domain ?? host, display_name: name, kind: p.kind ?? "user", avatar: p.avatar, avatar_still: p.avatar_still }, name, src.domain, src.self);
+  });
 }
 
 const RANK = { user: 0, role: 1, everyone: 2 } as const;

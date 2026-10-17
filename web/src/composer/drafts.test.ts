@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
+import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { MAX_DRAFTS, clearDraft, clearDrafts, draftCount, draftGeneration, draftKey, getDraft, saveDraftReply, saveDraftText } from "./drafts";
+import { MAX_DRAFTS, clearDraft, clearDrafts, draftCount, draftGeneration, draftKey, getDraft, saveDraftReply, saveDraftText, useDraftReply } from "./drafts";
 
 afterEach(() => clearDrafts());
 
@@ -52,5 +53,20 @@ describe("draft memory", () => {
     saveDraftText("k", "nur im Speicher");
     expect(localStorage.length).toBe(0);
     expect(sessionStorage.length).toBe(0);
+  });
+});
+
+describe("the reply target of a draft", () => {
+  it("is kept with the conversation's draft and restored when it is opened again", () => {
+    const k = draftKey("a@h", "h", "C1")!;
+    const first = renderHook(() => useDraftReply<{ id: string }>(k));
+    act(() => first.result.current[1]({ id: "M1" }));
+    first.unmount();
+    const again = renderHook(() => useDraftReply<{ id: string }>(k));
+    expect(again.result.current[0]).toEqual({ id: "M1" });
+    // Another conversation has none; cancelling (or sending) drops it.
+    expect(renderHook(() => useDraftReply(draftKey("a@h", "h", "C2"))).result.current[0]).toBeNull();
+    act(() => again.result.current[1](null));
+    expect(getDraft(k)).toBeUndefined();
   });
 });
