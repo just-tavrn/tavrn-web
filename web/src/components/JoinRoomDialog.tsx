@@ -32,9 +32,10 @@ export function needsJoinDialog(info: JoinInfo): boolean {
 
 /**
  * The inner block: the room's head (icon, name, members and the node; `head={false}` for the invite page, which
- * shows its own large head), the rules with the checkbox and the document links.
+ * shows its own large head), the rules with the checkbox and the document links. `readOnly`: the signed-out invite
+ * preview, the rules without the checkbox (they are accepted after the sign-in, right before the join).
  */
-export function RoomJoinBlock({ info, node, accepted, onAcceptedChange, head = true, page = false }: { info: JoinInfo; node: string | null; accepted: boolean; onAcceptedChange: (v: boolean) => void; head?: boolean; page?: boolean }) {
+export function RoomJoinBlock({ info, node, accepted, onAcceptedChange, head = true, page = false, readOnly = false }: { info: JoinInfo; node: string | null; accepted: boolean; onAcceptedChange: (v: boolean) => void; head?: boolean; page?: boolean; readOnly?: boolean }) {
   const t = useT();
   return (
     <div className="space-y-3" data-testid="join-block">
@@ -56,9 +57,15 @@ export function RoomJoinBlock({ info, node, accepted, onAcceptedChange, head = t
         <div className={page ? "rounded-md border border-line bg-bg-0 p-3 text-left text-sm" : "space-y-2"}>
           {page && <p className="mb-1 font-medium">{t("invite.rules")}</p>}
           <RoomRules markdown={info.rules ?? ""} compact={!page} />
-          <label className={`flex min-h-10 items-center gap-2 text-sm ${page ? "mt-3" : ""}`}>
-            <input type="checkbox" checked={accepted} onChange={(e) => onAcceptedChange(e.target.checked)} className="h-5 w-5" data-testid="accept-rules" /> {t("invite.accept_rules")}
-          </label>
+          {readOnly ? (
+            <p className={`text-xs text-fg-2 ${page ? "mt-3" : ""}`} data-testid="rules-accept-later">
+              {t("invite.preview.rules_note")}
+            </p>
+          ) : (
+            <label className={`flex min-h-10 items-center gap-2 text-sm ${page ? "mt-3" : ""}`}>
+              <input type="checkbox" checked={accepted} onChange={(e) => onAcceptedChange(e.target.checked)} className="h-5 w-5" data-testid="accept-rules" /> {t("invite.accept_rules")}
+            </label>
+          )}
         </div>
       )}
       <RoomLegalLinks texts={info} />

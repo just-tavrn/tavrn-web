@@ -104,6 +104,45 @@ describe("room header", () => {
   });
 });
 
+describe("the room's rules in the room menu", () => {
+  beforeEach(() => useUnread.setState({ states: {}, held: {} }));
+  const RULES = "Be **kind**.\n\n- No spam";
+  const routes = (rules: string) => ({
+    "/rooms/r1/reports": { body: { open: 0, reports: [] } },
+    "/rooms/r1/preview": { body: { room: { id: "r1", name: "Gilde der sehr langen Raumnamen", description: "", icon_animated: false, member_count: 2, age_gate: "none" }, rules, privacy_notice: "", privacy_notice_updated_at: null, legal_notice: "", legal_notice_updated_at: null } },
+    "/rooms/r1": { body: { ...room(perms()), rules } },
+    "/node": { body: { capabilities: [] } },
+  });
+
+  it("every member gets \"Show rules\" while the room has rules; it opens them read-only in a dialog", async () => {
+    const user = userEvent.setup();
+    mockFetch(routes(RULES));
+    renderSidebar();
+    await user.click(await screen.findByTestId("room-header-menu"));
+    const menu = await screen.findByTestId("room-menu");
+    const entry = await within(menu).findByRole("menuitem", { name: "Regeln anzeigen" });
+    expect(ids(menu).slice(0, 2)).toEqual(["settings", "rules"]);
+    await user.click(entry);
+    const dialog = await screen.findByRole("dialog", { name: "Regeln · Gilde der sehr langen Raumnamen" });
+    const rules = await within(dialog).findByRole("region", { name: "Regeln" });
+    expect(within(rules).getByText("kind").tagName).toBe("STRONG");
+    expect(within(rules).getByRole("listitem")).toHaveTextContent("No spam");
+    expect(within(dialog).queryByRole("checkbox")).toBeNull();
+    await user.click(within(dialog).getByRole("button", { name: "Schließen" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("a room without rules has no such entry", async () => {
+    const user = userEvent.setup();
+    mockFetch(routes("  "));
+    renderSidebar();
+    await user.click(await screen.findByTestId("room-header-menu"));
+    const menu = await screen.findByTestId("room-menu");
+    await within(menu).findByTestId("room-settings-button");
+    expect(within(menu).queryByRole("menuitem", { name: "Regeln anzeigen" })).toBeNull();
+  });
+});
+
 describe("channel encryption marks", () => {
   beforeEach(() => useUnread.setState({ states: {}, held: {} }));
 
