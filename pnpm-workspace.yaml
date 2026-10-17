@@ -24,8 +24,8 @@ blockExoticSubdeps: false
 minimumReleaseAgeExclude:
   - "@tavrn/*"
 overrides:
-  "@tavrn/sdk": "github:just-tavrn/tavrn-js#43bfbffe014a03cc1c6928fe70f9bd28e3643cc4&path:sdk"
-  "@tavrn/e2ee": "github:just-tavrn/tavrn-js#43bfbffe014a03cc1c6928fe70f9bd28e3643cc4&path:e2ee"
+  "@tavrn/sdk": "github:just-tavrn/tavrn-js#ce905e164328c30bb69a5a1632367796a000d375&path:sdk"
+  "@tavrn/e2ee": "github:just-tavrn/tavrn-js#ce905e164328c30bb69a5a1632367796a000d375&path:e2ee"
   "@tavrn/crypto": "^0.1.0"
   # Security overrides for @excalidraw/excalidraw 0.18.1 (the newest release; `pnpm audit` must stay clean).
   # Drop each one once Excalidraw ships a release without the problem.
