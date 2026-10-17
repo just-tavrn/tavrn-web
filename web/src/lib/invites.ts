@@ -5,7 +5,7 @@
  * and dismisses the invitation. DMs and group DMs started by a friend are accepted without asking, like a
  * DM of a friend on the same node simply appears in the list.
  */
-import type { PendingInvite } from "@tavrn/sdk";
+import type { InvitePreview, PendingInvite, RoomPreview } from "@tavrn/sdk";
 import { api } from "./api";
 import { useAuth } from "../stores/auth";
 import { apiFor, connectNode, isHome } from "../stores/nodes";
@@ -24,17 +24,30 @@ export function autoAccepts(invite: PendingInvite, friends: Iterable<string>): b
 }
 
 /**
+ * The preview of a room invitation on the hosting node (rules, privacy notice, legal notice; PROTOCOL.md §6b), shown
+ * before the join (components/JoinRoomDialog.tsx): the invite preview of the invitation's code, the room preview
+ * without one.
+ */
+export async function invitePreview(invite: PendingInvite): Promise<InvitePreview | RoomPreview> {
+  if (!isHome(invite.node)) await connectNode(invite.node);
+  const client = apiFor(invite.node);
+  return invite.invite_code ? client.invites.preview(invite.invite_code) : client.rooms.preview(invite.room?.id ?? "");
+}
+
+/**
  * Joins the room or conversation of `invite` on its node and returns the route to open. Rooms join with
- * the invitation's (address-bound) code; conversations are only checked: the hosting node already lists
+ * the invitation's (address-bound) code and `acceptRules`, the user's answer to the rules the join dialog showed
+ * (tavrn-web#195; never assumed); conversations are only checked: the hosting node already lists
  * the user as a member, and the node's answer (not the invitation) decides the index entry.
  */
-export async function acceptInvite(invite: PendingInvite): Promise<string> {
+export async function acceptInvite(invite: PendingInvite, acceptRules = false): Promise<string> {
   const home = isHome(invite.node);
   if (!home) await connectNode(invite.node);
   const client = apiFor(invite.node);
   let path: string;
   if (invite.kind === "room") {
-    const room = invite.invite_code ? await client.invites.join(invite.invite_code, { accept_rules: true }) : await client.rooms.join(invite.room?.id ?? "", { accept_rules: true });
+    const req = { accept_rules: acceptRules };
+    const room = invite.invite_code ? await client.invites.join(invite.invite_code, req) : await client.rooms.join(invite.room?.id ?? "", req);
     await indexJoinedRoom(invite.node, room.id);
     path = roomPath(home ? null : invite.node, room.id);
   } else {

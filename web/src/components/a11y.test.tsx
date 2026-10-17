@@ -13,6 +13,7 @@ import { ComponentsContext } from "../messageComponents/context";
 import { ComponentModal } from "../messageComponents/ComponentModal";
 import { ConfirmHost, confirmDialog } from "./Confirm";
 import { useDismiss } from "../lib/dismiss";
+import { JoinRoomDialog } from "./JoinRoomDialog";
 
 function DialogHarness() {
   const [open, setOpen] = useState(false);
@@ -285,5 +286,38 @@ describe("accessibility of shared widgets", () => {
     expect(name).toHaveFocus();
     await user.keyboard("{Escape}");
     expect(closed).toBe(1);
+  });
+});
+
+describe("accessibility of the join dialog (tavrn-web#195)", () => {
+  const info = {
+    room: { id: "R1", name: "Lounge", description: "", icon_animated: false, member_count: 3, age_gate: "none" },
+    rules: "Be kind.",
+    privacy_notice: "We keep messages.",
+    privacy_notice_updated_at: "2026-10-01T10:00:00Z",
+    legal_notice: "Run by Alice",
+    legal_notice_updated_at: null,
+  };
+
+  it("is a labelled modal: the checkbox has its name and the focus, documents are disclosures with a labelled, focusable region", async () => {
+    const user = userEvent.setup();
+    render(<JoinRoomDialog info={info} node="b.test" onJoin={async () => {}} onClose={() => {}} />);
+    const dialog = screen.getByRole("dialog", { name: "Lounge beitreten" });
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    const checkbox = screen.getByRole("checkbox", { name: "Ich akzeptiere die Regeln" });
+    expect(checkbox).toHaveFocus();
+    expect(screen.getByRole("region", { name: "Regeln" })).toHaveAttribute("tabindex", "0");
+    const privacy = screen.getByRole("button", { name: /Datenschutzhinweise/ });
+    expect(privacy).toHaveAttribute("aria-expanded", "false");
+    await user.tab();
+    expect(privacy).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(privacy).toHaveAttribute("aria-expanded", "true");
+    const region = screen.getByRole("region", { name: "Datenschutzhinweise" });
+    expect(region).toHaveAttribute("tabindex", "0");
+    expect(document.getElementById(privacy.getAttribute("aria-controls") ?? "")).toContainElement(region);
+    // The decorative arrow stays out of the name; Join names its action and is disabled until the rules are accepted.
+    expect(privacy.querySelector('[aria-hidden="true"]')).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Beitreten" })).toBeDisabled();
   });
 });

@@ -308,6 +308,16 @@ describe("notification and list menus", () => {
     expect(findEntry(one, "settings")).toMatchObject({ ariaLabel: 'menu.room.settings · reports.open_reports_one:{"count":"1"}' });
   });
 
+  it("lists the room's privacy notice and legal notice right after the settings while the room publishes them", () => {
+    const actions = { ...notifyActions, setSuppressEveryone: vi.fn(), markRead: vi.fn(), invite: vi.fn(), settings: vi.fn(), leave: vi.fn(), copyId: vi.fn(), privacyNotice: vi.fn(), legalNotice: vi.fn() };
+    expect(ids(roomMenu({ unread: false, canInvite: true, isOwner: false, notify }, actions, t))).not.toContain("privacy-notice");
+    const both = roomMenu({ unread: false, canInvite: true, isOwner: false, notify, privacyNotice: true, legalNotice: true }, actions, t);
+    expect(ids(both).slice(0, 4)).toEqual(["invite", "settings", "privacy-notice", "legal-notice"]);
+    expect(findEntry(both, "privacy-notice")).toMatchObject({ label: "roomdocs.privacy", testId: "room-privacy-notice" });
+    const legalOnly = roomMenu({ unread: false, canInvite: false, isOwner: false, notify, legalNotice: true }, actions, t);
+    expect(ids(legalOnly).slice(0, 2)).toEqual(["settings", "legal-notice"]);
+  });
+
   it("does not let owners leave their room; DMs can be closed and blocked", () => {
     const actions = { ...notifyActions, setSuppressEveryone: vi.fn(), markRead: vi.fn(), invite: vi.fn(), settings: vi.fn(), leave: vi.fn(), copyId: vi.fn() };
     const owner = roomMenu({ unread: true, canInvite: true, isOwner: true, notify: { ...notify, suppressEveryone: false } }, actions, t);

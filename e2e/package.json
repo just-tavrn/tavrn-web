@@ -14,10 +14,10 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.64.0",
-    "@tavrn/bot": "github:just-tavrn/tavrn-js#82f245c66d85f548a5096664ff80d177f09a48dc&path:bot",
+    "@tavrn/bot": "file:/home/baton/tavrn-split/tavrn-js/.claude/worktrees/joinflow/bot",
     "@tavrn/crypto": "^0.1.0",
-    "@tavrn/e2ee": "github:just-tavrn/tavrn-js#82f245c66d85f548a5096664ff80d177f09a48dc&path:e2ee",
-    "@tavrn/sdk": "github:just-tavrn/tavrn-js#82f245c66d85f548a5096664ff80d177f09a48dc&path:sdk",
+    "@tavrn/e2ee": "file:/home/baton/tavrn-split/tavrn-js/.claude/worktrees/joinflow/e2ee",
+    "@tavrn/sdk": "file:/home/baton/tavrn-split/tavrn-js/.claude/worktrees/joinflow/sdk",
     "@types/libsodium-wrappers": "^0.8.2",
     "@types/node": "^26.6.5",
     "libsodium-wrappers": "^0.8.4",
