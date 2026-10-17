@@ -104,7 +104,8 @@ const inCodeOrLink = (el: Element) => el.localName === "code" || el.localName ==
 /** A member's name in a passive mention: like a username, ending in a letter, digit or underscore (`@alice.` → `alice`). */
 const LOCAL = "[a-z0-9](?:[a-z0-9_.-]{0,30}[a-z0-9_])?";
 const LABEL = "[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?";
-const PASSIVE = new RegExp(`(^|[^\\w@])@(${LOCAL})(?:@(${LABEL}(?:\\.${LABEL})+))?(?![\\w@-]|\\.[\\w])`, "gi");
+// The host may be a single label (development nodes such as `localhost`); only directory members match anyway.
+const PASSIVE = new RegExp(`(^|[^\\w@])@(${LOCAL})(?:@(${LABEL}(?:\\.${LABEL})*))?(?![\\w@-]|\\.[\\w])`, "gi");
 
 /** The pill of a mention (and the BOT badge after a bot's); `target` is the address or the role name. */
 export function mentionPill(doc: Document, text: string, kind: MentionKind, target: string | undefined, botLabel: string): Node[] {
