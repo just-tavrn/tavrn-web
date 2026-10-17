@@ -115,6 +115,7 @@ export function MessageList({
   canStartThreads = false,
   encrypted = false,
   historyCut,
+  visibleChannels,
 }: {
   /** Newest first, as delivered by the API. */
   messages: Message[];
@@ -123,6 +124,8 @@ export function MessageList({
    * replaces "load older" at the top (nothing older is loaded).
    */
   historyCut?: string;
+  /** The channels in the viewer's channel list (room channels): welcome channel entries name only these. */
+  visibleChannels?: ReadonlySet<string>;
   currentUserId: string | undefined;
   canManage: boolean;
   canReact?: boolean;
@@ -451,6 +454,7 @@ export function MessageList({
                   mentions={mentionsOf(m)}
                   mentionDirectory={mentionMembers}
                   links={links}
+                  visibleChannels={visibleChannels}
                 />
               </article>
             );
@@ -496,7 +500,8 @@ type Shown =
   | { kind: "member_event"; event: "join" | "leave"; user: string; name: string }
   | { kind: "key_event"; user: string; name: string; rotated: boolean }
   | { kind: "restore_event"; approved: boolean; user: string; name: string; by: string }
-  | { kind: "bot_event"; added: boolean; bot: string; name: string; channel: string; by: string | null; reason: string }
+  /** `inChannel`: a security notice in the channel it is about (APPLICATIONS.md §3.6), else a welcome channel entry. */
+  | { kind: "bot_event"; added: boolean; bot: string; name: string; channel: string; channelId: string; inChannel: boolean; by: string | null; reason: string }
   | { kind: "call_event"; outcome: "missed" | "ended"; by: string; name: string; duration: number }
   | { kind: "cipher" }
   /** A poll (PROTOCOL.md §7g) that passed the shape check. */
@@ -559,14 +564,16 @@ function contentOf(m: Message, d: Decrypted | undefined, signature: PlainStatus 
     const name = typeof raw.display_name === "string" && raw.display_name ? raw.display_name : (user.split("@")[0] ?? user);
     return { kind: "restore_event", approved: c.type === "system.history_restored", user, name, by: typeof raw.by === "string" ? raw.by : "?" };
   }
-  // The security log names every bot that joins or leaves an encrypted channel's group (design note 4.7).
+  // The security log names every bot that joins or leaves an encrypted channel's group (design note 4.7): in the welcome
+  // channel for channels everyone can view, else as a notice in the channel itself (APPLICATIONS.md §3.6).
   if (c?.type === "system.bot_added" || c?.type === "system.bot_removed") {
-    const raw = c as AnyContent & { bot?: unknown; display_name?: unknown; channel_name?: unknown; channel_system_name?: unknown; by?: unknown; reason?: unknown };
+    const raw = c as AnyContent & { bot?: unknown; display_name?: unknown; channel?: unknown; channel_name?: unknown; channel_system_name?: unknown; by?: unknown; reason?: unknown };
     const bot = typeof raw.bot === "string" ? raw.bot : m.author;
     const name = typeof raw.display_name === "string" && raw.display_name ? raw.display_name : (bot.split("@")[0] ?? bot);
     const channel = typeof raw.channel_name === "string" ? channelName({ name: raw.channel_name, system_name: typeof raw.channel_system_name === "string" ? raw.channel_system_name : null }) : "?";
+    const channelId = typeof raw.channel === "string" ? raw.channel : "";
     const by = typeof raw.by === "string" && raw.by !== bot ? raw.by : null;
-    return { kind: "bot_event", added: c.type === "system.bot_added", bot, name, channel, by, reason: typeof raw.reason === "string" ? raw.reason : "" };
+    return { kind: "bot_event", added: c.type === "system.bot_added", bot, name, channel, channelId, inChannel: channelId === m.conversation_id, by, reason: typeof raw.reason === "string" ? raw.reason : "" };
   }
   // Calls in DMs and group DMs (VOICE.md §11.2): missed and ended calls, in the viewer's language.
   if (c?.type === "system.call.missed" || c?.type === "system.call.ended") {
@@ -675,6 +682,8 @@ interface RowProps {
   mentionDirectory?: MentionDirectory;
   /** The nodes whose tavrn links become chips (stable object). */
   links?: MarkdownLinks;
+  /** The channels in the viewer's channel list (room channels): welcome channel entries name only these. */
+  visibleChannels?: ReadonlySet<string>;
 }
 
 /** The first line of a message for reply previews. */
@@ -686,7 +695,7 @@ function snippet(m: Message, d: Decrypted | undefined): string | null {
  * One message. Memoized: with stable props from the list, a new message (20/s under load) renders only
  * its own row instead of every loaded one (design note 9e).
  */
-const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, grouped, own, bot, author, replyAuthor, decrypted, signature, editing, setEditingId, canManage, canReact, canPin, roomId, customEmojis, emojiUrls, onReact, onPin, onEdit, onDelete, onReply, onReport, onThread, usersById, canStartThreads, onMarkUnread, replyTo, replyDecrypted, mentioned, mentions, mentionDirectory: directory, links }: RowProps) {
+const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, grouped, own, bot, author, replyAuthor, decrypted, signature, editing, setEditingId, canManage, canReact, canPin, roomId, customEmojis, emojiUrls, onReact, onPin, onEdit, onDelete, onReply, onReport, onThread, usersById, canStartThreads, onMarkUnread, replyTo, replyDecrypted, mentioned, mentions, mentionDirectory: directory, links, visibleChannels }: RowProps) {
   const t = useT();
   const [draft, setDraft] = useState("");
   const c = useMemo(() => contentOf(m, decrypted, signature, t, conversationEncrypted), [m, decrypted, signature, t, conversationEncrypted]);
@@ -785,12 +794,14 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
   if (c.kind === "bot_event") {
     const reasonKey = `members.bot_reason.${c.reason}`;
     const reason = t(reasonKey) === reasonKey ? c.reason : t(reasonKey);
-    const text = c.added
-      ? c.by
-        ? t("members.bot_added_by", { name: c.name, channel: c.channel, by: c.by })
-        : t("members.bot_added", { name: c.name, channel: c.channel })
-      : t("members.bot_removed", { name: c.name, channel: c.channel, reason });
-    return systemRow("🤖", { address: c.bot, name: c.name }, { "data-testid": "bot-event", "data-event": c.added ? "added" : "removed", "data-reason": c.added ? undefined : c.reason }, (
+    // A welcome channel entry names its channel only when the viewer can see it (an older entry about a channel that
+    // became private, or no channel list known): "a private channel" otherwise (APPLICATIONS.md §3.6).
+    const hidden = !c.inChannel && !visibleChannels?.has(c.channelId);
+    const key = c.inChannel
+      ? c.added ? (c.by ? "members.bot_reads_channel_by" : "members.bot_reads_channel") : "members.bot_stopped_reading"
+      : `${c.added ? (c.by ? "members.bot_added_by" : "members.bot_added") : "members.bot_removed"}${hidden ? "_private" : ""}`;
+    const text = t(key, { name: c.name, channel: c.channel, by: c.by ?? "", reason });
+    return systemRow("🤖", { address: c.bot, name: c.name }, { "data-testid": c.inChannel ? "bot-notice" : "bot-event", "data-event": c.added ? "added" : "removed", "data-reason": c.added ? undefined : c.reason, "data-hidden-channel": hidden ? "true" : undefined }, (
       <>
         {text} <BotBadge />
       </>

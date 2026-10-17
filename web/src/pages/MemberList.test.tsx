@@ -8,6 +8,7 @@ import { MemberList } from "./MemberList";
 import { useAuth } from "../stores/auth";
 import { usePresence } from "../stores/presence";
 import { mockFetch, renderWithProviders } from "../test/render";
+import { SIDEBAR_CATEGORY, SIDEBAR_ROW } from "../components/sidebarRow";
 
 const user = (id: string, username: string) => ({ id, username, domain: "t.local", address: `${username}@t.local`, display_name: username, kind: "user", avatar_blob_id: null });
 const member = (u: ReturnType<typeof user>) => ({ user: u, nickname: null, roles: [], joined_at: "2026-01-01T00:00:00Z", timeout_until: null });
@@ -35,5 +36,21 @@ describe("member list", () => {
     act(() => usePresence.getState().apply({ user: bob.address, status: "online" } as never));
     await waitFor(() => expect(document.querySelector('[data-section="offline"]')).toBeNull());
     expect(screen.getByTestId("profile-popover")).toBeInTheDocument();
+  });
+
+  it("names members in the channel list's text size, the status line and section labels proportionate", async () => {
+    usePresence.getState().apply({ user: bob.address, status: "online", custom_status: { text: "Im Urlaub" } } as never);
+    renderWithProviders(<MemberList roomId="R1" />);
+    const names = await screen.findAllByTestId("member-name");
+    // The channel rows' metrics (sidebarRow.ts): 16 px medium on a 20 px line.
+    for (const cls of ["text-base", "font-medium", "leading-5"]) {
+      expect(SIDEBAR_ROW.split(" ")).toContain(cls);
+      for (const n of names) expect(n).toHaveClass(cls);
+    }
+    const status = await screen.findByTestId("member-status-line");
+    expect(status).toHaveClass("text-xs", "leading-4", "text-fg-2");
+    for (const h of document.querySelectorAll('[data-testid="member-section"] h3')) expect(h).toHaveClass(...SIDEBAR_CATEGORY.split(" "));
+    // The row keeps its 40 px height (name and status line fit: 20 + 16 px).
+    for (const row of screen.getAllByTestId("member-row")) expect(row).toHaveClass("min-h-10");
   });
 });

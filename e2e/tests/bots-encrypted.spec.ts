@@ -2,13 +2,14 @@
 import type { ChildProcess } from "node:child_process";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { startExampleBot } from "./bot-helpers";
-import { NODE, createRoomViaApi, registerViaUi, tokenOf, uniqueName } from "./helpers";
+import { NODE, createRoomViaApi, openNavIfMobile, registerViaUi, tokenOf, uniqueName } from "./helpers";
 import { scaled } from "./timeouts";
 
 // Bots and encrypted channels (design note 4.7, decided 2026-10-06; APPLICATIONS.md §3.5, §3.6): in a new room the example
 // bot stays out of the encrypted channel until the channel's settings allow bots, then joins on its own; switching it
-// off removes the bot's leaf. The welcome channel shows both changes; the room overview has the switch with its
-// explanation, the role editor the "Manage applications" permission.
+// off removes the bot's leaf. The welcome channel shows both changes, unless the channel is hidden from @everyone: then
+// the channel itself shows a quiet notice; the room overview has the switch with its explanation, the role editor the
+// "Manage applications" permission.
 
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 const SEND_MESSAGES = 1n << 1n;
@@ -103,6 +104,50 @@ test.describe("Bots in encrypted channels (design note 4.7)", () => {
     await expect(removed).toBeVisible({ timeout: 20_000 });
     await expect(removed).toHaveAttribute("data-reason", "bots_not_allowed");
     await expect(removed).toContainText("Bots sind in diesem Channel nicht mehr erlaubt");
+  });
+
+  test("in a channel only some members can view, the bot's entry is a quiet notice there and the welcome channel names nothing", async ({ page, request }) => {
+    test.setTimeout(scaled(180_000));
+    await registerViaUi(page, { prefix: "botprivate" });
+    const token = await tokenOf(page);
+    const app = await createApp(request, token);
+    bot = await startExampleBot(app, test.info().outputPath("bot"));
+    const room = await createRoomViaApi(request, token, "Vorstand", "invite", { encrypted: true });
+    const channel = room.channels.find((c: { kind: string }) => c.kind === "text");
+    const welcome = room.channels.find((c: { kind: string }) => c.kind === "system");
+    const everyone = room.roles.find((r: { is_everyone: boolean }) => r.is_everyone).id as string;
+    const install = await request.post(`${NODE}/api/v1/rooms/${room.id}/applications`, { headers: auth(token), data: { application: `localhost/${app.id}`, permissions: SEND_MESSAGES.toString() } });
+    expect(install.status(), await install.text()).toBe(201);
+    // The channel: hidden from @everyone, visible to the bot (member override); the owner sees everything.
+    const members = await (await request.get(`${NODE}/api/v1/rooms/${room.id}/members`, { headers: auth(token) })).json();
+    const botId = (members as Array<{ user: { id: string; username: string } }>).find((m) => m.user.username === app.botUsername)!.user.id;
+    for (const [subject_type, subject_id, allow, deny] of [["role", everyone, "0", "1"], ["member", botId, "1", "0"]]) {
+      const resp = await request.put(`${NODE}/api/v1/rooms/${room.id}/overrides`, { headers: auth(token), data: { target_type: "channel", target_id: channel.id, subject_type, subject_id, allow, deny } });
+      expect(resp.ok(), await resp.text()).toBeTruthy();
+    }
+
+    await page.goto(`/rooms/${room.id}/channels/${channel.id}`);
+    await expect(page.getByLabel("Nachricht", { exact: true })).toBeEnabled({ timeout: 20_000 });
+    await expect.poll(() => epoch(request, token, channel.id), { timeout: 20_000 }).toBe(0);
+    await setBotsAllowed(page, room.id, channel.id, true);
+    await expect.poll(() => epoch(request, token, channel.id), { timeout: 30_000 }).toBeGreaterThanOrEqual(1);
+
+    // Not in the welcome channel; nothing unread in the channel although the bot wrote its newest message.
+    const log = await (await request.get(`${NODE}/api/v1/conversations/${welcome.id}/messages?limit=50`, { headers: auth(token) })).json();
+    expect((log as Array<{ content: { type: string } }>).filter((m) => m.content.type.startsWith("system.bot_"))).toEqual([]);
+    await page.goto(`/rooms/${room.id}/channels/${welcome.id}`);
+    await expect(page.getByTestId("bot-event")).toHaveCount(0);
+    await openNavIfMobile(page);
+    await expect(page.locator(`[data-testid="channel-row"][data-channel="${channel.id}"]`).getByTestId("unread-count")).toHaveCount(0);
+
+    // In the channel: one inline line with the bot's avatar and BOT badge; the header counts the bot.
+    await page.goto(`/rooms/${room.id}/channels/${channel.id}`);
+    const notice = page.locator('[data-testid="bot-notice"][data-event="added"]');
+    await expect(notice).toBeVisible({ timeout: 20_000 });
+    await expect(notice).toContainText("kann diesen Channel jetzt mitlesen");
+    await expect(notice.getByTestId("bot-badge")).toBeVisible();
+    await expect(page.getByTestId("message-unencrypted")).toHaveCount(0);
+    await expect(page.getByTestId("bot-readers")).toHaveAttribute("data-count", "1", { timeout: 20_000 });
   });
 
   test("the room switch explains the setting, and the role editor shows Manage applications", async ({ page, request }) => {

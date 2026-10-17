@@ -24,6 +24,7 @@ import { mapMessages, prependMessage, type MessagePages } from "../lib/messagePa
 import { mergeMessageUpdate, type MessageUpdateEvent } from "../lib/reactionEvents";
 import { threadHandlers, threadMessage } from "../threads/realtime";
 import { useUnread } from "../stores/unread";
+import { isChannelNotice } from "../lib/securityNotice";
 import { apiFor, homeDomain, isHome, refreshNode, useNodes } from "../stores/nodes";
 import { loadFollowedThreads } from "../threads/loadFollowed";
 import { unindexConversation, unindexMessages } from "../search/local";
@@ -254,15 +255,17 @@ export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: 
         if (threadMessage(m, queryClient, self) && self) void notifyMessage(m, { queryClient, node, me: self, loadRooms }).catch(() => undefined);
         return;
       }
+      // A security notice in a channel (APPLICATIONS.md §3.6) is a quiet line: never unread, never a notification.
+      const notice = isChannelNotice(m);
       // Unread counts: not for the conversation the user is looking at right now.
-      if (self) useUnread.getState().message(m, self, useMlsUi.getState().open === m.conversation_id && isAttentive());
+      if (self) useUnread.getState().message(m, self, notice || (useMlsUi.getState().open === m.conversation_id && isAttentive()));
       // One lookup of the room or DM for everything below.
       const located = locate(queryClient, m.conversation_id);
       // A known DM or group DM moves up in its node's list (order by last activity): patched, nothing is fetched.
       if (located.conversation) patchConversationActivity(queryClient, node, m);
       // Notifications (design note 4.11): toast, sound, notification center, browser notification. An unknown
       // conversation is looked up there (the room on that node, else that node's conversation list).
-      if (self) void notifyMessage(m, { queryClient, node, me: self, loadRooms, located }).catch(() => undefined);
+      if (self && !notice) void notifyMessage(m, { queryClient, node, me: self, loadRooms, located }).catch(() => undefined);
       else if (!located.room && !located.conversation) void queryClient.invalidateQueries({ queryKey: node ? ["conversations", node] : ["conversations"], exact: true });
       // Only the open conversation has loaded pages (lazy history); nothing is fetched for others.
       updatePages(m.conversation_id, (d) => prependMessage(d, m));
