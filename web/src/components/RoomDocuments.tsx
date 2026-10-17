@@ -12,6 +12,7 @@ import { renderDocument } from "../lib/markdown";
 import { intlLocale, useT } from "../i18n";
 import { describeError } from "../stores/toasts";
 import { Button, Dialog, ErrorText } from "./ui";
+import { RoomRules } from "./RoomRules";
 
 export type RoomDocumentKind = "privacy" | "legal";
 
@@ -111,6 +112,27 @@ export function RoomDocumentDialog({ client, roomId, roomName, kind, onClose }: 
         {preview.isPending && <p className="text-sm text-fg-2">{t("common.loading")}</p>}
         {preview.isError && <ErrorText>{describeError(preview.error)}</ErrorText>}
         {preview.data && (doc ? <RoomDocument kind={kind} markdown={doc.markdown} updatedAt={doc.updatedAt} /> : <p className="text-sm text-fg-2">{t("roomlegal.none")}</p>)}
+        <div className="flex justify-end">
+          <Button variant="ghost" onClick={onClose}>
+            {t("common.close")}
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+/** The room's rules for members (room menu → "Show rules"), read-only, from the same room preview as the documents. */
+export function RoomRulesDialog({ client, roomId, roomName, onClose }: { client: TavrnApi; roomId: string; roomName: string; onClose: () => void }) {
+  const t = useT();
+  const preview = useQuery({ queryKey: ["room-preview", client.baseUrl, roomId], queryFn: () => client.rooms.preview(roomId), staleTime: 30_000 });
+  const rules = preview.data?.rules?.trim() ? preview.data.rules : null;
+  return (
+    <Dialog title={`${t("invite.rules")} · ${roomName}`} open onClose={onClose}>
+      <div className="space-y-3" data-testid="room-rules-dialog">
+        {preview.isPending && <p className="text-sm text-fg-2">{t("common.loading")}</p>}
+        {preview.isError && <ErrorText>{describeError(preview.error)}</ErrorText>}
+        {preview.data && (rules ? <RoomRules markdown={rules} tall /> : <p className="text-sm text-fg-2">{t("roomdocs.rules_none")}</p>)}
         <div className="flex justify-end">
           <Button variant="ghost" onClick={onClose}>
             {t("common.close")}

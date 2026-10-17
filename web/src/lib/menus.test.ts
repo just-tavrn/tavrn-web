@@ -318,6 +318,20 @@ describe("notification and list menus", () => {
     expect(ids(legalOnly).slice(0, 2)).toEqual(["settings", "legal-notice"]);
   });
 
+  it("offers the rules to every member while the room has rules, before the documents", () => {
+    const actions = { ...notifyActions, setSuppressEveryone: vi.fn(), markRead: vi.fn(), invite: vi.fn(), settings: vi.fn(), leave: vi.fn(), copyId: vi.fn(), rules: vi.fn(), privacyNotice: vi.fn(), legalNotice: vi.fn() };
+    expect(ids(roomMenu({ unread: false, canInvite: false, isOwner: false, notify }, actions, t))).not.toContain("rules");
+    const all = roomMenu({ unread: false, canInvite: false, isOwner: false, notify, rules: true, privacyNotice: true, legalNotice: true }, actions, t);
+    expect(ids(all).slice(0, 4)).toEqual(["settings", "rules", "privacy-notice", "legal-notice"]);
+    const rules = findEntry(all, "rules");
+    expect(rules).toMatchObject({ label: "roomdocs.rules_show", testId: "room-show-rules" });
+    if (rules?.kind === "item") rules.onSelect?.();
+    expect(actions.rules).toHaveBeenCalled();
+    // Without the action (a caller that cannot show them) there is no entry.
+    const { rules: _omit, ...withoutAction } = actions;
+    expect(ids(roomMenu({ unread: false, canInvite: false, isOwner: false, notify, rules: true }, withoutAction, t))).not.toContain("rules");
+  });
+
   it("does not let owners leave their room; DMs can be closed and blocked", () => {
     const actions = { ...notifyActions, setSuppressEveryone: vi.fn(), markRead: vi.fn(), invite: vi.fn(), settings: vi.fn(), leave: vi.fn(), copyId: vi.fn() };
     const owner = roomMenu({ unread: true, canInvite: true, isOwner: true, notify: { ...notify, suppressEveryone: false } }, actions, t);

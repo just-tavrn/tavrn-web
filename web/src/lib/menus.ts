@@ -433,6 +433,8 @@ export interface RoomMenuContext {
   canReport?: boolean;
   /** Open reports of the room's inbox for its moderators (badge text, "99+" at most); shown on "Room settings". */
   openReports?: string | null;
+  /** The room has rules: "Show rules" for every member (read-only). */
+  rules?: boolean;
   /** The room publishes a privacy notice / a legal notice (PROTOCOL.md §6b): entries that open them. */
   privacyNotice?: boolean;
   legalNotice?: boolean;
@@ -445,6 +447,8 @@ export interface RoomMenuActions extends NotifyMenuActions {
   leave: () => void;
   copyId: () => void;
   report?: () => void;
+  /** Opens the room's rules, read-only. */
+  rules?: () => void;
   /** Opens the room's privacy notice / legal notice. */
   privacyNotice?: () => void;
   legalNotice?: () => void;
@@ -456,6 +460,7 @@ export function roomMenu(c: RoomMenuContext, a: RoomMenuActions, t: T): MenuEntr
   return normalizeMenu([
     c.canInvite && menuItem("invite", t("menu.room.invite"), a.invite, { icon: "✉" }),
     menuItem("settings", t("menu.room.settings"), a.settings, { icon: "⚙", testId: "room-settings-button", ...(reports ? { hint: c.openReports!, hintBadge: true, ariaLabel: `${t("menu.room.settings")} · ${reports}` } : {}) }),
+    c.rules && a.rules && menuItem("rules", t("roomdocs.rules_show"), a.rules, { icon: "≡", testId: "room-show-rules" }),
     c.privacyNotice && a.privacyNotice && menuItem("privacy-notice", t("roomdocs.privacy"), a.privacyNotice, { icon: "§", testId: "room-privacy-notice" }),
     c.legalNotice && a.legalNotice && menuItem("legal-notice", t("roomdocs.legal"), a.legalNotice, { icon: "ⓘ", testId: "room-legal-notice" }),
     separator("sep-read"),

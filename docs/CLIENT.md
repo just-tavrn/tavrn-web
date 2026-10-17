@@ -261,8 +261,8 @@ tells them.
 ## The sidebar and the channel list
 
 The sidebar has three bars. At the top, the **room header** is one button (room icon, name, chevron ⌄; rooms of other
-nodes show their domain below the name) that opens the room menu: "Invite people" and "Room settings" first, then mark
-as read, notifications, copy ID, report and leave; moderators see the number of open reports as a badge on the
+nodes show their domain below the name) that opens the room menu: "Invite people" and "Room settings" first, then
+"Show rules", "Privacy notice" and "Legal notice" while the room has them, mark as read, notifications, copy ID, report and leave; moderators see the number of open reports as a badge on the
 chevron and next to "Room settings", which then opens the report inbox. Above the account bar sits the **voice bar**
 while connected ("Voice channels" below). At the bottom, the **account bar** holds the avatar with the account menu
 (presence, custom status, activity, legal pages, sign out with a confirmation and, for node admins of the home node,
@@ -1419,6 +1419,22 @@ change). The documents are information, not a second checkbox. A room with neith
 directly, as before. A direct join the node refuses for rules (added since the preview) opens the dialog; a node
 without the preview route is joined directly and a refusal is shown.
 
+**The invite page signed out** (`/invite/<code>`, `web/src/pages/InvitePage.tsx`): a visitor without a session sees
+the invite's preview instead of being sent to the sign-in. It comes from the node's public `GET /invites/{code}`
+without a token (`publicApi`: no credentials, no refresh, nothing about the visitor is stored) and shows the room's
+icon, name, description, member count and the node it lives on, the rules read-only (no checkbox: they are accepted
+after the sign-in, right before the join) and the links to the privacy notice and legal notice as in the join block.
+Two actions follow: "Sign in to join" (`/login?next=/invite/<code>`) and, unless the node takes no new accounts
+(`registration: closed`, or SSO only), "Create an account" (`/login?mode=register&next=…`; with `registration:
+invite` the hint that an account invite code is needed). The sign-in, the registration wizard, SSO and the desktop
+app's sign-in on the node page carry `next` through the encryption step back to the invite (only same-origin paths
+are followed), which then shows the join block with "I accept the rules" and "Join". Nothing is joined until the user
+clicks "Join". An invalid or expired invite says so ("This invite is invalid or expired", a rate limit as "Too many
+requests") with a link to the sign-in. An invite of another node (`?node=<domain>`, the apps' links of other nodes)
+still leads to the sign-in first: signed out, the client does not contact a node a link names. In the desktop and
+Android apps the deep link prompt's "Open" leads to the same page, so an app with a chosen node but no account shows
+the preview too; an app without a node keeps the node picker first.
+
 **Privacy notice and legal notice of a room** (Room settings → Privacy & legal; PROTOCOL.md §6b "Room privacy notice
 and legal notice"): optional Markdown documents for rooms that are not purely private, up to 20,000 and 5,000
 characters, rendered like the rules. Members with *Manage room* edit both with **Preview** and **Load a template**
@@ -1428,7 +1444,9 @@ operator as a separate controller with a link to the node's privacy policy when 
 them, that this is not legal advice, and links the operator guide
 ([tavrn/docs/room-legal.md](https://github.com/just-tavrn/tavrn/blob/main/docs/room-legal.md)). Other members see
 the tab read-only while the room publishes a document; the room menu (rail and room header) has "Privacy notice" and
-"Legal notice" entries while they are set, which open the document in a dialog. Members are not asked to accept a
+"Legal notice" entries while they are set, which open the document in a dialog. "Show rules" (every member, while
+the room has rules) opens the rules read-only in the same kind of dialog (`RoomRulesDialog` in
+`web/src/components/RoomDocuments.tsx`). Members are not asked to accept a
 changed document; the date of the last change is shown with it.
 
 ## The desktop app
