@@ -14,9 +14,8 @@ import { ComponentModal } from "../messageComponents/ComponentModal";
 import { ConfirmHost, confirmDialog } from "./Confirm";
 import { useDismiss } from "../lib/dismiss";
 import { JoinRoomDialog } from "./JoinRoomDialog";
-import { useLocale } from "../i18n";
 import { Composer } from "./Composer";
-import { t as translate } from "../i18n";
+import { t as translate, useLocale } from "../i18n";
 import { useComposerPrefs } from "../stores/composerPrefs";
 
 function DialogHarness() {
