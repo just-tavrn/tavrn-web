@@ -66,6 +66,7 @@ import { ComponentsContext, type ComponentsEnv } from "../messageComponents/cont
 import { ComponentModal } from "../messageComponents/ComponentModal";
 import { applyAnswer, componentBody, modalBody, type OpenModal, type Sealer } from "../messageComponents/invoke";
 import { PollContext } from "../polls/context";
+import { ChatLinksContext, type ChatLinksValue } from "../chatLinks/context";
 import { useConversationPolls } from "../polls/env";
 import type { PollContent, PollKind } from "../polls/model";
 import { channelMentionCandidates, directMentionCandidates } from "../composer/mentions";
@@ -253,8 +254,12 @@ export function ConversationView(p: ConversationViewProps) {
     if (p.roomId && e2ee.phase === "ready") void rememberRoom(q, p.roomId);
   }, [q, p.roomId, e2ee.phase]);
 
-  // Jump to a message (`?m=<id>`, a search result): load the page around it unless it is loaded already.
-  const focusParam = p.jumpEnabled === false ? null : (new URLSearchParams(location.search).get("m")?.toUpperCase() ?? null);
+  // Jump to a message (`?m=<id>`, a search result; `?message=<id>`, a message link opened in the browser, PROTOCOL.md
+  // §7h): load the page around it unless it is loaded already.
+  const searchParams = new URLSearchParams(location.search);
+  const focusParam = p.jumpEnabled === false ? null : ((searchParams.get("m") ?? searchParams.get("message"))?.toUpperCase() ?? null);
+  // Pills and chips in the message bodies (chatLinks/): the room, its members, the conversation's addresses.
+  const chatLinks = useMemo<ChatLinksValue>(() => ({ room: p.room, roomMembers: p.roomMembers, members: p.members }), [p.room, p.roomMembers, p.members]);
   const [focus, setFocus] = useState<{ id: string; n: number } | null>(null);
   useEffect(() => {
     if (!focusParam) return;
@@ -729,6 +734,7 @@ export function ConversationView(p: ConversationViewProps) {
       <AuthorProfiles messages={loaded} members={p.roomMembers}>
       <PollContext.Provider value={pollEnv}>
       <ComponentsContext.Provider value={componentsEnv}>
+      <ChatLinksContext.Provider value={chatLinks}>
       <MessageList
         encrypted={p.encrypted}
         messages={loaded}
@@ -760,6 +766,7 @@ export function ConversationView(p: ConversationViewProps) {
         mentionRoles={mentionRoles}
         authors={authors}
       />
+      </ChatLinksContext.Provider>
       </ComponentsContext.Provider>
       </PollContext.Provider>
       </AuthorProfiles>

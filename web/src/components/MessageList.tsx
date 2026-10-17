@@ -6,7 +6,7 @@ import { isBotKind, type Message, type User } from "@tavrn/sdk";
 import { ThreadIndicator } from "../threads/ThreadIndicator";
 import { formatFullTime, formatTime } from "../lib/format";
 import { MAX_CACHED, PAGE } from "../lib/messagePages";
-import { configureMarkdown, handleMarkdownClick, handleMarkdownKey, markdownVersion, renderMarkdown, subscribeMarkdown } from "../lib/markdown";
+import { configureMarkdown, handleMarkdownClick, handleMarkdownKey, markdownVersion, renderMarkdown, subscribeMarkdown, type MarkdownLinks } from "../lib/markdown";
 import { useEmojiResolver } from "../lib/emojis";
 import { isGifUrl } from "../lib/gifs";
 import { GifView } from "./GifView";
@@ -17,7 +17,12 @@ import { MessageAttachments, fromEncrypted, fromPlain } from "./AttachmentView";
 import { ContextMenu, MenuButton, useContextMenu } from "./ContextMenu";
 import { messageMenu } from "../lib/menus";
 import { mentionsMe } from "../lib/mentions";
-import { mentionTokens, parseMentionTokens, serializeMentionTokens } from "../lib/mentionBadges";
+import { mentionDirectory, mentionTokens, parseMentionTokens, serializeMentionTokens, type MentionDirectory } from "../lib/mentionBadges";
+import { messageUrl, useKnownNodes } from "../lib/tavrnLinks";
+import { isHome } from "../stores/nodes";
+import { useNode } from "./NodeScope";
+import { useChatLinks } from "../chatLinks/context";
+import { hasInteractiveParts, MessageBodyLinks } from "../chatLinks/MessageBodyLinks";
 import { copyText } from "./ContextMenu";
 import { useToasts } from "../stores/toasts";
 import { useAccessibility } from "../stores/accessibility";
@@ -191,6 +196,15 @@ export function MessageList({
       return s;
     };
   }, [bots, currentAddress, mentionRoles]);
+  // Members the text names without listing them (a bot card's roster) become pills too, without notification; tavrn
+  // links of the nodes this client talks to become chips (lib/markdown.ts).
+  const { members: participants } = useChatLinks();
+  const mentionMembers = useMemo(
+    () => (participants?.length ? mentionDirectory(participants, { bots, self: currentAddress, nodeDomain: currentAddress ? currentAddress.slice(currentAddress.lastIndexOf("@") + 1) : null }) : undefined),
+    [participants, bots, currentAddress],
+  );
+  const known = useKnownNodes();
+  const links = useMemo<MarkdownLinks>(() => ({ known: known.nodes, key: known.key, home: (d) => isHome(d) }), [known]);
   const onDelete = useCallback((m: Message) => actionsRef.current.onDelete?.(m), []);
   const onReply = useCallback((m: Message) => actionsRef.current.onReply?.(m), []);
   const onReport = useCallback((m: Message) => actionsRef.current.onReport?.(m), []);
@@ -435,6 +449,8 @@ export function MessageList({
                   conversationEncrypted={encrypted}
                   mentioned={mentionsMe(m, currentAddress) && m.author_id !== currentUserId}
                   mentions={mentionsOf(m)}
+                  mentionDirectory={mentionMembers}
+                  links={links}
                 />
               </article>
             );
@@ -655,6 +671,10 @@ interface RowProps {
   mentioned?: boolean;
   /** The message's mentions with their kinds (`serializeMentionTokens`: a string, so the memoized row compares it). */
   mentions?: string;
+  /** Members of the conversation (stable object): mentions the message does not list become pills too. */
+  mentionDirectory?: MentionDirectory;
+  /** The nodes whose tavrn links become chips (stable object). */
+  links?: MarkdownLinks;
 }
 
 /** The first line of a message for reply previews. */
@@ -666,7 +686,7 @@ function snippet(m: Message, d: Decrypted | undefined): string | null {
  * One message. Memoized: with stable props from the list, a new message (20/s under load) renders only
  * its own row instead of every loaded one (design note 9e).
  */
-const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, grouped, own, bot, author, replyAuthor, decrypted, signature, editing, setEditingId, canManage, canReact, canPin, roomId, customEmojis, emojiUrls, onReact, onPin, onEdit, onDelete, onReply, onReport, onThread, usersById, canStartThreads, onMarkUnread, replyTo, replyDecrypted, mentioned, mentions }: RowProps) {
+const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, grouped, own, bot, author, replyAuthor, decrypted, signature, editing, setEditingId, canManage, canReact, canPin, roomId, customEmojis, emojiUrls, onReact, onPin, onEdit, onDelete, onReply, onReport, onThread, usersById, canStartThreads, onMarkUnread, replyTo, replyDecrypted, mentioned, mentions, mentionDirectory: directory, links }: RowProps) {
   const t = useT();
   const [draft, setDraft] = useState("");
   const c = useMemo(() => contentOf(m, decrypted, signature, t, conversationEncrypted), [m, decrypted, signature, t, conversationEncrypted]);
@@ -676,10 +696,11 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
   const mdVersion = useSyncExternalStore(subscribeMarkdown, markdownVersion);
   const botLabel = t("badge.bot");
   const html = useMemo(
-    () => (body ? renderMarkdown(body, emojiUrls, resolve, mentions ? { tokens: parseMentionTokens(mentions), key: mentions, botLabel } : undefined) : ""),
+    () => (body ? renderMarkdown(body, emojiUrls, resolve, mentions || directory ? { tokens: parseMentionTokens(mentions ?? ""), key: mentions ?? "", botLabel, directory } : undefined, links) : ""),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [body, emojiUrls, resolve, mdVersion, mentions, botLabel],
+    [body, emojiUrls, resolve, mdVersion, mentions, botLabel, directory, links],
   );
+  const { domain } = useNode();
   // Custom emojis whose bytes are gone everywhere become a muted `:name:` chip (design note 4.13).
   const markdownRef = useRef<HTMLDivElement>(null);
   const unavailable = t("emoji.unavailable");
@@ -731,7 +752,8 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
           replyInThread: () => onThread?.(m, "reply", body),
           react: (emoji) => onReact?.(m, emoji, !!m.reactions?.some((r) => r.emoji === emoji && r.me)),
           copyText: () => void copyText(c.kind === "text" ? c.body : "").then((ok) => ok && useToasts.getState().push({ kind: "info", title: t("menu.copied") })),
-          copyLink: () => void copyText(`${webOrigin()}${window.location.pathname}?message=${m.id}`).then((ok) => ok && useToasts.getState().push({ kind: "info", title: t("menu.copied") })),
+          // Room channels: the canonical link on the hosting node (PROTOCOL.md §7h); elsewhere (DMs, threads) the route.
+          copyLink: () => void copyText(roomId && !m.thread_id ? messageUrl(domain, roomId, m.conversation_id, m.id) : `${webOrigin()}${window.location.pathname}?message=${m.id}`).then((ok) => ok && useToasts.getState().push({ kind: "info", title: t("menu.copied") })),
           copyId: () => void copyText(m.id).then((ok) => ok && useToasts.getState().push({ kind: "info", title: t("menu.copied") })),
           pin: (pinned) => onPin?.(m, pinned),
           edit: startEdit,
@@ -923,6 +945,7 @@ const MessageRow = memo(function MessageRow({ m, conversationEncrypted = false, 
               />
             )
           )}
+          {html && !editing && hasInteractiveParts(html) && <MessageBodyLinks containerRef={markdownRef} html={html} />}
           {c.kind === "text" && c.gif?.url && <GifView gif={{ url: c.gif.url, width: c.gif.width, height: c.gif.height }} author={m.author} own={own} inRoom={!!roomId} />}
           {c.kind === "text" && !editing && <LinkPreviews body={c.body} content={c.raw ?? m.content} />}
           {componentRows && !editing && <MessageComponents m={m} rows={componentRows} />}

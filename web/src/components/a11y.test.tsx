@@ -316,3 +316,36 @@ describe("accessibility of shared widgets", () => {
     }
   });
 });
+
+describe("accessibility of pills and chips in messages (PROTOCOL.md §7h)", () => {
+  it("mentions are named buttons, chips named links; the role list is a labelled dialog that gives the focus back", async () => {
+    const { renderWithProviders, mockFetch } = await import("../test/render");
+    const { ChatLinksContext } = await import("../chatLinks/context");
+    const { useAuth } = await import("../stores/auth");
+    const { useLocale } = await import("../i18n");
+    useLocale.setState({ locale: "en" });
+    useAuth.setState({ token: "t", user: { id: "u9", username: "me", domain: "t.local", address: "me@t.local", display_name: "Me", kind: "user", is_node_admin: false, created_at: "", email: null, email_verified: false, has_identity_key: true } as never });
+    const R = "01JAAAAAAAAAAAAAAAAAAAAAAA";
+    const C = "01JCCCCCCCCCCCCCCCCCCCCCCC";
+    const room = { id: R, name: "Guild", roles: [{ id: "r1", name: "Raid Leads", is_everyone: false, color: null }], channels: [{ id: C, name: "raids", kind: "text", encrypted: false }], read_states: [] };
+    const alice = { user: { id: "u1", username: "alice", domain: "t.local", address: "alice@t.local", display_name: "Alice", kind: "user", avatar: null, avatar_still: null }, roles: ["r1"], nickname: null };
+    mockFetch({ [`/rooms/${R}`]: { body: room } });
+    const m = { ...base, content: { type: "text", body: `@alice and @Raid Leads: https://t.local/rooms/${R}/channels/${C}` }, mentions: ["alice@t.local"] } as Message;
+    renderWithProviders(
+      <ChatLinksContext.Provider value={{ room: room as never, roomMembers: [alice] as never, members: ["alice@t.local"] }}>
+        <MessageList messages={[m]} currentUserId="u9" currentAddress="me@t.local" roomId={R} canManage={false} hasMore={false} mentionRoles={["Raid Leads"]} />
+      </ChatLinksContext.Provider>,
+    );
+    const user = userEvent.setup();
+    expect(await screen.findByRole("button", { name: "@alice" })).toHaveAttribute("aria-haspopup", "dialog");
+    expect(await screen.findByRole("link", { name: "Channel: raids" })).toBeInTheDocument();
+    const role = screen.getByRole("button", { name: "@Raid Leads" });
+    await user.click(role);
+    const dialog = await screen.findByRole("dialog", { name: "Members with the role Raid Leads" });
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    expect(screen.getByRole("button", { name: "Show the profile of Alice" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(role).toHaveFocus();
+  });
+});

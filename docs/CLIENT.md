@@ -350,7 +350,29 @@ composer; every other emoji keeps the platform's font. The font is served with t
 `@name` and `@name@domain` of the message's mentions list, `@everyone`/`@here` when the message mentions everyone, and
 the room's role names, only in text outside code. Mentions of yourself and `@everyone`/`@here` use the warning colour
 with a border, other mentions the accent colour; a message that mentions you keeps its left border with a stronger
-tint.
+tint. Members the text names without listing them (`@name@domain`, or `@name` of the conversation's node) are pills too,
+without notification: a bot's card carries no mentions list, so the raid helper's rosters show their members this way.
+`@name@domain` is never an e-mail link; a bare `name@domain` stays a `mailto:` link unless it is a member of the
+conversation (then their pill), and explicit `[text](mailto:…)` links stay links. User, bot and role pills are buttons
+(`role="button"`, Enter or Space): a user or bot opens the same profile card as the member list (mini profile with
+"Full profile"), a role a dialog with the role's members as the viewer's member list has them (at most 25, then "and N
+more"; a member opens their card). `@everyone` and `@here` open nothing.
+
+**Links into tavrn** (PROTOCOL.md §7h, `lib/tavrnLinks.ts`): `https://<web>/rooms/<room>[/channels/<channel>[/files/<file>]]`,
+`…/channels/<channel>?message=<id>`, `https://<web>/invite/<code>` and `https://<web>/u/<address>` on the web origin of
+the node hosting the target. They are recognised only for nodes the client already talks to (the home node and nodes
+with a federated session, by their web origin or by their identity domain over https), never with credentials in the
+URL, unknown query parameters or a fragment; everything else stays an external link and the client contacts no unknown
+host for it. A bare link becomes a chip (`chatLinks/`): a channel with its kind icon and name (plus the room when it is
+another room), "Message in #channel", a room with its icon, an invite with the room and "Join" (opens the invite page),
+a file with its name and size (records of encrypted files channels are decrypted on the device). Names come from the
+room cache, otherwise from the hosting node with the viewer's own session; without access (not a member, no
+`view_channel`, no right in the files channel, deleted) the chip says "Private channel", "Private room", "Invite not
+available" or "File not available", never a name the node did not give the viewer. A labelled link keeps its label;
+a profile link becomes the user's pill. A click navigates inside the client (no page load), a Ctrl/Cmd/Shift or
+middle click keeps the browser's behaviour (the link's `href` is the client's own route). The sender's client does not
+unfurl these links and readers show no stored preview for them. "Copy link" of channels and messages copies this form,
+also for rooms of other nodes; `?message=<id>` opens the channel at the message (like the search's `?m=`).
 
 **The composer** has the emoji picker, a GIF picker on nodes with a GIF provider (in encrypted messages the client
 itself accepts only the providers' media hosts), uploads by button, drag and drop or paste ("Uploads and downloads"),
@@ -746,6 +768,12 @@ A files channel (kind `files`, [FILES.md](https://github.com/just-tavrn/tavrn-pr
 browser (`web/src/files/`): breadcrumbs, list and grid views, sorting, uploads by button or drag and drop with
 progress, folders, rename, move (dialog or dragging, with a non-drag equivalent), delete, download, media in the
 viewer, the context menu and keyboard navigation. Uploads follow the room's file types ("File types" below).
+
+**Referencing files**: "Copy link" in an entry's menu copies `https://<web>/rooms/<room>/channels/<channel>/files/<id>`
+(PROTOCOL.md §7h) with a notice to paste it into a chat of the room. In messages it becomes a file chip; opening it
+(`…/files/<id>`, a route of the channel page) asks the node for the entry (`GET …/files/{id}`, `view_channel`) and opens
+the channel in the entry's folder with the entry selected (a folder link opens the folder). A member without the right
+in that files channel sees "File not available" and the channel opens without anything.
 
 Where the node keeps no files of a room's files channels itself (`TAVRN_FILES_INTERNAL=off`, FILES.md §5;
 `files_internal: false` in `GET /node`, or the room's entitlement `files_channels.internal` set to 0), a channel

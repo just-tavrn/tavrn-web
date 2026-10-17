@@ -129,6 +129,22 @@ body { @apply bg-bg-2 text-fg-0 font-sans antialiased; }
    >= 8.2:1, the warn border >= 3:1 against the pill and the row). A pill that wraps keeps its padding on every line. */
 .mention { padding: 0.05em 0.3em; border-radius: 0.3em; background: var(--color-accent-soft); color: var(--color-accent-hover); font-weight: 500; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 .mention[data-mention="self"], .mention[data-mention="everyone"] { background: color-mix(in srgb, var(--color-warn) 22%, transparent); color: var(--color-fg-0); font-weight: 600; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-warn) 70%, transparent); }
+/* Clickable pills (users, bots, roles) open a card: pointer and the focus ring of the spoilers. */
+.mention[role="button"] { cursor: pointer; }
+.mention[role="button"]:hover { text-decoration: underline; text-underline-offset: 2px; }
+.mention[role="button"]:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+/* tavrn link chips (PROTOCOL.md §7h): icon and name on bg-3 in the body text colour (fg-0 on bg-3 >= 4.5:1 in both
+   themes), private ones in fg-1 (secondary text, >= 4.5:1 on bg-0…bg-3), "Join" like a pill (accent-hover on
+   accent-soft >= 4.67:1); the border keeps the chip's edge at >= 3:1 against the row. */
+.markdown a.tavrn-chip { display: inline-flex; max-width: 100%; align-items: center; vertical-align: bottom; padding: 0 0.35em; border: 1px solid var(--color-line-strong); border-radius: 0.35em; background: var(--color-bg-3); color: var(--color-fg-0); text-decoration: none; font-weight: 500; line-height: 1.5; }
+.markdown a.tavrn-chip:hover { background: var(--color-line); color: var(--color-fg-0); }
+.markdown a.tavrn-chip:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+.tavrn-chip-body { display: inline-flex; min-width: 0; align-items: center; gap: 0.3em; }
+.tavrn-chip-body[data-state="private"], .tavrn-chip-body[data-state="loading"] { color: var(--color-fg-1); font-style: italic; font-weight: 400; }
+.tavrn-chip-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; unicode-bidi: isolate; }
+.tavrn-chip-icon { flex-shrink: 0; }
+.tavrn-chip-meta { flex-shrink: 0; color: var(--color-fg-1); font-size: 0.85em; font-weight: 400; }
+.tavrn-chip-action { flex-shrink: 0; margin-left: 0.15em; padding: 0 0.4em; border-radius: 0.3em; background: var(--color-accent-soft); color: var(--color-accent-hover); font-size: 0.85em; font-weight: 600; }
 .bot-mention-badge { margin-left: 0.2em; padding: 0 0.25em; border-radius: 0.25rem; background: var(--color-accent-soft); color: var(--color-accent); font-size: 0.65em; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; vertical-align: middle; }
 /* Country flags (tavrn-web#118): where the platform's emoji font has no flag glyphs (lib/flagEmoji.ts marks the
    document), the bundled Twemoji flag font comes first for emoji-bearing text (messages, reactions, the picker, status
