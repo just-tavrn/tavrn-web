@@ -8,7 +8,7 @@ import type { ChildProcess } from "node:child_process";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 import { startExampleBot } from "./bot-helpers";
-import { NODE, createRoomViaApi, registerViaUi, tokenOf, uniqueName } from "./helpers";
+import { NODE, closePages, createRoomViaApi, newPage, registerViaUi, tokenOf, uniqueName } from "./helpers";
 import { scaled } from "./timeouts";
 
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
@@ -66,10 +66,119 @@ async function send(page: Page, text: string) {
   await expect(box).toHaveValue("");
 }
 
+test.afterEach(closePages);
+
 test.describe("Message components (APPLICATIONS.md §5.10)", () => {
   let bot: ChildProcess | null = null;
   test.afterEach(() => {
     if (bot && bot.exitCode === null) bot.kill("SIGTERM");
+  });
+
+  test("the actual raid module keeps two members' class and spec choices private and independent", async ({ page, browser, request }) => {
+    test.skip(!process.env.E2E_RAID_BOT_SCRIPT, "Set E2E_RAID_BOT_SCRIPT to the bot-platform e2e/raid-bot.ts fixture.");
+    test.setTimeout(scaled(240_000));
+    await registerViaUi(page, { prefix: "paladin" });
+    const token = await tokenOf(page);
+    const other = await newPage(browser);
+    await registerViaUi(other, { prefix: "deathknight" });
+    const otherToken = await tokenOf(other);
+    const app = await createApp(request, token);
+    bot = await startExampleBot(app, test.info().outputPath("bot"), process.env.E2E_RAID_BOT_SCRIPT!);
+    const room = await createRoomViaApi(request, token, "Raid members");
+    const channelId = room.channels.find((c: { kind: string }) => c.kind === "text").id as string;
+    const invite = await request.post(`${NODE}/api/v1/rooms/${room.id}/invites`, { headers: auth(token), data: {} });
+    expect(invite.ok(), await invite.text()).toBeTruthy();
+    const join = await request.post(`${NODE}/api/v1/invites/${(await invite.json()).code}/join`, { headers: auth(otherToken), data: {} });
+    expect(join.ok(), await join.text()).toBeTruthy();
+    const installed = await request.post(`${NODE}/api/v1/rooms/${room.id}/applications`, { headers: auth(token), data: { application: `localhost/${app.id}`, permissions: SEND_MESSAGES.toString() } });
+    expect(installed.ok(), await installed.text()).toBeTruthy();
+    const url = `/rooms/${room.id}/channels/${channelId}`;
+    await page.goto(url);
+    await other.goto(url);
+    await send(page, `@${app.botUsername} raid please`);
+    const card = page.getByTestId("message").filter({ hasText: "Raid helper E2E" }).filter({ has: page.getByTestId("message-components") });
+    const otherCard = other.getByTestId("message").filter({ hasText: "Raid helper E2E" }).filter({ has: other.getByTestId("message-components") });
+    await expect(card).toBeVisible({ timeout: scaled(30_000) });
+    await expect(card.getByTestId("component-select-trigger")).toHaveCount(1);
+    await card.getByTestId("component-select-trigger").click();
+    await card.getByRole("option", { name: /Paladin/ }).click();
+    const personal = page.getByRole("dialog", { name: "Choose your spec" });
+    await expect(personal).toBeVisible({ timeout: scaled(15_000) });
+    await expect(other.getByRole("dialog", { name: "Choose your spec" })).toHaveCount(0);
+    await expect(card).toContainText("Tanks · 0/2");
+    await expect(otherCard.getByTestId("component-select-trigger")).toHaveCount(1);
+    await otherCard.getByTestId("component-select-trigger").click();
+    await otherCard.getByRole("option", { name: /Death Knight/ }).click();
+    const otherPersonal = other.getByRole("dialog", { name: "Choose your spec" });
+    await expect(otherPersonal).toBeVisible({ timeout: scaled(15_000) });
+    const paladin = personal.getByRole("combobox", { name: "Paladin spec" });
+    const knight = otherPersonal.getByRole("combobox", { name: "Death Knight spec" });
+    await expect(paladin.getByRole("option")).toHaveCount(4);
+    await expect(paladin.getByRole("option", { name: /Frost/ })).toHaveCount(0);
+    await expect(knight.getByRole("option", { name: /Protection/ })).toHaveCount(0);
+    await paladin.selectOption("7.1");
+    await knight.selectOption("0.1");
+    await axe(page, '[role="dialog"]');
+    await test.info().attach("raid-private-spec", { body: await page.screenshot({ animations: "disabled" }), contentType: "image/png" });
+    await personal.getByTestId("component-modal-submit").click();
+    await expect(personal).toBeHidden({ timeout: scaled(15_000) });
+    await expect(card).toContainText("Paladin · Protection", { timeout: scaled(15_000) });
+    await expect(otherPersonal).toBeVisible();
+    await expect(knight).toHaveValue("0.1");
+    await otherPersonal.getByTestId("component-modal-submit").click();
+    await expect(otherPersonal).toBeHidden({ timeout: scaled(15_000) });
+    await expect(card).toContainText("Death Knight · Frost", { timeout: scaled(15_000) });
+    await expect(card).toContainText("Paladin · Protection");
+    await expect(card).toContainText("Tanks · 1/2");
+    await expectNoOverflow(page, card);
+    await test.info().attach("raid-roster", { body: await card.screenshot({ animations: "disabled" }), contentType: "image/png" });
+  });
+
+  for (const encrypted of [false, true]) test(`private modal selects in ${encrypted ? "encrypted" : "plaintext"} channels`, async ({ page, request }) => {
+    test.setTimeout(scaled(180_000));
+    await registerViaUi(page, { prefix: "chooser" });
+    const token = await tokenOf(page);
+    const app = await createApp(request, token);
+    bot = await startExampleBot(app, test.info().outputPath("bot"), "fixtures/components-bot.ts");
+    const room = await createRoomViaApi(request, token, "Private choices", "invite", { encrypted });
+    const channel = room.channels.find((c: { kind: string }) => c.kind === "text");
+    if (encrypted) {
+      const allow = await request.patch(`${NODE}/api/v1/rooms/${room.id}/channels/${channel.id}`, { headers: auth(token), data: { bots_allowed: true } });
+      expect(allow.ok(), await allow.text()).toBeTruthy();
+    }
+    const installed = await request.post(`${NODE}/api/v1/rooms/${room.id}/applications`, { headers: auth(token), data: { application: `localhost/${app.id}`, permissions: SEND_MESSAGES.toString() } });
+    expect(installed.ok(), await installed.text()).toBeTruthy();
+    await page.goto(`/rooms/${room.id}/channels/${channel.id}`);
+    if (encrypted) await expect.poll(async () => (await (await request.get(`${NODE}/api/v1/conversations/${channel.id}/mls/group-info`, { headers: auth(token) })).json()).epoch, { timeout: scaled(30_000) }).toBeGreaterThanOrEqual(1);
+    await send(page, `@${app.botUsername} raid choices`);
+    const card = page.getByTestId("message").filter({ hasText: "Raid on Friday 20:00" }).filter({ has: page.getByTestId("message-components") });
+    await card.getByRole("button", { name: "Private choice" }).click({ timeout: scaled(30_000) });
+    const dialog = page.getByRole("dialog", { name: "Your private choice" });
+    const choice = dialog.getByRole("combobox", { name: "Choice", exact: true });
+    await expect(choice).toBeFocused({ timeout: scaled(15_000) });
+    await dialog.getByTestId("component-modal-submit").click();
+    await expect(choice).toHaveAttribute("aria-invalid", "true");
+    await expect(choice).toHaveAccessibleDescription("Wähle eine Option aus.");
+    await axe(page, '[role="dialog"]');
+
+    // Even an injected invalid enum value is stopped before it reaches the submit route.
+    await choice.evaluate((element) => element.append(new Option("Invalid test value", "invalid")));
+    await choice.selectOption("invalid");
+    await dialog.getByTestId("component-modal-submit").click();
+    await expect(choice).toHaveAccessibleDescription("Wähle eine Option aus der Liste aus.");
+    await choice.selectOption("second");
+    const sent = page.waitForRequest((r) => /\/interactions\/[^/]+\/submit$/.test(r.url()) && r.method() === "POST");
+    await dialog.getByTestId("component-modal-submit").click();
+    const body = (await sent).postDataJSON();
+    if (encrypted) {
+      expect(body.values).toBeNull();
+      expect(typeof body.values_ciphertext).toBe("string");
+      expect(body.values_ciphertext.length).toBeGreaterThan(0);
+    } else expect(body.values).toEqual({ choice: "second", backup: "" });
+    await expect(dialog).toBeHidden({ timeout: scaled(15_000) });
+    await expect(card.getByTestId("interaction-ephemeral")).toContainText("Private choice: second; backup: none", { timeout: scaled(15_000) });
+    const stored = await (await request.get(`${NODE}/api/v1/conversations/${channel.id}/messages?limit=20`, { headers: auth(token) })).json();
+    expect(JSON.stringify(stored)).not.toContain("Private choice: second");
   });
 
   test("buttons, a select and a modal of a bot's message, inside the message on every screen", async ({ page, request }) => {

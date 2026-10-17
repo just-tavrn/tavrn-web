@@ -45,7 +45,7 @@ on the desktop and the phone project unless noted:
 | `age.spec.ts` | the registration form, the room settings, the invite page, a locked channel, the date of birth dialog |
 | `threads.spec.ts` | a forum post open in the thread panel, the forum's post list |
 | `polls.spec.ts` | the poll composer (choice and date poll with the calendar), a choice poll with results and voters, a date poll with the answer grid |
-| `components.spec.ts` | a bot's message with buttons, a select menu and a link button (closed and open list), the application's form with a field error |
+| `components.spec.ts` | a bot's message with buttons, a select menu and a link button (closed and open list), the application's form with text and native single-choice fields, required/invalid-option errors, and private raid specialization selection |
 | `reports.spec.ts` | a report's detail with its action row |
 | `voice-stream-join.spec.ts` | the voice stage with a stream placeholder ("Join stream") and with a joined stream |
 | `whiteboard-voice.spec.ts` | the voice stage with a whiteboard placeholder ("Join whiteboard"), a joined whiteboard, the presenter's preview with the "Whiteboard is open" bar, and a whiteboard next to a focused stream |
@@ -204,6 +204,9 @@ Before: 3 critical + 325 serious + 241 moderate + 25 minor nodes. After: 0 criti
 - **Message list**: `role="feed"` with `article` rows (`aria-posinset`, `aria-setsize`, `aria-busy` while a page
   loads); new messages of others in the open conversation are announced in a polite live region ("New message
   from …"), muted with **Settings → Notifications → Screen reader** (device-local, `stores/accessibility.ts`).
+- **Application forms** use labelled native selects for single choices, with an empty placeholder until a required
+  choice is made; keyboard selection follows the platform, and field errors are linked with `aria-describedby`.
+  The shared dialog keeps focus inside and returns it on close.
 - **Forms**: every control has a label; `Field` links its hint and, while shown, the form's error
   (`errorId` → `aria-describedby`, `aria-invalid`); errors are `role="alert"`.
 - **Sliders** carry `aria-valuetext` with the unit (volumes, thresholds, audio progress); the microphone level is

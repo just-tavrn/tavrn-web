@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
  * The form a bot asks for in answer to a button, a select or a command (tavrn-protocol/APPLICATIONS.md §5.10
- * "modal"): a real dialog (focus trap, Escape, labelled fields) with 1–5 text inputs, checked like the node checks
+ * "modal"): a real dialog (focus trap, Escape, labelled fields) with 1–5 text or select inputs, checked like the node checks
  * them before anything is sent. Closing discards it, after a confirmation once the user typed something.
  */
 import { useId, useMemo, useState } from "react";
@@ -15,9 +15,14 @@ import { confirmDialog } from "../components/Confirm";
 
 const length = (v: string) => [...v].length;
 
-/** The error key of one field, or null when the value passes `required`, `min_length` and `max_length`. */
+/** The error key of one field, or null when its required, length or exact option membership checks pass. */
 export function inputError(input: ModalInput, value: string): { key: string; vars?: Record<string, number> } | null {
   const required = input.required ?? true;
+  if (input.style === "select") {
+    if (value === "") return required ? { key: "components.modal.choose_required" } : null;
+    // Option values are opaque tokens, including whitespace: never trim or normalize them.
+    return input.options.some((option) => option.value === value) ? null : { key: "components.modal.option_invalid" };
+  }
   const n = length(value);
   if (n === 0 || !value.trim()) return required ? { key: "components.modal.required" } : null;
   const min = input.min_length ?? 0;
@@ -102,7 +107,7 @@ export function ComponentModal({ modal, appName, onSubmit, onClose }: { modal: M
           const err = shown ? errors[input.custom_id] : null;
           const invalid = !!err || serverField === input.custom_id;
           const errId = `${id}-error`;
-          const max = input.max_length ?? 4000;
+          const max = input.style === "select" ? undefined : (input.max_length ?? 4000);
           const common = {
             id,
             value: values[input.custom_id] ?? "",
@@ -112,7 +117,7 @@ export function ComponentModal({ modal, appName, onSubmit, onClose }: { modal: M
             "aria-describedby": err ? errId : undefined,
             disabled: pending || done,
             onChange: (e: { target: { value: string } }) => setValues((v) => ({ ...v, [input.custom_id]: e.target.value })),
-            className: "w-full rounded-md border border-line-strong bg-bg-0 px-3 text-sm text-fg-0 outline-none placeholder:text-fg-2 focus:border-accent disabled:opacity-50 aria-invalid:border-danger",
+            className: "min-w-0 max-w-full w-full rounded-md border border-line-strong bg-bg-0 px-3 text-sm text-fg-0 outline-none placeholder:text-fg-2 focus:border-accent disabled:opacity-50 aria-invalid:border-danger",
             "data-testid": "component-modal-input",
             "data-custom-id": input.custom_id,
           };
@@ -126,7 +131,16 @@ export function ComponentModal({ modal, appName, onSubmit, onClose }: { modal: M
                   </span>
                 )}
               </label>
-              {input.style === "paragraph" ? <textarea {...common} rows={4} maxLength={max} className={`${common.className} min-h-24 py-2`} /> : <input {...common} type="text" maxLength={max} className={`${common.className} min-h-10`} />}
+              {input.style === "select" ? (
+                <select {...common} className={`${common.className} min-h-10`}>
+                  <option value="" disabled={input.required ?? true}>{input.placeholder ? stripBidi(input.placeholder) : t("components.modal.choose")}</option>
+                  {input.options.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {stripBidi(`${option.emoji ? `${option.emoji} ` : ""}${option.label}${option.description ? ` — ${option.description}` : ""}`)}
+                    </option>
+                  ))}
+                </select>
+              ) : input.style === "paragraph" ? <textarea {...common} rows={4} maxLength={max} className={`${common.className} min-h-24 py-2`} /> : <input {...common} type="text" maxLength={max} className={`${common.className} min-h-10`} />}
               <div className="flex gap-2 text-xs">
                 {err ? (
                   <span id={errId} className="flex-1 text-danger" data-testid="component-modal-field-error">
@@ -135,9 +149,9 @@ export function ComponentModal({ modal, appName, onSubmit, onClose }: { modal: M
                 ) : (
                   <span className="flex-1" />
                 )}
-                <span className="text-fg-2" aria-hidden="true">
+                {max !== undefined && <span className="text-fg-2" aria-hidden="true">
                   {length(values[input.custom_id] ?? "")}/{max}
-                </span>
+                </span>}
               </div>
             </div>
           );
