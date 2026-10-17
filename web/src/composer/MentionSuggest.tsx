@@ -70,12 +70,12 @@ export function MentionOption({ item }: { item: MentionCandidate }) {
       <>
         {item.avatar ? <UserAvatar user={item.avatar} size={24} /> : <MediaAvatar name={item.name} size={24} />}
         <span className="min-w-0 truncate font-medium text-fg-0">{item.name}</span>
-        <span className="min-w-0 truncate text-xs text-fg-2" data-testid="suggest-handle">
+        <span className="suggest-meta min-w-0 truncate text-xs" data-testid="suggest-handle">
           @{item.username}
           {item.remote ? `@${item.remote}` : ""}
         </span>
         {item.bot && <BotBadge />}
-        {item.self && <span className="ml-auto shrink-0 text-xs text-fg-2">{t("composer.mention.you")}</span>}
+        {item.self && <span className="suggest-meta ml-auto shrink-0 text-xs">{t("composer.mention.you")}</span>}
       </>
     );
   }
@@ -85,7 +85,7 @@ export function MentionOption({ item }: { item: MentionCandidate }) {
         @
       </span>
       <span className="min-w-0 truncate font-medium text-fg-0">{item.kind === "role" ? `@${item.name}` : item.name}</span>
-      <span className="ml-auto shrink-0 text-xs text-fg-2">{item.kind === "role" ? t("composer.mention.role") : t("composer.mention.everyone_hint")}</span>
+      <span className="suggest-meta ml-auto shrink-0 text-xs">{item.kind === "role" ? t("composer.mention.role") : t("composer.mention.everyone_hint")}</span>
     </>
   );
 }
@@ -99,7 +99,7 @@ export function ChannelOption({ item }: { item: ChannelCandidate }) {
         <Icon size={18} data-testid="channel-kind-icon" data-icon={item.kind} />
       </span>
       <span className="min-w-0 truncate font-medium text-fg-0">{item.name}</span>
-      {item.category && <span className="ml-auto min-w-0 shrink truncate text-xs text-fg-2" data-testid="suggest-category">{item.category}</span>}
+      {item.category && <span className="suggest-meta ml-auto min-w-0 shrink truncate text-xs" data-testid="suggest-category">{item.category}</span>}
     </>
   );
 }
