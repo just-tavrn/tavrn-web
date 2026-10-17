@@ -318,17 +318,33 @@ impl<R: Runtime> Tray<R> {
     }
 
     pub fn set(&self, state: VoiceState, labels: Labels, window_visible: bool) -> Result<(), String> {
+        self.set_with(state, labels, |state, labels| self.apply(state, labels, window_visible).map_err(|e| e.to_string()))
+    }
+
+    fn set_with(&self, state: VoiceState, labels: Labels, apply: impl FnOnce(VoiceState, &Labels) -> Result<(), String>) -> Result<(), String> {
         labels.validate().map_err(str::to_string)?;
+        // Tauri's native menu setters wait for the UI thread. Never hold current while they run: the UI thread
+        // may be handling the focus/resize caused by a notification click and waiting to read the same state.
+        apply(state, &labels)?;
         let mut current = self.current.lock().map_err(|_| "tray.unavailable".to_string())?;
-        self.apply(state, &labels, window_visible).map_err(|e| e.to_string())?;
         *current = (state, labels);
         Ok(())
     }
 
     /// The show/hide item follows the window.
     pub fn window_changed(&self, visible: bool) {
-        let (Some(items), Ok(current)) = (&self.items, self.current.lock()) else { return };
-        let _ = items.window.set_text(if visible { &current.1.hide } else { &current.1.show });
+        let Some(items) = &self.items else { return };
+        self.window_changed_with(visible, |label| {
+            let _ = items.window.set_text(label);
+        });
+    }
+
+    fn window_changed_with(&self, visible: bool, apply: impl FnOnce(&str)) {
+        let label = {
+            let Ok(current) = self.current.lock() else { return };
+            if visible { current.1.hide.clone() } else { current.1.show.clone() }
+        };
+        apply(&label);
     }
 
     pub fn state(&self) -> (VoiceState, Labels) {
@@ -576,6 +592,44 @@ mod tests {
             quit: "tavrn beenden".into(),
         };
         assert_eq!(german.validate(), Ok(()));
+    }
+
+    fn headless_tray() -> Tray<tauri::Wry> {
+        Tray { items: None, current: Mutex::new((VoiceState::Disconnected, Labels::default())) }
+    }
+
+    #[test]
+    fn updating_the_tray_does_not_lock_out_window_events() {
+        let tray = headless_tray();
+        // Native menu calls on a notification worker wait for the UI thread. A focus/resize event on that thread
+        // must be able to read the state while the worker waits, or both threads stop permanently.
+        let result = tray.set_with(VoiceState::Connected, Labels::default(), |_, _| {
+            assert!(tray.current.try_lock().is_ok(), "a native menu update holds the tray state lock");
+            Ok(())
+        });
+        assert!(result.is_ok());
+        assert_eq!(tray.state().0, VoiceState::Connected);
+    }
+
+    #[test]
+    fn showing_the_notification_window_does_not_hold_the_tray_lock() {
+        let tray = headless_tray();
+        for visible in [true, false] {
+            tray.window_changed_with(visible, |label| {
+                assert!(tray.current.try_lock().is_ok(), "a native window menu update holds the tray state lock");
+                assert_eq!(label, if visible { "Hide tavrn" } else { "Show tavrn" });
+            });
+        }
+    }
+
+    #[test]
+    fn rejected_tray_updates_keep_the_previous_state() {
+        let tray = headless_tray();
+        let result = tray.set_with(VoiceState::Connected, Labels::default(), |_, _| Err("native failure".into()));
+        assert_eq!(result, Err("native failure".into()));
+        assert_eq!(tray.state().0, VoiceState::Disconnected);
+        let invalid = Labels { show: String::new(), ..Labels::default() };
+        assert!(tray.set_with(VoiceState::Connected, invalid, |_, _| unreachable!("invalid labels reach the native menu")).is_err());
     }
 
     #[test]

@@ -201,6 +201,11 @@ events on desktop and would replace the webview's `Notification` with an IPC bri
 | Windows | a toast under the app's id (the installer's Start menu entry; a development build shows the default id) | focuses the window and opens the conversation while the toast is on screen; a toast clicked later in the notification center starts the app, and the running one comes to the front (to be confirmed by hand on Windows) |
 | macOS | (later) | — |
 
+The notification worker restores the window, whose focus and resize events update the tray menu. Tray state locks
+are released before native menu calls: those calls can wait for the UI thread, which must remain free to read the
+state during activation. Rust regressions cover both the voice-state update and the show/hide label path without
+requiring a running notification server. Actual toast activation still needs the Windows manual check above.
+
 ## Downloads
 
 The Tauri shell's webviews (WebView2, WebKitGTK) do nothing with the blob downloads a browser handles, so every download
@@ -1200,7 +1205,8 @@ picker accepts `http://127.0.0.1:8080`).
   the key filter and the listener's lifecycle (only while signed in with bindings, holds released when it stops); the
   media permissions; the security properties of `tauri.conf.json` and the capabilities, the bundle targets (Windows
   only), the keychain with the in-memory mock store of keyring-core and its entry names, notification
-  validation, the tray's states, icons and labels, the installer licence and the icons of the bundle; downloads: the
+  validation, the tray's states, icons and labels, unlocked native menu updates during notification activation, the
+  installer licence and the icons of the bundle; downloads: the
   chunk writer (temporary file, rename, size limit, abort and cleanup), the registry of running saves (no second begin
   with the same id, at most 8), file names from the webview that cannot leave the chosen directory).
   The native voice engine: the gate and level meter (thresholds, hysteresis, hold, ramps, push-to-talk), the
