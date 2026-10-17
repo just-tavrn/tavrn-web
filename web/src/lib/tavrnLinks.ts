@@ -222,10 +222,14 @@ function buildKnown(home: string | null, remoteHome: boolean, sessions: Record<s
 export function useKnownNodes(): { nodes: KnownNode[]; key: string } {
   const home = useAuth((s) => s.user?.domain ?? null);
   const remoteHome = useAuth((s) => !!s.home);
-  const homeWebOrigin = useAuth((s) => s.home?.web ?? null);
+  // Subscribed so that a change of the home node's web origin (read by buildKnown through homeWeb()) re-renders.
+  useAuth((s) => s.home?.web ?? null);
   const sessions = useNodes((s) => s.sessions);
+  const built = buildKnown(home, remoteHome, sessions);
+  // Keyed by the content: a renewed session token (a new sessions object) keeps the same value, so message rows
+  // do not re-render for it.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  return useMemo(() => buildKnown(home, remoteHome, sessions), [home, remoteHome, homeWebOrigin, sessions]);
+  return useMemo(() => built, [built.key]);
 }
 
 /** Whether `url` is a recognised tavrn link (the sender's client does not unfurl these: the chip shows them). */
