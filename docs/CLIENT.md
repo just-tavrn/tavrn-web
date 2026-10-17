@@ -334,7 +334,7 @@ text nodes). Names and file names are shown without Unicode bidi controls and is
 they cannot display in a misleading order. Code blocks show their
 language, are highlighted and have "Copy code" and "Wrap long lines" buttons. Custom emojis (`:name:` of the room,
 `<:name:ID>` from other rooms and nodes) render as images. **Spoilers** `||text||` (inline, also in quotes and lists)
-stay hidden until clicked or activated with Enter or Space; the composer's spoiler button and Ctrl+Shift+S wrap the
+stay hidden until clicked or activated with Enter or Space; the composer's formatting bar and Ctrl+Shift+S wrap the
 selection, and every attachment can be marked as a spoiler, which covers images and videos until "Spoiler, click to
 reveal".
 **Emoji sizes**: Unicode emojis in message text are rendered at 1.25× the text size, aligned to the baseline without
@@ -368,6 +368,62 @@ and readers never load anything. Because the home node learns every link it load
 make previews while typing only with **"Fetch link previews in encrypted conversations"** switched on (off by default;
 the device-local setting `encryptedPreviews` in `tavrn.privacy.content`); plaintext channels keep the default above.
 Typing indicators are not sent while the status is "invisible".
+
+**Mention suggestions** (`composer/autocomplete.ts`, `composer/mentions.ts`, `composer/MentionSuggest.tsx`): an `@` at
+the start of a word (the start of the text, after a space, a line break, an opening bracket or quote) with the caret in
+that word opens a list of who can be mentioned here; `foo@bar`, addresses in URLs and anything inside code spans or
+blocks never open it, and with no match nothing is shown, so typing an `@` is never blocked. Candidates are only who is
+in this conversation: in a room channel the room members who can view the channel (the room's member list, filtered
+with the node's permission rules, `lib/memberPermissions.ts`), its mentionable roles (every role for members with
+*Mention everyone*) and `@everyone`/`@here` with that permission; in DMs and group DMs the participants. Never the
+node's user directory. Rows show the avatar, the name (nickname or display name), `@username` (with `@domain` for
+users of other nodes), the BOT badge, "you" for yourself (listed last); at most eight rows, matched by prefix and
+fuzzily on name and username (a query with a space only by prefix, for role names). ↑/↓ move, Enter or Tab picks,
+Escape closes the list and leaves the text exactly as typed (it stays closed for that word), a click or tap picks
+without taking the focus from the text box. The pick inserts `@username`, `@username@domain` or `@Role Name` plus a
+space, exactly what the send path's `extractMentions` recognises. The list is a listbox controlled by the text box
+(ARIA combobox: `aria-expanded`, `aria-controls`, `aria-activedescendant`); it sits above the input, so on phones it
+stays above the on-screen keyboard, with 44 px rows. The slash-command palette and its argument suggestions take
+precedence: both never open at once, and inside a command only its free text (`/me waves at @…`) gets mention
+suggestions. The provider interface (`CompletionProvider`) is meant for further triggers (`#channel` links).
+
+**The formatting bar.** The "Formatting" button (the "Aa" glyph, `aria-pressed`) in the input row shows or hides a
+toolbar above the text box (a device preference, `tavrn.composer` in localStorage: a preference, never content). It has
+one button per format the renderer shows: bold, italic, strikethrough, spoiler, inline code, code block, link, quote,
+bulleted and numbered list (no headings: they render like plain text; no underline: Markdown has none). Each wraps the
+selection or inserts the markers with the caret between them and toggles off when the selection is already wrapped;
+line formats prefix every selected line (bullets and numbers replace each other), the code block puts its fences on
+their own lines, a link keeps the selection as its label and selects the `https://` placeholder (a selected URL
+becomes the target instead). Shortcuts: Ctrl/Cmd+B bold, Ctrl/Cmd+I italic, Ctrl/Cmd+Shift+X strikethrough, Ctrl/Cmd+E
+inline code, Ctrl/Cmd+Shift+S spoiler; the tooltips name them. The buttons keep the focus and selection in the text
+box; the toolbar has one tab stop and moves with the arrow keys, Home and End; on phones it scrolls sideways with
+40 px buttons. Formats, picked mentions and emojis are applied with `setRangeText` (never `execCommand`), so React
+never resets the text box; browsers do not record such edits in their undo history, so the composer keeps its own
+for them (`composer/textEdit.ts`): Ctrl/Cmd+Z right after one restores the text and selection before it,
+Ctrl/Cmd+Shift+Z or Ctrl+Y redoes it, and once you type, the browser's own undo takes over again.
+
+**Styled input** (the pen button at the end of the formatting bar, a device preference, off by default): the text box
+shows the Markdown formats while you type. The textarea stays the real input (caret, selection, IME, spell check,
+undo, paste and on-screen keyboards are untouched); its text is transparent above an `aria-hidden` layer with exactly
+the same characters (`composer/StyledLayer.tsx`), the same font, padding, line height and wrapping, scrolled with it
+(neither shows a scrollbar, which would narrow one of them). Only styles that keep every glyph's width are used, so
+the caret never drifts: bold is a faux bold (a text shadow), italics a dotted underline, strikethrough a line through,
+inline code and spoilers a background without padding, code blocks a background, quotes a lighter colour with an inset
+line, links the accent colour with an underline, mentions of the conversation the pill colours; the Markdown
+characters stay visible but dimmed. The tokenizer (`composer/highlight.ts`) follows the renderer's rules: fenced code
+blocks and code spans suppress everything inside, backslash escapes, quote and list markers per line, links and bare
+URLs, spoilers, and emphasis with the CommonMark delimiter rules within a paragraph (a test cross-checks it against the
+renderer). It runs on every input; texts over 4000 characters are shown plain.
+
+**Drafts.** Text written in a channel, thread, DM or group DM and not sent yet stays with that conversation while the
+app runs: switching to another conversation or the settings and back finds it in the box, with the caret at its end,
+and the reply target too (`composer/drafts.ts`). Drafts are keyed by account, node, conversation and thread, written
+while typing (debounced) and when the composer closes, and dropped after a successful send. They live **only in the
+client's memory**: never in localStorage, sessionStorage, IndexedDB or on disk, never sent anywhere, gone when the tab
+or the app closes. Encrypted conversations follow the same rule (a draft is the plaintext you typed, like the text
+box's own content). Signing out, a forced sign-out, another account signing in in this tab and the app locking drop
+every draft (with the other unlocked state in `stores/e2ee` `forgetUnlocked`); a composer still open at that moment
+cannot write its text back. Edits of sent messages are not drafted.
 
 **Messages** get reactions, replies, inline edits (marked "(edited)"), pins (the channel's "Pinned messages" panel) and
 threads. Hovering, focusing or long-pressing a reaction chip shows who reacted (up to ten names and "and n more", loaded

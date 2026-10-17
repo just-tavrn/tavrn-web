@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Accessibility behaviour of shared widgets (design note 4.14 item 4, docs/ACCESSIBILITY.md).
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useRef, useState } from "react";
 import { describe, expect, it } from "vitest";
@@ -13,6 +13,8 @@ import { ComponentsContext } from "../messageComponents/context";
 import { ComponentModal } from "../messageComponents/ComponentModal";
 import { ConfirmHost, confirmDialog } from "./Confirm";
 import { useDismiss } from "../lib/dismiss";
+import { Composer } from "./Composer";
+import { useComposerPrefs } from "../stores/composerPrefs";
 
 function DialogHarness() {
   const [open, setOpen] = useState(false);
@@ -285,5 +287,32 @@ describe("accessibility of shared widgets", () => {
     expect(name).toHaveFocus();
     await user.keyboard("{Escape}");
     expect(closed).toBe(1);
+  });
+
+  it("the composer: mention suggestions are a labelled listbox the text box controls; the formatting bar a named toolbar", async () => {
+    const user = userEvent.setup();
+    act(() => useComposerPrefs.getState().set({ formatBar: true, styledInput: true }));
+    try {
+      render(<Composer placeholder="Nachricht" onSend={() => undefined} mentions={[{ kind: "user", key: "ann@a", insert: "@ann", name: "Ann", username: "ann", remote: null }]} />);
+      const box = screen.getByRole("combobox", { name: "Nachricht" });
+      await user.type(box, "@an");
+      const list = screen.getByRole("listbox", { name: "Personen und Rollen zum Erwähnen" });
+      const option = screen.getByRole("option", { name: /Ann/ });
+      expect(box).toHaveAttribute("aria-autocomplete", "list");
+      expect(box).toHaveAttribute("aria-expanded", "true");
+      expect(box).toHaveAttribute("aria-controls", list.id);
+      expect(document.getElementById(box.getAttribute("aria-activedescendant")!)).toBe(option);
+      expect(option).toHaveAttribute("aria-selected", "true");
+      // The focus never leaves the text box while choosing.
+      await user.keyboard("{ArrowDown}");
+      expect(box).toHaveFocus();
+      const bar = screen.getByRole("toolbar", { name: "Formatierung" });
+      for (const b of within(bar).getAllByRole("button")) expect(b).toHaveAccessibleName();
+      expect(screen.getByRole("button", { name: "Formatierung" })).toHaveAttribute("aria-pressed", "true");
+      // The styled layer duplicates the text: hidden from assistive technology.
+      expect(screen.getByTestId("styled-layer")).toHaveAttribute("aria-hidden", "true");
+    } finally {
+      act(() => useComposerPrefs.getState().set({ formatBar: false, styledInput: false }));
+    }
   });
 });
