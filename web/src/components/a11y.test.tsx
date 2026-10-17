@@ -14,6 +14,7 @@ import { ComponentModal } from "../messageComponents/ComponentModal";
 import { ConfirmHost, confirmDialog } from "./Confirm";
 import { useDismiss } from "../lib/dismiss";
 import { Composer } from "./Composer";
+import { t as translate } from "../i18n";
 import { useComposerPrefs } from "../stores/composerPrefs";
 
 function DialogHarness() {
@@ -347,5 +348,20 @@ describe("accessibility of pills and chips in messages (PROTOCOL.md §7h)", () =
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(role).toHaveFocus();
+  });
+
+  it("the composer: #channel suggestions are a labelled listbox the text box controls", async () => {
+    const user = userEvent.setup();
+    render(<Composer placeholder="Nachricht" onSend={() => undefined} channels={[{ key: "C1", insert: "https://n.example/rooms/R/channels/C1", name: "allgemein", kind: "text", category: "Textkanäle" }]} />);
+    const box = screen.getByRole("combobox", { name: translate("composer.message") });
+    await user.type(box, "#al");
+    const list = screen.getByRole("listbox", { name: translate("composer.suggest.channel") });
+    const option = within(list).getByRole("option", { name: /allgemein/ });
+    expect(box).toHaveAttribute("aria-expanded", "true");
+    expect(box).toHaveAttribute("aria-controls", list.id);
+    expect(document.getElementById(box.getAttribute("aria-activedescendant")!)).toBe(option);
+    // The kind icon is decorative; the name carries the meaning.
+    expect(within(option).getByTestId("channel-kind-icon")).toHaveAttribute("aria-hidden", "true");
+    expect(box).toHaveFocus();
   });
 });

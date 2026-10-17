@@ -70,6 +70,7 @@ import { ChatLinksContext, type ChatLinksValue } from "../chatLinks/context";
 import { useConversationPolls } from "../polls/env";
 import type { PollContent, PollKind } from "../polls/model";
 import { channelMentionCandidates, directMentionCandidates } from "../composer/mentions";
+import { channelCandidates } from "../composer/channels";
 import { draftKey, useDraftReply } from "../composer/drafts";
 
 /** An error that was already shown to the user. */
@@ -309,6 +310,8 @@ export function ConversationView(p: ConversationViewProps) {
     if (p.people) return directMentionCandidates({ people: p.people, domain: ctx.domain, self: user?.address });
     return undefined;
   }, [p.mentionContext, p.room, p.roomMembers, p.people, conversationId, user?.address]);
+  // `#` links (composer/channels.ts): the channels of this room the user can view; none in DMs.
+  const linkableChannels = useMemo(() => (p.room && user?.id ? channelCandidates({ room: p.room, userId: user.id, domain }) : undefined), [p.room, user?.id, domain]);
 
   // History for new members (ENCRYPTION.md §7b): every encrypted room channel, `since_join` included.
   const historyChannel = p.room?.channels.find((c) => c.id === conversationId);
@@ -794,6 +797,7 @@ export function ConversationView(p: ConversationViewProps) {
         onSend={send}
         encrypted={p.encrypted}
         mentions={mentionCandidates}
+        channels={linkableChannels}
         draftKey={draft}
         onTyping={() => {
           // Invisible users appear offline: no typing indicator either; the role preview sends none.

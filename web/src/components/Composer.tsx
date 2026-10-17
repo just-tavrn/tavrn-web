@@ -24,7 +24,8 @@ import type { PollKind } from "../polls/model";
 import type { CompletionProvider } from "../composer/autocomplete";
 import { useCompletion } from "../composer/useCompletion";
 import { mentionProvider, type MentionCandidate } from "../composer/mentions";
-import { MentionOption, SuggestionList, optionId } from "../composer/MentionSuggest";
+import { ChannelOption, MentionOption, SuggestionList, optionId } from "../composer/MentionSuggest";
+import { channelProvider, type ChannelCandidate } from "../composer/channels";
 import { FormatBar, FormatIcon } from "../composer/FormatBar";
 import { applyFormat, formatForShortcut, type FormatId, type TextState } from "../composer/format";
 import { textState, useEditHistory } from "../composer/textEdit";
@@ -107,6 +108,7 @@ export function Composer({
   encrypted = false,
   onPoll,
   mentions,
+  channels,
   draftKey,
 }: {
   placeholder: string;
@@ -135,6 +137,8 @@ export function Composer({
   onPoll?: (kind: PollKind) => void;
   /** Who may be suggested after `@` (composer/mentions.ts): only people and roles of this conversation. */
   mentions?: MentionCandidate[];
+  /** Channels of the current room that `#` may link (composer/channels.ts); none outside rooms. */
+  channels?: ChannelCandidate[];
   /** The unsent text is kept under this key while the app runs (composer/drafts.ts); none: not kept. */
   draftKey?: string | null;
 }) {
@@ -169,7 +173,7 @@ export function Composer({
   // ---- styled input (composer/StyledLayer.tsx): a highlight layer behind the transparent text, plain for long texts
   const layer = useRef<HTMLDivElement>(null);
   const styled = styledInput && !disabled && value.length <= STYLED_MAX;
-  const mentionInserts = useMemo(() => mentions?.map((m) => m.insert), [mentions]);
+  const mentionInserts = useMemo(() => [...(mentions ?? []).map((m) => m.insert), ...(channels ?? []).map((c) => c.insert)], [mentions, channels]);
   const syncLayer = () => {
     if (layer.current && textarea.current && layer.current.scrollTop !== textarea.current.scrollTop) layer.current.scrollTop = textarea.current.scrollTop;
   };
@@ -235,7 +239,12 @@ export function Composer({
 
   // ---- inline autocomplete (composer/autocomplete.ts): never together with the command palette or its argument
   // suggestions; inside a command only in its free text (`/me waves at @…`).
-  const providers = useMemo<CompletionProvider<MentionCandidate>[]>(() => (mentions ? [mentionProvider(mentions)] : []), [mentions]);
+  const providers = useMemo(() => {
+    const list: CompletionProvider<MentionCandidate | ChannelCandidate>[] = [];
+    if (mentions) list.push(mentionProvider(mentions) as CompletionProvider<MentionCandidate | ChannelCandidate>);
+    if (channels?.length) list.push(channelProvider(channels) as CompletionProvider<MentionCandidate | ChannelCandidate>);
+    return list;
+  }, [mentions, channels]);
   const inCommand = !!line && (!line.complete || (!!def && !activeArg?.rest));
   const complete = useCompletion({
     providers,
@@ -516,7 +525,7 @@ export function Composer({
           selected={complete.selected}
           onPick={(item) => complete.pick(complete.completion!.trigger, item)}
           onHover={complete.setSelected}
-          render={(item) => <MentionOption item={item.data} />}
+          render={(item) => (complete.completion!.provider.id === "channel" ? <ChannelOption item={item.data as ChannelCandidate} /> : <MentionOption item={item.data as MentionCandidate} />)}
         />
       )}
       {def && !typingName && <ArgumentHint def={def} active={active} suggestions={suggestions} selected={selected} onPick={pickSuggestion} error={commandError} />}

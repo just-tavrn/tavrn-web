@@ -106,6 +106,13 @@ describe("styled input tokenizer", () => {
     expect(having(r, F.MENTION)).toEqual(["@bob", "@Mod Team"]);
   });
 
+  it("links of the room's channels (the composer's #channel) get the pill, other links stay links", () => {
+    const url = "https://n.example/rooms/R/channels/C1";
+    const r = highlight(`siehe ${url} und https://other.example/x`, ["@bob", url]);
+    expect(having(r, F.MENTION)).toEqual([url]);
+    expect(having(r, F.LINK)).toEqual(["https://other.example/x"]);
+  });
+
   it("agrees with the message renderer on which formats appear", () => {
     const samples = ["**a**", "*a*", "_a_", "~~a~~", "~a~", "`a`", "snake_case_word", "**a", "a * b * c", "***a***", "**a *b* c**", "\\*a\\*", "*a\nb*", "x**y**z", "x__y__z", "_a_b", "**a**b", "~~~a~~~"];
     for (const s of samples) {

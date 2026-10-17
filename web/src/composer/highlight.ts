@@ -142,7 +142,8 @@ function inline(s: string, idx: number[], flags: Uint16Array, locked: Uint8Array
       if (m) {
         // Trailing punctuation is not part of a bare URL (GFM autolinks).
         const url = m[0].replace(/[.,:;!?'")\]*_~]+$/, "");
-        set(i, i + url.length, F.LINK);
+        // A link of the conversation's channels (the composer's `#channel`) gets the pill.
+        set(i, i + url.length, mentions.includes(url.toLowerCase()) ? F.MENTION : F.LINK);
         lock(i, i + url.length);
         i += url.length;
         continue;
@@ -210,7 +211,10 @@ function inline(s: string, idx: number[], flags: Uint16Array, locked: Uint8Array
   }
 }
 
-/** The runs of `text`; `mentions` are the inserted texts of the conversation's mention candidates (any case). */
+/**
+ * The runs of `text`; `mentions` are the inserted texts of the conversation's completion candidates (any case):
+ * `@…` mentions and the links of the room's channels, both shown as pills.
+ */
 export function highlight(text: string, mentions: readonly string[] = []): Run[] {
   const n = text.length;
   const flags = new Uint16Array(n);

@@ -2950,6 +2950,7 @@
   "composer.format.styled": "Formatierung beim Schreiben zeigen",
   "composer.format.styled_hint": "Zeigt Fett, Kursiv, Code und die anderen Formate schon im Eingabefeld (die Markdown-Zeichen bleiben sichtbar)",
   "composer.suggest.mention": "Personen und Rollen zum Erwähnen",
+  "composer.suggest.channel": "Kanäle zum Verlinken",
   "composer.mention.you": "du",
   "composer.mention.role": "Rolle",
   "composer.mention.everyone_hint": "Benachrichtigt alle in diesem Kanal",
