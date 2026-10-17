@@ -70,5 +70,5 @@ export function useMarkRead(conversationId: string, newestId: string | undefined
 
   useEffect(() => {
     check.current();
-  }, [conversationId, newestId]);
+  }, [conversationId, newestId, domain]);
 }
