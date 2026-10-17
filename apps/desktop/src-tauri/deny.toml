@@ -44,10 +44,24 @@ ignore = [
     # bindings (gtk-rs 0.18) that Tauri 2's Linux runtime (wry, tao, muda, webkit2gtk) is built on; not part
     # of the app's runtime code, and no Tauri 2 release leaves those bindings yet.
     { id = "RUSTSEC-2024-0370", reason = "unmaintained build-time macro crate of the GTK 3 bindings under Tauri 2 on Linux" },
-    # zip 0.6 was yanked as a whole (every 0.6.x) when the crate changed hands; webrtc-sys-build (LiveKit's Rust SDK,
-    # latest 0.3.19) still requires ^0.6 to unpack the prebuilt libwebrtc archive at build time. Build-time only, no
-    # advisory against it, nothing else to resolve to. Drop when webrtc-sys-build moves to a current zip.
-    { crate = "zip@0.6.6", reason = "yanked 0.6 line still required by webrtc-sys-build (build-time, libwebrtc archive)" },
+    # zip < 9 extraction advisories (tavrn-web#201): RUSTSEC-2026-0367 (SUID/SGID bits kept), RUSTSEC-2026-0368
+    # (symlinks pointing outside the destination), RUSTSEC-2026-0369 (permissions applied through symlinks). Two
+    # copies are in the tree, neither extracts an archive an attacker controls:
+    # - zip 0.6.6 under webrtc-sys-build 0.3.19 (LiveKit's Rust SDK, the native voice engine): its build script
+    #   downloads the prebuilt libwebrtc archive of the pinned release tag WEBRTC_TAG from LiveKit's GitHub releases
+    #   over HTTPS and extracts it on the build machine, as the unprivileged build user; nothing at runtime.
+    # - zip 4.6.1 under tauri-plugin-updater 2.13.3 (Windows only, feature "zip"): `Update::download` checks the
+    #   minisign signature against the pubkey in tauri.conf.json before `install` extracts anything, and only bytes
+    #   that are a zip are extracted. Our feed (apps/desktop/scripts/latest-json.mjs) points at the bare NSIS
+    #   installer and MSI (createUpdaterArtifacts is false, no .zip bundles), so the updater never extracts a zip for
+    #   our artifacts: it writes the signed installer to a temp file and starts it.
+    # No upstream release moves yet (webrtc-sys-build 0.3.19: zip ^0.6; tauri-plugin-updater 2.14.0 and
+    # 3.0.0-alpha.3: zip ^4). Drop when webrtc-sys-build and tauri-plugin-updater move to zip >= 9.
+    { id = "RUSTSEC-2026-0367", reason = "zip < 9 SUID bits: only a pinned libwebrtc archive at build time and signature-verified updater downloads (our feed has no zip)" },
+    { id = "RUSTSEC-2026-0368", reason = "zip < 9 symlink targets: only a pinned libwebrtc archive at build time and signature-verified updater downloads (our feed has no zip)" },
+    { id = "RUSTSEC-2026-0369", reason = "zip < 9 permissions through symlinks: only a pinned libwebrtc archive at build time and signature-verified updater downloads (our feed has no zip)" },
+    # (zip 0.6.6 itself is no longer yanked on crates.io, so the earlier `crate = "zip@0.6.6"` yanked exception is
+    # gone: cargo deny reported it as "yanked crate was not encountered".)
 ]
 # Not an ignore, for the record: `cargo audit` also lists RUSTSEC-2024-0429 (glib 0.18 `VariantStrIter`
 # unsound) as a warning. Neither this crate nor any dependency in the tree calls `Variant::array_iter_str` or
