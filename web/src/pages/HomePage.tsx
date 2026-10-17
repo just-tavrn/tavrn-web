@@ -11,6 +11,7 @@ import { apiFor, isHome, useNodes } from "../stores/nodes";
 import { useOriginDomain } from "../lib/origin";
 import { roomPath } from "../components/NodeScope";
 import { InviteList } from "../components/InviteList";
+import { useJoinFlow } from "../components/JoinRoomDialog";
 
 /** Public rooms of the home node, or of another node (`domain`) through its federated session. */
 function DiscoverSection({ domain }: { domain: string | null }) {
@@ -20,12 +21,20 @@ function DiscoverSection({ domain }: { domain: string | null }) {
   const session = useNodes((s) => (domain ? s.sessions[domain] : null));
   const client = apiFor(domain);
   const discover = useQuery({ queryKey: domain ? ["discover", domain] : ["discover"], queryFn: () => client.rooms.discover(), enabled: !domain || !!session });
+  const flow = useJoinFlow();
+  // Rules and the room's documents first when it has any (components/JoinRoomDialog.tsx, tavrn-web#195).
   const join = async (id: string) => {
     try {
-      await client.rooms.join(id, { accept_rules: true });
-      void indexJoinedRoom(domain, id);
-      await queryClient.invalidateQueries({ queryKey: ["rooms"] });
-      navigate(roomPath(domain, id));
+      await flow.start(
+        () => client.rooms.preview(id),
+        async (acceptRules) => {
+          await client.rooms.join(id, { accept_rules: acceptRules });
+          void indexJoinedRoom(domain, id);
+          await queryClient.invalidateQueries({ queryKey: ["rooms"] });
+          navigate(roomPath(domain, id));
+        },
+        domain,
+      );
     } catch (e) {
       toastError(e);
     }
@@ -52,6 +61,7 @@ function DiscoverSection({ domain }: { domain: string | null }) {
           </li>
         ))}
       </ul>
+      {flow.overlay}
     </section>
   );
 }

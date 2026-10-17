@@ -7,7 +7,7 @@ vi.mock("./conversationIndex", () => ({ indexJoinedRoom: vi.fn(async () => undef
 import { indexJoinedRoom } from "./conversationIndex";
 import { useAuth } from "./auth";
 import { nodeDeps, resetNodeCaches, useNodes } from "./nodes";
-import { discoverDeps, iconClient, joinRoom, keysOf, loadNodes, loadRoomIcons, loadRooms, resetDiscoverCaches } from "./discover";
+import { discoverDeps, iconClient, joinRoom, keysOf, loadNodes, loadRoomIcons, loadRooms, previewRoom, resetDiscoverCaches } from "./discover";
 
 const subtle = globalThis.crypto.subtle;
 const enc = (v: unknown) => b64urlEncode(new TextEncoder().encode(JSON.stringify(v)));
@@ -130,6 +130,27 @@ describe("joining from Discover", () => {
     expect(await joinRoom({ node: "a.test", room_id: ROOM_A })).toBe(`/rooms/${ROOM_A}`);
     expect(calls).toEqual([`https://a.test/api/v1/rooms/${ROOM_A}/join`]);
     expect(indexJoinedRoom).toHaveBeenCalledWith(null, ROOM_A);
+  });
+
+  it("sends the user's answer to the rules (false unless accepted) and reads the room preview first", async () => {
+    const calls: Array<{ url: string; body: unknown }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        calls.push({ url, body: init?.body ? JSON.parse(String(init.body)) : null });
+        if (url.endsWith("/preview")) return json(200, { room: { id: ROOM_A, name: "A" }, rules: "Be kind.", privacy_notice: "", legal_notice: "" });
+        return json(200, { id: ROOM_A, name: "A" });
+      }),
+    );
+    expect((await previewRoom({ node: "a.test", room_id: ROOM_A })).rules).toBe("Be kind.");
+    await joinRoom({ node: "a.test", room_id: ROOM_A });
+    await joinRoom({ node: "a.test", room_id: ROOM_A }, true);
+    expect(calls).toEqual([
+      { url: `https://a.test/api/v1/rooms/${ROOM_A}/preview`, body: null },
+      { url: `https://a.test/api/v1/rooms/${ROOM_A}/join`, body: { accept_rules: false } },
+      { url: `https://a.test/api/v1/rooms/${ROOM_A}/join`, body: { accept_rules: true } },
+    ]);
   });
 
   it("opens a federated session on another node, joins there and routes under its domain", async () => {

@@ -67,6 +67,20 @@ describe("roomEventHandlers", () => {
     expect(room().categories.map((c) => c.id)).toEqual(["k2", "k1"]);
   });
 
+  it("room.update with a changed privacy notice or legal notice reloads the open document views of the room only", async () => {
+    const { emit, invalidate, room } = setup();
+    emit("room.update", { id: "r1", name: "Raum", owner_id: "o", privacy_notice_updated_at: null, legal_notice_updated_at: null });
+    expect(invalidate.mock.calls.filter(([f]) => f?.predicate)).toEqual([]);
+    emit("room.update", { id: "r1", name: "Raum", owner_id: "o", privacy_notice_updated_at: "2026-10-17T10:00:00Z", legal_notice_updated_at: null });
+    expect(room().privacy_notice_updated_at).toBe("2026-10-17T10:00:00Z");
+    const preds = invalidate.mock.calls.map(([f]) => f?.predicate).filter(Boolean);
+    expect(preds).toHaveLength(1);
+    const query = (key: unknown[]) => ({ queryKey: key }) as never;
+    expect(preds[0]!(query(["room-preview", "", "r1"]))).toBe(true);
+    expect(preds[0]!(query(["room-preview", "", "r2"]))).toBe(false);
+    expect(preds[0]!(query(["room", "r1"]))).toBe(false);
+  });
+
   it("override.update replaces the target's overrides and refreshes only the command palettes", async () => {
     const { emit, keys, room } = setup();
     const o = { id: "o1", target_type: "channel", target_id: "c1", subject_type: "role", subject_id: "e", allow: "0", deny: "1" };

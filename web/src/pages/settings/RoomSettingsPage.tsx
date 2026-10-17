@@ -22,10 +22,12 @@ import { badgeText, useCapabilities, useOpenRoomReports } from "../../moderation
 import { HistoryRequestsTab } from "./HistoryRequestsTab";
 import { RESTORE_CAPABILITY, useRestoreRequests } from "../../history/restore";
 import { useRoomPreview } from "../../stores/rolePreview";
+import { RoomLegalTab, showsLegalTab } from "./RoomLegalTab";
 
 /** `anyOf`: one of these bits is enough; `cap`: only on nodes announcing the capability (MODERATION.md). */
 const TABS: readonly { id: string; needs: bigint; label?: string; anyOf?: bigint[]; cap?: string }[] = [
   { id: "overview", needs: 0n },
+  { id: "legal", needs: 0n },
   { id: "profile", needs: 0n, label: "roomprofile.tab" },
   { id: "roles", needs: Permission.MANAGE_ROLES },
   { id: "channels", needs: Permission.MANAGE_CHANNELS },
@@ -58,7 +60,7 @@ export function RoomSettingsPage() {
   if (room.isPending) return <p className="p-4 text-sm text-fg-2">{t("room.loading")}</p>;
   if (room.isError) return <p className="p-4 text-sm text-danger">{describeError(room.error)}</p>;
   const perms = parsePermissions(room.data.my_permissions);
-  const visible = TABS.filter((x) => (x.needs === 0n || hasPermission(perms, x.needs)) && (!x.anyOf || x.anyOf.some((b) => hasPermission(perms, b))) && (!x.cap || !!caps?.includes(x.cap)));
+  const visible = TABS.filter((x) => (x.needs === 0n || hasPermission(perms, x.needs)) && (!x.anyOf || x.anyOf.some((b) => hasPermission(perms, b))) && (!x.cap || !!caps?.includes(x.cap)) && (x.id !== "legal" || showsLegalTab(room.data)));
   // Tabs behind a capability wait for the node's answer instead of redirecting.
   if (!caps && TABS.some((x) => x.id === tab && x.cap)) return <p className="p-4 text-sm text-fg-2">{t("room.loading")}</p>;
   // A tab the previewed roles may not see (the preview was just started from the Roles tab): back to the room.
@@ -100,6 +102,7 @@ export function RoomSettingsPage() {
             </p>
           )}
           {tab === "overview" && <OverviewTab key={room.data.id} room={room.data} />}
+          {tab === "legal" && <RoomLegalTab key={room.data.id} room={room.data} />}
           {tab === "profile" && <RoomProfileTab room={room.data} />}
           {tab === "roles" && <RolesTab room={room.data} />}
           {tab === "channels" && <ChannelsTab room={room.data} />}

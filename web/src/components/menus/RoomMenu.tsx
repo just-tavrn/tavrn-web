@@ -23,6 +23,7 @@ import { useNotifyMenu } from "./useNotifyMenu";
 import { useCapabilities } from "../../moderation/hooks";
 import { ReportDialog } from "../../moderation/ReportDialog";
 import { useAuth } from "../../stores/auth";
+import { RoomDocumentDialog } from "../RoomDocuments";
 
 /**
  * `node` = domain of the room's node, null for the home node. `openReports`: the moderators' open reports (badge
@@ -37,7 +38,7 @@ export function useRoomMenu(room: Pick<Room, "id" | "name">, node: string | null
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { closeNav } = useShell();
-  const [dialog, setDialog] = useState<"invite" | "leave" | "report" | null>(null);
+  const [dialog, setDialog] = useState<"invite" | "leave" | "report" | "privacy" | "legal" | null>(null);
   const canReport = !!useCapabilities(node)?.includes("reports.v1");
   const homeDomain = useAuth((s) => s.user?.domain ?? "");
   // The same cache entry as the sidebar's `useRoom`; fetched when the menu opens.
@@ -61,7 +62,16 @@ export function useRoomMenu(room: Pick<Room, "id" | "name">, node: string | null
   const entries = menu.open
     ? withExtra(
         roomMenu(
-          { unread, canInvite: hasPermission(perms, Permission.CREATE_INVITES), isOwner: !!data?.is_owner, notify: notify.state, canReport, openReports },
+          {
+            unread,
+            canInvite: hasPermission(perms, Permission.CREATE_INVITES),
+            isOwner: !!data?.is_owner,
+            notify: notify.state,
+            canReport,
+            openReports,
+            privacyNotice: !!data?.privacy_notice_updated_at,
+            legalNotice: !!data?.legal_notice_updated_at,
+          },
           {
             ...notify.actions,
             markRead: () =>
@@ -76,6 +86,8 @@ export function useRoomMenu(room: Pick<Room, "id" | "name">, node: string | null
             leave: () => setDialog("leave"),
             copyId: () => void copyWithToast(room.id, t("menu.copied")),
             report: () => setDialog("report"),
+            privacyNotice: () => setDialog("privacy"),
+            legalNotice: () => setDialog("legal"),
           },
           t,
         ),
@@ -95,6 +107,7 @@ export function useRoomMenu(room: Pick<Room, "id" | "name">, node: string | null
         ) : (
           <InviteDialog roomId={room.id} open onClose={() => setDialog(null)} />
         ))}
+      {(dialog === "privacy" || dialog === "legal") && <RoomDocumentDialog client={client} roomId={room.id} roomName={room.name} kind={dialog} onClose={() => setDialog(null)} />}
       {dialog === "report" && <ReportDialog subject={{ kind: "room", roomId: room.id, name: room.name }} client={client} node={node ?? homeDomain} onClose={() => setDialog(null)} />}
       {dialog === "leave" && (
         <ConfirmAction

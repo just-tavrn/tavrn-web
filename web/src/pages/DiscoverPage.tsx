@@ -9,9 +9,10 @@ import { Avatar, Button, Dialog, ErrorText, Field, Input } from "../components/u
 import { describeError, toastError, useToasts } from "../stores/toasts";
 import { api } from "../lib/api";
 import { useAuth } from "../stores/auth";
-import { iconClient, joinRoom, loadNodes, loadRoomIcons, loadRooms, type RoomIconUrls } from "../stores/discover";
+import { iconClient, joinRoom, loadNodes, loadRoomIcons, loadRooms, previewRoom, type RoomIconUrls } from "../stores/discover";
+import { useJoinFlow } from "../components/JoinRoomDialog";
 import { MediaAvatar } from "../components/Avatar";
-import { useNodes } from "../stores/nodes";
+import { isHome, useNodes } from "../stores/nodes";
 import { useOriginDomain } from "../lib/origin";
 import { formatTime } from "../lib/format";
 import { Select, Textarea } from "./settings/common";
@@ -136,12 +137,20 @@ function RoomCard({ room, icon, onReport }: { room: VerifiedRoom; icon?: RoomIco
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
+  const flow = useJoinFlow();
+  // Rules and the room's documents first when it has any (components/JoinRoomDialog.tsx, tavrn-web#195).
   const join = async () => {
     setBusy(true);
     try {
-      const path = await joinRoom(room);
-      await queryClient.invalidateQueries({ queryKey: ["rooms"] });
-      navigate(path);
+      await flow.start(
+        () => previewRoom(room),
+        async (acceptRules) => {
+          const path = await joinRoom(room, acceptRules);
+          await queryClient.invalidateQueries({ queryKey: ["rooms"] });
+          navigate(path);
+        },
+        isHome(room.node) ? null : room.node,
+      );
     } catch (e) {
       toastError(e);
     } finally {
@@ -171,6 +180,7 @@ function RoomCard({ room, icon, onReport }: { room: VerifiedRoom; icon?: RoomIco
           {busy ? t("discover.joining") : t("discover.join")}
         </Button>
       </div>
+      {flow.overlay}
     </li>
   );
 }

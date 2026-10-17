@@ -4,7 +4,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { TavrnApiError, type PendingInvite } from "@tavrn/sdk";
 import { api } from "../lib/api";
-import { acceptInvite } from "../lib/invites";
+import { isHome } from "../stores/nodes";
+import { acceptInvite, invitePreview } from "../lib/invites";
+import { useJoinFlow } from "./JoinRoomDialog";
 import { useT } from "../i18n";
 import { toastError } from "../stores/toasts";
 import { Avatar, Button } from "./ui";
@@ -37,9 +39,10 @@ export function InviteList() {
   const queryClient = useQueryClient();
   const invites = usePendingInvites();
   const [busy, setBusy] = useState<string | null>(null);
+  const flow = useJoinFlow();
   // Message requests of other nodes are listed under "Message requests" (components/MessageRequests.tsx).
   const items = (invites.data ?? []).filter((i) => !(i.kind === "conversation" && (i.conversation as { requested?: boolean } | null | undefined)?.requested));
-  if (!items.length) return null;
+  if (!items.length) return flow.overlay ?? null;
   const done = () => Promise.all([queryClient.invalidateQueries({ queryKey: ["pending-invites"] }), queryClient.invalidateQueries({ queryKey: ["rooms"] }), queryClient.invalidateQueries({ queryKey: ["conversations"] })]);
   const dismiss = async (invite: PendingInvite) => {
     try {
@@ -51,10 +54,15 @@ export function InviteList() {
   };
   const accept = async (invite: PendingInvite) => {
     setBusy(invite.id);
-    try {
-      const path = await acceptInvite(invite);
+    const join = async (acceptRules: boolean) => {
+      const path = await acceptInvite(invite, acceptRules);
       await done();
       navigate(path);
+    };
+    try {
+      // Rooms show their rules and documents first when they have any (components/JoinRoomDialog.tsx).
+      if (invite.kind === "room") await flow.start(() => invitePreview(invite), join, isHome(invite.node) ? null : invite.node);
+      else await join(false);
     } catch (e) {
       toastError(e);
     } finally {
@@ -95,6 +103,7 @@ export function InviteList() {
           );
         })}
       </ul>
+      {flow.overlay}
     </>
   );
 }

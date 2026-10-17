@@ -14,8 +14,7 @@ import { indexJoinedRoom } from "../stores/conversationIndex";
 import { describeError } from "../stores/toasts";
 import { useOriginDomain } from "../lib/origin";
 import { useT } from "../i18n";
-import { RoomIcon } from "./Avatar";
-import { RoomRules } from "./RoomRules";
+import { RoomJoinBlock, hasRules } from "./JoinRoomDialog";
 import { roomPath } from "./NodeScope";
 import { Button, Dialog, ErrorText, Field, Input } from "./ui";
 import { AddApplicationForm } from "./AddApplicationForm";
@@ -187,27 +186,8 @@ function JoinForm({ onClose, onJoined }: { onClose: () => void; onJoined: (path:
         />
       </Field>
       {preview && (
-        <div className="space-y-2 rounded-md border border-line bg-bg-0 p-3" data-testid="join-preview">
-          <div className="flex items-center gap-3">
-            <RoomIcon room={preview.room} size={40} node={node} />
-            <div className="min-w-0 flex-1">
-              <p className="truncate font-medium" data-testid="join-preview-name">
-                {preview.room.name}
-              </p>
-              <p className="truncate text-xs text-fg-2">
-                {t("invite.members", { count: preview.room.member_count })}
-                {node ? ` · ${node}` : ""}
-              </p>
-            </div>
-          </div>
-          {preview.rules && (
-            <>
-              <RoomRules markdown={preview.rules} compact />
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} className="h-5 w-5" /> {t("invite.accept_rules")}
-              </label>
-            </>
-          )}
+        <div className="rounded-md border border-line bg-bg-0 p-3" data-testid="join-preview">
+          <RoomJoinBlock info={preview} node={node} accepted={accepted} onAcceptedChange={setAccepted} />
         </div>
       )}
       <ErrorText>{error}</ErrorText>
@@ -216,7 +196,7 @@ function JoinForm({ onClose, onJoined }: { onClose: () => void; onJoined: (path:
           {t("common.cancel")}
         </Button>
         {preview ? (
-          <Button type="submit" disabled={busy || (!!preview.rules && !accepted)} data-testid="join-invite-submit">
+          <Button type="submit" disabled={busy || (hasRules(preview) && !accepted)} data-testid="join-invite-submit">
             {t("invite.join")}
           </Button>
         ) : (
