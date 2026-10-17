@@ -16,13 +16,22 @@ import { acceptFor, classifyFile, isAllowed } from "../lib/uploads";
 import type { LinkPreview } from "../lib/linkPreview";
 import { useUploadPrivacy } from "./UploadPrivacy";
 import { useComposePreview } from "./ComposePreview";
-import { wrapSpoiler } from "../lib/markdown";
 import { renameClipboardFiles } from "../lib/clipboardName";
 import { composerGrowth, PHONE_MAX_WIDTH, type Growth } from "../lib/composerGrowth";
 import { blockedText, isAutomodBlock } from "../moderation/blocked";
-import { EyeOffIcon } from "./icons";
 import { ContextMenu, menuItem, useContextMenu, type MenuItem } from "./ContextMenu";
 import type { PollKind } from "../polls/model";
+import type { CompletionProvider } from "../composer/autocomplete";
+import { useCompletion } from "../composer/useCompletion";
+import { mentionProvider, type MentionCandidate } from "../composer/mentions";
+import { MentionOption, SuggestionList, optionId } from "../composer/MentionSuggest";
+import { FormatBar, FormatIcon } from "../composer/FormatBar";
+import { applyFormat, formatForShortcut, type FormatId, type TextState } from "../composer/format";
+import { textState, useEditHistory } from "../composer/textEdit";
+import { clearDraft, useDraft } from "../composer/drafts";
+import { useComposerPrefs } from "../stores/composerPrefs";
+import { StyledLayer } from "../composer/StyledLayer";
+import { STYLED_MAX } from "../composer/highlight";
 
 export interface PendingUpload {
   key: string;
@@ -97,6 +106,8 @@ export function Composer({
   above,
   encrypted = false,
   onPoll,
+  mentions,
+  draftKey,
 }: {
   placeholder: string;
   disabled?: boolean;
@@ -122,10 +133,18 @@ export function Composer({
   encrypted?: boolean;
   /** Polls may be created here (PROTOCOL.md §7g): the ＋ button becomes a menu with "Poll" and "Date poll". */
   onPoll?: (kind: PollKind) => void;
+  /** Who may be suggested after `@` (composer/mentions.ts): only people and roles of this conversation. */
+  mentions?: MentionCandidate[];
+  /** The unsent text is kept under this key while the app runs (composer/drafts.ts); none: not kept. */
+  draftKey?: string | null;
 }) {
   const t = useT();
   const paletteId = useId();
+  const completionId = useId();
+  const formatBarId = useId();
   const [value, setValue] = useState("");
+  /** The caret while nothing is selected (-1 with a selection): where the autocomplete looks for its trigger. */
+  const [caret, setCaret] = useState(0);
   const [busy, setBusy] = useState(false);
   const [uploads, setUploads] = useState<PendingUpload[]>([]);
   /** One controller per upload until it is sent or removed. */
@@ -144,6 +163,33 @@ export function Composer({
   const lastTyping = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
+  const edits = useEditHistory(textarea);
+  const formatBar = useComposerPrefs((s) => s.formatBar);
+  const styledInput = useComposerPrefs((s) => s.styledInput);
+  // ---- styled input (composer/StyledLayer.tsx): a highlight layer behind the transparent text, plain for long texts
+  const layer = useRef<HTMLDivElement>(null);
+  const styled = styledInput && !disabled && value.length <= STYLED_MAX;
+  const mentionInserts = useMemo(() => mentions?.map((m) => m.insert), [mentions]);
+  const syncLayer = () => {
+    if (layer.current && textarea.current && layer.current.scrollTop !== textarea.current.scrollTop) layer.current.scrollTop = textarea.current.scrollTop;
+  };
+  // The textarea scrolls itself to the caret while typing: the layer follows after every render.
+  useLayoutEffect(() => {
+    if (styled) syncLayer();
+  });
+  const setPrefs = useComposerPrefs((s) => s.set);
+  // ---- drafts (composer/drafts.ts): restored with the caret at the end
+  const caretToEnd = useRef(false);
+  useDraft(draftKey, value, (text) => {
+    caretToEnd.current = true;
+    setValue(text);
+    setCaret(text.length);
+  });
+  useLayoutEffect(() => {
+    if (!caretToEnd.current || !textarea.current) return;
+    caretToEnd.current = false;
+    textarea.current.setSelectionRange(value.length, value.length);
+  }, [value]);
   // ---- growth on focus (design note 4.13 item 14, lib/composerGrowth.ts)
   const anchor = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLDivElement>(null);
@@ -186,6 +232,22 @@ export function Composer({
   const paletteOpen = typingName && !!commands;
   const listLength = paletteOpen ? matches.length : suggestions.length;
   useEffect(() => setSelected(0), [line?.name, line?.complete, partial]);
+
+  // ---- inline autocomplete (composer/autocomplete.ts): never together with the command palette or its argument
+  // suggestions; inside a command only in its free text (`/me waves at @…`).
+  const providers = useMemo<CompletionProvider<MentionCandidate>[]>(() => (mentions ? [mentionProvider(mentions)] : []), [mentions]);
+  const inCommand = !!line && (!line.complete || (!!def && !activeArg?.rest));
+  const complete = useCompletion({
+    providers,
+    value,
+    caret,
+    enabled: !disabled && !inCommand && !paletteOpen && suggestions.length === 0,
+    apply: (next: TextState) => {
+      if (!edits.apply(next)) setValue(next.value);
+      setCaret(next.start);
+      textarea.current?.focus();
+    },
+  });
 
   const pickCommand = (d: CommandDefinition) => {
     setPicked(d);
@@ -292,6 +354,7 @@ export function Composer({
     try {
       await onSend({ body, attachmentIds: ready, gif, preview: gif ? undefined : (composePreview.preview ?? undefined), ...(spoilerIds.length ? { spoilerIds } : {}) });
       setValue("");
+      clearDraft(draftKey);
       composePreview.reset();
       // Sent: nothing to abort any more.
       uploadAborts.current.clear();
@@ -369,26 +432,27 @@ export function Composer({
   const insertAtCursor = (text: string) => {
     const el = textarea.current;
     if (!el) return setValue((v) => v + text);
-    const start = el.selectionStart ?? value.length;
-    const end = el.selectionEnd ?? value.length;
-    setValue(value.slice(0, start) + text + value.slice(end));
-    requestAnimationFrame(() => {
-      el.focus();
-      el.setSelectionRange(start + text.length, start + text.length);
-    });
+    const { value: current, start, end } = textState(el);
+    const caretAt = start + text.length;
+    edits.apply({ value: current.slice(0, start) + text + current.slice(end), start: caretAt, end: caretAt });
+    setCaret(caretAt);
+    requestAnimationFrame(() => el.focus());
   };
 
-  /** Wraps the selection in `||…||` (toolbar button, Ctrl+Shift+S). */
-  const spoiler = () => {
+  /** Applies a format to the selection (formatting bar, Ctrl/Cmd shortcuts) as one undoable step; the focus stays. */
+  const format = (id: FormatId) => {
     const el = textarea.current;
-    const start = el?.selectionStart ?? value.length;
-    const end = el?.selectionEnd ?? value.length;
-    const next = wrapSpoiler(value, start, end);
-    setValue(next.value);
-    requestAnimationFrame(() => {
-      el?.focus();
-      el?.setSelectionRange(next.start, next.end);
-    });
+    if (!el) return;
+    const next = applyFormat(id, textState(el));
+    edits.apply(next);
+    setCaret(next.start === next.end ? next.start : -1);
+    el.focus();
+  };
+
+  /** Remembers the caret for the autocomplete (none while a range is selected). */
+  const trackCaret = (el: HTMLTextAreaElement) => {
+    const at = el.selectionStart === el.selectionEnd ? (el.selectionStart ?? 0) : -1;
+    if (at !== caret) setCaret(at);
   };
 
   const restricted = uploadPolicy && uploadPolicy.allowed.length < ALL_CATEGORIES;
@@ -443,6 +507,18 @@ export function Composer({
       {gifOpen && <GifPicker onPick={(g) => void submit(g)} onClose={() => setGifOpen(false)} />}
       {helpOpen && commands && <CommandHelp items={commands.available} onClose={() => setHelpOpen(false)} />}
       {paletteOpen && <CommandList id={paletteId} items={matches} selected={selected} onPick={pickCommand} onHover={setSelected} />}
+      {complete.completion && (
+        <SuggestionList
+          id={completionId}
+          label={t(`composer.suggest.${complete.completion.provider.id}`)}
+          provider={complete.completion.provider.id}
+          items={complete.items}
+          selected={complete.selected}
+          onPick={(item) => complete.pick(complete.completion!.trigger, item)}
+          onHover={complete.setSelected}
+          render={(item) => <MentionOption item={item.data} />}
+        />
+      )}
       {def && !typingName && <ArgumentHint def={def} active={active} suggestions={suggestions} selected={selected} onPick={pickSuggestion} error={commandError} />}
       {blocked && (
         <p className="mb-2 rounded-lg border border-danger/50 bg-danger/10 px-3 py-2 text-xs text-danger" role="alert" data-testid="composer-blocked">
@@ -488,6 +564,7 @@ export function Composer({
           ))}
         </ul>
       )}
+      {formatBar && !disabled && <FormatBar id={formatBarId} onFormat={format} styled={styledInput} onStyled={() => setPrefs({ styledInput: !styledInput })} />}
       <div ref={inputRow} className="flex items-end gap-1 rounded-lg border border-line-strong bg-bg-0 px-2 py-2 focus-within:border-accent">
         {(canAttach || onPoll) && (
           <>
@@ -538,6 +615,8 @@ export function Composer({
             )}
           </>
         )}
+        <div className="relative flex min-w-0 flex-1">
+        {styled && <StyledLayer ref={layer} text={value} mentions={mentionInserts} className="pointer-events-none absolute inset-0 emoji-font px-1 py-2.5 text-sm leading-5" />}
         <textarea
           ref={textarea}
           aria-label={t("composer.message")}
@@ -545,13 +624,17 @@ export function Composer({
           value={value}
           disabled={disabled}
           placeholder={placeholder}
-          role={commands ? "combobox" : undefined}
-          aria-expanded={commands ? paletteOpen : undefined}
-          aria-controls={paletteOpen ? paletteId : undefined}
-          aria-activedescendant={paletteOpen && matches.length ? `${paletteId}-${selected}` : undefined}
-          aria-autocomplete={commands ? "list" : undefined}
+          role={commands || providers.length ? "combobox" : undefined}
+          aria-expanded={commands || providers.length ? paletteOpen || complete.open : undefined}
+          aria-controls={paletteOpen ? paletteId : complete.open ? completionId : undefined}
+          aria-activedescendant={paletteOpen && matches.length ? `${paletteId}-${selected}` : complete.open ? optionId(completionId, complete.selected) : undefined}
+          aria-autocomplete={commands || providers.length ? "list" : undefined}
+          onSelect={(e) => trackCaret(e.currentTarget)}
+          onKeyUp={(e) => trackCaret(e.currentTarget)}
+          onClick={(e) => trackCaret(e.currentTarget)}
           onChange={(e) => {
             setValue(e.target.value);
+            trackCaret(e.target);
             setBlocked(undefined);
             if (!e.target.value.startsWith("/")) setPicked(null);
             setCommandError(undefined);
@@ -579,6 +662,13 @@ export function Composer({
             }
           }}
           onKeyDown={(e) => {
+            if (complete.onKeyDown(e) || edits.onKeyDown(e)) return;
+            const shortcut = formatForShortcut(e);
+            if (shortcut) {
+              e.preventDefault();
+              format(shortcut);
+              return;
+            }
             if ((paletteOpen || suggestions.length > 0) && listLength > 0) {
               if (e.key === "ArrowDown") {
                 e.preventDefault();
@@ -613,22 +703,31 @@ export function Composer({
               setShrunk(true);
               return;
             }
-            if ((e.key === "S" || e.key === "s") && e.shiftKey && (e.ctrlKey || e.metaKey)) {
-              e.preventDefault();
-              spoiler();
-              return;
-            }
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               void submit();
             }
           }}
+          onScroll={styled ? syncLayer : undefined}
           style={growth.height ? { height: growth.height } : undefined}
-          className={`composer-text emoji-font ${growth.expanded ? "" : "max-h-40"} min-h-10 flex-1 resize-none bg-transparent px-1 py-2.5 text-sm leading-5 text-fg-0 outline-none placeholder:text-fg-2 disabled:opacity-50`}
+          className={`composer-text emoji-font ${styled ? "composer-styled relative" : ""} ${growth.expanded ? "" : "max-h-40"} min-h-10 flex-1 resize-none bg-transparent px-1 py-2.5 text-sm leading-5 text-fg-0 outline-none placeholder:text-fg-2 disabled:opacity-50`}
+          data-styled={styled || undefined}
         />
+        </div>
         {!disabled && (
-          <button type="button" aria-label={t("composer.spoiler")} title={t("composer.spoiler_hint")} onClick={spoiler} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-fg-2 hover:bg-bg-3 hover:text-fg-0" data-testid="composer-spoiler">
-            <EyeOffIcon size={18} />
+          <button
+            type="button"
+            aria-label={t("composer.format.toggle")}
+            title={t("composer.format.toggle_hint")}
+            aria-pressed={formatBar}
+            aria-controls={formatBar ? formatBarId : undefined}
+            // The text box keeps the focus and its selection.
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setPrefs({ formatBar: !formatBar })}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-fg-2 hover:bg-bg-3 hover:text-fg-0 aria-pressed:bg-accent-soft aria-pressed:text-accent"
+            data-testid="composer-format-toggle"
+          >
+            <FormatIcon size={18} />
           </button>
         )}
         {!disabled && <EmojiPicker customEmojis={customEmojis} onPick={insertAtCursor} label={t("composer.emoji")} triggerClassName="flex h-10 w-10 shrink-0 items-center justify-center" />}

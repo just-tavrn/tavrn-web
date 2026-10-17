@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { Composer } from "./Composer";
 import { BUILTIN_COMMANDS } from "../commands/builtin";
+import { useComposerPrefs } from "../stores/composerPrefs";
 
 describe("Composer", () => {
   it("the ＋ button is a menu with the file picker, Poll and Date poll where polls may be created", async () => {
@@ -99,12 +100,16 @@ describe("Composer: attachments", () => {
     box.setSelectionRange(4, 8);
     await u.keyboard("{Control>}{Shift>}S{/Shift}{/Control}");
     expect(box.value).toBe("das ||ende||");
-    const spoilerButton = screen.getByRole("button", { name: "Spoiler" });
+    // The spoiler button lives in the formatting bar (the "Formatting" toggle shows it).
+    await u.click(screen.getByRole("button", { name: "Formatierung" }));
+    const spoilerButton = within(screen.getByRole("toolbar", { name: "Formatierung" })).getByRole("button", { name: /^Spoiler/ });
     // An SVG icon, not a block glyph that renders differently per font.
     expect(spoilerButton.querySelector("svg")).not.toBeNull();
     expect(spoilerButton.textContent).not.toContain("\u2592");
+    box.setSelectionRange(box.value.length, box.value.length);
     await u.click(spoilerButton);
     expect(box.value).toContain("||||");
+    useComposerPrefs.getState().set({ formatBar: false });
     await vi.waitFor(() => expect(screen.getByRole("button", { name: "Senden" })).toBeEnabled());
     await u.click(screen.getByRole("button", { name: "Senden" }));
     expect(onSend).toHaveBeenCalledWith(expect.objectContaining({ attachmentIds: ["01J00000000000000000000000"], spoilerIds: ["01J00000000000000000000000"] }));

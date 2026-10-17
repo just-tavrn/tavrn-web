@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, test, type Page } from "@playwright/test";
-import { createRoomViaApi, loginAs, registerViaApi } from "./helpers";
+import { NODE, createRoomViaApi, loginAs, openNavIfMobile, registerViaApi } from "./helpers";
+import { joinRoom } from "./menu-helpers";
 
 /** Top edge of the last message row and the list's scroll position: both must stay put while the composer grows. */
 async function lastRow(page: Page) {
@@ -78,3 +79,120 @@ test("The input field grows as an overlay while typing and shrinks after sending
   await expect(composer).not.toHaveAttribute("data-expanded");
   await expect.poll(async () => (await box.boundingBox())!.height).toBeLessThanOrEqual(collapsed + 1);
 });
+
+/** A channel row of the sidebar, clicked (client-side navigation: the app keeps its memory). */
+async function openChannel(page: Page, channelId: string) {
+  await openNavIfMobile(page);
+  await page.locator(`[data-testid="channel-row"][data-channel="${channelId}"]`).getByRole("link").click();
+}
+
+// docs/CLIENT.md "The composer": @ suggests who is in this channel, Enter picks, the mention is sent as a pill.
+test("@ suggests the channel's members and inserts a mention that is sent as one", async ({ page, request }) => {
+  const owner = await registerViaApi(request, "mentown");
+  const member = await registerViaApi(request, "mentmem");
+  const room = await createRoomViaApi(request, owner.token, "Erwähnungen");
+  await joinRoom(request, owner, room.id, member);
+  await loginAs(page, owner);
+  await page.goto(`/rooms/${room.id}`);
+  const box = page.getByLabel("Nachricht", { exact: true });
+  await expect(box).toBeEnabled();
+  await box.click();
+  await box.pressSequentially(`Hallo @${member.username.slice(0, 6)}`);
+  const list = page.getByRole("listbox", { name: "Personen und Rollen zum Erwähnen" });
+  await expect(list).toBeVisible();
+  await expect(list.getByRole("option").first()).toHaveAttribute("data-key", `${member.username}@localhost`);
+  await expect(box).toHaveAttribute("aria-activedescendant", (await list.getByRole("option").first().getAttribute("id"))!);
+  await box.press("Enter");
+  await expect(box).toHaveValue(`Hallo @${member.username} `);
+  await expect(list).toHaveCount(0);
+  // Escape leaves a typed @ alone; an e-mail address never opens the list.
+  await box.pressSequentially("mail an x@y und @");
+  await expect(list).toBeVisible();
+  await box.press("Escape");
+  await expect(list).toHaveCount(0);
+  await box.pressSequentially("!");
+  await box.press("Enter");
+  const row = page.getByTestId("message").filter({ hasText: "mail an x@y" });
+  await expect(row.locator('[data-mention="user"]')).toHaveText(`@${member.username}`);
+});
+
+// Unsent text per conversation, in memory while the app runs (docs/CLIENT.md "The composer").
+test("unsent text stays per channel while switching to another channel and the settings", async ({ page, request }) => {
+  const owner = await registerViaApi(request, "draft");
+  const room = await createRoomViaApi(request, owner.token, "Entwürfe");
+  const first = room.channels.find((c: { kind: string }) => c.kind === "text") as { id: string };
+  const second = await (
+    await request.post(`${NODE}/api/v1/rooms/${room.id}/channels`, { headers: { Authorization: `Bearer ${owner.token}` }, data: { kind: "text", name: "zweiter", encrypted: false } })
+  ).json();
+  await loginAs(page, owner);
+  await page.goto(`/rooms/${room.id}/channels/${first.id}`);
+  const box = page.getByLabel("Nachricht", { exact: true });
+  await expect(box).toBeEnabled();
+  await box.fill("halb geschrieben im ersten");
+  await openChannel(page, second.id);
+  await expect(page.getByTestId("channel-name")).toHaveText("zweiter");
+  await expect(box).toHaveValue("");
+  await box.fill("im zweiten");
+  await openNavIfMobile(page);
+  await page.getByRole("button", { name: "Benutzereinstellungen" }).click();
+  await expect(page).toHaveURL(/\/settings/);
+  await page.goBack();
+  await expect(page.getByTestId("channel-name")).toHaveText("zweiter");
+  await expect(box).toHaveValue("im zweiten");
+  await openChannel(page, first.id);
+  await expect(box).toHaveValue("halb geschrieben im ersten");
+  // Sending clears it; a reload (a closed app) keeps nothing.
+  await box.press("Enter");
+  await expect(page.getByTestId("message").filter({ hasText: "halb geschrieben im ersten" })).toBeVisible();
+  await openChannel(page, second.id);
+  await openChannel(page, first.id);
+  await expect(box).toHaveValue("");
+  await page.reload();
+  await openChannel(page, second.id);
+  await expect(box).toHaveValue("");
+});
+
+// The formatting bar and the styled input (docs/CLIENT.md "The composer").
+test("the formatting bar wraps the selection and the styled input shows the formats in place", async ({ page, request }) => {
+  const owner = await registerViaApi(request, "format");
+  const room = await createRoomViaApi(request, owner.token, "Formate");
+  await loginAs(page, owner);
+  await page.goto(`/rooms/${room.id}`);
+  const box = page.getByLabel("Nachricht", { exact: true });
+  await expect(box).toBeEnabled();
+  const toggle = page.getByTestId("composer-format-toggle");
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await toggle.click();
+  const bar = page.getByRole("toolbar", { name: "Formatierung" });
+  await expect(bar).toBeVisible();
+  await box.fill("ganz wichtig");
+  await box.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(5, 12));
+  await bar.getByTestId("format-bold").click();
+  await expect(box).toHaveValue("ganz **wichtig**");
+  await expect(box).toBeFocused();
+  // Ctrl+Z undoes the step.
+  await box.press("Control+z");
+  await expect(box).toHaveValue("ganz wichtig");
+  await box.press("Control+Shift+z");
+  await expect(box).toHaveValue("ganz **wichtig**");
+  // Styled input: the layer behind the textarea has the same text and the same box (the caret aligns).
+  await bar.getByTestId("format-styled").click();
+  const layer = page.getByTestId("styled-layer");
+  await expect(layer).toHaveText("ganz **wichtig**");
+  const [a, b] = [await box.boundingBox(), await layer.boundingBox()];
+  expect(b).toEqual(a);
+  await box.press("End");
+  await box.pressSequentially(" und `code`");
+  await box.press("Shift+Enter");
+  await box.pressSequentially("> zitat");
+  expect(await layer.evaluate((el) => el.textContent)).toBe(await box.inputValue());
+  await expect(layer.locator(".cs-bold")).toHaveText("wichtig");
+  await box.press("Enter");
+  const row = page.getByTestId("message").filter({ hasText: "ganz" });
+  await expect(row.locator("strong")).toHaveText("wichtig");
+  // The choices are remembered on this device.
+  await page.reload();
+  await expect(page.getByTestId("composer-format-toggle")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("format-styled")).toHaveAttribute("aria-pressed", "true");
+});
+

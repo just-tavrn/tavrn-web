@@ -13,6 +13,7 @@ import { useE2ee } from "./e2ee";
 import { useMlsUi } from "./mls";
 import { useInteractions } from "./interactions";
 import { loadAttachment, type ViewAttachment } from "../components/AttachmentView";
+import { draftKey, getDraft, saveDraftText } from "../composer/drafts";
 
 const ALICE = "alice@home.test";
 const DEV = "01J9ZK3G5M8Q2W4E6R8T0Y2VA1";
@@ -60,5 +61,17 @@ describe("a forced sign-out", () => {
     useAuth.getState().sessionRefused();
     expect(useMlsUi.getState().open).toBeNull();
     expect(useInteractions.getState().notices).toEqual([]);
+  });
+
+  it("forgets the unsent composer drafts (sign-out, forced sign-out, another account)", () => {
+    signIn();
+    const key = draftKey(ALICE, "home.test", "01CONV")!;
+    saveDraftText(key, "halb geschrieben");
+    useAuth.getState().sessionRefused();
+    expect(getDraft(key)).toBeUndefined();
+    signIn();
+    saveDraftText(key, "noch einmal");
+    useAuth.getState().logout();
+    expect(getDraft(key)).toBeUndefined();
   });
 });
