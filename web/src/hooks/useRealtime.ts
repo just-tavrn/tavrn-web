@@ -315,10 +315,10 @@ export function roomHandlers(socket: TavrnSocket, queryClient: QueryClient, me: 
         );
       }
     }),
-    ...threadHandlers(socket, queryClient, me),
+    ...threadHandlers(socket, queryClient, me, node),
     // Poll votes (PROTOCOL.md §7g): the shown polls' vote records follow; votes never count as unread or notify.
     ...pollHandlers(socket, queryClient),
-    socket.on<{ conversation_id: string; last_read_message_id: string }>("read.update", (d) => useUnread.getState().read(d.conversation_id, d.last_read_message_id)),
+    socket.on<{ conversation_id: string; last_read_message_id: string }>("read.update", (d) => useUnread.getState().read(d.conversation_id, d.last_read_message_id, node)),
     // Room channels carry `channel_id`, DMs and group DMs `conversation_id`.
     socket.on<{ channel_id?: string; conversation_id?: string; user_id: string }>("typing", (d) => {
       const id = d.channel_id ?? d.conversation_id;

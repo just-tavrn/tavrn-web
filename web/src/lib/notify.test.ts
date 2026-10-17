@@ -42,7 +42,7 @@ describe("notifyMessage", () => {
     await notifyMessage(message(), { queryClient: client(), node: null, me });
     const toast = useToasts.getState().toasts[0]!;
     expect(toast).toMatchObject({ title: "bob in #general · Guild", detail: "hello @me", path: "/rooms/r1/channels/ch1", testId: "notify-toast-mention" });
-    expect(useNotifications.getState().entries[0]).toMatchObject({ kind: "mention", path: "/rooms/r1/channels/ch1" });
+    expect(useNotifications.getState().entries[0]).toMatchObject({ kind: "mention", path: "/rooms/r1/channels/ch1", messageId: "m1" });
   });
 
   it("a DM notifies; encrypted content is never previewed", async () => {

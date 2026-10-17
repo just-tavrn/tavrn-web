@@ -2,6 +2,7 @@
 import { useEffect, useRef } from "react";
 import { useNode } from "../components/NodeScope";
 import { useUnread } from "../stores/unread";
+import { useNotifications } from "../stores/notifications";
 
 /** Delay before the read marker is sent, so a burst of messages costs one request. */
 export const MARK_READ_DELAY_MS = 500;
@@ -22,7 +23,7 @@ export function useMarkRead(conversationId: string, newestId: string | undefined
   newest.current = newestId;
   const check = useRef<() => void>(() => undefined);
   // Read markers go to the node of the conversation.
-  const { api } = useNode();
+  const { api, domain } = useNode();
   const apiRef = useRef(api);
   apiRef.current = api;
 
@@ -46,8 +47,11 @@ export function useMarkRead(conversationId: string, newestId: string | undefined
       if (useUnread.getState().held[conversationId]) return;
       opened = true;
       const s = useUnread.getState().states[conversationId];
-      if (s?.read && s.read >= id && s.unread === 0) return;
-      useUnread.getState().read(conversationId, id);
+      if (s?.read && s.read >= id && s.unread === 0) {
+        useNotifications.getState().markMessagesRead({ node: domain, conversationId, messageId: id, caughtUp: !!s.last && id >= s.last });
+        return;
+      }
+      useUnread.getState().read(conversationId, id, domain);
       pending = id;
       if (timer) clearTimeout(timer);
       timer = setTimeout(flush, MARK_READ_DELAY_MS);
@@ -62,7 +66,7 @@ export function useMarkRead(conversationId: string, newestId: string | undefined
       flush();
       useUnread.getState().release(conversationId);
     };
-  }, [conversationId]);
+  }, [conversationId, domain]);
 
   useEffect(() => {
     check.current();
