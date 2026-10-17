@@ -18,7 +18,7 @@ the patent grant protects users and contributors.
 
 **Dependencies under other licenses.** The client is built on [`@tavrn/e2ee`](https://github.com/just-tavrn/tavrn-js)
 and [`@tavrn/crypto`](https://github.com/just-tavrn/tavrn-crypto), which are MPL-2.0: a file-level copyleft, so their
-files stay MPL-2.0 (changes to them are shared back in their repositories), while this repository and the bundle that
+files stay MPL-2.0 (distributed modifications to those files must be available in source form), while this repository and the bundle that
 contains them stay Apache-2.0. They are dependencies, not part of this repository. `@tavrn/sdk` and `@tavrn/bot` are
 Apache-2.0. No dependency of the client is (A)GPL or LGPL: `scripts/check-js-licenses.mjs` refuses them and checks
 every production dependency against an allow-list (MIT, BSD, ISC, Apache-2.0, MPL-2.0 and similar). The Rust crates of
