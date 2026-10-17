@@ -21,11 +21,12 @@ import { composerGrowth, PHONE_MAX_WIDTH, type Growth } from "../lib/composerGro
 import { blockedText, isAutomodBlock } from "../moderation/blocked";
 import { ContextMenu, menuItem, useContextMenu, type MenuItem } from "./ContextMenu";
 import type { PollKind } from "../polls/model";
-import { findTrigger, applyCompletion, type CompletionProvider, type Suggestion, type Trigger } from "../composer/autocomplete";
+import type { CompletionProvider } from "../composer/autocomplete";
+import { useCompletion } from "../composer/useCompletion";
 import { mentionProvider, type MentionCandidate } from "../composer/mentions";
 import { MentionOption, SuggestionList, optionId } from "../composer/MentionSuggest";
 import { FormatBar, FormatIcon } from "../composer/FormatBar";
-import { applyFormat, formatForShortcut, type FormatId } from "../composer/format";
+import { applyFormat, formatForShortcut, type FormatId, type TextState } from "../composer/format";
 import { textState, useEditHistory } from "../composer/textEdit";
 import { clearDraft, useDraft } from "../composer/drafts";
 import { useComposerPrefs } from "../stores/composerPrefs";
@@ -236,30 +237,17 @@ export function Composer({
   // suggestions; inside a command only in its free text (`/me waves at @…`).
   const providers = useMemo<CompletionProvider<MentionCandidate>[]>(() => (mentions ? [mentionProvider(mentions)] : []), [mentions]);
   const inCommand = !!line && (!line.complete || (!!def && !activeArg?.rest));
-  const completion = useMemo(() => {
-    if (disabled || inCommand || paletteOpen || suggestions.length > 0 || caret < 0) return null;
-    for (const provider of providers) {
-      const trigger = findTrigger(value, caret, provider.trigger);
-      if (trigger) return { provider, trigger };
-    }
-    return null;
-  }, [disabled, inCommand, paletteOpen, suggestions.length, caret, providers, value]);
-  const completionItems = useMemo(() => (completion ? completion.provider.suggest(completion.trigger.query) : []), [completion]);
-  /** Escape closed the list for the trigger at this position; it stays closed until the caret leaves that word. */
-  const [dismissedAt, setDismissedAt] = useState<number | null>(null);
-  const completionOpen = !!completion && completionItems.length > 0 && dismissedAt !== completion.trigger.start;
-  const [completionSel, setCompletionSel] = useState(0);
-  useEffect(() => setCompletionSel(0), [completion?.trigger.start, completion?.trigger.query]);
-  useEffect(() => {
-    if (!completion) setDismissedAt(null);
-  }, [completion]);
-  const pickCompletion = (trigger: Trigger, item: Suggestion) => {
-    const el = textarea.current;
-    const next = applyCompletion(el?.value ?? value, trigger, item.insert);
-    if (!edits.apply(next)) setValue(next.value);
-    setCaret(next.start);
-    el?.focus();
-  };
+  const complete = useCompletion({
+    providers,
+    value,
+    caret,
+    enabled: !disabled && !inCommand && !paletteOpen && suggestions.length === 0,
+    apply: (next: TextState) => {
+      if (!edits.apply(next)) setValue(next.value);
+      setCaret(next.start);
+      textarea.current?.focus();
+    },
+  });
 
   const pickCommand = (d: CommandDefinition) => {
     setPicked(d);
@@ -519,15 +507,15 @@ export function Composer({
       {gifOpen && <GifPicker onPick={(g) => void submit(g)} onClose={() => setGifOpen(false)} />}
       {helpOpen && commands && <CommandHelp items={commands.available} onClose={() => setHelpOpen(false)} />}
       {paletteOpen && <CommandList id={paletteId} items={matches} selected={selected} onPick={pickCommand} onHover={setSelected} />}
-      {completionOpen && completion && (
+      {complete.completion && (
         <SuggestionList
           id={completionId}
-          label={t(`composer.suggest.${completion.provider.id}`)}
-          provider={completion.provider.id}
-          items={completionItems}
-          selected={completionSel}
-          onPick={(item) => pickCompletion(completion.trigger, item)}
-          onHover={setCompletionSel}
+          label={t(`composer.suggest.${complete.completion.provider.id}`)}
+          provider={complete.completion.provider.id}
+          items={complete.items}
+          selected={complete.selected}
+          onPick={(item) => complete.pick(complete.completion!.trigger, item)}
+          onHover={complete.setSelected}
           render={(item) => <MentionOption item={item.data} />}
         />
       )}
@@ -637,9 +625,9 @@ export function Composer({
           disabled={disabled}
           placeholder={placeholder}
           role={commands || providers.length ? "combobox" : undefined}
-          aria-expanded={commands || providers.length ? paletteOpen || completionOpen : undefined}
-          aria-controls={paletteOpen ? paletteId : completionOpen ? completionId : undefined}
-          aria-activedescendant={paletteOpen && matches.length ? `${paletteId}-${selected}` : completionOpen ? optionId(completionId, completionSel) : undefined}
+          aria-expanded={commands || providers.length ? paletteOpen || complete.open : undefined}
+          aria-controls={paletteOpen ? paletteId : complete.open ? completionId : undefined}
+          aria-activedescendant={paletteOpen && matches.length ? `${paletteId}-${selected}` : complete.open ? optionId(completionId, complete.selected) : undefined}
           aria-autocomplete={commands || providers.length ? "list" : undefined}
           onSelect={(e) => trackCaret(e.currentTarget)}
           onKeyUp={(e) => trackCaret(e.currentTarget)}
@@ -674,26 +662,7 @@ export function Composer({
             }
           }}
           onKeyDown={(e) => {
-            if (completionOpen && completion) {
-              const n = completionItems.length;
-              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                e.preventDefault();
-                setCompletionSel((s) => (e.key === "ArrowDown" ? (s + 1) % n : (s - 1 + n) % n));
-                return;
-              }
-              if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing)) {
-                e.preventDefault();
-                pickCompletion(completion.trigger, completionItems[completionSel] ?? completionItems[0]!);
-                return;
-              }
-              if (e.key === "Escape") {
-                // Closes the list; the text stays exactly as typed.
-                e.preventDefault();
-                setDismissedAt(completion.trigger.start);
-                return;
-              }
-            }
-            if (edits.onKeyDown(e)) return;
+            if (complete.onKeyDown(e) || edits.onKeyDown(e)) return;
             const shortcut = formatForShortcut(e);
             if (shortcut) {
               e.preventDefault();
