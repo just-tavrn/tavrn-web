@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Pills and chips in message bodies: user mentions open the profile card, role mentions the role's members, tavrn
 // links become chips that resolve their names with the viewer's access and navigate inside the client.
-import { act, fireEvent, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
-import { useLocation } from "react-router";
+import { MemoryRouter, useLocation } from "react-router";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Member, Message, RoomDetail } from "@tavrn/sdk";
 import { MessageList } from "../components/MessageList";
 import { useAuth } from "../stores/auth";
+import { useNodes } from "../stores/nodes";
 import { useLocale } from "../i18n";
 import { useHiddenChannels } from "../lib/hiddenChannels";
 import { mockFetch, renderWithProviders } from "../test/render";
@@ -47,6 +49,7 @@ beforeEach(() => {
   useLocale.setState({ locale: "en" });
   useAuth.setState({ token: "t", user: { id: "u9", username: "me", domain: "t.local", address: "me@t.local", display_name: "Me", kind: "user", is_node_admin: false, created_at: "", email: null, email_verified: false, has_identity_key: true } as never });
   useHiddenChannels.setState({ ids: {} });
+  useNodes.setState({ sessions: {} });
 });
 
 describe("mention pills", () => {
@@ -186,5 +189,56 @@ describe("tavrn link chips", () => {
     expect(screen.queryByTestId("tavrn-chip")).toBeNull();
     await act(async () => {});
     expect(calls.some((c) => c.url.includes("elsewhere.test"))).toBe(false);
+  });
+});
+
+describe("tavrn link chips of other nodes and the shared room cache", () => {
+  const B = "b.test";
+  /** b.test answers for the id of a room the home node lists (ids are chosen by nodes). */
+  const imposter = { ...room, name: "Imposter", channels: [{ id: C, name: "fake", kind: "text", encrypted: false }] } as unknown as RoomDetail;
+
+  function showWith(client: QueryClient, m: Message) {
+    return render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={[`/rooms/${R}/channels/${C}`]}>
+          <ChatLinksContext.Provider value={{ room, roomMembers: members, members: members.map((x) => x.user.address) }}>
+            <MessageList messages={[m]} currentUserId="u9" currentAddress="me@t.local" roomId={R} canManage={false} hasMore={false} />
+          </ChatLinksContext.Provider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  }
+
+  function setup() {
+    const calls = mockFetch({ [`https://${B}/`]: { body: imposter }, [`/rooms/${R}`]: { body: room } });
+    useNodes.setState({ sessions: { [B]: { domain: B, base: `https://${B}`, ws: `wss://${B}/api/v1/ws`, web: `https://${B}`, token: "fed", refresh: "r", deviceId: "D", user: user("me"), expiresAt: Date.now() + 3_600_000 } as never } });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    // The home node lists the room: its detail under ["room", R] is the home node's.
+    client.setQueryData(["rooms"], [{ id: R, name: "Guild" }]);
+    return { calls, client };
+  }
+
+  it("a known node answering for a home room's id fills only its own chip entry, never the shared one", async () => {
+    const { calls, client } = setup();
+    showWith(client, msg(`https://${B}/rooms/${R}/channels/${C}`));
+    expect(await within(await screen.findByTestId("tavrn-chip")).findByText("fake")).toBeInTheDocument();
+    expect(calls.some((c) => c.url.startsWith(`https://${B}/`))).toBe(true);
+    expect(client.getQueryData(["room", R])).toBeUndefined();
+  });
+
+  it("the home room's cached name stays when a known node answers for the same id", async () => {
+    const { client } = setup();
+    client.setQueryData(["room", R], room);
+    showWith(client, msg(`https://${B}/rooms/${R}/channels/${C}`));
+    expect(await within(await screen.findByTestId("tavrn-chip")).findByText("fake")).toBeInTheDocument();
+    expect(client.getQueryData<RoomDetail>(["room", R])?.name).toBe("Guild");
+  });
+
+  it("a home link reads the shared room cache (no request)", async () => {
+    const { calls, client } = setup();
+    client.setQueryData(["room", R], room);
+    showWith(client, msg(`https://t.local/rooms/${R}/channels/${C}`));
+    expect(await within(await screen.findByTestId("tavrn-chip")).findByText("raids")).toBeInTheDocument();
+    expect(calls.some((c) => c.url.includes(`/rooms/${R}`))).toBe(false);
   });
 });

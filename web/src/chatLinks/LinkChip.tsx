@@ -8,7 +8,7 @@
  * recognises no others). Decryption of file records happens locally, like in the files channel.
  */
 import type { ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { qualify } from "@tavrn/e2ee";
 import type { FileEntry, RoomDetail } from "@tavrn/sdk";
 import { useT } from "../i18n";
@@ -16,6 +16,7 @@ import { apiFor } from "../stores/nodes";
 import { useUnread } from "../stores/unread";
 import { getMls } from "../stores/mls";
 import { useHiddenChannels } from "../lib/hiddenChannels";
+import { admits } from "../lib/nodeScope";
 import { channelName } from "../lib/names";
 import { formatBytes } from "../files/model";
 import { decryptRecords } from "../files/e2ee";
@@ -53,13 +54,20 @@ export function chipTarget(a: HTMLElement): ChipTarget | null {
   return target && ULID.test(target) ? { kind, node, room, channel, target } : null;
 }
 
-/** The room detail of a link's room: the shared room cache, else the hosting node (403/404: no access). */
+/**
+ * The room detail of a link's room from the hosting node (403/404: no access). The shared room cache (`["room", id]`,
+ * keyed by the bare id) is used only when `node` owns that entry (lib/nodeScope.ts `admits`, the guard of
+ * lib/notify.ts): ids are chosen by nodes, so another node's answer for the id of, say, a home room goes into a
+ * node-scoped entry of its own and never renames the home room.
+ */
 function useLinkRoom(node: string, roomId: string) {
+  const queryClient = useQueryClient();
+  const shared = admits(queryClient, node, "room", roomId);
   return useQuery({
-    queryKey: ["room", roomId],
+    queryKey: shared ? ["room", roomId] : ["linkRoom", node, roomId],
     queryFn: async (): Promise<RoomDetail> => {
       const room = await apiFor(node).rooms.get(roomId);
-      useUnread.getState().seed(room.read_states ?? []);
+      if (shared) useUnread.getState().seed(room.read_states ?? []);
       return room;
     },
     retry: false,
