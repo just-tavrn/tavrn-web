@@ -23,7 +23,7 @@ export type EngineKind = "browser" | "native";
 export interface VoiceEngine {
   join(target: VoiceTarget, opts: { canCreate: boolean; start?: boolean }): Promise<void>;
   leave(): Promise<void>;
-  followMove(domain: string, data: { room_id: string; from_channel_id: string; channel_id: string }): Promise<void>;
+  followMove(domain: string, data: { room_id: string; from_channel_id: string; channel_id: string }): Promise<boolean>;
   setMuted(muted: boolean): Promise<void>;
   setDeafened(deafened: boolean): Promise<void>;
   setCamera(on: boolean): Promise<void>;

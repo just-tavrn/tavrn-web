@@ -131,9 +131,9 @@ export function setPrioritySpeaker(on: boolean): void {
   void module?.setPriority(on);
 }
 
-/** `voice.move` from the room's node (VOICE.md §7). */
-export function followMove(domain: string, data: { room_id: string; from_channel_id: string; channel_id: string }): void {
-  if (module) void module.followMove(domain, data);
+/** `voice.move` from the room's node (VOICE.md §7); `true` once the call is in the target channel. */
+export async function followMove(domain: string, data: { room_id: string; from_channel_id: string; channel_id: string }): Promise<boolean> {
+  return module ? module.followMove(domain, data) : false;
 }
 
 export type { VoiceTarget, ScreenShareOptions };

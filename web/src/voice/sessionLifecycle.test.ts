@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useToasts } from "../stores/toasts";
 import { useVoicePresence } from "./presence";
 import { IDLE, useVoice, type VoiceTarget } from "./store";
-import { JoinCancelled, SessionLifecycle, type Attempt, type LifecycleSession } from "./sessionLifecycle";
+import { JoinCancelled, MOVE_GRACE_MS, SessionLifecycle, type Attempt, type LifecycleSession } from "./sessionLifecycle";
 import { followEpoch, type Endpoints } from "./sessionShared";
 
 const h = vi.hoisted(() => ({ leaves: [] as string[] }));
@@ -184,6 +184,82 @@ describe("leaving while a join runs (both engines)", () => {
 
   it("JoinCancelled is not an error", () => {
     expect(new JoinCancelled()).toBeInstanceOf(Error);
+  });
+});
+
+describe("following a moderator's move (both engines)", () => {
+  const move = { room_id: "r1", from_channel_id: "c1", channel_id: "c2" };
+
+  /** Joins c1 and waits until it is connected. */
+  async function connected() {
+    const engine = fakeEngine();
+    const joined = engine.life.join(target("c1"), { canCreate: true });
+    await settle();
+    engine.steps[0]!.answer.resolve();
+    await settle();
+    engine.steps[0]!.media.resolve();
+    await joined;
+    return engine;
+  }
+
+  it("rejoins in the target channel and reports the move as followed", async () => {
+    const { life, steps, log } = await connected();
+    const followed = life.followMove("home.example", move);
+    await settle();
+    steps[1]!.answer.resolve();
+    await settle();
+    steps[1]!.media.resolve();
+    await expect(followed).resolves.toBe(true);
+    expect(log).toContain("connect c2");
+    expect(useVoice.getState()).toMatchObject({ status: "connected", target: target("c2") });
+  });
+
+  it("a move of another channel, room or node is not followed", async () => {
+    const { life, log } = await connected();
+    await expect(life.followMove("home.example", { ...move, from_channel_id: "c9" })).resolves.toBe(false);
+    await expect(life.followMove("home.example", { ...move, room_id: "r9" })).resolves.toBe(false);
+    await expect(life.followMove("other.example", move)).resolves.toBe(false);
+    expect(log).not.toContain("connect c2");
+    expect(useVoice.getState().target).toEqual(target("c1"));
+  });
+
+  it("a failed rejoin is not a followed move", async () => {
+    const { life, steps } = await connected();
+    const followed = life.followMove("home.example", move);
+    await settle();
+    steps[1]!.answer.reject(Object.assign(new Error("full"), { code: "voice.channel_full" }));
+    await expect(followed).resolves.toBe(false);
+    expect(useVoice.getState().status).toBe("idle");
+  });
+
+  it("leaving voice while the rejoin runs is not a followed move", async () => {
+    const { life, steps } = await connected();
+    const followed = life.followMove("home.example", move);
+    await settle();
+    await life.leave();
+    steps[1]!.answer.resolve();
+    await expect(followed).resolves.toBe(false);
+    expect(useVoice.getState()).toMatchObject({ status: "idle", target: null });
+  });
+
+  it("the move arriving right after the media server removed this device is still followed", async () => {
+    const { life, steps } = await connected();
+    vi.useFakeTimers();
+    // The node removes the participant first (`participant_removed`), then sends `voice.move`.
+    const removed = life.onDisconnected(life.current!, "participant_removed");
+    await settle();
+    expect(useVoice.getState().target).toBeNull();
+    const followed = life.followMove("home.example", move);
+    await settle();
+    steps[1]!.answer.resolve();
+    await settle();
+    steps[1]!.media.resolve();
+    await expect(followed).resolves.toBe(true);
+    await vi.advanceTimersByTimeAsync(MOVE_GRACE_MS);
+    await removed;
+    expect(useVoice.getState().target).toEqual(target("c2"));
+    // No "disconnected by a moderator" notice for a move.
+    expect(useToasts.getState().toasts).toEqual([]);
   });
 });
 

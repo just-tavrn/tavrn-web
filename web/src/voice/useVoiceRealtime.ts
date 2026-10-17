@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 /**
  * Voice events of every node socket (VOICE.md §5, §7, §8, §11): `voice.state` feeds the presence store,
- * `voice.move` moves the own call, `soundboard.update` refreshes the clip lists; deletions and the own
+ * `voice.move` moves the own call (and the view, `moveFollow.ts`), `soundboard.update` refreshes the clip lists; deletions and the own
  * removal from a room end the call; `call.ring`/`call.update`/`call.end` drive calls in DMs. Kept apart from `useRealtime` so the voice client stays one module.
  */
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import { useLocation, useNavigate } from "react-router";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { TavrnApiError, type Member, type RoomDetail, type TavrnSocket, type VoiceChannelState } from "@tavrn/sdk";
 import { splitIdentity } from "@tavrn/e2ee";
@@ -17,6 +18,7 @@ import { useNode } from "../components/NodeScope";
 import { useVoicePresence } from "./presence";
 import { useVoice } from "./store";
 import { followMove, leaveVoice } from "./index";
+import { followMoveView } from "./moveFollow";
 import { onEndEvent, onRingEvent, onUpdateEvent } from "./calls/actions";
 
 /** Whether the call is in this room (or channel) of `domain`. */
@@ -32,6 +34,13 @@ export function useVoiceRealtime() {
   const home = useRealtimeState((s) => s.socket);
   const nodes = useNodeSockets((s) => s.sockets);
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  // Read when a move has been followed (the route may change while the rejoin runs); no resubscription per route.
+  const { pathname } = useLocation();
+  const route = useRef({ pathname, navigate });
+  useEffect(() => {
+    route.current = { pathname, navigate };
+  }, [pathname, navigate]);
   useMyVoiceStates();
 
   // Priority speaker claims (design note 4.13 item 3) are checked against the room's roles and overrides and
@@ -60,7 +69,11 @@ export function useVoiceRealtime() {
     const me = (domain: string) => (domain === homeDomain ? useAuth.getState().user?.id : useNodes.getState().sessions[domain]?.user.id);
     const offs = pairs.flatMap(([socket, domain]) => [
       socket.on<VoiceChannelState>("voice.state", (d) => useVoicePresence.getState().apply(domain, d)),
-      socket.on<{ room_id: string; from_channel_id: string; channel_id: string; user_id: string }>("voice.move", (d) => followMove(domain, d)),
+      socket.on<{ room_id: string; from_channel_id: string; channel_id: string; user_id: string }>("voice.move", (d) => {
+        void followMove(domain, d).then((followed) => {
+          if (followed) void followMoveView({ domain, data: d, pathname: route.current.pathname, navigate: route.current.navigate, queryClient });
+        });
+      }),
       socket.on<{ room_id: string }>("soundboard.update", (d) => void queryClient.invalidateQueries({ queryKey: ["soundboard", domain, d.room_id] })),
       socket.on<{ room_id: string; id: string }>("channel.delete", (d) => {
         useVoicePresence.getState().removeChannel(domain, d.id);

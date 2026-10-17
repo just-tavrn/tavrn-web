@@ -936,7 +936,7 @@ export function leave(): Promise<void> {
 }
 
 /** `voice.move` of the room's node: rejoin in the target channel (other MLS group, other key). */
-export function followMove(domain: string, data: { room_id: string; from_channel_id: string; channel_id: string }): Promise<void> {
+export function followMove(domain: string, data: { room_id: string; from_channel_id: string; channel_id: string }): Promise<boolean> {
   return life.followMove(domain, data);
 }
 
