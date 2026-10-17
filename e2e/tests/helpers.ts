@@ -417,11 +417,14 @@ export async function enrollTotpInUi(page: Page): Promise<{ totpSecret: string; 
   return holder;
 }
 
-/** Full registration through the wizard with TOTP; ends in the app. */
-export async function registerViaUi(page: Page, opts: { prefix?: string; displayName?: string; web?: string; domain?: string; dateOfBirth?: string } = {}): Promise<UiAccount> {
+/**
+ * Full registration through the wizard with TOTP; ends in the app. `here`: the registration form is already open
+ * (e.g. the invite page's "Create an account"), and the wizard ends wherever its `next` leads, not in the app shell.
+ */
+export async function registerViaUi(page: Page, opts: { prefix?: string; displayName?: string; web?: string; domain?: string; dateOfBirth?: string; here?: boolean } = {}): Promise<UiAccount> {
   const username = uniqueName(opts.prefix ?? "ui");
   const password = `passwort-${username}-xyz`;
-  await page.goto(`${opts.web ?? ""}/login`);
+  if (!opts.here) await page.goto(`${opts.web ?? ""}/login`);
   await page.getByRole("tab", { name: "Registrieren" }).click();
   await page.getByLabel("Benutzername", { exact: true }).fill(username);
   await page.getByLabel("Passwort", { exact: true }).fill(password);
@@ -435,8 +438,10 @@ export async function registerViaUi(page: Page, opts: { prefix?: string; display
   const recoveryCodes = await confirmRecoveryCodes(page);
   await expect(page.getByTestId("wizard-steps")).toContainText("Schritt 4 von 4");
   const recoveryWords = await confirmRecoveryKey(page);
-  await expect(page.getByTestId("app-shell")).toBeVisible();
-  await expect(page.getByTestId("e2ee-banner")).toHaveCount(0);
+  if (!opts.here) {
+    await expect(page.getByTestId("app-shell")).toBeVisible();
+    await expect(page.getByTestId("e2ee-banner")).toHaveCount(0);
+  }
   return { username, password, address: `${username}@${opts.domain ?? "localhost"}`, ...totp, recoveryWords, recoveryCodes };
 }
 

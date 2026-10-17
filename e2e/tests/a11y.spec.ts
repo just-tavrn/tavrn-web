@@ -113,11 +113,22 @@ test.describe("Accessibility (axe, WCAG 2.2 AA)", () => {
     await expect(page.getByRole("heading", { name: "Link ungültig" })).toBeVisible();
     await scan(page, "verify e-mail (invalid link)");
 
-    // The invite page of a signed-in user who is not a member yet (signed out it leads to the sign-in).
+    // The invite page signed out: the preview with the rules (read-only), the room's documents and the two actions.
+    const patched = await request.patch(`${NODE}/api/v1/rooms/${room.id}`, { headers: auth(owner.token), data: { rules: "Sei **nett**.", privacy_notice: "Wir speichern Nachrichten." } });
+    expect(patched.ok(), await patched.text()).toBeTruthy();
+    await page.goto(`/invite/${code}`);
+    await expect(page.getByTestId("invite-room-name")).toHaveText("Barrierefrei");
+    await expect(page.getByRole("link", { name: "Zum Beitreten anmelden" })).toBeVisible();
+    await page.getByTestId("room-doc-link-privacy").click();
+    await expect(page.getByTestId("room-doc-privacy")).toContainText("Wir speichern Nachrichten.");
+    await scan(page, "invite (signed out)");
+
+    // The invite page of a signed-in user who is not a member yet.
     const guest = await registerViaApi(request, "a11yg");
     await loginAs(page, guest);
     await page.goto(`/invite/${code}`);
     await expect(page.getByText("Barrierefrei").first()).toBeVisible();
+    await expect(page.getByTestId("accept-rules")).toBeVisible();
     await scan(page, "invite");
   });
 
