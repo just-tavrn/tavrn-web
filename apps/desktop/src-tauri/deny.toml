@@ -40,6 +40,12 @@ allow = ["CDLA-Permissive-2.0"]
 yanked = "deny"
 # Accepted until upstream moves. Review on every dependency update.
 ignore = [
+    # zbus 5's split crates were merged into zbus 6 (https://github.com/z-galaxy/zbus/issues/2043).
+    # These are informational unmaintained advisories, not a reported vulnerability. Tauri's notification and
+    # keyring dependencies still require zbus 5. Track tavrn-web#210; remove once those upstreams migrate to zbus 6.
+    { id = "RUSTSEC-2026-0370", reason = "zvariant merged into zbus 6; notification/keyring upstreams still require the zbus 5 stack" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names merged into zbus 6; notification/keyring upstreams still require the zbus 5 stack" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive merged into zbus 6; notification/keyring upstreams still require the zbus 5 stack" },
     # proc-macro-error 1.0 is unmaintained: a build-time macro crate of glib-macros 0.18, part of the GTK 3
     # bindings (gtk-rs 0.18) that Tauri 2's Linux runtime (wry, tao, muda, webkit2gtk) is built on; not part
     # of the app's runtime code, and no Tauri 2 release leaves those bindings yet.
