@@ -1291,7 +1291,7 @@ the text once), and a lock next to the WEBHOOK badge says which.
 | Page | Tabs |
 |---|---|
 | User settings | Profile, Privacy & safety, Security, Voice & video, Notifications, Emojis, Sounds, Applications, Language, Devices, Legal & privacy, and App in the desktop app |
-| Room settings | Overview, My profile here, Roles, Channels, Members, Bans, Invites, Webhooks, Applications, Emojis, Soundboard, Moderation, Audit log; Reports, Auto-moderation and History requests where the node announces them; each tab only with its permission |
+| Room settings | Overview, Privacy & legal (managers; other members while the room publishes a document), My profile here, Roles, Channels, Members, Bans, Invites, Webhooks, Applications, Emojis, Soundboard, Moderation, Audit log; Reports, Auto-moderation and History requests where the node announces them; each tab only with its permission |
 | Node administration | Overview, Users, Invites, Bans, Reports (with `reports.v1`), Entitlements, API tokens, Applications, SSO (when single sign-on is configured), Federation, Legal, Notices, Audit log |
 
 **Room rules** (Room settings → Overview → Rules, at most 10,000 characters) are Markdown, a subset like the profile
@@ -1302,6 +1302,30 @@ with the legal documents' renderer (`renderDocument` in `web/src/lib/markdown.ts
 dropped, links keep only `http(s)`, `mailto` and same-site targets, DOMPurify), compact (headings at most the size of
 the text's third level) and in a scroll box when they are long, above "I accept the rules"
 (`web/src/components/RoomRules.tsx`).
+
+**Joining a room** looks the same on every path (tavrn-web#195; `web/src/components/JoinRoomDialog.tsx`): the invite
+page, the "+" dialog's pasted link, the invite list on the home view (personal invitations) and the public rooms of
+the home view and of Discover. The invite list and the public room lists first load the room's preview from the
+hosting node (`GET /rooms/{room_id}/preview`, or the invite preview of the invitation's code; another node through
+its federated session). A room with rules opens a dialog with the room's icon, name and node, the rules and
+"I accept the rules": Join stays disabled until it is ticked, and `accept_rules` is exactly that answer (the client
+never sends `true` on its own). A room with a privacy notice or a legal notice shows a link to each in the same block;
+it opens the document below the link (a disclosure, the document in a focusable scroll box with the date of its last
+change). The documents are information, not a second checkbox. A room with neither rules nor documents is joined
+directly, as before. A direct join the node refuses for rules (added since the preview) opens the dialog; a node
+without the preview route is joined directly and a refusal is shown.
+
+**Privacy notice and legal notice of a room** (Room settings → Privacy & legal; PROTOCOL.md §6b "Room privacy notice
+and legal notice"): optional Markdown documents for rooms that are not purely private, up to 20,000 and 5,000
+characters, rendered like the rules. Members with *Manage room* edit both with **Preview** and **Load a template**
+(a short draft in English or German with `[[…]]` placeholders: who is responsible, what the room processes, the node
+operator as a separate controller with a link to the node's privacy policy when it publishes one;
+`web/src/lib/roomLegalTemplates.ts`; it asks before replacing a text). The tab's help text says when a room may need
+them, that this is not legal advice, and links the operator guide
+([tavrn/docs/room-legal.md](https://github.com/just-tavrn/tavrn/blob/main/docs/room-legal.md)). Other members see
+the tab read-only while the room publishes a document; the room menu (rail and room header) has "Privacy notice" and
+"Legal notice" entries while they are set, which open the document in a dialog. Members are not asked to accept a
+changed document; the date of the last change is shown with it.
 
 ## The desktop app
 

@@ -161,6 +161,14 @@ Before: 3 critical + 325 serious + 241 moderate + 25 minor nodes. After: 0 criti
   their domain as visible text in the item's name). The result is a toast (`status`, or `alert` for a refusal), so it
   is announced. `e2e/tests/friend-invite.spec.ts` scans the friend menu with the open submenu with axe on the desktop
   and the phone project.
+- **Joining a room and the room's documents** (`components/JoinRoomDialog.tsx`, `components/RoomDocuments.tsx`,
+  `pages/settings/RoomLegalTab.tsx`): the join dialog is the shared modal `Dialog` (labelled "Join <room>", focus
+  trapped, Escape cancels, the first control takes the focus); the rules are a labelled, focusable scroll region and
+  "I accept the rules" a labelled checkbox that enables Join. The privacy notice and the legal notice are disclosure
+  buttons (`aria-expanded`, `aria-controls`, a decorative arrow, 40 px high) that open the document as a labelled,
+  focusable region with its date as text. The settings tab's editors are labelled fields with their limits as hints.
+  `e2e/tests/room-legal.spec.ts` scans the editor, the join dialog, the member's document dialog and the read-only tab
+  with axe; `web/src/components/a11y.test.tsx` checks names, focus and the disclosure.
 - **History restore after a key reset** (`components/HistoryRestoreBanner.tsx`, `pages/settings/HistoryRequestsTab.tsx`):
   the requester's banner is a labelled region with real buttons and a labelled message field; each request on the
   settings page is a labelled section with a definition list for the dates, the channels as a list and the identity
