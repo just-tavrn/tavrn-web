@@ -16,6 +16,7 @@ import { SpeakerGlyph } from "../voice/ui/SpeakerGlyph";
 import { groupMembers, memberColor, memberName } from "../lib/memberGroups";
 import { usePresence } from "../stores/presence";
 import { useAuth } from "../stores/auth";
+import { SIDEBAR_CATEGORY } from "../components/sidebarRow";
 
 /**
  * The member list of a room (design note 4.11): sections for hoisted roles ("display separately"), then
@@ -50,7 +51,7 @@ export function MemberList({ roomId }: { roomId: string }) {
       <h2 className="sr-only">{t("members.count", { count: members.data.length })}</h2>
       {sections.map((section) => (
         <section key={section.id} className="mb-3" data-testid="member-section" data-section={section.kind === "role" ? section.role.name : section.kind}>
-          <h3 className="flex items-center gap-1 px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-fg-2">
+          <h3 className={`flex items-center gap-1 px-1 pb-1 ${SIDEBAR_CATEGORY}`}>
             {section.kind === "role" ? section.role.name : t(`members.section.${section.kind}`)} – {section.members.length}
           </h3>
           <ul className="space-y-0.5">

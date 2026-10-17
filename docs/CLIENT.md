@@ -1282,7 +1282,15 @@ exactly once, and the page says that a bot token is a single factor), transfers 
 node and resets a bot's identity. Room settings → **Applications** lists the bots installed in the room (removing one
 takes it out of the room and deletes its role), Admin → **Applications** the applications of the node (a disabled one
 cannot act). Bots carry the BOT badge; channels show whether bots are kept out ("No bots") or may read an encrypted
-channel. Room settings → **Webhooks** creates webhooks for services such as CI or monitoring; in end-to-end encrypted
+channel. **Who reads along** (APPLICATIONS.md §3.6): when a bot joins or leaves an encrypted channel's group, a line
+with its avatar and BOT badge says so. For a channel every member can see, it is an entry of the welcome channel ("X
+added bot Y to the encrypted channel #z"); for any other channel the line is in that channel itself ("Y can now read this
+channel (added by X)", "Y can no longer read this channel: reason"), so members who cannot see the channel never learn
+its name. Such a line is quiet: it counts as nothing unread and notifies nobody (`lib/securityNotice.ts`). Welcome
+channel entries name a channel only when it is in the viewer's channel list ("a private channel" otherwise, e.g. older
+entries about a channel that became private). Next to the lock in an encrypted channel's header, a robot head with a
+count shows the bots whose leaves are in the group right now, read from this device's roster (names in the tooltip and
+the accessible name; `components/BotReaders.tsx`). Room settings → **Webhooks** creates webhooks for services such as CI or monitoring; in end-to-end encrypted
 channels their messages are sealed for the channel's members, by the service itself or by the node (which then saw
 the text once), and a lock next to the WEBHOOK badge says which.
 
@@ -1415,6 +1423,12 @@ writes English where it has no texts for the language.
   marks, muted, bot markers) are 16 px SVGs, the unread badges 20 px high. Category labels are 12 px semibold
   uppercase. Voice participants: 14 px names, 24 px avatars. Names truncate with an ellipsis; the sidebar stays 240 px
   wide on desktop.
+- **Member list** (`web/src/components/MemberEntry.tsx`, `web/src/pages/MemberList.tsx`): names as large as channel
+  names (16 px medium on a 20 px line), the status line 12 px on a 16 px line, 28 px avatars with the presence dot,
+  rows at least 40 px high, section labels like the sidebar's category
+  labels (12 px semibold uppercase). Phones and tablets show the same list in the drawer. All sizes are in `rem`, so
+  the browser's or the system's text size scales the sidebar and the member list alike (there is no separate size
+  setting).
 - **No text selection on the chrome**: the room rail, the sidebars (channel list, home, voice and account bars), the
   member list, the phone top bar, the views' headers, the settings navigation, tab bars, the voice controls, context
   menus and dialog titles carry Tailwind's `select-none` (`user-select: none` with the `-webkit-` prefix), so a press
