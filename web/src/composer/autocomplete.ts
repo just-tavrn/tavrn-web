@@ -23,6 +23,8 @@ export interface CompletionProvider<T = unknown> {
   id: string;
   /** One character that opens the provider at the start of a word. */
   trigger: string;
+  /** Characters needed after the trigger before anything is offered (`#` needs one: `# ` stays a heading). */
+  minQuery?: number;
   /** Suggestions for `query` (the text between the trigger and the caret), best first, at most {@link MAX_SUGGESTIONS}. */
   suggest: (query: string) => Suggestion<T>[];
 }

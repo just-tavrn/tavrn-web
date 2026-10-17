@@ -138,3 +138,32 @@ describe("ConversationView: the composer's mentions and drafts", () => {
     expect(within(screen.getByRole("listbox")).getAllByRole("option").map((o) => o.getAttribute("data-key"))).toEqual(["dora@t.local", "eve@far.example", "bob@t.local"]);
   });
 });
+
+describe("ConversationView: #channel links", () => {
+  it("offers the room's channels the user can view (never a hidden one), none in DMs", async () => {
+    useAuth.setState({ token: "t", user: me });
+    mockFetch(routes([]));
+    const linkRoom = {
+      ...room,
+      is_owner: false,
+      my_roles: [],
+      categories: [],
+      channels: [
+        { id: "01J9ZK3G5M8Q2W4E6R8T0Y2CAA", name: "offen", kind: "text", category_id: null, position: 0, encrypted: false },
+        { id: "01J9ZK3G5M8Q2W4E6R8T0Y2CBB", name: "ohne-zugang", kind: "text", category_id: null, position: 1, encrypted: false },
+        { id: "c1", name: "hier", kind: "text", category_id: null, position: 2, encrypted: false },
+      ],
+      overrides: [{ target_type: "channel", target_id: "01J9ZK3G5M8Q2W4E6R8T0Y2CBB", subject_type: "role", subject_id: "everyone", allow: "0", deny: bits(Permission.VIEW_CHANNEL) }],
+    } as unknown as RoomDetail;
+    renderWithProviders(
+      <ConversationView conversationId="c1" encrypted={false} header={<h1>x</h1>} placeholder="Nachricht" canSend canManage={false} canAttach={false} canReact canPin members={["bob@t.local"]} mayManage={false} domain="t.local" room={linkRoom} roomId="r1" roomMembers={members} permissions={Permission.SEND_MESSAGES} />,
+    );
+    const box = screen.getByLabelText("Nachricht");
+    await waitFor(() => expect(box).toBeEnabled());
+    const u = userEvent.setup();
+    await u.type(box, "#o");
+    expect(within(screen.getByRole("listbox", { name: "Kanäle zum Verlinken" })).getAllByRole("option").map((o) => o.getAttribute("data-key"))).toEqual(["01J9ZK3G5M8Q2W4E6R8T0Y2CAA"]);
+    await u.keyboard("{Enter}");
+    expect((box as HTMLTextAreaElement).value).toMatch(/\/rooms\/r1\/channels\/01J9ZK3G5M8Q2W4E6R8T0Y2CAA $/);
+  });
+});

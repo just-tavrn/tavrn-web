@@ -11,6 +11,9 @@ import { MediaAvatar, UserAvatar } from "../components/Avatar";
 import { BotBadge } from "../components/Badges";
 import type { Suggestion } from "./autocomplete";
 import type { MentionCandidate } from "./mentions";
+import type { ChannelCandidate } from "./channels";
+import { AnnouncementIcon, FolderIcon, ForumIcon, HashIcon, SparkleIcon } from "../components/icons";
+import { SpeakerIcon } from "../voice/ui/icons";
 
 /** The id of option `index` of the list `id` (the text box's `aria-activedescendant`). */
 export const optionId = (id: string, index: number) => `${id}-opt-${index}`;
@@ -83,6 +86,20 @@ export function MentionOption({ item }: { item: MentionCandidate }) {
       </span>
       <span className="min-w-0 truncate font-medium text-fg-0">{item.kind === "role" ? `@${item.name}` : item.name}</span>
       <span className="ml-auto shrink-0 text-xs text-fg-2">{item.kind === "role" ? t("composer.mention.role") : t("composer.mention.everyone_hint")}</span>
+    </>
+  );
+}
+
+/** One row of the channel list: the kind icon (as in the channel list), the name and its category. */
+export function ChannelOption({ item }: { item: ChannelCandidate }) {
+  const Icon = item.kind === "voice" ? SpeakerIcon : item.kind === "announcement" ? AnnouncementIcon : item.kind === "forum" ? ForumIcon : item.kind === "files" ? FolderIcon : item.kind === "system" ? SparkleIcon : HashIcon;
+  return (
+    <>
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center text-fg-2">
+        <Icon size={18} data-testid="channel-kind-icon" data-icon={item.kind} />
+      </span>
+      <span className="min-w-0 truncate font-medium text-fg-0">{item.name}</span>
+      {item.category && <span className="ml-auto min-w-0 shrink truncate text-xs text-fg-2" data-testid="suggest-category">{item.category}</span>}
     </>
   );
 }

@@ -25,11 +25,13 @@ export function useCompletion<T>({
 }) {
   const completion = useMemo(() => {
     if (!enabled || caret < 0) return null;
+    // The trigger nearest to the caret wins (`#general @al…` completes the mention).
+    let best: { provider: CompletionProvider<T>; trigger: Trigger } | null = null;
     for (const provider of providers) {
       const trigger = findTrigger(value, caret, provider.trigger);
-      if (trigger) return { provider, trigger };
+      if (trigger && trigger.query.length >= (provider.minQuery ?? 0) && (!best || trigger.start > best.trigger.start)) best = { provider, trigger };
     }
-    return null;
+    return best;
   }, [enabled, caret, providers, value]);
   const items = useMemo(() => (completion ? completion.provider.suggest(completion.trigger.query) : []), [completion]);
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);

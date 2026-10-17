@@ -407,7 +407,16 @@ space, exactly what the send path's `extractMentions` recognises. The list is a 
 (ARIA combobox: `aria-expanded`, `aria-controls`, `aria-activedescendant`); it sits above the input, so on phones it
 stays above the on-screen keyboard, with 44 px rows. The slash-command palette and its argument suggestions take
 precedence: both never open at once, and inside a command only its free text (`/me waves at @…`) gets mention
-suggestions. The provider interface (`CompletionProvider`) is meant for further triggers (`#channel` links).
+suggestions. Further triggers plug in as providers (`CompletionProvider`); when two triggers are in the line, the one
+nearest to the caret wins.
+
+**Channel links** (`composer/channels.ts`): `#` at the start of a word followed by at least one character offers the
+channels of the current room the user can view (every kind, with its kind icon as in the channel list, the category
+as secondary text, default channels by their localized name; the same permission rules as the channel list), never
+channels of other rooms and nothing in DMs and group DMs. Only name prefixes match (also of words in the name), so
+`#1`, `C#`, a heading `# Title` or `##` are never taken over. Keys, mouse and the list's semantics are those of the
+mention suggestions. The pick inserts the channel's canonical link (`lib/tavrnLinks.ts` `channelUrl`) plus a space;
+readers see it as a `#name` chip, and the styled input shows it with the pill colours.
 
 **The formatting bar.** The "Formatting" button (the "Aa" glyph, `aria-pressed`) in the input row shows or hides a
 toolbar above the text box (a device preference, `tavrn.composer` in localStorage: a preference, never content). It has

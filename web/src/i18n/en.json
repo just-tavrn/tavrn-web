@@ -2972,6 +2972,7 @@
   "composer.format.styled": "Show formatting while typing",
   "composer.format.styled_hint": "Shows bold, italics, code and the other formats in the text box while you type (the Markdown characters stay visible)",
   "composer.suggest.mention": "People and roles to mention",
+  "composer.suggest.channel": "Channels to link",
   "composer.mention.you": "you",
   "composer.mention.role": "Role",
   "composer.mention.everyone_hint": "Notifies everyone in this channel",
