@@ -10,7 +10,7 @@ import { describeError, toastError, useToasts } from "../stores/toasts";
 import { api } from "../lib/api";
 import { useAuth } from "../stores/auth";
 import { iconClient, joinRoom, loadNodes, loadRoomIcons, loadRooms, previewRoom, type RoomIconUrls } from "../stores/discover";
-import { useJoinFlow } from "../components/JoinRoomDialog";
+import { useJoinFlow, type JoinFlow } from "../components/JoinRoomDialog";
 import { MediaAvatar } from "../components/Avatar";
 import { isHome, useNodes } from "../stores/nodes";
 import { useOriginDomain } from "../lib/origin";
@@ -132,12 +132,11 @@ function ReportButton({ target, label, onReport }: { target: ReportTarget; label
   );
 }
 
-function RoomCard({ room, icon, onReport }: { room: VerifiedRoom; icon?: RoomIconUrls; onReport: (target: ReportTarget) => void }) {
+function RoomCard({ room, icon, onReport, flow }: { room: VerifiedRoom; icon?: RoomIconUrls; onReport: (target: ReportTarget) => void; flow: JoinFlow }) {
   const t = useT();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
-  const flow = useJoinFlow();
   // Rules and the room's documents first when it has any (components/JoinRoomDialog.tsx, tavrn-web#195).
   const join = async () => {
     setBusy(true);
@@ -180,7 +179,6 @@ function RoomCard({ room, icon, onReport }: { room: VerifiedRoom; icon?: RoomIco
           {busy ? t("discover.joining") : t("discover.join")}
         </Button>
       </div>
-      {flow.overlay}
     </li>
   );
 }
@@ -229,6 +227,8 @@ function RoomsTab({ node, onClearNode }: { node: string | null; onClearNode: () 
   const icons = useRoomIcons(list);
   const hidden = rooms.data?.pages.reduce((n, p) => n + p.hidden, 0) ?? 0;
   const report = useReportDialog();
+  // The join dialog belongs to the list, not to a card: a refetch that re-renders the cards keeps it open.
+  const flow = useJoinFlow();
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
@@ -263,10 +263,11 @@ function RoomsTab({ node, onClearNode }: { node: string | null; onClearNode: () 
       )}
       <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" data-testid="discover-rooms">
         {list.map((r) => (
-          <RoomCard key={`${r.node}/${r.room_id}`} room={r} icon={icons[`${r.node}/${r.room_id}`]} onReport={report.open} />
+          <RoomCard key={`${r.node}/${r.room_id}`} room={r} icon={icons[`${r.node}/${r.room_id}`]} onReport={report.open} flow={flow} />
         ))}
       </ul>
       {report.dialog}
+      {flow.overlay}
       {rooms.hasNextPage && (
         <div className="flex justify-center">
           <Button variant="ghost" onClick={() => void rooms.fetchNextPage()} disabled={rooms.isFetchingNextPage}>
