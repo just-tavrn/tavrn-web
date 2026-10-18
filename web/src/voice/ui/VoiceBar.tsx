@@ -104,18 +104,6 @@ export function VoiceBar() {
   return (
     <div className="relative border-t border-line bg-bg-0 px-1 py-1" data-testid="voice-bar" data-status={status} data-call={target.call || undefined}>
       {overlay}
-      {whisperTarget && <button type="button" data-testid="whisper-selected-hold" disabled={!canWhisper || status !== "connected"}
-        className="min-h-11 w-full touch-none rounded-md px-2 text-left text-xs text-accent hover:bg-bg-3 disabled:opacity-50"
-        aria-label={t("voice.whisper.hold", { name: whisperTarget })}
-        onTouchStart={(e) => e.stopPropagation()}
-        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
-        onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); whisperToAddress(whisperTarget, true); }}
-        onPointerUp={() => whisperToAddress(whisperTarget, false)} onPointerCancel={() => whisperToAddress(whisperTarget, false)} onLostPointerCapture={() => whisperToAddress(whisperTarget, false)}
-        onKeyDown={(e) => { if (!e.repeat && (e.key === " " || e.key === "Enter")) { e.preventDefault(); whisperToAddress(whisperTarget, true); } }}
-        onKeyUp={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); whisperToAddress(whisperTarget, false); } }} onBlur={() => whisperToAddress(whisperTarget, false)}>
-        {t("voice.whisper.hold", { name: whisperTarget })}
-      </button>}
-      {whispering.length > 0 && <p role="status" className="truncate px-2 text-xs text-accent" data-testid="whisper-bar">{t("voice.whisper.sending", { names: whispering.map((id) => id.split("/")[0]).join(", ") })}</p>}
       {/*
         One button over the whole bar opens the channel: the first line (signal with the padlock, a short status, the
         quality) leaves room for the controls laid over its right end, the channel and room get the full width below.
@@ -153,6 +141,18 @@ export function VoiceBar() {
           </span>
         )}
       </button>
+      {whisperTarget && <button type="button" data-testid="whisper-selected-hold" disabled={!canWhisper || status !== "connected"}
+        className="min-h-11 w-full touch-none rounded-md px-2 text-left text-xs text-accent [overflow-wrap:anywhere] hover:bg-bg-3 disabled:opacity-50"
+        aria-label={t("voice.whisper.hold", { name: whisperTarget })}
+        onTouchStart={(e) => e.stopPropagation()}
+        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
+        onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); whisperToAddress(whisperTarget, true); }}
+        onPointerUp={() => whisperToAddress(whisperTarget, false)} onPointerCancel={() => whisperToAddress(whisperTarget, false)} onLostPointerCapture={() => whisperToAddress(whisperTarget, false)}
+        onKeyDown={(e) => { if (!e.repeat && (e.key === " " || e.key === "Enter")) { e.preventDefault(); whisperToAddress(whisperTarget, true); } }}
+        onKeyUp={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); whisperToAddress(whisperTarget, false); } }} onBlur={() => whisperToAddress(whisperTarget, false)}>
+        {t("voice.whisper.hold", { name: whisperTarget })}
+      </button>}
+      {whispering.length > 0 && <p role="status" className="truncate px-2 text-xs text-accent" data-testid="whisper-bar">{t("voice.whisper.sending", { names: whispering.map((id) => id.split("/")[0]).join(", ") })}</p>}
       <div className="absolute right-1 top-1 flex items-center">
         <ControlButton label={muted ? t("voice.unmute") : t("voice.mute")} active={muted} pulse={mutedTalk} onClick={() => void toggleMute()} testid="voice-bar-mute" menu={micMenu.triggerProps} compact>
           {muted ? <MicOffIcon /> : <MicIcon />}
