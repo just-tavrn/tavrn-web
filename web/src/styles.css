@@ -267,3 +267,6 @@ html[data-flag-font] :is(.markdown, .emoji-font) { font-family: "Twemoji Country
 .mention {
   unicode-bidi: isolate;
 }
+
+/* Whisper markers remain static with every motion preference. */
+.voice-tile[data-whisper] { outline: 2px solid var(--color-accent); outline-offset: -2px; }

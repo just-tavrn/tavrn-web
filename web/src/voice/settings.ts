@@ -17,7 +17,7 @@ export type Resolution = "360p" | "720p" | "1080p" | "1440p" | "4k";
 export type CameraFacing = "user" | "environment";
 
 /** Notification sounds (`cues.ts`). */
-export const CUE_NAMES = ["join", "leave", "mute", "unmute", "deafen", "undeafen", "stream_on", "stream_off", "connection_lost", "connection_restored", "ptt_on", "ptt_off", "priority_on", "priority_off", "muted_talk"] as const;
+export const CUE_NAMES = ["join", "leave", "mute", "unmute", "deafen", "undeafen", "stream_on", "stream_off", "connection_lost", "connection_restored", "ptt_on", "ptt_off", "priority_on", "priority_off", "muted_talk", "whisper_start", "whisper_end"] as const;
 export type Cue = (typeof CUE_NAMES)[number];
 
 /**
@@ -25,12 +25,17 @@ export type Cue = (typeof CUE_NAMES)[number];
  * system-wide. `""` = none. The shell's canonical spelling: `Ctrl+Alt+Shift+Super+<KeyboardEvent.code>`, a key alone
  * as its code (`KeyV`, `F13`), a modifier alone as its own code (`ControlLeft`).
  */
-export type Hotkeys = Record<HotkeyAction, string>;
+export type Hotkeys = Record<"push_to_talk" | "priority" | "toggle_mute" | "toggle_deafen", string> & Partial<Record<"whisper_reply" | `whisper:${string}`, string>>;
 
-/** The actions in their order (a migrated conflict keeps the earlier one). */
-const ACTIONS: readonly HotkeyAction[] = ["push_to_talk", "priority", "toggle_mute", "toggle_deafen"];
+/** Only bounded voice action names cross the desktop bridge. */
+export const validHotkeyAction = (a: string): a is HotkeyAction => ["push_to_talk", "priority", "toggle_mute", "toggle_deafen", "whisper_reply"].includes(a) || /^whisper:[A-Za-z0-9_-]{1,64}$/.test(a);
+
+
+export interface WhisperGroup { id: string; name: string; members: string[] }
+export const whisperRoomKey = (domain: string, roomId: string) => `${domain}/${roomId}`;
 
 export interface VoiceSettings {
+  whisperGroups: Record<string, WhisperGroup[]>;
   /** Empty = the system default device. */
   inputDeviceId: string;
   outputDeviceId: string;
@@ -93,6 +98,7 @@ export interface VoiceSettings {
 
 /** The defaults outside Android; {@link defaultSettings} has this device's (the talking-while-muted hint differs). */
 export const DEFAULT_SETTINGS: VoiceSettings = {
+  whisperGroups: {},
   inputDeviceId: "",
   outputDeviceId: "",
   cameraDeviceId: "",
@@ -199,7 +205,7 @@ function hotkeys(r: Record<string, unknown>): Hotkeys {
   const out = { ...DEFAULT_SETTINGS.hotkeys };
   if (r.hotkeys && typeof r.hotkeys === "object") {
     const h = r.hotkeys as Record<string, unknown>;
-    for (const a of ACTIONS) if (a in h) out[a] = binding(h[a]);
+    for (const a of Object.keys(h).filter(validHotkeyAction).slice(0, 128)) out[a] = binding(h[a]);
   } else {
     const legacy = r.desktopHotkeys && typeof r.desktopHotkeys === "object" ? (r.desktopHotkeys as Record<string, unknown>) : {};
     const global = (a: HotkeyAction) => binding(legacy[a]);
@@ -211,7 +217,7 @@ function hotkeys(r: Record<string, unknown>): Hotkeys {
   }
   // Never one binding for two actions.
   const seen = new Set<string>();
-  for (const a of ACTIONS) {
+  for (const a of Object.keys(out) as HotkeyAction[]) {
     if (out[a] && seen.has(out[a])) out[a] = "";
     else if (out[a]) seen.add(out[a]);
   }
@@ -255,6 +261,7 @@ export function normalizeSettings(raw: unknown): VoiceSettings {
     cuesDisabled: Array.isArray(r.cuesDisabled) ? CUE_NAMES.filter((c) => (r.cuesDisabled as unknown[]).includes(c)) : [],
     ringVolume: num(r.ringVolume, d.ringVolume, 0, 100),
     hotkeys: hotkeys(r),
+    whisperGroups: normalizeWhisperGroups(r.whisperGroups),
     mutedTalkHint: bool(r.mutedTalkHint, d.mutedTalkHint),
     keepScreenOn: bool(r.keepScreenOn, d.keepScreenOn),
     nativeEngine: bool(r.nativeEngine, d.nativeEngine),
@@ -356,4 +363,20 @@ export function cameraOptions(s: VoiceSettings, limit: { max_resolution: string;
 /** Phones and tablets (touch first, or the Android app): their cameras are "front" and "back", not a device list. */
 export function phoneCameras(): boolean {
   return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
+}
+
+
+function normalizeWhisperGroups(raw: unknown): Record<string, WhisperGroup[]> {
+  const out: Record<string, WhisperGroup[]> = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (const [room, groups] of Object.entries(raw).slice(0, 128)) {
+    if (room.length > 512 || !/^[^\s/]+\/[^\s/]+$/.test(room) || !Array.isArray(groups)) continue;
+    const seen = new Set<string>();
+    out[room] = groups.slice(0, 32).flatMap((g) => {
+      if (!g || typeof g !== "object" || typeof g.id !== "string" || !validHotkeyAction(`whisper:${g.id}`) || seen.has(g.id) || typeof g.name !== "string" || !g.name.trim() || !Array.isArray(g.members)) return [];
+      seen.add(g.id);
+      return [{ id: g.id, name: g.name.trim().slice(0, 64), members: [...new Set<string>(g.members.filter((m: unknown): m is string => typeof m === "string" && m.length <= 320 && /^[^\s/@]+@[^\s/]+$/.test(m)))].slice(0, 32) }];
+    });
+  }
+  return out;
 }

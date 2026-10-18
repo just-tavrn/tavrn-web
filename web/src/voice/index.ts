@@ -4,6 +4,9 @@
  * RNNoise, background effects) sits behind dynamic imports and is loaded on the first join, so the text
  * client stays light (design note 9e).
  */
+import { splitIdentity } from "@tavrn/e2ee";
+import { t } from "../i18n";
+import { useVoiceSettings, whisperRoomKey } from "./settings";
 import { previewing } from "../stores/rolePreview";
 import { toastPreviewRefused } from "../lib/previewGuard";
 import { useToasts } from "../stores/toasts";
@@ -137,3 +140,37 @@ export async function followMove(domain: string, data: { room_id: string; from_c
 }
 
 export type { VoiceTarget, ScreenShareOptions };
+
+
+/** Whisper is only available with the browser engine; native receivers fail closed. */
+export async function whisperTo(identities: string[]): Promise<void> {
+  if (useVoice.getState().status !== "connected") return;
+  if (useVoiceEngine.getState().kind !== "browser") {
+    if (identities.length) useToasts.getState().push({ kind: "warning", title: t("voice.whisper.browser_only") });
+    return;
+  }
+  await (await import("./session")).setWhisper(identities);
+}
+let whisperHoldAction: string | null = null;
+let whisperAddressHold: string | null = null;
+export function whisperToAddress(address: string, held: boolean): void {
+  if (!held && whisperAddressHold !== address) return;
+  whisperHoldAction = null;
+  whisperAddressHold = held ? address : null;
+  const s = useVoice.getState();
+  void whisperTo(held ? Object.keys(s.media).filter((id) => id !== s.identity && splitIdentity(id).address === address) : []);
+}
+export function whisperHotkey(action: string, held: boolean): void {
+  const s = useVoice.getState();
+  if (!held) {
+    if (whisperHoldAction === action) { whisperHoldAction = null; void whisperTo([]); }
+    return;
+  }
+  whisperHoldAction = action;
+  whisperAddressHold = null;
+  if (action === "whisper_reply") { if (s.lastWhisperer) void whisperTo([s.lastWhisperer]); return; }
+  if (!s.target || s.target.call) return;
+  const groups = useVoiceSettings.getState().settings.whisperGroups[whisperRoomKey(s.target.domain, s.target.roomId)] ?? [];
+  const group = groups.find((g) => `whisper:${g.id}` === action);
+  if (group) void whisperTo(Object.keys(s.media).filter((id) => id !== s.identity && group.members.includes(splitIdentity(id).address)));
+}

@@ -15,7 +15,7 @@
  * `electron.ts` hands them to the client's `Platform` types, so the compiler keeps both in step.
  */
 
-export type HotkeyAction = "push_to_talk" | "priority" | "toggle_mute" | "toggle_deafen";
+export type HotkeyAction = "push_to_talk" | "priority" | "toggle_mute" | "toggle_deafen" | "whisper_reply" | `whisper:${string}`;
 export interface HotkeyEvent {
   action: HotkeyAction;
   pressed: boolean;

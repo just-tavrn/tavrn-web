@@ -22,6 +22,9 @@ import { toastError, useToasts } from "../../stores/toasts";
 import { useAction } from "../../hooks/useAction";
 import { participantsOf, useVoicePresence, voiceChannelOfUser } from "../../voice/presence";
 import { useVoice } from "../../voice/store";
+import { whisperToAddress } from "../../voice/index";
+import { whisperRoomKey } from "../../voice/settings";
+import { useVoiceEngine } from "../../voice/engine";
 import { useVoiceSettings } from "../../voice/settings";
 import { setLocalMute, useLocalMute } from "../../voice/localMute";
 import { VolumeSlider } from "../../voice/ui/StreamAudio";
@@ -65,6 +68,11 @@ export function useMemberMenu(room: RoomDetail, member: Member | null, voiceTarg
   const participant = useVoicePresence((s) => (voiceChannelId ? participantsOf(s, domain, voiceChannelId).find((p) => p.user_id === userId) : undefined)) ?? voiceTarget?.participant;
   const inMyCall = useVoice((s) => !!voiceChannelId && s.status === "connected" && s.target?.domain === domain && s.target.channelId === voiceChannelId);
   const address = member?.user.address ?? voiceTarget?.participant.user ?? "";
+  const mayWhisper = useVoice((s) => s.canSpeak && !s.muted && !s.deafened);
+  const browserVoice = useVoiceEngine((s) => s.kind === "browser");
+  const whispering = useVoice((s) => s.whispering);
+  const whisperGroupsByRoom = useVoiceSettings((s) => s.settings.whisperGroups);
+  const whisperGroups = whisperGroupsByRoom[whisperRoomKey(domain, room.id)] ?? [];
   const volume = useVoiceSettings((s) => s.settings.userVolumes[address] ?? 100);
   const streamVolume = useVoiceSettings((s) => s.settings.streamVolumes[address] ?? 100);
   const setUserVolume = useVoiceSettings((s) => s.setUserVolume);
@@ -169,6 +177,20 @@ export function useMemberMenu(room: RoomDetail, member: Member | null, voiceTarg
     );
   }
 
+  if (menu.open && inMyCall && userId !== me?.id) {
+    entries.unshift({ kind: "item", id: "whisper-to", label: t("voice.whisper.to", { name }), disabled: !browserVoice || !mayWhisper, reason: !browserVoice ? t("voice.whisper.browser_only") : !mayWhisper ? t("voice.whisper.unavailable") : undefined,
+      onSelect: () => whisperToAddress(address, !whispering.some((id) => id.startsWith(`${address}/`))) });
+    entries.unshift({ kind: "submenu", id: "whisper-group", label: t("voice.whisper.add_to_group"), items: [
+      ...whisperGroups.map((g): MenuEntry => ({ kind: "item", id: `whisper-group-${g.id}`, label: g.name, checked: g.members.includes(address), onSelect: () => {
+        const { settings, update } = useVoiceSettings.getState(); const key = whisperRoomKey(domain, room.id);
+        update({ whisperGroups: { ...settings.whisperGroups, [key]: (settings.whisperGroups[key] ?? []).map((x) => x.id === g.id ? { ...x, members: x.members.includes(address) ? x.members.filter((a) => a !== address) : [...x.members, address] } : x) } });
+      } })),
+      { kind: "item", id: "whisper-new-group", label: t("voice.whisper.add_group"), onSelect: () => {
+        const { settings, update } = useVoiceSettings.getState(); const key = whisperRoomKey(domain, room.id);
+        update({ whisperGroups: { ...settings.whisperGroups, [key]: [...(settings.whisperGroups[key] ?? []), { id: crypto.randomUUID(), name, members: [address] }] } });
+      } },
+    ] });
+  }
   const overlay = (
     <>
       {menu.open && menu.anchor && <ContextMenu entries={entries} anchor={menu.anchor} onClose={menu.close} label={t("menu.label", { name })} testId="member-menu" />}

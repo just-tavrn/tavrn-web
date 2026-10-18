@@ -78,6 +78,7 @@ export function VoiceBar() {
   const status = useVoice((s) => s.status);
   const target = useVoice((s) => s.target);
   const muted = useVoice((s) => s.muted);
+  const whispering = useVoice((s) => s.whispering);
   const mutedTalk = useVoice((s) => s.mutedTalk);
   const deafened = useVoice((s) => s.deafened);
   const quality = useVoice((s) => s.quality);
@@ -101,6 +102,7 @@ export function VoiceBar() {
   return (
     <div className="relative border-t border-line bg-bg-0 px-1 py-1" data-testid="voice-bar" data-status={status} data-call={target.call || undefined}>
       {overlay}
+      {whispering.length > 0 && <p role="status" className="truncate px-2 text-xs text-accent" data-testid="whisper-bar">{t("voice.whisper.sending", { names: whispering.map((id) => id.split("/")[0]).join(", ") })}</p>}
       {/*
         One button over the whole bar opens the channel: the first line (signal with the padlock, a short status, the
         quality) leaves room for the controls laid over its right end, the channel and room get the full width below.

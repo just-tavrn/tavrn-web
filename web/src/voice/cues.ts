@@ -82,6 +82,8 @@ export const PATTERNS: Record<Cue, Note[]> = {
   priority_on: [glide(D5, G5, 0.09, 0.42)],
   priority_off: [glide(G5, D5, 0.09, 0.38)],
   // Talking while muted (issue #125): a soft double tap on G4.
+  whisper_start: [n(A4, 0, 0.08, 0.3), n(C5, 0.07, 0.1, 0.3)],
+  whisper_end: [n(C5, 0, 0.08, 0.3), n(A4, 0.07, 0.1, 0.3)],
   muted_talk: [n(G4, 0, 0.07, 0.5), n(G4, 0.12, 0.07, 0.5)],
 };
 

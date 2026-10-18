@@ -9,7 +9,7 @@
 import { EVENT_CHANNEL } from "../shared/bridge.ts";
 
 export type TrayAction = "mute" | "deafen" | "leave";
-export type HotkeyAction = "push_to_talk" | "priority" | "toggle_mute" | "toggle_deafen";
+export type HotkeyAction = "push_to_talk" | "priority" | "toggle_mute" | "toggle_deafen" | "whisper_reply" | `whisper:${string}`;
 
 /** The Tauri shell's `ShellEvent` (events.rs); `link` says that deep links wait (`shell.takeLinks`, `deeplink.ts`); `game`:
  * the listed game in front changed (`games.ts`). */

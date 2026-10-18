@@ -46,8 +46,13 @@ export class MicPipeline {
   private rnnoise: RnnoiseWorkletNode | null = null;
   private readonly gate: AudioWorkletNode;
   private readonly mix: GainNode;
+  private readonly mainGain: GainNode;
+  private whisperHeld = false;
+  private whisperTransition = false;
   private readonly monitor: GainNode;
   private readonly dest: MediaStreamAudioDestinationNode;
+  private readonly whisperDest: MediaStreamAudioDestinationNode;
+  private readonly whisperGain: GainNode;
   private constraints: MediaTrackConstraints | null = null;
   private settings: VoiceSettings;
   private pttTimer: ReturnType<typeof setTimeout> | null = null;
@@ -76,11 +81,18 @@ export class MicPipeline {
     this.input = ctx.createGain();
     this.gate = gate;
     this.mix = ctx.createGain();
+    this.mainGain = ctx.createGain();
     this.monitor = ctx.createGain();
     this.dest = ctx.createMediaStreamDestination();
+    this.whisperDest = ctx.createMediaStreamDestination();
+    this.whisperGain = ctx.createGain();
+    this.whisperGain.gain.value = 0;
+    this.gate.connect(this.whisperGain);
+    this.whisperGain.connect(this.whisperDest);
     this.gate.port.onmessage = (e: MessageEvent<LevelReport>) => onLevel(e.data);
     this.input.connect(this.gate);
-    this.gate.connect(this.mix);
+    this.gate.connect(this.mainGain);
+    this.mainGain.connect(this.mix);
     this.mix.connect(this.dest);
     this.monitor.connect(ctx.destination);
   }
@@ -109,6 +121,17 @@ export class MicPipeline {
   get track(): MediaStreamTrack {
     return this.dest.stream.getAudioTracks()[0]!;
   }
+
+  get whisperTrack(): MediaStreamTrack { return this.whisperDest.stream.getAudioTracks()[0]!; }
+
+  /** Close before relaxing SFU permissions; soundboard clips never enter this destination. */
+  setWhisper(on: boolean): void { this.whisperGain.gain.value = on ? 1 : 0; }
+
+  /** The whisper hold has no push-to-talk release tail into the normal destination. */
+  setWhisperHeld(on: boolean): void { this.whisperHeld = on; this.postMode(); }
+
+  /** Recipient changes must not open a short normal-voice gap between two whispers. */
+  setWhisperTransition(on: boolean): void { this.whisperTransition = on; this.postMode(); }
 
   /** The published track carries two independent channels (music mode with a two-channel device). */
   get stereo(): boolean {
@@ -140,7 +163,9 @@ export class MicPipeline {
 
   /** The gate's mode: closed while muted, else as the input mode and push-to-talk say. */
   private postMode(): void {
-    this.gate.port.postMessage({ mode: this.muted ? "closed" : gateModeFor(this.settings.inputMode, this.pttOpen, this.test) });
+    const normal = gateModeFor(this.settings.inputMode, this.pttOpen, this.test);
+    this.mainGain.gain.value = this.muted || this.whisperHeld || this.whisperTransition || normal === "closed" ? 0 : 1;
+    this.gate.port.postMessage({ mode: this.muted ? "closed" : this.whisperHeld ? "open" : normal });
   }
 
   /**
@@ -300,6 +325,7 @@ export class MicPipeline {
     if (this.pttTimer) clearTimeout(this.pttTimer);
     this.stream?.getTracks().forEach((t) => t.stop());
     this.dest.stream.getTracks().forEach((t) => t.stop());
+    this.whisperDest.stream.getTracks().forEach((t) => t.stop());
     this.rnnoise?.destroy();
     this.gate.port.onmessage = null;
     await this.ctx.close().catch(() => undefined);

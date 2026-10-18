@@ -21,6 +21,8 @@ import { participantsOf, screensOf, sessionStartOf, useVoicePresence } from "../
 import { publisherStreams, screenOwner } from "../streams";
 import { phoneCameras, useVoiceSettings } from "../settings";
 import { ownVoiceChannel, useVoice } from "../store";
+import { whisperToAddress } from "../index";
+import { useVoiceEngine } from "../engine";
 import { joinVoice } from "../index";
 import { AvatarTile } from "./AvatarTile";
 import { ConnectionGlyph, LevelMeterBars, LocalMuteMark, ParticipantFlags, SoundOverlay, levelStyle, useMemberLooks, useParticipantStatus, usePriority } from "./common";
@@ -105,9 +107,17 @@ export function ParticipantTile({ roomId, tile, menu }: { roomId?: string; tile:
   const backCamera = useVoiceSettings((s) => s.settings.cameraFacing === "environment" && !s.settings.cameraDeviceId) && phoneCameras();
   const mirror = mirrorSetting && !backCamera;
   const priority = usePriority(tile.identity);
+  const whisperTargets = useVoice((s) => s.whispering);
+  const whispering = tile.self && whisperTargets.length > 0;
+  const receivingWhisper = useVoice((s) => !!s.whisperedBy[tile.identity]);
+  const mainMuted = useVoice((s) => !tile.self && !!s.media[tile.identity]?.micMuted);
+  const flags = { ...tile.flags, muted: tile.flags.muted || (mainMuted && !receivingWhisper) };
+  const canWhisper = useVoice((s) => s.status === "connected" && !s.target?.call && s.canSpeak && !s.muted && !s.deafened && !!s.media[tile.identity]);
+  const browserVoice = useVoiceEngine((s) => s.kind === "browser");
+  const whisperLabel = receivingWhisper ? t("voice.whisper.receiving", { name: tile.name }) : whispering ? t("voice.whisper.sending", { names: whisperTargets.map((id) => id.split("/")[0]).join(", ") }) : null;
   // The own tile's microphone flag pulses while the user talks muted (issue #125).
   const mutedTalk = useVoice((s) => tile.self && s.mutedTalk);
-  const { status, level, localMuted } = useParticipantStatus({ identity: tile.identity, user: tile.self ? undefined : tile.address, connection: tile.connection, muted: tile.flags.muted, server_muted: tile.flags.server_muted });
+  const { status, level, localMuted } = useParticipantStatus({ identity: tile.identity, user: tile.self ? undefined : tile.address, connection: tile.connection, muted: flags.muted, server_muted: flags.server_muted });
   const speaking = status === "speaking";
   const reconnecting = status === "reconnecting";
   // A dropped camera keeps its last frame (the node still says `camera` while the participant reconnects).
@@ -122,6 +132,7 @@ export function ParticipantTile({ roomId, tile, menu }: { roomId?: string; tile:
       data-identity={tile.identity}
       data-speaking={speaking || undefined}
       data-priority={priority || undefined}
+      data-whisper={whispering || receivingWhisper || undefined}
       data-local-muted={localMuted || undefined}
       data-muted-talk={mutedTalk || undefined}
       data-connection={reconnecting ? "reconnecting" : undefined}
@@ -134,6 +145,12 @@ export function ParticipantTile({ roomId, tile, menu }: { roomId?: string; tile:
         <AvatarTile roomId={roomId} user={tile.user} name={tile.name} address={tile.address} size={72} speaking={speaking} stage />
       )}
       <SoundOverlay identity={tile.identity} roomId={roomId} />
+      {whisperLabel && <span role="status" className="absolute right-2 top-2 rounded-md bg-bg-0 px-2 text-xs text-accent" data-testid="whisper-indicator"><span aria-hidden="true">↝ </span>{whisperLabel}</span>}
+      {!tile.self && canWhisper && <button type="button" disabled={!browserVoice} aria-label={t("voice.whisper.hold", { name: tile.name })} title={!browserVoice ? t("voice.whisper.browser_only") : t("voice.whisper.hold", { name: tile.name })} className="absolute left-2 top-2 z-10 min-h-11 min-w-11 touch-none rounded-md bg-black/60 text-fg-0" data-testid="whisper-hold"
+        onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); whisperToAddress(tile.address, true); }}
+        onPointerUp={(e) => { e.stopPropagation(); whisperToAddress(tile.address, false); }} onPointerCancel={() => whisperToAddress(tile.address, false)} onLostPointerCapture={() => whisperToAddress(tile.address, false)}
+        onKeyDown={(e) => { if (!e.repeat && (e.key === " " || e.key === "Enter")) { e.preventDefault(); whisperToAddress(tile.address, true); } }}
+        onKeyUp={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); whisperToAddress(tile.address, false); } }} onBlur={() => whisperToAddress(tile.address, false)}>↝</button>}
       {priority && (
         <span role="img"
           className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded-md bg-accent px-1.5 py-0.5 text-[11px] font-medium text-accent-text"
@@ -154,7 +171,7 @@ export function ParticipantTile({ roomId, tile, menu }: { roomId?: string; tile:
           <span className="truncate" data-testid="tile-name" style={tile.color ? { color: tile.color } : undefined}>
             {tile.name}
           </span>
-          <ParticipantFlags p={{ ...tile.flags, streaming: false, camera: false }} size={12} />
+          <ParticipantFlags p={{ ...flags, streaming: false, camera: false }} size={12} />
         </span>
         {localMuted && <LocalMuteMark address={tile.address} name={tile.name} className="rounded-md bg-black/60 text-warn hover:bg-black/80" />}
         {menu && (

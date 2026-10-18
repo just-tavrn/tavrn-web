@@ -128,7 +128,7 @@ export class Registry {
   /** Binds `text` to `action`; returns the canonical spelling. */
   bind(action: HotkeyAction, text: string): string {
     const combo = parseCombo(text);
-    const other = ACTIONS.find((a) => a !== action && sameCombo(this.#bindings.get(a), combo));
+    const other = [...this.#bindings.keys()].find((a) => a !== action && sameCombo(this.#bindings.get(a), combo));
     if (other) throw new HotkeyError("hotkey.duplicate", other);
     this.#bindings.set(action, combo);
     return formatCombo(combo);
@@ -145,7 +145,7 @@ export class Registry {
 
   /** The bindings in the actions' order. */
   entries(): [HotkeyAction, Combo][] {
-    return ACTIONS.flatMap((a) => {
+    return [...this.#bindings.keys()].flatMap((a) => {
       const c = this.#bindings.get(a);
       return c ? [[a, c] as [HotkeyAction, Combo]] : [];
     });
@@ -194,7 +194,7 @@ export class Matcher {
       }
     } else {
       if (!this.#down.delete(code)) return events;
-      for (const action of ACTIONS) {
+      for (const action of [...this.#active]) {
         if (!this.#active.has(action)) continue;
         const c = registry.get(action);
         if (!c || c.key === code || [...c.modifiers].some((m) => !this.#held(m))) {
@@ -214,7 +214,7 @@ export class Matcher {
   /** Forgets every key and ends every hold (the listener stopped). */
   reset(): HotkeyEvent[] {
     this.#down.clear();
-    const ended = ACTIONS.filter((a) => this.#active.has(a)).map((action) => ({ action, pressed: false }));
+    const ended = [...this.#active].map((action) => ({ action, pressed: false }));
     this.#active.clear();
     return ended;
   }
@@ -346,7 +346,7 @@ export interface HotkeyDeps {
 
 /** The `hotkeys` namespace of the bridge (the Tauri shell's `register_hotkey`, `unregister_hotkey`, `set_hotkeys_enabled`). */
 export function registerHotkeyHandlers(registry: IpcRegistry, deps: HotkeyDeps): void {
-  const action = check.oneOf(...ACTIONS);
+  const action = (v: unknown) => typeof v === "string" && (ACTIONS.includes(v as HotkeyAction) || v === "whisper_reply" || /^whisper:[A-Za-z0-9_-]{1,64}$/.test(v));
   // Longer texts reach the parser, which refuses them as `hotkey.invalid` like the Tauri shell.
   registry.handle("hotkeys", "registerHotkey", check.args([action, check.string(1024)]), (a: HotkeyAction, combo: string) => deps.hotkeys.bind(a, combo));
   registry.handle("hotkeys", "unregisterHotkey", check.args([action]), (a: HotkeyAction) => deps.hotkeys.unbind(a));
