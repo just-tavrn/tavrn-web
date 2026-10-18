@@ -113,7 +113,8 @@ test.describe("Voice, round 3", () => {
     // (Phones: back from the channel drawer to the stage through the channel link; no reload, that would leave.)
     if ((owner.page.viewportSize()?.width ?? 1280) < 768) await owner.page.getByRole("link", { name: "Sprachkanal Sprache" }).click();
     await expect(tile(owner.page, bob.address)).toBeVisible({ timeout: 20_000 });
-    if (isTouch()) await longPress(owner.page, tile(owner.page, bob.address));
+    // Hold the tile surface, away from the separate press-and-hold whisper control.
+    if (isTouch()) await longPress(owner.page, tile(owner.page, bob.address), { x: 30, y: 30 });
     else await tile(owner.page, bob.address).click({ button: "right", position: { x: 30, y: 30 } });
     await expect(menu).toBeVisible();
     await expect(menu.getByRole("menuitem", { name: "Profil" })).toBeVisible();

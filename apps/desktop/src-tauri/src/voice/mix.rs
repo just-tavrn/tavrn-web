@@ -73,6 +73,15 @@ impl Mixer {
         }
     }
 
+    /// Discard buffered playback and speaking levels until this participant authenticates again.
+    pub fn quarantine(&mut self, identity: &str) {
+        for source in self.sources.values_mut().filter(|source| source.identity == identity) {
+            source.buf.clear();
+            source.playing = false;
+        }
+        self.levels.remove(identity);
+    }
+
     /// The gain of one participant (identity `<address>/<device>`), clamped to 0…`MAX_GAIN`.
     pub fn set_gain(&mut self, identity: &str, gain: f32) {
         let gain = if gain.is_finite() { gain.clamp(0.0, MAX_GAIN) } else { 1.0 };
@@ -146,6 +155,22 @@ mod tests {
 
     fn frames(n: usize, v: f32) -> Vec<f32> {
         vec![v; FRAME * n]
+    }
+
+    #[test]
+    fn quarantine_discards_buffered_audio_and_levels_but_allows_authenticated_recovery() {
+        let mut mixer = Mixer::default();
+        mixer.add("mic", "alice");
+        mixer.push("mic", &frames(8, 0.25));
+        mixer.quarantine("alice");
+        let mut out = vec![0.0; FRAME];
+        mixer.mix(&mut out);
+        assert!(out.iter().all(|sample| *sample == 0.0));
+        assert!(mixer.take_levels().is_empty());
+        mixer.push("mic", &frames(8, 0.25));
+        mixer.mix(&mut out);
+        assert!(out.iter().all(|sample| *sample == 0.25));
+        assert!(mixer.take_levels().iter().any(|(identity, _)| identity == "alice"));
     }
 
     #[test]

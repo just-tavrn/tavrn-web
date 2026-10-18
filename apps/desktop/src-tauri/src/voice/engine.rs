@@ -6,7 +6,7 @@
 //! (server mute), reconnects through the SDK and reports everything to the webview as [`VoiceEvent`]s.
 
 use std::borrow::Cow;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -81,6 +81,8 @@ struct Parts {
     output: Mutex<Option<StreamHandle>>,
     devices: Mutex<(Option<String>, Option<String>)>,
     downlinks: Mutex<HashMap<String, JoinHandle<()>>>,
+    /// Remote identities with an authenticated decryptor state; startup/error frames never reach playback.
+    decrypted: Shared<HashSet<String>>,
     bitrate_kbps: u32,
     /// The newest epoch whose key was set: its index is the sending key index.
     ring: Mutex<KeyRing>,
@@ -196,6 +198,7 @@ impl Engine {
             output: Mutex::new(None),
             devices: Mutex::new((args.config.input().map(str::to_string), args.config.output().map(str::to_string))),
             downlinks: Mutex::new(HashMap::new()),
+            decrypted: Arc::new(Mutex::new(HashSet::new())),
             bitrate_kbps: args.bitrate_kbps,
             ring: Mutex::new(ring),
         });
@@ -476,10 +479,15 @@ fn start_downlink(parts: &Arc<Parts>, track: RemoteAudioTrack, sid: String, iden
     lock(&parts.mixer).add(&sid, &identity);
     let mixer = Arc::clone(&parts.mixer);
     let key = sid.clone();
+    let decrypted = Arc::clone(&parts.decrypted);
     let task = tokio::spawn(async move {
         let mut stream = NativeAudioStream::new(track.rtc_track(), RATE as i32, 1);
         let mut samples = Vec::new();
         while let Some(frame) = stream.next().await {
+            let authenticated = lock(&decrypted);
+            if !authenticated.contains(&identity) {
+                continue;
+            }
             samples.clear();
             samples.extend(frame.data.iter().map(|s| from_i16(*s)));
             lock(&mixer).push(&key, &samples);
@@ -504,19 +512,36 @@ async fn handle(parts: &Arc<Parts>, room: &Arc<Room>, event: RoomEvent) {
             publication.set_subscribed(false);
         }
         RoomEvent::TrackSubscribed { track: RemoteTrack::Audio(track), publication, participant } => {
+            let encrypted = publication.encryption_type() == EncryptionType::Gcm
+                && room.e2ee_manager().frame_cryptors().get(&(participant.identity(), publication.sid())).is_some_and(|cryptor| cryptor.enabled());
+            if !encrypted {
+                publication.set_subscribed(false);
+                return;
+            }
             start_downlink(parts, track, publication.sid().to_string(), participant.identity().to_string());
             parts.send(participants(room));
         }
-        RoomEvent::TrackPublished { publication, .. } => {
+        RoomEvent::TrackPublished { publication, participant } => {
+            if wants_subscription(publication.kind(), publication.source(), &publication.name()) {
+                lock(&parts.decrypted).remove(participant.identity().as_str());
+                lock(&parts.mixer).quarantine(participant.identity().as_str());
+            }
             subscribe_wanted(&publication);
             parts.send(participants(room));
         }
-        RoomEvent::TrackUnsubscribed { publication, .. } => {
+        RoomEvent::TrackUnsubscribed { publication, participant, .. } => {
+            if wants_subscription(publication.kind(), publication.source(), &publication.name()) {
+                lock(&parts.decrypted).remove(participant.identity().as_str());
+            }
             stop_downlink(parts, &publication.sid().to_string());
             parts.send(participants(room));
         }
+        RoomEvent::ParticipantDisconnected(participant) => {
+            lock(&parts.decrypted).remove(participant.identity().as_str());
+            lock(&parts.mixer).quarantine(participant.identity().as_str());
+            parts.send(participants(room));
+        }
         RoomEvent::ParticipantConnected(_)
-        | RoomEvent::ParticipantDisconnected(_)
         | RoomEvent::TrackUnpublished { .. }
         | RoomEvent::TrackMuted { .. }
         | RoomEvent::TrackUnmuted { .. }
@@ -547,6 +572,13 @@ async fn handle(parts: &Arc<Parts>, room: &Arc<Room>, event: RoomEvent) {
             parts.send(VoiceEvent::Quality { identity: participant.identity().to_string(), quality: quality_name(quality) });
         }
         RoomEvent::E2eeStateChanged { participant, state } => {
+            let identity = participant.identity().to_string();
+            if matches!(state, EncryptionState::Ok) {
+                lock(&parts.decrypted).insert(identity);
+            } else {
+                lock(&parts.decrypted).remove(&identity);
+                lock(&parts.mixer).quarantine(&identity);
+            }
             parts.send(VoiceEvent::Encryption { identity: participant.identity().to_string(), state: encryption_name(state) });
         }
         RoomEvent::Reconnecting => parts.send(VoiceEvent::Reconnecting),

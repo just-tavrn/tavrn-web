@@ -6,6 +6,9 @@ checksums and update files. The node's container image embeds the web client of 
 
 ## Unreleased
 
+- Native voice now admits remote audio to playback only after successful frame decryption; startup and
+  key-error frames are discarded, including buffered audio.
+
 - **Whisper in voice channels** (`voice.whisper1`): hold a tile control or a configured room-group/reply
   hotkey to speak to selected participants through a second encrypted, SFU-restricted microphone track.
   EN/DE indicators and soft cues identify addressed whispers; outsiders receive neither audio nor control

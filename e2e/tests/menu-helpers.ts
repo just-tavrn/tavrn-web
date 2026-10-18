@@ -8,12 +8,12 @@ export function isTouch(): boolean {
 }
 
 /** A long press (≥ 500 ms without moving) through the DevTools protocol (Chromium only). */
-export async function longPress(page: Page, target: Locator) {
+export async function longPress(page: Page, target: Locator, position?: { x: number; y: number }) {
   await target.scrollIntoViewIfNeeded();
   const box = await target.boundingBox();
   if (!box) throw new Error("long press: element not visible");
-  const x = box.x + Math.min(box.width / 2, 40);
-  const y = box.y + box.height / 2;
+  const x = box.x + (position?.x ?? Math.min(box.width / 2, 40));
+  const y = box.y + (position?.y ?? box.height / 2);
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
   await page.waitForTimeout(800);
