@@ -76,6 +76,22 @@ test("only addressed participants hear whisper; the SFU rejects outsiders and no
     await user.page.getByTestId("voice-join").click();
     await expect(user.page.getByTestId("voice-e2ee")).toBeVisible({ timeout: scaled(30_000) });
   }
+  // A signal-only reconnect must retire old capabilities and still allow a new authorized whisper.
+  for (const user of [alice, bob]) {
+    const previousSid = await user.page.evaluate(() => (window as unknown as { __tavrnVoice: { room: { localParticipant: { sid: string } } } }).__tavrnVoice.room.localParticipant.sid);
+    await user.page.evaluate(async () => {
+      const room = (window as unknown as { __tavrnVoice: { room: { once(event: string, done: () => void): void; simulateScenario(scenario: string): Promise<void> } } }).__tavrnVoice.room;
+      const resumed = new Promise<void>((done) => room.once("reconnected", done));
+      await room.simulateScenario("signal-reconnect");
+      await resumed;
+    });
+    await expect.poll(() => user.page.evaluate((previous) => {
+      const sid = (window as unknown as { __tavrnVoice?: { room: { localParticipant: { sid: string } } } }).__tavrnVoice?.room.localParticipant.sid;
+      return !!sid && sid !== previous;
+    }, previousSid), { timeout: scaled(30_000) }).toBe(true);
+    await expect(user.page.getByTestId("voice-e2ee")).toBeVisible({ timeout: scaled(30_000) });
+  }
+  await expect(tile(alice.page, bob.address).getByTestId("whisper-hold")).toBeEnabled({ timeout: scaled(30_000) });
   const aliceId = (await hooks(alice.page)).local!.identity;
   const bobId = (await hooks(bob.page)).local!.identity;
   // The menu selects a destination. It must never leave an unattended transmission running.

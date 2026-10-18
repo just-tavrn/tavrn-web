@@ -524,6 +524,15 @@ function forgetQuality(identity: string) {
 function wire(s: Session) {
   const { room } = s;
   const media = () => refreshMedia(s);
+  const reconnecting = () => {
+    if (life.current !== s) return;
+    const wasReconnecting = useVoice.getState().status === "reconnecting";
+    set({ status: "reconnecting" });
+    void setWhisper([]);
+    clearIncomingWhispers(s);
+    s.whisperSignals.clear();
+    if (!wasReconnecting) cue("connection_lost", true);
+  };
   room
     .on(RoomEvent.ActiveSpeakersChanged, (speakers: Participant[]) => {
       // Fallback of the analysers (and always for the own device: that ring follows the gate).
@@ -558,16 +567,13 @@ function wire(s: Session) {
       if (p === room.localParticipant) set({ quality });
       if (useVoice.getState().qualities[p.identity] !== quality) useVoice.setState((st) => ({ qualities: { ...st.qualities, [p.identity]: quality } }));
     })
-    .on(RoomEvent.Reconnecting, () => {
-      if (life.current !== s) return;
-      set({ status: "reconnecting" });
-      void setWhisper([]);
-      clearIncomingWhispers(s);
-      s.whisperSignals.clear();
-      cue("connection_lost", true);
-    })
+    .on(RoomEvent.Reconnecting, reconnecting)
+    .on(RoomEvent.SignalReconnecting, reconnecting)
     .on(RoomEvent.Reconnected, () => {
       if (life.current !== s) return;
+      // The node retires grants on every signaling reconnect. A resumed SFU participant has no
+      // new join webhook: establish a fresh connection generation before accepting another hold.
+      if (useVoice.getState().whisperSupported) { void life.onDisconnected(s, "other"); return; }
       set({ status: "connected" });
       cue("connection_restored", true);
     })
