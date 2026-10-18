@@ -54,9 +54,17 @@ export function useVoiceRealtime() {
       if (useVoice.getState().canWhisper !== allowed) useVoice.setState({ canWhisper: allowed });
     };
     refresh();
-    const cache = queryClient.getQueryCache().subscribe(refresh);
-    const voice = useVoice.subscribe((s, prev) => { if (s.target !== prev.target) refresh(); });
-    return () => { cache(); voice(); };
+    // Queries can be added during a component render. Defer the store write and coalesce a cache burst.
+    let disposed = false;
+    let scheduled = false;
+    const schedule = () => {
+      if (scheduled) return;
+      scheduled = true;
+      queueMicrotask(() => { scheduled = false; if (!disposed) refresh(); });
+    };
+    const cache = queryClient.getQueryCache().subscribe(schedule);
+    const voice = useVoice.subscribe((s, prev) => { if (s.target !== prev.target) schedule(); });
+    return () => { disposed = true; cache(); voice(); };
   }, [queryClient]);
 
   // Soundboard overlays require both effective bits, even when SPEAK grants LiveKit data for whisper.

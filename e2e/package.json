@@ -14,10 +14,10 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.64.0",
-    "@tavrn/bot": "github:just-tavrn/tavrn-js#f38279ae86273de267b92f189dd8404f86c0ec9d&path:bot",
+    "@tavrn/bot": "github:just-tavrn/tavrn-js#38fdf17ab4f853569d58bf71f02f1155852943a7&path:bot",
     "@tavrn/crypto": "^0.1.0",
-    "@tavrn/e2ee": "github:just-tavrn/tavrn-js#f38279ae86273de267b92f189dd8404f86c0ec9d&path:e2ee",
-    "@tavrn/sdk": "github:just-tavrn/tavrn-js#f38279ae86273de267b92f189dd8404f86c0ec9d&path:sdk",
+    "@tavrn/e2ee": "github:just-tavrn/tavrn-js#38fdf17ab4f853569d58bf71f02f1155852943a7&path:e2ee",
+    "@tavrn/sdk": "github:just-tavrn/tavrn-js#38fdf17ab4f853569d58bf71f02f1155852943a7&path:sdk",
     "@types/libsodium-wrappers": "^0.8.2",
     "@types/node": "^26.6.5",
     "libsodium-wrappers": "^0.8.4",

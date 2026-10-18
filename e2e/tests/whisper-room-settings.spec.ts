@@ -26,6 +26,9 @@ test("a plain member edits personal room groups without joining voice; suggestio
   await search.fill(owner.username);
   await expect(group.getByRole("option")).toHaveCount(1);
   await expect(group.getByRole("option")).toContainText(owner.username);
+  const autocompleteShot = test.info().outputPath("whisper-autocomplete.png");
+  await page.screenshot({ path: autocompleteShot });
+  await test.info().attach(`whisper-autocomplete-${test.info().project.name}`, { path: autocompleteShot, contentType: "image/png" });
   await search.press("ArrowDown");
   await search.press("Enter");
   await expect(group.getByRole("list")).toContainText(ownerAddress);
@@ -44,7 +47,9 @@ test("a plain member edits personal room groups without joining voice; suggestio
   await expect(group.getByRole("list")).toContainText(ownerAddress);
   const accessibility = await new AxeBuilder({ page }).include("main").withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze();
   expect(accessibility.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
-  await test.info().attach(`whisper-settings-${test.info().project.name}`, { body: await page.screenshot(), contentType: "image/png" });
+  const settingsShot = test.info().outputPath("whisper-settings.png");
+  await page.screenshot({ path: settingsShot });
+  await test.info().attach(`whisper-settings-${test.info().project.name}`, { path: settingsShot, contentType: "image/png" });
   await page.goto(`/rooms/${second.id}/settings/whisper`);
   await expect(page.getByRole("button", { name: "Neue Flüstergruppe", exact: true })).toBeVisible();
   await expect(page.getByRole("group", { name: "Raid leaders", exact: true })).toHaveCount(0);

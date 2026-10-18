@@ -56,9 +56,10 @@ async function denyExplicitSubscription(page: Page, sender: string) {
 test("only addressed participants hear whisper; the SFU rejects outsiders and normal voice returns on release", async ({ browser, request }) => {
   test.setTimeout(scaled(300_000));
   test.skip(process.env.E2E_VOICE === "false", "LiveKit unavailable");
-  const alice = await voiceUser(browser, "whali", undefined, { cuesOff: true });
-  const bob = await voiceUser(browser, "whbob", undefined, { cuesOff: true, hotkeys: { whisper_reply: "KeyR" } });
-  const carol = await voiceUser(browser, "whcar", undefined, { cuesOff: true });
+  const errors: string[] = [];
+  const alice = await voiceUser(browser, "whali", errors, { cuesOff: true });
+  const bob = await voiceUser(browser, "whbob", errors, { cuesOff: true, hotkeys: { whisper_reply: "KeyR" } });
+  const carol = await voiceUser(browser, "whcar", errors, { cuesOff: true });
   const token = await tokenOf(alice.page);
   const room = await createRoomViaApi(request, token, "Whisper");
   const roomId = room.id as string;
@@ -137,4 +138,5 @@ test("only addressed participants hear whisper; the SFU rejects outsiders and no
   await expect.poll(async () => (await state(alice.page)).whisperedBy).toEqual({});
   await bob.page.getByTestId("voice-leave").click();
   await expect.poll(async () => (await state(alice.page)).lastWhisperer).toBeNull();
+  expect(errors.filter((error) => error.includes("Cannot update a component"))).toEqual([]);
 });

@@ -104,7 +104,8 @@ export class WhisperSender {
     const attempt = async (fn: () => unknown) => { try { await bounded(Promise.resolve(fn())); return true; } catch (e) { this.port.failed(e); return false; } };
     if (!await attempt(() => this.port.whisperMuted(true))) { this.port.recover(); return; }
     if (this.limiter.allow("self")) await attempt(() => this.port.send(encodeWhisperSignal("whisper.end", ids), ids));
-    await attempt(() => this.port.release?.());
+    // The node confirms the exact track is gone before ordinary permissions/audio can resume.
+    if (!await attempt(() => this.port.release?.())) { this.port.recover(); return; }
     if (!await attempt(() => this.port.permissions([]))) { this.port.recover(); return; }
     this.port.hold(false);
     if (!await attempt(() => this.port.mainMuted(false))) this.port.recover();

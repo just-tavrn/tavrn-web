@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it, vi } from "vitest";
 import { Permission, type RoomDetail, TavrnApi } from "@tavrn/sdk";
-import { WHISPER, confirmedWhisperUnpublish, whisperAllowed, verifiedWhisperReceipt, startWhisper, receiveWhisper, endWhisper } from "./whisperAccess";
+import { WHISPER, whisperAllowed, verifiedWhisperReceipt, startWhisper, receiveWhisper, endWhisper } from "./whisperAccess";
 const room = (permissions: bigint) => ({ channels: [{ id: "c", kind: "voice", category_id: "cat" }], roles: [{ id: "all", is_everyone: true, permissions: (permissions | Permission.VIEW_CHANNEL).toString() }], my_roles: [], overrides: [], is_owner: false } as unknown as RoomDetail);
 describe("whisper initiation authorization", () => {
   it("requires the dedicated bit and speaking, and honors category and channel denies", () => {
@@ -44,6 +44,10 @@ describe("server-confirmed whisper reception", () => {
     request.mockRejectedValueOnce(new Error("denied"));
     expect(await verify("whisper:session")).toBeNull();
   });
+  it("keeps connection-bound playback and reply available beyond a short initial window", async () => {
+    const longReceipt = { ...receipt, expires_at: new Date(3_600_000).toISOString(), reply_expires_at: new Date(3_600_000).toISOString() };
+    expect(await verifiedWhisperReceipt("whisper:session", receipt.sender, async () => longReceipt, () => true, () => 180_000)).toEqual(longReceipt);
+  });
   it("rejects delayed responses after deafen, unpublish or reconnect and expired receipts", async () => {
     let current = true; let resolve!: (value: typeof receipt) => void;
     const pending = verifiedWhisperReceipt("whisper:session", receipt.sender, () => new Promise((r) => { resolve = r; }), () => current, () => 1000);
@@ -51,18 +55,4 @@ describe("server-confirmed whisper reception", () => {
     expect(await pending).toBeNull();
     expect(await verifiedWhisperReceipt("whisper:session", receipt.sender, async () => receipt, () => true, () => 31_000)).toBeNull();
   });
-});
-
-
-it("does not restore normal permissions before the SFU confirms track removal", async () => {
-  let ack!: () => void;
-  const off = vi.fn();
-  const done = vi.fn();
-  const unpublish = vi.fn(async () => undefined);
-  const pending = confirmedWhisperUnpublish(unpublish, (fn) => { ack = fn; return off; }).then(done);
-  await Promise.resolve(); await Promise.resolve();
-  expect(unpublish).toHaveBeenCalledOnce();
-  expect(done).not.toHaveBeenCalled();
-  ack(); await pending;
-  expect(done).toHaveBeenCalledOnce(); expect(off).toHaveBeenCalledOnce();
 });

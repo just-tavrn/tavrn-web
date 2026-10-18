@@ -44,7 +44,7 @@ import {
   type RemoteTrack,
   type RemoteTrackPublication,
 } from "livekit-client";
-import { confirmedWhisperUnpublish, verifiedWhisperReceipt, startWhisper, endWhisper, receiveWhisper, type WhisperSession } from "./whisperAccess";
+import { verifiedWhisperReceipt, startWhisper, endWhisper, receiveWhisper, type WhisperSession } from "./whisperAccess";
 import { isWhisperTrack, whisperSessionId } from "./whisperTracks";
 import { WhisperSender, whisperPermissions } from "./whisper";
 import { WHISPER_TOPIC, WhisperLimiter, addressedWhisper } from "./whisperSignal";
@@ -1514,7 +1514,7 @@ function createWhisperSender(current: () => Session): WhisperSender {
       s().whisperAuthorization = authorization;
       if (authorization.sender !== s().room.localParticipant.identity || authorization.recipients.length !== ids.length || ids.some((id) => !authorization.recipients.includes(id)) || !whisperSessionId(`whisper:${authorization.id}`)) throw new Error("Invalid whisper authorization");
       const expires = Date.parse(authorization.expires_at) - Date.now();
-      if (!(expires > 2000 && expires <= 30_000)) throw new Error("Expired whisper authorization");
+      if (!(expires > 2000 && expires <= 86_400_000)) throw new Error("Expired whisper authorization");
       s().whisperExpiry = setTimeout(() => { void s().whisper.set([]); }, expires - 2000);
     },
     release: async () => {
@@ -1555,12 +1555,8 @@ function createWhisperSender(current: () => Session): WhisperSender {
       if (muted) {
         await pub.mute();
         const track = pub.track;
-        if (track) await confirmedWhisperUnpublish(() => s().room.localParticipant.unpublishTrack(track, false), (ack) => {
-          const engine = s().room.engine;
-          const receive = (response: { trackSid: string }) => { if (response.trackSid === pub.trackSid) ack(); };
-          engine.on("localTrackUnpublished", receive);
-          return () => { engine.off("localTrackUnpublished", receive); };
-        });
+        // Local unpublish is optimistic; release() awaits the node's signed SFU removal proof.
+        if (track) await s().room.localParticipant.unpublishTrack(track, false);
         s().whisperPub = null;
       } else await pub.unmute();
     },

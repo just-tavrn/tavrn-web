@@ -7,7 +7,7 @@ import { scaled } from "./timeouts";
 
 test.use({ launchOptions: { args: FAKE_MEDIA }, permissions: ["microphone", "camera"] });
 test.afterEach(closeOpened);
-type State = { whispering: string[]; whisperedBy: Record<string, true>; lastWhisperer: string | null };
+type State = { whispering: string[]; whisperedBy: Record<string, true>; lastWhisperer: string | null; remote: { identity: string; tracks: { name: string }[] }[] };
 const state = (page: Page): Promise<State> => page.evaluate(() => (window as unknown as { __tavrnVoice: { state(): State } }).__tavrnVoice.state());
 const tile = (page: Page, address: string) => page.getByTestId("voice-tile").and(page.locator(`[data-user="${address}"]`));
 
@@ -55,6 +55,14 @@ test("denied initiation still permits an actual reply; channel grants and live r
   try {
     await expect.poll(async () => (await state(bob.page)).whisperedBy[aliceId]).toBe(true);
     await expect.poll(() => inboundPeak(bob.page, aliceId), { timeout: scaled(30_000) }).toBeGreaterThan(0.05);
+    // A continuous hold remains active across the first half-minute.
+    await alice.page.waitForTimeout(31_000);
+    expect((await state(alice.page)).whispering).toEqual([bobId]);
+    expect((await state(bob.page)).whisperedBy[aliceId]).toBe(true);
+    const name = (await state(bob.page)).remote.find((p) => p.identity === aliceId)!.tracks.find((p) => p.name.startsWith("whisper:"))!.name;
+    const premature = await request.delete(`${path}/${name.slice(8)}`, { headers: { Authorization: `Bearer ${await tokenOf(alice.page)}` } });
+    expect(premature.status()).toBe(409);
+    expect((await state(alice.page)).whispering).toEqual([bobId]);
   } finally { await alice.page.keyboard.up("Space"); }
   await expect.poll(async () => (await state(bob.page)).whisperedBy).toEqual({});
   expect((await state(bob.page)).lastWhisperer).toBe(aliceId);

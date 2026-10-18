@@ -24,20 +24,6 @@ export async function verifiedWhisperReceipt(trackName: string, sender: string, 
     const receipt = await request(id);
     const remaining = Date.parse(receipt.expires_at) - now();
     const replyRemaining = Date.parse(receipt.reply_expires_at) - now();
-    return current() && receipt.id === id && receipt.sender === sender && remaining > 0 && remaining <= 30_000 && replyRemaining > 0 && replyRemaining <= 120_000 ? receipt : null;
+    return current() && receipt.id === id && receipt.sender === sender && remaining > 0 && remaining <= 86_400_000 && replyRemaining > 0 && replyRemaining <= 86_400_000 ? receipt : null;
   } catch { return null; }
-}
-
-/** Local unpublication is optimistic in LiveKit; wait for the ordered SFU removal acknowledgment. */
-export async function confirmedWhisperUnpublish(unpublish: () => Promise<unknown>, listen: (acknowledge: () => void) => () => void): Promise<void> {
-  let acknowledge!: () => void;
-  const acknowledged = new Promise<void>((resolve) => { acknowledge = resolve; });
-  const off = listen(acknowledge);
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    await Promise.race([
-      Promise.all([unpublish(), acknowledged]),
-      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("Whisper unpublication was not confirmed")), 9000); }),
-    ]);
-  } finally { off(); clearTimeout(timer); }
 }

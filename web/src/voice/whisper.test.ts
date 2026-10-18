@@ -56,6 +56,31 @@ describe("whisper sender privacy and restoration", () => {
     expect(h.port.release).toHaveBeenCalledOnce();
   });
 
+  it("keeps normal audio muted until the server confirms removal of the published track", async () => {
+    const h = harness();
+    await h.sender.set(["a@n/d"]);
+    let finish!: () => void; let entered!: () => void;
+    const releasing = new Promise<void>((resolve) => { entered = resolve; });
+    h.port.release = () => { entered(); return new Promise<void>((resolve) => { finish = resolve; }); };
+    const ending = h.sender.set([]);
+    await releasing;
+    expect(h.log).not.toContain("all");
+    expect(h.mainMuted()).toBe(true);
+    finish(); await ending;
+    expect(h.log).toContain("all");
+    expect(h.mainMuted()).toBe(false);
+  });
+  it("recovers without restoring ordinary permissions if server removal cannot be confirmed", async () => {
+    const h = harness();
+    await h.sender.set(["a@n/d"]);
+    h.port.release = async () => { throw new Error("unconfirmed"); };
+    await h.sender.set([]);
+    expect(h.log).toContain("recover");
+    expect(h.log).not.toContain("all");
+    expect(h.mainMuted()).toBe(true);
+    expect(h.output()).toBe(false);
+  });
+
   it("resends permissions on membership/publication change and ends on resync failure", async () => {
     const h = harness(); await h.sender.set(["a@n/d"]);
     h.sender.resync(); expect(h.log.filter((x) => x === "restrict")).toHaveLength(3);

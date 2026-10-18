@@ -579,6 +579,8 @@
   "errors.voice.mute_forbidden": "Du darfst keine Mitglieder stummschalten.",
   "errors.voice.move_forbidden": "Du darfst keine Mitglieder verschieben oder trennen.",
   "errors.voice.target_forbidden": "Das Mitglied darf den Zielkanal nicht betreten.",
+  "errors.voice.whisper_forbidden": "Flüsterziel oder Kanalrechte sind nicht mehr gültig.",
+  "errors.voice.whisper_active": "Das Ende des Flüsterns konnte nicht bestätigt werden. Die Sprachverbindung wird neu aufgebaut.",
   "errors.voice.same_channel": "Das Mitglied ist bereits in diesem Kanal.",
   "errors.soundboard.manage_forbidden": "Du darfst keine Sounds verwalten.",
   "errors.soundboard.name_invalid": "Namen haben 1–32 Zeichen.",
