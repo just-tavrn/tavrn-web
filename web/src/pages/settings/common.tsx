@@ -1,9 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useId, useState, type ReactNode } from "react";
-import { CHANNEL_SCOPED_GROUPS, PERMISSION_LABELS, Permission, hasPermission, type InheritedSource, type PermissionName } from "@tavrn/sdk";
+import { CHANNEL_SCOPED_GROUPS as SDK_CHANNEL_SCOPED_GROUPS, PERMISSION_LABELS as SDK_PERMISSION_LABELS, Permission as SDK_Permission, hasPermission, type InheritedSource, type PermissionName as SDKPermissionName } from "@tavrn/sdk";
 import { useT } from "../../i18n";
 import { describeError } from "../../stores/toasts";
 import { Button, Dialog, ErrorText, Input } from "../../components/ui";
+
+import { WHISPER } from "../../voice/whisperAccess";
+// Compatibility with the pending SDK pin; avoid duplicate entries once the SDK includes WHISPER.
+const Permission = { ...SDK_Permission, WHISPER };
+type PermissionName = SDKPermissionName | "WHISPER";
+const PERMISSION_LABELS: { name: PermissionName; label: string; group: string }[] = [...SDK_PERMISSION_LABELS.filter((p) => String(p.name) !== "WHISPER"), { name: "WHISPER", label: "Initiate whispers", group: "Voice" }];
+const CHANNEL_SCOPED_GROUPS: { group: string; permissions: PermissionName[] }[] = SDK_CHANNEL_SCOPED_GROUPS.map((g) => ({ ...g, permissions: g.group === "voice" ? [...g.permissions.filter((p) => String(p) !== "WHISPER"), "WHISPER"] : [...g.permissions] }));
 
 export function Section({ title, children, description }: { title: string; description?: string; children: ReactNode }) {
   return (
@@ -66,7 +73,7 @@ export function PermissionCheckboxes({ value, onChange, limit, idPrefix = "perm"
               const checked = hasPermission(value, bit);
               const locked = (restricted & bit) !== 0n;
               // A restricted bit that is still set (older rooms) can be removed, never added.
-              const allowed = (limit === undefined || hasPermission(limit, bit)) && (!locked || checked);
+              const allowed = (limit === undefined || hasPermission(limit, Permission.ADMINISTRATOR) || hasPermission(limit, bit)) && (!locked || checked);
               return (
                 <label key={p.name} className={`flex min-h-9 items-center gap-2 text-sm ${allowed ? "" : "opacity-40"}`} title={locked ? t("members.everyone_restricted_hint") : undefined} data-restricted={locked || undefined}>
                   <input id={`${idPrefix}-${p.name}`} type="checkbox" className="h-4 w-4" checked={checked} disabled={!allowed} onChange={(e) => onChange(e.target.checked ? value | bit : value & ~bit)} aria-description={locked ? t("members.everyone_restricted_hint") : (hint(p.name) ?? undefined)} />

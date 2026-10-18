@@ -3960,10 +3960,10 @@
   "polls.mine_answer": "Deine Antwort: {answer}",
   "voice.whisper.title": "Flüstern",
   "voice.whisper.group": "Flüstergruppe",
-  "voice.whisper.settings_help": "Gruppentaste zum Flüstern halten. Gruppen gehören zum aktuellen Raum; Antworten ist unabhängig davon.",
+  "voice.whisper.settings_help": "Deine persönlichen Gruppen für diesen Raum, auf diesem Gerät gespeichert. Halte ein Gruppenkürzel zum Flüstern. Antworten auf den letzten Flüsterer konfigurierst du unter Benutzereinstellungen → Sprache & Video → Weitere Tastenkürzel.",
   "voice.whisper.join_room": "Tritt einem Sprachkanal bei, um die Flüstergruppen dieses Raums zu bearbeiten.",
   "voice.whisper.group_name": "Gruppenname",
-  "voice.whisper.members": "Mitglieder (Adressen mit Komma trennen)",
+  "voice.whisper.members": "Mitglieder",
   "voice.whisper.add_group": "Neue Flüstergruppe",
   "voice.whisper.remove_group": "Gruppe entfernen",
   "voice.hotkeys.action.whisper_reply": "Letztem Flüsternden antworten (halten)",
@@ -3977,6 +3977,12 @@
   "voice.cue.whisper_start": "Flüstern beginnt",
   "voice.cue.whisper_end": "Flüstern endet",
   "voice.whisper.open_browser": "Browser zum Flüstern öffnen",
-  "voice.whisper.unavailable": "Aktiviere Mikrofon und Audio zum Flüstern. Du benötigst Sprechrechte.",
-  "voice.whisper.remove_group_named": "Flüstergruppe {name} entfernen"
+  "voice.whisper.unavailable": "Aktiviere Mikrofon und Audio zum Flüstern. Sprechrecht und das Recht zum Beginnen von Flüstern sind erforderlich.",
+  "voice.whisper.remove_group_named": "Flüstergruppe {name} entfernen",
+  "voice.whisper.add_member": "Raummitglied hinzufügen",
+  "voice.whisper.remove_member": "{name} aus Gruppe entfernen",
+  "voice.whisper.suggestions": "Raummitglieder für Flüstergruppe",
+  "voice.whisper.no_members": "Keine passenden Raummitglieder.",
+  "perm.WHISPER": "Flüstern beginnen",
+  "perm.hint.WHISPER": "Flüstern zu Mitgliedern und Gruppen beginnen. Antworten auf das zuletzt empfangene Flüstern sind auch ohne dieses Recht erlaubt; Sprechrecht bleibt erforderlich."
 }

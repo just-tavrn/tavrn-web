@@ -80,7 +80,7 @@ export function VoiceBar() {
   const muted = useVoice((s) => s.muted);
   const whispering = useVoice((s) => s.whispering);
   const whisperTarget = useVoice((s) => s.whisperTarget);
-  const canWhisper = useVoice((s) => s.whisperSupported && s.canSpeak && !s.muted && !s.deafened);
+  const canWhisper = useVoice((s) => s.whisperSupported && s.canWhisper && s.canSpeak && !s.muted && !s.deafened);
   const mutedTalk = useVoice((s) => s.mutedTalk);
   const deafened = useVoice((s) => s.deafened);
   const quality = useVoice((s) => s.quality);

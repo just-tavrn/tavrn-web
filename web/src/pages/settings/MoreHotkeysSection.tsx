@@ -16,7 +16,7 @@ export function MoreHotkeysSection() {
   return (
     <Section title={t("voice.hotkeys.title")} description={desktop ? t("voice.hotkeys.description") : t("voice.hotkeys.description_browser")}>
       <div className="space-y-2" data-testid="more-hotkeys">
-        {(["toggle_mute", "toggle_deafen"] as const).map((action) => (
+        {(["toggle_mute", "toggle_deafen", "whisper_reply"] as const).map((action) => (
           <div key={action} data-testid={`hotkey-${action}`}>
             <HotkeyRecorder action={action} label={t(`voice.hotkeys.action.${action}`)} testid={{ key: `hotkey-${action}-key`, change: `hotkey-${action}-change`, remove: `hotkey-${action}-remove` }} />
           </div>

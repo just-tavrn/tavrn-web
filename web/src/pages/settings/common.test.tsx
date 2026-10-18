@@ -83,3 +83,16 @@ describe("PermissionCheckboxes: phase 4E bits", () => {
     for (const label of ["Whiteboard benutzen", "Whiteboards verwalten", "Webhooks verwalten"]) expect(screen.getByLabelText(label)).toBeInTheDocument();
   });
 });
+
+it("offers whisper initiation in both Voice permission editors independently of speaking", async () => {
+  const whisper = 1n << 41n;
+  const onChange = vi.fn();
+  const view = render(<PermissionCheckboxes value={Permission.SPEAK} onChange={onChange} />);
+  const box = screen.getByRole("checkbox", { name: /^Flüstern beginnen/ });
+  expect(box.closest("fieldset")?.querySelector("legend")).toHaveTextContent("Sprache");
+  await userEvent.click(box);
+  expect(onChange).toHaveBeenCalledWith(Permission.SPEAK | whisper);
+  view.rerender(<OverrideTriState allow={Permission.SPEAK} deny={0n} onChange={onChange} />);
+  await userEvent.click(screen.getByRole("radio", { name: "Flüstern beginnen: verbieten" }));
+  expect(onChange).toHaveBeenLastCalledWith(Permission.SPEAK, whisper);
+});

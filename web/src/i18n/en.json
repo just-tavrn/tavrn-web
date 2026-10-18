@@ -3960,10 +3960,10 @@
   "polls.mine_answer": "Your answer: {answer}",
   "voice.whisper.title": "Whisper",
   "voice.whisper.group": "Whisper group",
-  "voice.whisper.settings_help": "Hold a group key to whisper. Groups belong to the current room; reply to last is independent.",
+  "voice.whisper.settings_help": "Your personal groups for this room, saved on this device. Hold a group shortcut to whisper. Reply to last whisperer is configured in User Settings → Voice & Video → More shortcuts.",
   "voice.whisper.join_room": "Join a room voice channel to configure its whisper groups.",
   "voice.whisper.group_name": "Group name",
-  "voice.whisper.members": "Members (addresses separated by commas)",
+  "voice.whisper.members": "Members",
   "voice.whisper.add_group": "New whisper group",
   "voice.whisper.remove_group": "Remove group",
   "voice.hotkeys.action.whisper_reply": "Reply to last whisperer (hold)",
@@ -3977,6 +3977,12 @@
   "voice.cue.whisper_start": "Whisper starts",
   "voice.cue.whisper_end": "Whisper ends",
   "voice.whisper.open_browser": "Open browser for whisper",
-  "voice.whisper.unavailable": "Unmute and enable audio to whisper. Speaking permission is required.",
-  "voice.whisper.remove_group_named": "Remove whisper group {name}"
+  "voice.whisper.unavailable": "Unmute and enable audio to whisper. Speaking and whisper initiation permissions are required.",
+  "voice.whisper.remove_group_named": "Remove whisper group {name}",
+  "voice.whisper.add_member": "Add room member",
+  "voice.whisper.remove_member": "Remove {name} from group",
+  "voice.whisper.suggestions": "Room members for whisper group",
+  "voice.whisper.no_members": "No matching room members.",
+  "perm.WHISPER": "Initiate whispers",
+  "perm.hint.WHISPER": "Start whispers to members and groups. Replying to the last received whisper is allowed without this permission; speaking permission is still required."
 }

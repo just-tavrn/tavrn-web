@@ -67,6 +67,7 @@ export function useChannelMenu(room: RoomDetail, channel: Channel): { menu: Cont
         },
         {
           ...notify.actions,
+          whisperSettings: () => { closeNav(); navigate(roomPath(room.id, undefined, "settings/whisper")); },
           toggleFullHistory: fullHistory.toggle,
           markRead: () => void markConversationRead(api, channel.id, domain).catch(toastError),
           edit: () => {

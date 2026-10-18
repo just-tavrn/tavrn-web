@@ -59,6 +59,9 @@ export function keepMedia(prev: Record<string, ParticipantMedia>, next: Record<s
 }
 
 export interface VoiceState {
+  canWhisper: boolean;
+  lastWhisperSession: string | null;
+  lastWhisperExpiresAt: number;
   whisperSupported: boolean;
   whisperTarget: string | null;
   whispering: string[];
@@ -115,6 +118,9 @@ export interface VoiceState {
 }
 
 export const IDLE: VoiceState = {
+  canWhisper: false,
+  lastWhisperSession: null,
+  lastWhisperExpiresAt: 0,
   whisperSupported: false,
   whisperTarget: null,
   whispering: [],

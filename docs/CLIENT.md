@@ -1595,3 +1595,18 @@ Vitest tests sit next to the code in `web/src` (unit, component and the static a
 suite in `e2e/` clicks through the flows of this document in real browsers against real nodes, on a desktop and a
 phone viewport, with axe-core scans of the views. How to run both is in the [README](../README.md) ("Development" and
 "End-to-end tests"); the desktop app's own tests are in DESKTOP.md "Tests".
+
+### Personal whisper groups
+
+Room Settings → Whisper stores personal groups for the selected room on this device; no voice connection or room
+management permission is needed to edit them. The voice channel context menu opens that room's Whisper category.
+Members are selected from the room member list with the same nickname/username suggestions as the composer;
+arrow keys and Enter select, Escape closes suggestions, and each selected member has a removal button.
+Only the independent “Reply to last whisperer (hold)” shortcut stays in User Settings → Voice & Video → More shortcuts.
+
+The Voice permission “Initiate whispers” controls member/group starts and their shortcuts, including native shortcut
+callbacks. Reply uses the last server-confirmed received whisper session and bypasses only that permission; speaking
+permission and an unmuted microphone are still required. Whisper requires `voice.whisper2`, the browser voice engine
+and server-authorized `whisper:<session-id>` publications. Receivers confirm the publication with the node before
+playing it; encrypted client data signals alone do not authorize audio. Native voice rejects these tracks and offers
+the existing browser fallback.

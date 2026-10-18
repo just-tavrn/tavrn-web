@@ -2,6 +2,7 @@
 import { AgeGateSection } from "../../components/age/AgeGateSection";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { WHISPER, whisperInheritance } from "../../voice/whisperAccess";
 import { EVERYONE_RESTRICTED, Permission, UPLOAD_CATEGORIES, hasPermission, inheritedOverrideValue, parsePermissions, type Category, type Channel, type RoomDetail } from "@tavrn/sdk";
 import { useSearchParams } from "react-router";
 import { useNode } from "../../components/NodeScope";
@@ -327,7 +328,7 @@ function OverridesEditor({ target, room, onChanged }: { target: OverrideTarget; 
   const members = useQuery({ ...roomMembersQuery(api, room.id), enabled: subjectType === "member" });
   const memberRoles = subjectType === "member" ? (members.data?.find((m) => m.user.id === subjectId)?.roles ?? []) : [];
   const hintInput = overrideHintInput(room, { type: target.type, id: targetId }, subjectType === "member" ? { type: "member", id: subjectId, roles: memberRoles } : { type: "role", id: subjectId });
-  const inherited = (bit: bigint) => inheritedOverrideValue(hintInput, bit);
+  const inherited = (bit: bigint) => bit === WHISPER ? whisperInheritance(hintInput) : inheritedOverrideValue(hintInput, bit);
   const pick = (value: string) => {
     setSubject(value);
     const [ty, id] = value.split(":");

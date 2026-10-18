@@ -12,6 +12,7 @@ import { BansTab, MembersTab } from "./MembersTab";
 import { EmojisTab } from "./EmojisTab";
 import { SoundboardTab } from "./SoundboardTab";
 import { AuditTab, ModerationTab } from "./ModerationTab";
+import { WhisperTab } from "./WhisperTab";
 import { RoomProfileTab } from "./RoomProfileTab";
 import { InvitesTab } from "./InvitesTab";
 import { WebhooksTab } from "./WebhooksTab";
@@ -28,6 +29,7 @@ import { RoomLegalTab, showsLegalTab } from "./RoomLegalTab";
 const TABS: readonly { id: string; needs: bigint; label?: string; anyOf?: bigint[]; cap?: string }[] = [
   { id: "overview", needs: 0n },
   { id: "legal", needs: 0n },
+  { id: "whisper", needs: 0n, label: "voice.whisper.title" },
   { id: "profile", needs: 0n, label: "roomprofile.tab" },
   { id: "roles", needs: Permission.MANAGE_ROLES },
   { id: "channels", needs: Permission.MANAGE_CHANNELS },
@@ -103,6 +105,7 @@ export function RoomSettingsPage() {
           )}
           {tab === "overview" && <OverviewTab key={room.data.id} room={room.data} />}
           {tab === "legal" && <RoomLegalTab key={room.data.id} room={room.data} />}
+          {tab === "whisper" && <WhisperTab key={room.data.id} roomId={room.data.id} />}
           {tab === "profile" && <RoomProfileTab room={room.data} />}
           {tab === "roles" && <RolesTab room={room.data} />}
           {tab === "channels" && <ChannelsTab room={room.data} />}

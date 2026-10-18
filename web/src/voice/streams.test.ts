@@ -182,8 +182,8 @@ describe("screen publishers are their device's stream (VOICE.md §4b)", () => {
   });
 });
 
-it("does not let stream subscription refresh subscribe an unsolicited whisper", () => {
-  const pub = { source: "microphone", trackName: "whisper", isDesired: false, setSubscribed: vi.fn() };
+it.each(["whisper", "whisper:session"])("does not let stream subscription refresh subscribe an unsolicited %s", (trackName) => {
+  const pub = { source: "microphone", trackName, isDesired: false, setSubscribed: vi.fn() };
   const subscriptions = new StreamSubscriptions(() => [{ identity: "a@n/d", trackPublications: new Map([["wh", pub]]) }]);
   subscriptions.applyAll(); subscriptions.join("a@n/d");
   expect(pub.setSubscribed).not.toHaveBeenCalled();

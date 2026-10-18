@@ -364,6 +364,7 @@ export interface ChannelMenuContext {
 }
 
 export interface ChannelMenuActions extends NotifyMenuActions {
+  whisperSettings?: () => void;
   markRead: () => void;
   toggleFullHistory?: () => void;
   edit: () => void;
@@ -392,6 +393,7 @@ export function channelMenu(c: ChannelMenuContext, a: ChannelMenuActions, t: T):
     separator("sep-notify"),
     ...notifyEntries("channel", c.notify, a, t),
     ...fullHistoryEntries(c.fullHistory, a.toggleFullHistory, t, c.fullHistoryUsage),
+    c.kind === "voice" && a.whisperSettings && menuItem("whisper-settings", t("voice.whisper.title"), a.whisperSettings, { icon: "↝" }),
     move && separator("sep-voice"),
     move &&
       menuItem("move-here", t("menu.channel.move_here_count", { count: move.elsewhere }), a.moveEveryoneHere, {

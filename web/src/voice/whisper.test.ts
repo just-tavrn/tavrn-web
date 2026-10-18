@@ -43,6 +43,19 @@ describe("whisper sender privacy and restoration", () => {
     const end = h.sender.set([]); expect(h.output()).toBe(false);
     finish(); await Promise.all([start, end]); expect(h.log).not.toContain("output:true"); expect(h.mainMuted()).toBe(false);
   });
+  it("releases a late server authorization after the hold was cancelled without publishing", async () => {
+    const h = harness(); let finish!: () => void; let entered!: () => void;
+    const preparing = new Promise<void>((resolve) => { entered = resolve; });
+    h.port.prepare = () => { entered(); return new Promise<void>((resolve) => { finish = resolve; }); };
+    h.port.release = vi.fn(async () => undefined);
+    const start = h.sender.set(["a@n/d"]); await preparing;
+    const release = h.sender.set([]); finish();
+    await Promise.all([start, release]);
+    expect(h.log).not.toContain("publish");
+    expect(h.log).not.toContain("output:true");
+    expect(h.port.release).toHaveBeenCalledOnce();
+  });
+
   it("resends permissions on membership/publication change and ends on resync failure", async () => {
     const h = harness(); await h.sender.set(["a@n/d"]);
     h.sender.resync(); expect(h.log.filter((x) => x === "restrict")).toHaveLength(3);
@@ -51,7 +64,7 @@ describe("whisper sender privacy and restoration", () => {
     await h.sender.set([]); expect(h.sender.recipients).toEqual([]); expect(h.mainMuted()).toBe(false);
   });
   it("keeps every main track accessible and handles late participants and publications", () => {
-    const tracks = [{ trackSid: "mic", trackName: "microphone" }, { trackSid: "cam", trackName: "camera" }, { trackSid: "wh", trackName: "whisper" }, { trackSid: "screen", trackName: "screen" }];
+    const tracks = [{ trackSid: "mic", trackName: "microphone" }, { trackSid: "cam", trackName: "camera" }, { trackSid: "wh", trackName: "whisper:authorized-session" }, { trackSid: "screen", trackName: "screen" }];
     const p = whisperPermissions(["a", "b", "late"], tracks, ["a"]);
     expect(p[0]!.allowedTrackSids).toEqual(["mic", "cam", "screen", "wh"]);
     for (const entry of p.slice(1)) expect(entry.allowedTrackSids).toEqual(["mic", "cam", "screen"]);
