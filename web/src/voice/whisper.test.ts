@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { WhisperSender, whisperPermissions, type WhisperPort } from "./whisper";
 function harness(fail?: string) {
   const log: string[] = [];
@@ -77,4 +77,38 @@ it("keeps the normal destination closed throughout a recipient change", async ()
   expect(h.log.indexOf("main:false")).toBeLessThan(h.log.indexOf("main:true"));
   expect(h.log.lastIndexOf("transition:false")).toBeGreaterThan(h.log.indexOf("output:true"));
   expect(h.sender.recipients).toEqual(["b@n/d"]);
+});
+
+
+it("suppresses normal audio synchronously before queued key preparation begins", async () => {
+  const h = harness();
+  let finish!: () => void;
+  h.port.prepare = () => new Promise<void>((resolve) => { finish = resolve; });
+  const start = h.sender.set(["a@n/d"]);
+  expect(h.log[0]).toBe("transition:true");
+  expect(h.log).not.toContain("key");
+  await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
+  const stop = h.sender.set([]);
+  finish();
+  await Promise.all([start, stop]);
+  expect(h.log).not.toContain("output:true");
+});
+
+it("a timed-out publish tears down its connection before a late operation settles", async () => {
+  vi.useFakeTimers();
+  try {
+    const h = harness();
+    let finish!: () => void;
+    h.port.publish = () => new Promise<void>((resolve) => { finish = resolve; });
+    const start = h.sender.set(["a@n/d"]);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(10_001);
+    await start;
+    expect(h.output()).toBe(false);
+    expect(h.log).toContain("recover");
+    expect(h.log).not.toContain("all");
+    finish();
+    await Promise.resolve();
+    expect(h.log).not.toContain("output:true");
+  } finally { vi.useRealTimers(); }
 });

@@ -145,32 +145,48 @@ export type { VoiceTarget, ScreenShareOptions };
 /** Whisper is only available with the browser engine; native receivers fail closed. */
 export async function whisperTo(identities: string[]): Promise<void> {
   if (useVoice.getState().status !== "connected") return;
+  if (identities.length && !useVoice.getState().whisperSupported) return;
   if (useVoiceEngine.getState().kind !== "browser") {
     if (identities.length) useToasts.getState().push({ kind: "warning", title: t("voice.whisper.browser_only") });
     return;
   }
-  await (await import("./session")).setWhisper(identities);
+  await module?.setWhisper?.(identities);
 }
 let whisperHoldAction: string | null = null;
 let whisperAddressHold: string | null = null;
+useVoice.subscribe((state, previous) => {
+  if (state.status !== "connected" || state.target !== previous.target) {
+    whisperHoldAction = null;
+    whisperAddressHold = null;
+  }
+});
 export function whisperToAddress(address: string, held: boolean): void {
-  if (!held && whisperAddressHold !== address) return;
+  if (!held) {
+    if (whisperAddressHold !== address) return;
+    whisperAddressHold = null;
+    void whisperTo([]);
+    return;
+  }
+  const state = useVoice.getState();
+  const ids = Object.keys(state.media).filter((id) => id !== state.identity && !id.endsWith("#screen") && splitIdentity(id).address === address);
+  if (!ids.length || state.status !== "connected" || !state.whisperSupported) return;
   whisperHoldAction = null;
-  whisperAddressHold = held ? address : null;
-  const s = useVoice.getState();
-  void whisperTo(held ? Object.keys(s.media).filter((id) => id !== s.identity && splitIdentity(id).address === address) : []);
+  whisperAddressHold = address;
+  void whisperTo(ids);
 }
 export function whisperHotkey(action: string, held: boolean): void {
-  const s = useVoice.getState();
+  const state = useVoice.getState();
   if (!held) {
     if (whisperHoldAction === action) { whisperHoldAction = null; void whisperTo([]); }
     return;
   }
+  if (state.status !== "connected" || !state.whisperSupported || !state.target || state.target.call) return;
+  const groups = useVoiceSettings.getState().settings.whisperGroups[whisperRoomKey(state.target.domain, state.target.roomId)] ?? [];
+  const group = groups.find((g) => `whisper:${g.id}` === action);
+  const ids = action === "whisper_reply" ? (state.lastWhisperer && state.media[state.lastWhisperer] ? [state.lastWhisperer] : [])
+    : group ? Object.keys(state.media).filter((id) => id !== state.identity && !id.endsWith("#screen") && group.members.includes(splitIdentity(id).address)) : [];
+  if (!ids.length) return;
   whisperHoldAction = action;
   whisperAddressHold = null;
-  if (action === "whisper_reply") { if (s.lastWhisperer) void whisperTo([s.lastWhisperer]); return; }
-  if (!s.target || s.target.call) return;
-  const groups = useVoiceSettings.getState().settings.whisperGroups[whisperRoomKey(s.target.domain, s.target.roomId)] ?? [];
-  const group = groups.find((g) => `whisper:${g.id}` === action);
-  if (group) void whisperTo(Object.keys(s.media).filter((id) => id !== s.identity && group.members.includes(splitIdentity(id).address)));
+  void whisperTo(ids);
 }

@@ -437,7 +437,7 @@ export function useRealtime() {
       url: wsUrl(),
       WebSocketImpl: browserWebSocket(),
       getToken: () => useAuth.getState().token,
-      capabilities: ["content.v1", "reactions", "e2ee.mls1", "commands.v1", "components.v1", "components.modal_select.v1"],
+      capabilities: ["content.v1", "reactions", "e2ee.mls1", "commands.v1", "components.v1", "components.modal_select.v1", "voice.whisper1"],
       onStatus: (status) => {
         useRealtimeState.setState({ status });
         // (Re)connected: Welcomes that arrived while the socket was down, and own leaves waiting for removal.
@@ -631,7 +631,7 @@ function openNodeSocket(domain: string, queryClient: QueryClient, navigate: (to:
     url: session.ws,
     WebSocketImpl: browserWebSocket(),
     getToken: () => useNodes.getState().sessions[domain]?.token ?? null,
-    capabilities: ["content.v1", "reactions", "e2ee.mls1", "commands.v1", "components.v1", "components.modal_select.v1"],
+    capabilities: ["content.v1", "reactions", "e2ee.mls1", "commands.v1", "components.v1", "components.modal_select.v1", "voice.whisper1"],
     onStatus: (status) => {
       // Connected (again): DMs started on that node wait there as Welcomes (§6.1); own leaves to remove.
       if (status === "ready") {

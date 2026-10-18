@@ -31,6 +31,8 @@ export interface VoiceEngine {
   playSound(sound: PlayableSound): Promise<void>;
   setPriority(on: boolean): Promise<void>;
   pushToTalk(pressed: boolean): void;
+  /** Browser-only selective whisper; invoked synchronously at hold intent. */
+  setWhisper?(recipients: string[]): Promise<void>;
   attachVideo(identity: string, source: "camera" | "screen", el: HTMLVideoElement): () => void;
   /** Joins the stream (screen share) of `identity`: only joined streams are received (`streams.ts`). */
   joinStream(identity: string): void;

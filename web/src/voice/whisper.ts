@@ -32,10 +32,13 @@ export class WhisperSender {
 
   set(recipients: string[]): Promise<void> {
     const revision = ++this.revision;
-    if (!recipients.length) this.port.output(false);
+    // Close both routes at intent time, even while a previous asynchronous transition is pending.
+    if (this.port.active()) {
+      this.port.transition(recipients.length > 0);
+      this.port.output(false);
+    }
     this.queue = this.queue.then(async () => {
       if (!this.port.active()) return;
-      this.port.transition(recipients.length > 0);
       try {
         await this.end();
         if (revision !== this.revision || !this.port.canStart()) return;
@@ -64,10 +67,14 @@ export class WhisperSender {
           this.announced = true;
           this.port.cue(true);
         } catch (e) {
-          await this.end();
+          if (e instanceof WhisperTimeoutError) {
+            // Promise.race cannot cancel a late SDK operation. Destroy its connection before it can settle.
+            this.dispose();
+            this.port.recover();
+          } else await this.end();
           this.port.failed(e);
         }
-      } finally { this.port.transition(false); }
+      } finally { if (revision === this.revision) this.port.transition(false); }
     }).catch((e) => { this.port.output(false); this.port.failed(e); });
     return this.queue;
   }
@@ -114,10 +121,12 @@ export function whisperPermissions(participants: Iterable<string>, tracks: Itera
 }
 
 
+class WhisperTimeoutError extends Error {}
+
 /** Network failures cannot leave a hold or normal microphone restoration waiting forever. */
 function bounded<T>(promise: Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout>;
   return Promise.race([promise, new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error("Whisper operation timed out")), 10_000);
+    timer = setTimeout(() => reject(new WhisperTimeoutError("Whisper operation timed out")), 10_000);
   })]).finally(() => clearTimeout(timer));
 }

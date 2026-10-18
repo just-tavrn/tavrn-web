@@ -112,7 +112,7 @@ export function ParticipantTile({ roomId, tile, menu }: { roomId?: string; tile:
   const receivingWhisper = useVoice((s) => !!s.whisperedBy[tile.identity]);
   const mainMuted = useVoice((s) => !tile.self && !!s.media[tile.identity]?.micMuted);
   const flags = { ...tile.flags, muted: tile.flags.muted || (mainMuted && !receivingWhisper) };
-  const canWhisper = useVoice((s) => s.status === "connected" && !s.target?.call && s.canSpeak && !s.muted && !s.deafened && !!s.media[tile.identity]);
+  const canWhisper = useVoice((s) => s.status === "connected" && s.whisperSupported && !s.target?.call && s.canSpeak && !s.muted && !s.deafened && !!s.media[tile.identity]);
   const browserVoice = useVoiceEngine((s) => s.kind === "browser");
   const whisperLabel = receivingWhisper ? t("voice.whisper.receiving", { name: tile.name }) : whispering ? t("voice.whisper.sending", { names: whisperTargets.map((id) => id.split("/")[0]).join(", ") }) : null;
   // The own tile's microphone flag pulses while the user talks muted (issue #125).
@@ -146,7 +146,7 @@ export function ParticipantTile({ roomId, tile, menu }: { roomId?: string; tile:
       )}
       <SoundOverlay identity={tile.identity} roomId={roomId} />
       {whisperLabel && <span role="status" className="absolute right-2 top-2 rounded-md bg-bg-0 px-2 text-xs text-accent" data-testid="whisper-indicator"><span aria-hidden="true">↝ </span>{whisperLabel}</span>}
-      {!tile.self && canWhisper && <button type="button" disabled={!browserVoice} aria-label={t("voice.whisper.hold", { name: tile.name })} title={!browserVoice ? t("voice.whisper.browser_only") : t("voice.whisper.hold", { name: tile.name })} className="absolute left-2 top-2 z-10 min-h-11 min-w-11 touch-none rounded-md bg-black/60 text-fg-0" data-testid="whisper-hold"
+      {!tile.self && canWhisper && <button type="button" disabled={!browserVoice} aria-label={t("voice.whisper.hold", { name: tile.name })} title={!browserVoice ? t("voice.whisper.browser_only") : t("voice.whisper.hold", { name: tile.name })} className="absolute left-2 top-12 z-10 min-h-11 min-w-11 touch-none rounded-md bg-black/60 text-fg-0" data-testid="whisper-hold"
         onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); whisperToAddress(tile.address, true); }}
         onPointerUp={(e) => { e.stopPropagation(); whisperToAddress(tile.address, false); }} onPointerCancel={() => whisperToAddress(tile.address, false)} onLostPointerCapture={() => whisperToAddress(tile.address, false)}
         onKeyDown={(e) => { if (!e.repeat && (e.key === " " || e.key === "Enter")) { e.preventDefault(); whisperToAddress(tile.address, true); } }}

@@ -18,6 +18,7 @@ const { browser, native } = vi.hoisted(() => {
     setScreenShare: vi.fn(async () => undefined),
     playSound: vi.fn(async () => undefined),
     setPriority: vi.fn(async () => undefined),
+    setWhisper: vi.fn(async () => undefined),
     pushToTalk: vi.fn(),
     attachVideo: vi.fn(() => () => undefined),
   });
@@ -87,5 +88,41 @@ describe("the voice entry point picks the engine", () => {
   it("a failed join ends in a toast and false", async () => {
     browser.join.mockRejectedValueOnce(new Error("nope"));
     expect(await voice.joinVoice(target, { canCreate: true })).toBe(false);
+  });
+});
+
+
+describe("whisper hold ownership and capability", () => {
+  async function ready() {
+    await voice.joinVoice(target, { canCreate: true });
+    const media = { camera: false, screen: false, micMuted: false };
+    useVoice.setState({ ...IDLE, target, status: "connected", whisperSupported: true, identity: "me@home.example/d", media: { "a@n/d": media, "b@n/d": media } });
+    useVoiceSettings.getState().update({ whisperGroups: { "home.example/r1": [
+      { id: "first", name: "First", members: ["a@n"] }, { id: "second", name: "Second", members: ["b@n"] },
+    ] } });
+  }
+  it("does not offer a broadcast fallback without node support", async () => {
+    await ready(); useVoice.setState({ whisperSupported: false });
+    await voice.whisperTo(["a@n/d"]);
+    expect(browser.setWhisper).not.toHaveBeenCalled();
+  });
+  it("an older group's keyup cannot stop the newer held group", async () => {
+    await ready();
+    voice.whisperHotkey("whisper:first", true);
+    voice.whisperHotkey("whisper:second", true);
+    voice.whisperHotkey("whisper:first", false);
+    expect(browser.setWhisper.mock.calls).toEqual([[["a@n/d"]], [["b@n/d"]]]);
+    voice.whisperHotkey("whisper:second", false);
+    expect(browser.setWhisper).toHaveBeenLastCalledWith([]);
+  });
+  it("a held key from an old call cannot cancel a later touch hold", async () => {
+    await ready(); voice.whisperHotkey("whisper:first", true);
+    useVoice.setState(IDLE);
+    await ready(); voice.whisperToAddress("b@n", true);
+    browser.setWhisper.mockClear();
+    voice.whisperHotkey("whisper:first", false);
+    expect(browser.setWhisper).not.toHaveBeenCalled();
+    voice.whisperToAddress("b@n", false);
+    expect(browser.setWhisper).toHaveBeenCalledWith([]);
   });
 });

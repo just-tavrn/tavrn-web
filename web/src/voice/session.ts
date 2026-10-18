@@ -712,7 +712,7 @@ async function cleanup(s: Session) {
   if (s.mutedTalkPulse) clearTimeout(s.mutedTalkPulse);
   s.leaving = true;
   s.whisper.dispose();
-  set({ whispering: [], whisperedBy: {}, lastWhisperer: null });
+  set({ whispering: [], whisperedBy: {}, lastWhisperer: null, whisperSupported: false, whisperTarget: null });
   // The screen publisher ends with the voice session (the node also removes it with this device).
   void s.nativeScreen?.dispose();
   s.capture.close();
@@ -773,6 +773,7 @@ async function connect(attempt: Attempt, canCreate: boolean, opts: ConnectOpts) 
   const q = qualify(target.domain, target.channelId);
   const api = apiFor(target.domain);
   const ep = endpoints(api, target);
+  const whisperSupport = target.call ? Promise.resolve(false) : api.node.info().then((node) => node.capabilities.includes("voice.whisper1")).catch(() => false);
   // Ghost leaves (deleted devices, this user's old devices) go before the new voice key (ENCRYPTION.md §4.7); the
   // node lists who is in the channel, so only those devices are online for the election. Never waits for the
   // election: when another device is elected the cleanup runs in the background once connected. Best effort.
@@ -923,7 +924,8 @@ async function connect(attempt: Attempt, canCreate: boolean, opts: ConnectOpts) 
     vjMark("start_audio_done");
     attempt.check();
     const canSpeak = canPublish(room, Track.Source.Microphone);
-    set({ status: "connected", identity: room.localParticipant.identity, limits: info.limits, canSpeak, serverMuted: !canSpeak, e2ee: true });
+    set({ status: "connected", identity: room.localParticipant.identity, limits: info.limits, canSpeak, serverMuted: !canSpeak, e2ee: true, whisperSupported: false });
+    void whisperSupport.then((supported) => { if (life.current === s && !s.leaving) set({ whisperSupported: supported }); });
     vjMark("store_connected");
     if (canSpeak) await publishMic(s);
     vjMark("mic_published");
@@ -1484,7 +1486,7 @@ function createWhisperSender(current: () => Session): WhisperSender {
     active: () => life.current === s() && !s().leaving,
     canStart: () => {
       const v = useVoice.getState();
-      return life.current === s() && !s().leaving && !s().target.call && v.status === "connected" && !v.muted && !v.deafened && v.canSpeak;
+      return life.current === s() && !s().leaving && !s().target.call && v.whisperSupported && v.status === "connected" && !v.muted && !v.deafened && v.canSpeak;
     },
     resolve: (ids) => ids.filter((id) => id !== s().room.localParticipant.identity && !id.endsWith("#screen") && s().room.remoteParticipants.has(id)),
     prepare: async () => {
@@ -1494,10 +1496,17 @@ function createWhisperSender(current: () => Session): WhisperSender {
     publish: async () => {
       // A previous publication muted this reusable MediaStreamTrack; the destination is still silent here.
       s().pipeline.whisperTrack.enabled = true;
-      s().whisperPub ??= await s().room.localParticipant.publishTrack(s().pipeline.whisperTrack, {
+      if (s().whisperPub) return;
+      const pub = await s().room.localParticipant.publishTrack(s().pipeline.whisperTrack, {
         name: "whisper", source: Track.Source.Microphone,
         ...micPublishOptions(s().info.limits.audio_bitrate_kbps, { music: isMusic(s().info.limits.audio_bitrate_kbps), stereo: s().pipeline.stereo }),
       });
+      // A timed-out publish belongs to the old connection, never to its replacement.
+      if (life.current !== s() || s().leaving) {
+        if (pub.track) await s().room.localParticipant.unpublishTrack(pub.track, false).catch(() => undefined);
+        return;
+      }
+      s().whisperPub = pub;
     },
     permissions: (ids) => {
       const local = s().room.localParticipant;
