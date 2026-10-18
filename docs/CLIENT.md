@@ -1598,8 +1598,8 @@ phone viewport, with axe-core scans of the views. How to run both is in the [REA
 
 ### Personal whisper groups
 
-Room Settings → Whisper stores personal groups for the selected room on this device; no voice connection or room
-management permission is needed to edit them. The voice channel context menu opens that room's Whisper category.
+Room Settings → Whisper groups lets each member edit personal groups for the selected room on this device,
+without a voice connection or room management permission. The voice channel context menu opens that room's Whisper groups category.
 Members are selected from the room member list with the same nickname/username suggestions as the composer;
 arrow keys and Enter select, Escape closes suggestions, and each selected member has a removal button.
 Only the independent “Reply to last whisperer (hold)” shortcut stays in User Settings → Voice & Video → More shortcuts.

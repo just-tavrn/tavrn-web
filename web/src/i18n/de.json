@@ -3958,7 +3958,7 @@
   "polls.cell_mine": "deine Antwort: {answer}",
   "polls.legend_mine": "deine Antwort",
   "polls.mine_answer": "Deine Antwort: {answer}",
-  "voice.whisper.title": "Flüstern",
+  "voice.whisper.title": "Flüstergruppen",
   "voice.whisper.group": "Flüstergruppe",
   "voice.whisper.settings_help": "Deine persönlichen Gruppen für diesen Raum, auf diesem Gerät gespeichert. Halte ein Gruppenkürzel zum Flüstern. Antworten auf den letzten Flüsterer konfigurierst du unter Benutzereinstellungen → Sprache & Video → Weitere Tastenkürzel.",
   "voice.whisper.join_room": "Tritt einem Sprachkanal bei, um die Flüstergruppen dieses Raums zu bearbeiten.",

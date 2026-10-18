@@ -44,7 +44,8 @@ import {
   type RemoteTrack,
   type RemoteTrackPublication,
 } from "livekit-client";
-import { isWhisperTrack, confirmedWhisperUnpublish, verifiedWhisperReceipt, whisperSessionId, startWhisper, endWhisper, receiveWhisper, type WhisperSession } from "./whisperAccess";
+import { confirmedWhisperUnpublish, verifiedWhisperReceipt, startWhisper, endWhisper, receiveWhisper, type WhisperSession } from "./whisperAccess";
+import { isWhisperTrack, whisperSessionId } from "./whisperTracks";
 import { WhisperSender, whisperPermissions } from "./whisper";
 import { WHISPER_TOPIC, WhisperLimiter, addressedWhisper } from "./whisperSignal";
 import E2EEWorker from "livekit-client/e2ee-worker?worker";

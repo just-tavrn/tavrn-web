@@ -25,10 +25,10 @@ export function WhisperSection({ domain, roomId, members, self }: { domain: stri
       <label className="block text-sm">{t("voice.whisper.group_name")}<Input className="mt-1" defaultValue={g.name} maxLength={64} onBlur={(e) => update(groups.map((x) => x.id === g.id ? { ...x, name: e.target.value.trim() || g.name } : x))} /></label>
       <WhisperMembers members={members} selected={g.members} domain={domain} self={self} onChange={(addresses) => update(groups.map((x) => x.id === g.id ? { ...x, members: addresses } : x))} />
       <HotkeyRecorder action={`whisper:${g.id}`} label={g.name} testid={{ key: `whisper-${g.id}-key`, change: `whisper-${g.id}-change`, remove: `whisper-${g.id}-remove` }} />
-      <Button type="button" aria-label={t("voice.whisper.remove_group_named", { name: g.name })} onClick={() => { void clearHotkey(`whisper:${g.id}`); update(groups.filter((x) => x.id !== g.id)); }}>{t("voice.whisper.remove_group")}</Button>
+      <Button type="button" variant="ghost" aria-label={t("voice.whisper.remove_group_named", { name: g.name })} onClick={() => { void clearHotkey(`whisper:${g.id}`); update(groups.filter((x) => x.id !== g.id)); }}>{t("voice.whisper.remove_group")}</Button>
     </div>)}
     {groups.length < 32 && <form onSubmit={(e) => { e.preventDefault(); if (!name.trim()) return; update([...groups, { id: crypto.randomUUID(), name: name.trim(), members: [] }]); setName(""); }} className="mt-3 flex flex-wrap gap-2">
-      <Input aria-label={t("voice.whisper.group_name")} maxLength={64} value={name} onChange={(e) => setName(e.target.value)} />
+      <Input className="min-w-0 flex-1" aria-label={t("voice.whisper.group_name")} maxLength={64} value={name} onChange={(e) => setName(e.target.value)} />
       <Button type="submit">{t("voice.whisper.add_group")}</Button>
     </form>}
   </Section>;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { isWhisperTrack } from "./whisperAccess";
+import { isWhisperTrack } from "./whisperTracks";
 import { encodeWhisperSignal, WhisperLimiter } from "./whisperSignal";
 
 /** The media adapter owns E2EE preparation, publications and the call's user mute state. */

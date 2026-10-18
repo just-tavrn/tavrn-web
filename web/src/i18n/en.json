@@ -3958,7 +3958,7 @@
   "polls.cell_mine": "your answer: {answer}",
   "polls.legend_mine": "your answer",
   "polls.mine_answer": "Your answer: {answer}",
-  "voice.whisper.title": "Whisper",
+  "voice.whisper.title": "Whisper groups",
   "voice.whisper.group": "Whisper group",
   "voice.whisper.settings_help": "Your personal groups for this room, saved on this device. Hold a group shortcut to whisper. Reply to last whisperer is configured in User Settings → Voice & Video → More shortcuts.",
   "voice.whisper.join_room": "Join a room voice channel to configure its whisper groups.",

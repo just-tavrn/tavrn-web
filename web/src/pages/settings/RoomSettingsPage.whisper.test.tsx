@@ -16,8 +16,8 @@ it("opens the personal whisper category without manage-room or a voice connectio
   useAuth.setState({ user: { id: "me", address: "me@n", domain: "n" } as never });
   useVoiceSettings.setState({ settings: DEFAULT_SETTINGS });
   renderWithProviders(<Routes><Route path="/rooms/:roomId/settings/:tab" element={<RoomSettingsPage />} /></Routes>, { route: "/rooms/selected/settings/whisper" });
-  expect(screen.getByRole("link", { name: "Flüstern" })).toHaveAttribute("href", "/rooms/selected/settings/whisper");
-  expect(screen.getByRole("heading", { name: "Flüstern" })).toBeVisible();
+  expect(screen.getByRole("link", { name: "Flüstergruppen" })).toHaveAttribute("href", "/rooms/selected/settings/whisper");
+  expect(screen.getByRole("heading", { name: "Flüstergruppen" })).toBeVisible();
   expect(screen.queryByRole("link", { name: "Rollen" })).toBeNull();
   await userEvent.type(screen.getByRole("textbox", { name: "Gruppenname" }), "Personal");
   await userEvent.click(screen.getByRole("button", { name: "Neue Flüstergruppe" }));

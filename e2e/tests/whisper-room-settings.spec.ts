@@ -36,6 +36,12 @@ test("a plain member edits personal room groups without joining voice; suggestio
   await search.fill(outsider.username);
   await expect(group.getByRole("option")).toHaveCount(0);
   await search.press("Escape");
+  await group.getByRole("button", { name: `${ownerAddress} aus Gruppe entfernen`, exact: true }).click();
+  await search.fill(owner.username);
+  const suggestion = group.getByRole("option");
+  if (test.info().project.use.hasTouch) await suggestion.tap();
+  else await suggestion.click();
+  await expect(group.getByRole("list")).toContainText(ownerAddress);
   const accessibility = await new AxeBuilder({ page }).include("main").withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze();
   expect(accessibility.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
   await test.info().attach(`whisper-settings-${test.info().project.name}`, { body: await page.screenshot(), contentType: "image/png" });

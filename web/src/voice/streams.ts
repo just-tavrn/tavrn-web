@@ -9,7 +9,7 @@
  * No LiveKit import: the session hands its publications in (`session.ts`), the tests hand in mocks. LiveKit's
  * `Track.Source` values are plain strings.
  */
-import { isWhisperTrack } from "./whisperAccess";
+import { isWhisperTrack } from "./whisperTracks";
 import type { VoiceStatus, VoiceTarget } from "./store";
 
 /** `Track.Source` of the screen share video and of the screen share's audio. */

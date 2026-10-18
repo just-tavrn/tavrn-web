@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it, vi } from "vitest";
 import { Permission, type RoomDetail, TavrnApi } from "@tavrn/sdk";
-import { WHISPER, whisperInheritance, confirmedWhisperUnpublish, whisperAllowed, verifiedWhisperReceipt, startWhisper, receiveWhisper, endWhisper } from "./whisperAccess";
+import { WHISPER, confirmedWhisperUnpublish, whisperAllowed, verifiedWhisperReceipt, startWhisper, receiveWhisper, endWhisper } from "./whisperAccess";
 const room = (permissions: bigint) => ({ channels: [{ id: "c", kind: "voice", category_id: "cat" }], roles: [{ id: "all", is_everyone: true, permissions: (permissions | Permission.VIEW_CHANNEL).toString() }], my_roles: [], overrides: [], is_owner: false } as unknown as RoomDetail);
 describe("whisper initiation authorization", () => {
   it("requires the dedicated bit and speaking, and honors category and channel denies", () => {
@@ -18,14 +18,17 @@ describe("whisper initiation authorization", () => {
     expect(whisperAllowed(r, "unknown", "me")).toBe(false);
   });
   it("sends reply session IDs without arbitrary recipients using the authenticated SDK transport", async () => {
-    const api = new TavrnApi(); const request = vi.spyOn(api, "request").mockResolvedValue({});
+    const api = new TavrnApi();
+    const start = vi.spyOn(api.voice, "startWhisper").mockResolvedValue({} as never);
+    const receive = vi.spyOn(api.voice, "receiveWhisper").mockResolvedValue({} as never);
+    const end = vi.spyOn(api.voice, "endWhisper").mockResolvedValue(undefined);
     const target = { domain: "n", roomId: "r", channelId: "c" };
     await startWhisper(api, target, { reply_to: "last" });
-    expect(request).toHaveBeenLastCalledWith("POST", "/rooms/r/channels/c/voice/whisper", { reply_to: "last" });
+    expect(start).toHaveBeenLastCalledWith("r", "c", { reply_to: "last" });
     await receiveWhisper(api, target, "session");
-    expect(request).toHaveBeenLastCalledWith("POST", "/rooms/r/channels/c/voice/whisper/session/receive");
+    expect(receive).toHaveBeenLastCalledWith("r", "c", "session");
     await endWhisper(api, target, "session");
-    expect(request).toHaveBeenLastCalledWith("DELETE", "/rooms/r/channels/c/voice/whisper/session");
+    expect(end).toHaveBeenLastCalledWith("r", "c", "session");
   });
 });
 describe("server-confirmed whisper reception", () => {
@@ -62,11 +65,4 @@ it("does not restore normal permissions before the SFU confirms track removal", 
   expect(done).not.toHaveBeenCalled();
   ack(); await pending;
   expect(done).toHaveBeenCalledOnce(); expect(off).toHaveBeenCalledOnce();
-});
-
-
-it("shows the whisper inheritance source independently of the legacy SDK carrier", () => {
-  const input = { everyone_role_id: "all", everyone_permissions: WHISPER | Permission.PRIORITY_SPEAKER, roles: [], subject: { type: "member" as const, id: "me", roles: [] }, category_overrides: [{ subject_type: "role" as const, subject_id: "all", allow: "0", deny: WHISPER.toString() }], layer_overrides: [] };
-  expect(whisperInheritance(input)).toEqual({ allowed: false, source: "category" });
-  expect(whisperInheritance({ ...input, category_overrides: [] })).toEqual({ allowed: true, source: "role" });
 });

@@ -1,16 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useId, useState, type ReactNode } from "react";
-import { CHANNEL_SCOPED_GROUPS as SDK_CHANNEL_SCOPED_GROUPS, PERMISSION_LABELS as SDK_PERMISSION_LABELS, Permission as SDK_Permission, hasPermission, type InheritedSource, type PermissionName as SDKPermissionName } from "@tavrn/sdk";
+import { CHANNEL_SCOPED_GROUPS, PERMISSION_LABELS, Permission, hasPermission, type InheritedSource, type PermissionName } from "@tavrn/sdk";
 import { useT } from "../../i18n";
 import { describeError } from "../../stores/toasts";
 import { Button, Dialog, ErrorText, Input } from "../../components/ui";
-
-import { WHISPER } from "../../voice/whisperAccess";
-// Compatibility with the pending SDK pin; avoid duplicate entries once the SDK includes WHISPER.
-const Permission = { ...SDK_Permission, WHISPER };
-type PermissionName = SDKPermissionName | "WHISPER";
-const PERMISSION_LABELS: { name: PermissionName; label: string; group: string }[] = [...SDK_PERMISSION_LABELS.filter((p) => String(p.name) !== "WHISPER"), { name: "WHISPER", label: "Initiate whispers", group: "Voice" }];
-const CHANNEL_SCOPED_GROUPS: { group: string; permissions: PermissionName[] }[] = SDK_CHANNEL_SCOPED_GROUPS.map((g) => ({ ...g, permissions: g.group === "voice" ? [...g.permissions.filter((p) => String(p) !== "WHISPER"), "WHISPER"] : [...g.permissions] }));
 
 export function Section({ title, children, description }: { title: string; description?: string; children: ReactNode }) {
   return (
