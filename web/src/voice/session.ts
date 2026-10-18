@@ -635,8 +635,10 @@ function wire(s: Session) {
       if (p === room.localParticipant) onPermissions(s);
       else if (!participantCanPublish(p, Track.Source.Microphone)) forgetIncomingWhisper(s, p.identity);
     })
-    .on(RoomEvent.EncryptionError, (error: Error) => {
-      void s.whisper.set([]);
+    .on(RoomEvent.EncryptionError, (error: Error, participant?: Participant) => {
+      // A remote epoch may arrive before its MLS commit. The decoder drops those frames while
+      // catch-up installs the key; that does not mean our independently encrypted publisher failed.
+      if (!participant || participant === room.localParticipant) void s.whisper.set([]);
       console.warn("voice: encryption error", error.message);
     });
 }

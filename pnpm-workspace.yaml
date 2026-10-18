@@ -41,3 +41,5 @@ overrides:
   #   web client has no Sass sources). Removing it drops chokidar 3 and braces 3.0.3, whose stack-exhaustion
   #   advisory has no fixed release.
   "@excalidraw/excalidraw>sass": "-"
+patchedDependencies:
+  livekit-client@2.22.4: patches/livekit-client@2.22.4.patch

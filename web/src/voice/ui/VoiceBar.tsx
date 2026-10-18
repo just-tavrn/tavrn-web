@@ -107,6 +107,8 @@ export function VoiceBar() {
       {whisperTarget && <button type="button" data-testid="whisper-selected-hold" disabled={!canWhisper || status !== "connected"}
         className="min-h-11 w-full touch-none rounded-md px-2 text-left text-xs text-accent hover:bg-bg-3 disabled:opacity-50"
         aria-label={t("voice.whisper.hold", { name: whisperTarget })}
+        onTouchStart={(e) => e.stopPropagation()}
+        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
         onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); whisperToAddress(whisperTarget, true); }}
         onPointerUp={() => whisperToAddress(whisperTarget, false)} onPointerCancel={() => whisperToAddress(whisperTarget, false)} onLostPointerCapture={() => whisperToAddress(whisperTarget, false)}
         onKeyDown={(e) => { if (!e.repeat && (e.key === " " || e.key === "Enter")) { e.preventDefault(); whisperToAddress(whisperTarget, true); } }}

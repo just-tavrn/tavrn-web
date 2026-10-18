@@ -89,6 +89,7 @@ test("only addressed participants hear whisper; the SFU rejects outsiders and no
       await expect.poll(async () => (await state(sender.page)).whispering).toEqual([receiverId]);
       await expect.poll(async () => (await state(receiver.page)).whisperedBy[senderId]).toBe(true);
       await expect.poll(() => inboundPeak(receiver.page, senderId), { timeout: scaled(30_000) }).toBeGreaterThan(0.05);
+      await expect(sender.page.getByRole("menu")).not.toBeVisible();
       const remote = (await state(receiver.page)).remote.find((p) => p.identity === senderId)!;
       expect(remote.tracks.find((p) => p.name === "whisper")).toMatchObject({ subscribed: true, encrypted: true });
       if (first) {

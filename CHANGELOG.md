@@ -6,6 +6,14 @@ checksums and update files. The node's container image embeds the web client of 
 
 ## Unreleased
 
+- **Whisper in voice channels** (`voice.whisper1`): hold a tile control or a configured room-group/reply
+  hotkey to speak to selected participants through a second encrypted, SFU-restricted microphone track.
+  EN/DE indicators and soft cues identify addressed whispers; outsiders receive neither audio nor control
+  signals. The shared epoch-key privacy boundary is documented in the protocol. Native voice uses the
+  explicit browser-engine fallback. Sender cleanup preserves normal mute/PTT behavior, and soundboard
+  signals retain their own channel permission checks. A pinned LiveKit ESM patch preserves targeted routing
+  when data encryption replaces the inner packet.
+
 First public release of the web client and the desktop apps.
 
 - **Web client**: rooms with text, voice, announcement, forum and files channels, threads, direct messages and

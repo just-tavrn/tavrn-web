@@ -147,6 +147,8 @@ export function ParticipantTile({ roomId, tile, menu }: { roomId?: string; tile:
       <SoundOverlay identity={tile.identity} roomId={roomId} />
       {whisperLabel && <span role="status" className="absolute right-2 top-2 rounded-md bg-bg-0 px-2 text-xs text-accent" data-testid="whisper-indicator"><span aria-hidden="true">↝ </span>{whisperLabel}</span>}
       {!tile.self && canWhisper && <button type="button" disabled={!browserVoice} aria-label={t("voice.whisper.hold", { name: tile.name })} title={!browserVoice ? t("voice.whisper.browser_only") : t("voice.whisper.hold", { name: tile.name })} className="absolute left-2 top-12 z-10 min-h-11 min-w-11 touch-none rounded-md bg-black/60 text-fg-0" data-testid="whisper-hold"
+        onTouchStart={(e) => e.stopPropagation()}
+        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
         onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); whisperToAddress(tile.address, true); }}
         onPointerUp={(e) => { e.stopPropagation(); whisperToAddress(tile.address, false); }} onPointerCancel={() => whisperToAddress(tile.address, false)} onLostPointerCapture={() => whisperToAddress(tile.address, false)}
         onKeyDown={(e) => { if (!e.repeat && (e.key === " " || e.key === "Enter")) { e.preventDefault(); whisperToAddress(tile.address, true); } }}
