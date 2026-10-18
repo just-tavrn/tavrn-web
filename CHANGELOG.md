@@ -6,6 +6,13 @@ checksums and update files. The node's container image embeds the web client of 
 
 ## Unreleased
 
+- Move personal whisper groups to their own room settings category with room-member autocomplete and a voice-channel
+  menu shortcut. Keep the reply shortcut under Voice & Video → More shortcuts. The channel-scoped Voice permission
+  controls initiation; an actual server-confirmed whisper can still be replied to without it. `voice.whisper2`
+  binds encrypted tracks to server authorization, confirms removal before restoring normal voice, and preserves
+  ordinary camera/audio for other listeners. Signal reconnects establish a fresh SFU connection before new
+  whisper authorization; native receivers continue to quarantine whisper tracks.
+
 - Native voice now admits remote audio to playback only after successful frame decryption; startup and
   key-error frames are discarded, including buffered audio.
 

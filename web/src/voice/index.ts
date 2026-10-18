@@ -143,18 +143,21 @@ export type { VoiceTarget, ScreenShareOptions };
 
 
 /** Whisper is only available with the browser engine; native receivers fail closed. */
-export async function whisperTo(identities: string[]): Promise<void> {
+export async function whisperTo(identities: string[], reply = false): Promise<void> {
   if (useVoice.getState().status !== "connected") return;
-  if (identities.length && !useVoice.getState().whisperSupported) return;
+  const state = useVoice.getState();
+  if (identities.length && (!state.whisperSupported || (!reply && !state.canWhisper) || (reply && (!state.lastWhisperSession || state.lastWhisperExpiresAt <= Date.now() || identities.length !== 1 || identities[0] !== state.lastWhisperer)))) return;
   if (useVoiceEngine.getState().kind !== "browser") {
     if (identities.length) useToasts.getState().push({ kind: "warning", title: t("voice.whisper.browser_only") });
     return;
   }
-  await module?.setWhisper?.(identities);
+  if (reply) await module?.setWhisper?.(identities, state.lastWhisperSession ?? undefined);
+  else await module?.setWhisper?.(identities);
 }
 let whisperHoldAction: string | null = null;
 let whisperAddressHold: string | null = null;
 useVoice.subscribe((state, previous) => {
+  if (previous.canWhisper && !state.canWhisper && whisperHoldAction !== "whisper_reply") void whisperTo([]);
   if (state.status !== "connected" || state.target !== previous.target) {
     whisperHoldAction = null;
     whisperAddressHold = null;
@@ -169,7 +172,7 @@ export function whisperToAddress(address: string, held: boolean): void {
   }
   const state = useVoice.getState();
   const ids = Object.keys(state.media).filter((id) => id !== state.identity && !id.endsWith("#screen") && splitIdentity(id).address === address);
-  if (!ids.length || state.status !== "connected" || !state.whisperSupported) return;
+  if (!ids.length || state.status !== "connected" || !state.whisperSupported || !state.canWhisper) return;
   whisperHoldAction = null;
   whisperAddressHold = address;
   void whisperTo(ids);
@@ -181,6 +184,8 @@ export function whisperHotkey(action: string, held: boolean): void {
     return;
   }
   if (state.status !== "connected" || !state.whisperSupported || !state.target || state.target.call) return;
+  if (action !== "whisper_reply" && !state.canWhisper) return;
+  if (action === "whisper_reply" && (!state.lastWhisperSession || state.lastWhisperExpiresAt <= Date.now())) return;
   const groups = useVoiceSettings.getState().settings.whisperGroups[whisperRoomKey(state.target.domain, state.target.roomId)] ?? [];
   const group = groups.find((g) => `whisper:${g.id}` === action);
   const ids = action === "whisper_reply" ? (state.lastWhisperer && state.media[state.lastWhisperer] ? [state.lastWhisperer] : [])
@@ -188,5 +193,5 @@ export function whisperHotkey(action: string, held: boolean): void {
   if (!ids.length) return;
   whisperHoldAction = action;
   whisperAddressHold = null;
-  void whisperTo(ids);
+  void whisperTo(ids, action === "whisper_reply");
 }

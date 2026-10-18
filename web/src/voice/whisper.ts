@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
+import { isWhisperTrack } from "./whisperTracks";
 import { encodeWhisperSignal, WhisperLimiter } from "./whisperSignal";
 
 /** The media adapter owns E2EE preparation, publications and the call's user mute state. */
 export interface WhisperPort {
   active(): boolean;
-  canStart(): boolean;
+  canStart(replyTo?: string): boolean;
   resolve(recipients: string[]): string[];
-  prepare(): Promise<void>;
+  prepare(recipients: string[], replyTo?: string): Promise<void>;
   publish(): Promise<void>;
+  release?(): Promise<void>;
   permissions(recipients: string[]): void;
   mainMuted(muted: boolean): Promise<void>;
   whisperMuted(muted: boolean): Promise<void>;
@@ -30,7 +32,7 @@ export class WhisperSender {
   private readonly limiter = new WhisperLimiter();
   constructor(private readonly port: WhisperPort) {}
 
-  set(recipients: string[]): Promise<void> {
+  set(recipients: string[], replyTo?: string): Promise<void> {
     const revision = ++this.revision;
     // Close both routes at intent time, even while a previous asynchronous transition is pending.
     if (this.port.active()) {
@@ -41,26 +43,26 @@ export class WhisperSender {
       if (!this.port.active()) return;
       try {
         await this.end();
-        if (revision !== this.revision || !this.port.canStart()) return;
+        if (revision !== this.revision || !this.port.canStart(replyTo)) return;
         const ids = this.port.resolve([...new Set(recipients)]);
         if (!ids.length) return;
         try {
           const data = encodeWhisperSignal("whisper.start", ids);
           // Reserve the end signal too: rapid holds cannot exceed ten packets per ten seconds.
           if (!this.limiter.canAllow("self", 2)) return;
-          await bounded(this.port.prepare());
-          if (revision !== this.revision || !this.port.canStart()) return;
           this.recipients = ids;
+          await bounded(this.port.prepare(ids, replyTo));
+          if (revision !== this.revision || !this.port.canStart(replyTo)) { await this.end(); return; }
           await bounded(this.port.mainMuted(true));
           this.port.permissions(ids);
           await bounded(this.port.publish());
           this.port.permissions(ids);
-          if (revision !== this.revision || !this.port.canStart()) { await this.end(); return; }
+          if (revision !== this.revision || !this.port.canStart(replyTo)) { await this.end(); return; }
           this.limiter.allow("self");
           await bounded(this.port.send(data, ids));
-          if (revision !== this.revision || !this.port.canStart()) { await this.end(); return; }
+          if (revision !== this.revision || !this.port.canStart(replyTo)) { await this.end(); return; }
           await bounded(this.port.whisperMuted(false));
-          if (revision !== this.revision || !this.port.canStart()) { await this.end(); return; }
+          if (revision !== this.revision || !this.port.canStart(replyTo)) { await this.end(); return; }
           this.port.hold(true);
           this.port.output(true);
           this.port.changed(ids);
@@ -102,6 +104,8 @@ export class WhisperSender {
     const attempt = async (fn: () => unknown) => { try { await bounded(Promise.resolve(fn())); return true; } catch (e) { this.port.failed(e); return false; } };
     if (!await attempt(() => this.port.whisperMuted(true))) { this.port.recover(); return; }
     if (this.limiter.allow("self")) await attempt(() => this.port.send(encodeWhisperSignal("whisper.end", ids), ids));
+    // The node confirms the exact track is gone before ordinary permissions/audio can resume.
+    if (!await attempt(() => this.port.release?.())) { this.port.recover(); return; }
     if (!await attempt(() => this.port.permissions([]))) { this.port.recover(); return; }
     this.port.hold(false);
     if (!await attempt(() => this.port.mainMuted(false))) this.port.recover();
@@ -113,8 +117,8 @@ export class WhisperSender {
 /** Every ordinary track stays accessible; only addressed identities may subscribe to the second track. */
 export function whisperPermissions(participants: Iterable<string>, tracks: Iterable<{ trackSid: string; trackName: string }>, recipients: string[]) {
   const publications = [...tracks];
-  const main = publications.filter((p) => p.trackName !== "whisper").map((p) => p.trackSid);
-  const whisper = publications.filter((p) => p.trackName === "whisper").map((p) => p.trackSid);
+  const main = publications.filter((p) => !isWhisperTrack(p.trackName)).map((p) => p.trackSid);
+  const whisper = publications.filter((p) => isWhisperTrack(p.trackName)).map((p) => p.trackSid);
   return [...participants].map((participantIdentity) => ({ participantIdentity, allowAll: false,
     allowedTrackSids: recipients.includes(participantIdentity) ? [...main, ...whisper] : [...main],
   }));

@@ -13,6 +13,7 @@ import { useNodeSockets, useRealtimeState } from "../hooks/useRealtime";
 import { useAuth } from "../stores/auth";
 import { apiFor, useNodes } from "../stores/nodes";
 import { fetchRoomMembers } from "../pages/ChannelPage";
+import { whisperAllowed } from "./whisperAccess";
 import { priorityAllowed, setPriorityVerifier } from "./priority";
 import { soundboardAllowed, setSoundboardVerifier } from "./soundboardAuthorization";
 import { useNode } from "../components/NodeScope";
@@ -43,6 +44,28 @@ export function useVoiceRealtime() {
     route.current = { pathname, navigate };
   }, [pathname, navigate]);
   useMyVoiceStates();
+
+  // Re-evaluate initiation on cache updates, permission changes and voice moves. Reply remains independent.
+  useEffect(() => {
+    const refresh = () => {
+      const target = useVoice.getState().target;
+      const user = target?.domain === useAuth.getState().user?.domain ? useAuth.getState().user : target ? useNodes.getState().sessions[target.domain]?.user : null;
+      const allowed = !!target && !target.call && whisperAllowed(queryClient.getQueryData<RoomDetail>(["room", target.roomId]), target.channelId, user?.id ?? "");
+      if (useVoice.getState().canWhisper !== allowed) useVoice.setState({ canWhisper: allowed });
+    };
+    refresh();
+    // Queries can be added during a component render. Defer the store write and coalesce a cache burst.
+    let disposed = false;
+    let scheduled = false;
+    const schedule = () => {
+      if (scheduled) return;
+      scheduled = true;
+      queueMicrotask(() => { scheduled = false; if (!disposed) refresh(); });
+    };
+    const cache = queryClient.getQueryCache().subscribe(schedule);
+    const voice = useVoice.subscribe((s, prev) => { if (s.target !== prev.target) schedule(); });
+    return () => { disposed = true; cache(); voice(); };
+  }, [queryClient]);
 
   // Soundboard overlays require both effective bits, even when SPEAK grants LiveKit data for whisper.
   useEffect(() => {

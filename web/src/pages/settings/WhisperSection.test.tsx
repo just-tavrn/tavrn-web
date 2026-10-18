@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-import { act, fireEvent, screen } from "@testing-library/react";
+import { act, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import userEvent from "@testing-library/user-event";
+import type { Member } from "@tavrn/sdk";
 import { browserPlatform } from "../../platform/browser";
 import { resetPlatform, setPlatform } from "../../platform";
 import { useVoiceEngine } from "../../voice/engine";
@@ -9,30 +10,54 @@ import { WhisperSection } from "./WhisperSection";
 import { renderWithProviders } from "../../test/render";
 import { DEFAULT_SETTINGS, useVoiceSettings } from "../../voice/settings";
 import { IDLE, useVoice } from "../../voice/store";
+const member = (name: string, address: string, nick?: string): Member => ({ user: { id: address, address, username: address.split("@")[0], domain: address.split("@")[1], display_name: name, kind: "user" }, nickname: nick } as Member);
+const members = [member("Alice", "alice@n", "Raid leader"), member("Alice", "alice@remote"), member("Self", "me@n")];
+const section = (domain = "n", roomId = "r") => <WhisperSection domain={domain} roomId={roomId} members={members} self="me@n" />;
 beforeEach(() => { useVoiceEngine.setState({ kind: "browser" }); useVoice.setState(IDLE); useVoiceSettings.setState({ settings: DEFAULT_SETTINGS }); });
-it("keeps reply independent and groups scoped to their room", async () => {
-  useVoice.setState({ status: "connected", target: { domain: "n", roomId: "r", channelId: "c" }, lastWhisperer: "a@n/d" });
-  renderWithProviders(<WhisperSection />);
+afterEach(() => { resetPlatform(); useVoiceEngine.setState({ kind: "browser" }); });
+it("edits the selected room without joining voice and leaves reply in user settings", async () => {
+  useVoice.setState({ lastWhisperer: "a@n/d", target: { domain: "other", roomId: "other", channelId: "c" } });
+  const view = renderWithProviders(section());
   await userEvent.type(screen.getByRole("textbox", { name: "Gruppenname" }), "Raid");
   await userEvent.click(screen.getByRole("button", { name: "Neue Flüstergruppe" }));
-  const groups = useVoiceSettings.getState().settings.whisperGroups["n/r"]!;
-  expect(groups).toHaveLength(1); expect(groups[0]!.name).toBe("Raid");
-  fireEvent.blur(screen.getByRole("textbox", { name: /Mitglieder/ }), { target: { value: "alice@n, bob@n" } });
-  expect(useVoiceSettings.getState().settings.whisperGroups["n/r"]![0]!.members).toEqual(["alice@n", "bob@n"]);
+  expect(useVoiceSettings.getState().settings.whisperGroups["n/r"]![0]!.name).toBe("Raid");
+  const box = screen.getByRole("combobox", { name: "Raummitglied hinzufügen" });
+  await userEvent.type(box, "Raid");
+  expect(screen.getByRole("option")).toHaveTextContent("Raid leader");
+  expect(box).toHaveAttribute("aria-activedescendant", screen.getByRole("option").id);
+  await userEvent.keyboard("{Enter}");
+  expect(useVoiceSettings.getState().settings.whisperGroups["n/r"]![0]!.members).toEqual(["alice@n"]);
   expect(useVoice.getState().lastWhisperer).toBe("a@n/d");
-  act(() => useVoice.setState({ target: { domain: "other", roomId: "r", channelId: "c" } }));
-  expect(screen.queryByRole("textbox", { name: /Mitglieder/ })).toBeNull();
-  expect(screen.getByTestId("whisper-reply-key")).toBeInTheDocument();
+  expect(screen.queryByText("Letztem Flüsternden antworten (halten)")).toBeNull();
+  view.rerender(section("remote", "r"));
+  expect(screen.queryByRole("combobox")).toBeNull();
 });
-
-
-afterEach(() => { resetPlatform(); useVoiceEngine.setState({ kind: "browser" }); });
+it("matches names and usernames, excludes selected/self and supports pointer selection, Escape and removal", async () => {
+  act(() => useVoiceSettings.getState().update({ whisperGroups: { "n/r": [{ id: "g", name: "Raid", members: ["gone@n"] }] } }));
+  renderWithProviders(section());
+  const box = screen.getByRole("combobox");
+  await userEvent.click(box);
+  expect(screen.getAllByRole("option")).toHaveLength(2);
+  expect(screen.queryByRole("option", { name: /Self/ })).toBeNull();
+  await userEvent.type(box, "alice");
+  await userEvent.keyboard("{ArrowDown}{Enter}");
+  expect(useVoiceSettings.getState().settings.whisperGroups["n/r"]![0]!.members).toEqual(["gone@n", "alice@remote"]);
+  const list = screen.getByRole("listbox");
+  await userEvent.click(within(list).getByRole("option"));
+  expect(useVoiceSettings.getState().settings.whisperGroups["n/r"]![0]!.members).toHaveLength(3);
+  await userEvent.type(box, "not-a-room-member");
+  await userEvent.keyboard("{Enter}");
+  expect(useVoiceSettings.getState().settings.whisperGroups["n/r"]![0]!.members).toHaveLength(3);
+  await userEvent.keyboard("{Escape}");
+  expect(box).toHaveAttribute("aria-expanded", "false");
+  await userEvent.click(screen.getByRole("button", { name: "gone@n aus Gruppe entfernen" }));
+  expect(useVoiceSettings.getState().settings.whisperGroups["n/r"]![0]!.members).not.toContain("gone@n");
+});
 it("offers an explicit safe browser fallback for native voice", async () => {
   const openExternal = vi.fn(async () => undefined);
   setPlatform({ ...browserPlatform, kind: "desktop", isDesktop: true, webOrigin: () => "https://n.example", openExternal });
   useVoiceEngine.setState({ kind: "native" });
-  renderWithProviders(<WhisperSection />);
-  expect(screen.getByText(/Browser-Sprachengine/)).toBeInTheDocument();
+  renderWithProviders(section());
   await userEvent.click(screen.getByRole("button", { name: "Browser zum Flüstern öffnen" }));
   expect(openExternal).toHaveBeenCalledWith("https://n.example/");
 });

@@ -67,7 +67,7 @@ export function useMemberMenu(room: RoomDetail, member: Member | null, voiceTarg
   const participant = useVoicePresence((s) => (voiceChannelId ? participantsOf(s, domain, voiceChannelId).find((p) => p.user_id === userId) : undefined)) ?? voiceTarget?.participant;
   const inMyCall = useVoice((s) => !!voiceChannelId && s.status === "connected" && s.target?.domain === domain && s.target.channelId === voiceChannelId);
   const address = member?.user.address ?? voiceTarget?.participant.user ?? "";
-  const mayWhisper = useVoice((s) => s.whisperSupported && s.canSpeak && !s.muted && !s.deafened);
+  const mayWhisper = useVoice((s) => s.whisperSupported && s.canWhisper && s.canSpeak && !s.muted && !s.deafened);
   const browserVoice = useVoiceEngine((s) => s.kind === "browser");
   const whisperGroupsByRoom = useVoiceSettings((s) => s.settings.whisperGroups);
   const whisperGroups = whisperGroupsByRoom[whisperRoomKey(domain, room.id)] ?? [];

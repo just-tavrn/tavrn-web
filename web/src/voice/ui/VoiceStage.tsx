@@ -112,7 +112,7 @@ export function ParticipantTile({ roomId, tile, menu }: { roomId?: string; tile:
   const receivingWhisper = useVoice((s) => !!s.whisperedBy[tile.identity]);
   const mainMuted = useVoice((s) => !tile.self && !!s.media[tile.identity]?.micMuted);
   const flags = { ...tile.flags, muted: tile.flags.muted || (mainMuted && !receivingWhisper) };
-  const canWhisper = useVoice((s) => s.status === "connected" && s.whisperSupported && !s.target?.call && s.canSpeak && !s.muted && !s.deafened && !!s.media[tile.identity]);
+  const canWhisper = useVoice((s) => s.status === "connected" && s.whisperSupported && s.canWhisper && !s.target?.call && s.canSpeak && !s.muted && !s.deafened && !!s.media[tile.identity]);
   const browserVoice = useVoiceEngine((s) => s.kind === "browser");
   const whisperLabel = receivingWhisper ? t("voice.whisper.receiving", { name: tile.name }) : whispering ? t("voice.whisper.sending", { names: whisperTargets.map((id) => id.split("/")[0]).join(", ") }) : null;
   // The own tile's microphone flag pulses while the user talks muted (issue #125).

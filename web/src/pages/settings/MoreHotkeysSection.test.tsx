@@ -42,6 +42,7 @@ describe("More hotkeys", () => {
     renderWithProviders(<MoreHotkeysSection />);
     expect(screen.getByText("Weitere Tastenkürzel")).toBeInTheDocument();
     expect(screen.getByTestId("more-hotkeys")).toBeInTheDocument();
+    expect(screen.getByTestId("hotkey-whisper_reply-key")).toBeInTheDocument();
     expect(screen.getByText(/Desktop-App beobachtet sie auch systemweit/)).toBeInTheDocument();
     expect(screen.queryByTestId("hotkey-push_to_talk")).toBeNull();
     await userEvent.click(screen.getByTestId("hotkey-toggle_mute-change"));

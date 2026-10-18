@@ -9,6 +9,7 @@
  * No LiveKit import: the session hands its publications in (`session.ts`), the tests hand in mocks. LiveKit's
  * `Track.Source` values are plain strings.
  */
+import { isWhisperTrack } from "./whisperTracks";
 import type { VoiceStatus, VoiceTarget } from "./store";
 
 /** `Track.Source` of the screen share video and of the screen share's audio. */
@@ -58,7 +59,7 @@ export class StreamSubscriptions {
 
   /** Brings one publication to the wanted state (a track published now, or one already there). */
   apply(identity: string, pub: SubscribablePublication): void {
-    if (pub.trackName === "whisper") return;
+    if (isWhisperTrack(pub.trackName)) return;
     const want = this.wants(identity, pub.source);
     if (pub.isDesired !== want) pub.setSubscribed(want);
   }

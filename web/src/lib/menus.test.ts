@@ -269,6 +269,17 @@ describe("notification and list menus", () => {
     expect(ids(welcome)).not.toContain("delete");
   });
 
+  it("opens personal whisper settings from voice channels without management permission", () => {
+    const whisperSettings = vi.fn();
+    const actions = { ...notifyActions, markRead: vi.fn(), edit: vi.fn(), duplicate: vi.fn(), remove: vi.fn(), copyLink: vi.fn(), copyId: vi.fn(), moveEveryoneHere: vi.fn(), moveEveryoneTo: vi.fn(), whisperSettings };
+    const context = { kind: "voice", unread: false, canManage: false, system: false, notify };
+    const entry = findEntry(channelMenu(context, actions, t), "whisper-settings");
+    expect(entry).toMatchObject({ kind: "item" });
+    if (entry?.kind === "item") entry.onSelect?.();
+    expect(whisperSettings).toHaveBeenCalledOnce();
+    expect(ids(channelMenu({ ...context, kind: "text" }, actions, t))).not.toContain("whisper-settings");
+  });
+
   it("gives voice channels the text channel menu plus the mass moves (move_members)", () => {
     const actions = { ...notifyActions, markRead: vi.fn(), edit: vi.fn(), duplicate: vi.fn(), remove: vi.fn(), copyLink: vi.fn(), copyId: vi.fn(), moveEveryoneHere: vi.fn(), moveEveryoneTo: vi.fn() };
     // Without move_members: exactly the entries of a text channel.

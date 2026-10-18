@@ -5,7 +5,7 @@ import { currentReauth, requestReauth } from "../stores/reauth";
 import { trackingFetch } from "../stores/reach";
 import { apiBase, originWsUrl } from "../platform";
 
-export const CLIENT_HEADER = "tavrn-web/0.0.1 (content.v1, reactions, e2ee.mls1, voice.whisper1)";
+export const CLIENT_HEADER = "tavrn-web/0.0.1 (content.v1, reactions, e2ee.mls1, voice.whisper2)";
 
 /**
  * Base URL of the account's home node: the client's node (this origin in the browser, the chosen node in the

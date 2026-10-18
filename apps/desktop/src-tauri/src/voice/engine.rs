@@ -463,7 +463,10 @@ fn participants(room: &Room) -> VoiceEvent {
 /// bandwidth and decoding), and never a screen share's audio: streams are opt-in in tavrn (a viewer receives one only
 /// after joining it) and cannot be joined without video.
 fn wants_subscription(kind: TrackKind, source: TrackSource, name: &str) -> bool {
-    name != "whisper" && kind == TrackKind::Audio && !matches!(source, TrackSource::Screenshare | TrackSource::ScreenshareAudio)
+    name != "whisper"
+        && !name.starts_with("whisper:")
+        && kind == TrackKind::Audio
+        && !matches!(source, TrackSource::Screenshare | TrackSource::ScreenshareAudio)
 }
 
 /// Brings a remote publication to the wanted subscription (the room connects without auto-subscription).
@@ -620,6 +623,7 @@ mod tests {
         assert!(wants_subscription(TrackKind::Audio, TrackSource::Microphone, "microphone"));
         assert!(!wants_subscription(TrackKind::Audio, TrackSource::Microphone, "whisper"));
         assert!(!wants_subscription(TrackKind::Audio, TrackSource::Unknown, "whisper"));
+        assert!(!wants_subscription(TrackKind::Audio, TrackSource::Microphone, "whisper:session"));
         assert!(wants_subscription(TrackKind::Audio, TrackSource::Unknown, "microphone"));
         assert!(!wants_subscription(TrackKind::Video, TrackSource::Camera, "microphone"));
         assert!(!wants_subscription(TrackKind::Video, TrackSource::Unknown, "microphone"));

@@ -40,15 +40,15 @@ async function recordPackets(page: Page) {
 }
 
 async function denyExplicitSubscription(page: Page, sender: string) {
-  await expect.poll(async () => (await state(page)).remote.find((p) => p.identity === sender)?.tracks.some((p) => p.name === "whisper")).toBe(true);
+  await expect.poll(async () => (await state(page)).remote.find((p) => p.identity === sender)?.tracks.some((p) => p.name.startsWith("whisper:"))).toBe(true);
   await page.evaluate((id) => {
     const room = (window as unknown as { __tavrnVoice: { room: { remoteParticipants: Map<string, { audioTrackPublications: Map<string, { trackName: string; setSubscribed(on: boolean): void }> }> } } }).__tavrnVoice.room;
-    [...room.remoteParticipants.get(id)!.audioTrackPublications.values()].find((p) => p.trackName === "whisper")!.setSubscribed(true);
+    [...room.remoteParticipants.get(id)!.audioTrackPublications.values()].find((p) => p.trackName.startsWith("whisper:"))!.setSubscribed(true);
   }, sender);
   // This flag is changed by the SFU's permission response. UI filtering alone cannot make it pass.
   await expect.poll(() => page.evaluate((id) => {
     const room = (window as unknown as { __tavrnVoice: { room: { remoteParticipants: Map<string, { audioTrackPublications: Map<string, { trackName: string; permissionStatus: string; isSubscribed: boolean }> }> } } }).__tavrnVoice.room;
-    const pub = [...room.remoteParticipants.get(id)!.audioTrackPublications.values()].find((p) => p.trackName === "whisper");
+    const pub = [...room.remoteParticipants.get(id)!.audioTrackPublications.values()].find((p) => p.trackName.startsWith("whisper:"));
     return pub && { permission: pub.permissionStatus, subscribed: pub.isSubscribed };
   }, sender), { timeout: scaled(30_000) }).toEqual({ permission: "not_allowed", subscribed: false });
 }
@@ -56,9 +56,10 @@ async function denyExplicitSubscription(page: Page, sender: string) {
 test("only addressed participants hear whisper; the SFU rejects outsiders and normal voice returns on release", async ({ browser, request }) => {
   test.setTimeout(scaled(300_000));
   test.skip(process.env.E2E_VOICE === "false", "LiveKit unavailable");
-  const alice = await voiceUser(browser, "whali", undefined, { cuesOff: true });
-  const bob = await voiceUser(browser, "whbob", undefined, { cuesOff: true });
-  const carol = await voiceUser(browser, "whcar", undefined, { cuesOff: true });
+  const errors: string[] = [];
+  const alice = await voiceUser(browser, "whali", errors, { cuesOff: true });
+  const bob = await voiceUser(browser, "whbob", errors, { cuesOff: true, hotkeys: { whisper_reply: "KeyR" } });
+  const carol = await voiceUser(browser, "whcar", errors, { cuesOff: true });
   const token = await tokenOf(alice.page);
   const room = await createRoomViaApi(request, token, "Whisper");
   const roomId = room.id as string;
@@ -75,6 +76,22 @@ test("only addressed participants hear whisper; the SFU rejects outsiders and no
     await user.page.getByTestId("voice-join").click();
     await expect(user.page.getByTestId("voice-e2ee")).toBeVisible({ timeout: scaled(30_000) });
   }
+  // A signal-only reconnect must retire old capabilities and still allow a new authorized whisper.
+  for (const user of [alice, bob]) {
+    const previousSid = await user.page.evaluate(() => (window as unknown as { __tavrnVoice: { room: { localParticipant: { sid: string } } } }).__tavrnVoice.room.localParticipant.sid);
+    await user.page.evaluate(async () => {
+      const room = (window as unknown as { __tavrnVoice: { room: { once(event: string, done: () => void): void; simulateScenario(scenario: string): Promise<void> } } }).__tavrnVoice.room;
+      const resumed = new Promise<void>((done) => room.once("reconnected", done));
+      await room.simulateScenario("signal-reconnect");
+      await resumed;
+    });
+    await expect.poll(() => user.page.evaluate((previous) => {
+      const sid = (window as unknown as { __tavrnVoice?: { room: { localParticipant: { sid: string } } } }).__tavrnVoice?.room.localParticipant.sid;
+      return !!sid && sid !== previous;
+    }, previousSid), { timeout: scaled(30_000) }).toBe(true);
+    await expect(user.page.getByTestId("voice-e2ee")).toBeVisible({ timeout: scaled(30_000) });
+  }
+  await expect(tile(alice.page, bob.address).getByTestId("whisper-hold")).toBeEnabled({ timeout: scaled(30_000) });
   const aliceId = (await hooks(alice.page)).local!.identity;
   const bobId = (await hooks(bob.page)).local!.identity;
   // The menu selects a destination. It must never leave an unattended transmission running.
@@ -91,7 +108,7 @@ test("only addressed participants hear whisper; the SFU rejects outsiders and no
       await expect.poll(() => inboundPeak(receiver.page, senderId), { timeout: scaled(30_000) }).toBeGreaterThan(0.05);
       await expect(sender.page.getByRole("menu")).not.toBeVisible();
       const remote = (await state(receiver.page)).remote.find((p) => p.identity === senderId)!;
-      expect(remote.tracks.find((p) => p.name === "whisper")).toMatchObject({ subscribed: true, encrypted: true });
+      expect(remote.tracks.find((p) => p.name.startsWith("whisper:"))).toMatchObject({ subscribed: true, encrypted: true });
       if (first) {
         // A DOM click avoids stealing the sender's focus: blur intentionally cancels a real hold.
         await carol.page.getByTestId("voice-join").evaluate((button: HTMLButtonElement) => button.click());
@@ -114,6 +131,28 @@ test("only addressed participants hear whisper; the SFU rejects outsiders and no
     expect((await state(receiver.page)).lastWhisperer).toBe(senderId);
   }
   expect(await carol.page.evaluate(() => (window as unknown as { __whisperPackets: number }).__whisperPackets)).toBe(0);
+  // Denying initiation removes all person/group start surfaces but preserves the server-bound reply shortcut.
+  const bobToken = await tokenOf(bob.page);
+  const me = await request.get(`${NODE}/api/v1/users/me`, { headers: { Authorization: `Bearer ${bobToken}` } });
+  const bobUser = await me.json() as { id: string };
+  const deny = await request.put(`${NODE}/api/v1/rooms/${roomId}/overrides`, { headers: { Authorization: `Bearer ${token}` }, data: { target_type: "channel", target_id: voiceId, subject_type: "member", subject_id: bobUser.id, allow: "0", deny: (1n << 41n).toString() } });
+  expect(deny.ok(), await deny.text()).toBeTruthy();
+  await expect(tile(bob.page, alice.address).getByTestId("whisper-hold")).toHaveCount(0);
+  const rejected = await request.post(`${NODE}/api/v1/rooms/${roomId}/channels/${voiceId}/voice/whisper`, { headers: { Authorization: `Bearer ${bobToken}` }, data: { recipients: [aliceId] } });
+  expect(rejected.status()).toBe(403);
+  // Refresh the bounded reply receipt with a newly received whisper.
+  const releaseAlice = await hold(alice.page, bob.address);
+  await expect.poll(async () => (await state(bob.page)).whisperedBy[aliceId]).toBe(true);
+  await releaseAlice();
+  await expect.poll(async () => (await state(bob.page)).whisperedBy).toEqual({});
+  await bob.page.keyboard.down("KeyR");
+  try {
+    await expect.poll(async () => (await state(bob.page)).whispering).toEqual([aliceId]);
+    await expect.poll(async () => (await state(alice.page)).whisperedBy[bobId]).toBe(true);
+    await expect.poll(() => inboundPeak(alice.page, bobId)).toBeGreaterThan(0.05);
+  } finally { await bob.page.keyboard.up("KeyR"); }
+  await expect.poll(async () => (await state(alice.page)).whisperedBy).toEqual({});
   await bob.page.getByTestId("voice-leave").click();
   await expect.poll(async () => (await state(alice.page)).lastWhisperer).toBeNull();
+  expect(errors.filter((error) => error.includes("Cannot update a component"))).toEqual([]);
 });

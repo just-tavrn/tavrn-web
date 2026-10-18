@@ -96,7 +96,7 @@ describe("whisper hold ownership and capability", () => {
   async function ready() {
     await voice.joinVoice(target, { canCreate: true });
     const media = { camera: false, screen: false, micMuted: false };
-    useVoice.setState({ ...IDLE, target, status: "connected", whisperSupported: true, identity: "me@home.example/d", media: { "a@n/d": media, "b@n/d": media } });
+    useVoice.setState({ ...IDLE, target, status: "connected", whisperSupported: true, canWhisper: true, identity: "me@home.example/d", media: { "a@n/d": media, "b@n/d": media } });
     useVoiceSettings.getState().update({ whisperGroups: { "home.example/r1": [
       { id: "first", name: "First", members: ["a@n"] }, { id: "second", name: "Second", members: ["b@n"] },
     ] } });
@@ -124,5 +124,35 @@ describe("whisper hold ownership and capability", () => {
     expect(browser.setWhisper).not.toHaveBeenCalled();
     voice.whisperToAddress("b@n", false);
     expect(browser.setWhisper).toHaveBeenCalledWith([]);
+  });
+});
+
+
+describe("whisper initiation permission", () => {
+  it("blocks direct, selected-person and group starts while allowing only the recorded reply", async () => {
+    await voice.joinVoice(target, { canCreate: true });
+    const media = { camera: false, screen: false, micMuted: false };
+    useVoiceSettings.getState().update({ whisperGroups: { "home.example/r1": [{ id: "g", name: "Group", members: ["a@n"] }] } });
+    useVoice.setState({ ...IDLE, target, status: "connected", whisperSupported: true, canWhisper: false, identity: "me@home.example/d", media: { "a@n/d": media, "b@n/d": media }, lastWhisperer: "a@n/d", lastWhisperSession: "received", lastWhisperExpiresAt: Date.now() + 120_000 });
+    await voice.whisperTo(["a@n/d"]);
+    voice.whisperToAddress("a@n", true);
+    voice.whisperHotkey("whisper:g", true);
+    await voice.whisperTo(["b@n/d"], true);
+    expect(browser.setWhisper).not.toHaveBeenCalled();
+    voice.whisperHotkey("whisper_reply", true);
+    expect(browser.setWhisper).toHaveBeenCalledWith(["a@n/d"], "received");
+    voice.whisperHotkey("whisper_reply", false);
+    expect(browser.setWhisper).toHaveBeenLastCalledWith([]);
+    browser.setWhisper.mockClear();
+    useVoice.setState({ lastWhisperExpiresAt: Date.now() - 1 });
+    voice.whisperHotkey("whisper_reply", true);
+    expect(browser.setWhisper).not.toHaveBeenCalled();
+  });
+  it("permission revocation releases an active initiation", async () => {
+    await voice.joinVoice(target, { canCreate: true });
+    useVoice.setState({ ...IDLE, target, status: "connected", whisperSupported: true, canWhisper: true });
+    await voice.whisperTo(["a@n/d"]);
+    useVoice.setState({ canWhisper: false });
+    expect(browser.setWhisper).toHaveBeenLastCalledWith([]);
   });
 });

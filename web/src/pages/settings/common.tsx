@@ -66,7 +66,7 @@ export function PermissionCheckboxes({ value, onChange, limit, idPrefix = "perm"
               const checked = hasPermission(value, bit);
               const locked = (restricted & bit) !== 0n;
               // A restricted bit that is still set (older rooms) can be removed, never added.
-              const allowed = (limit === undefined || hasPermission(limit, bit)) && (!locked || checked);
+              const allowed = (limit === undefined || hasPermission(limit, Permission.ADMINISTRATOR) || hasPermission(limit, bit)) && (!locked || checked);
               return (
                 <label key={p.name} className={`flex min-h-9 items-center gap-2 text-sm ${allowed ? "" : "opacity-40"}`} title={locked ? t("members.everyone_restricted_hint") : undefined} data-restricted={locked || undefined}>
                   <input id={`${idPrefix}-${p.name}`} type="checkbox" className="h-4 w-4" checked={checked} disabled={!allowed} onChange={(e) => onChange(e.target.checked ? value | bit : value & ~bit)} aria-description={locked ? t("members.everyone_restricted_hint") : (hint(p.name) ?? undefined)} />

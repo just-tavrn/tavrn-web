@@ -450,16 +450,14 @@ test.describe("Voice channels", () => {
     await expect(row(alice.page, bob.address).getByTestId("connection-problems")).toBeAttached();
     await expect(row(alice.page, bob.address)).not.toHaveAttribute("data-speaking", "true");
     await expect(tile(alice.page, bob.address).getByTestId("connection-problems")).toBeVisible();
-    // Back: normal state, listed once.
-    await liveKitWebhook(request, { event: "participant_joined", room: { name: lkRoom }, participant: { identity: bobIdentity } });
-    await expect(row(alice.page, bob.address)).not.toHaveAttribute("data-connection", "reconnecting", { timeout: scaled(10_000) });
-    await expect(row(alice.page, bob.address)).toHaveCount(1);
-
-    // Bob's own connection breaks: his client rejoins by itself (voice bar "reconnecting"), E2EE again.
+    // Recover through an actual fresh SFU connection. A synthetic join without its SFU SID/time
+    // cannot revive a retired connection generation (and must never restore whisper capabilities).
+    // Bob's client rejoins by itself (voice bar "reconnecting"), E2EE again.
     await bob.page.evaluate(() => void (window as unknown as { __tavrnVoice: { drop: () => Promise<void> } }).__tavrnVoice.drop());
     await expect(bob.page.getByTestId("voice-stage")).toBeVisible();
     await expect.poll(async () => bob.page.evaluate(() => !!(window as unknown as { __tavrnVoice?: { state: () => { e2eeEnabled: boolean } } }).__tavrnVoice?.state().e2eeEnabled), { timeout: scaled(30_000) }).toBe(true);
     await expect(row(alice.page, bob.address)).toHaveCount(1, { timeout: scaled(20_000) });
+    await expect(row(alice.page, bob.address)).not.toHaveAttribute("data-connection", "reconnecting", { timeout: scaled(10_000) });
     await expect(tile(alice.page, bob.address)).toHaveCount(1);
 
     // A drop longer than the grace period (5 s on the test nodes): LiveKit drops Bob and his client cannot
