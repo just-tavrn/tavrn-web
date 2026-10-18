@@ -527,16 +527,17 @@ mod tests {
     }
 
     #[test]
-    fn dynamic_whisper_actions_round_trip_and_validate() {
+    fn dynamic_whisper_actions_round_trip_and_validate() -> Result<(), Box<dyn std::error::Error>> {
         for name in ["whisper_reply", "whisper:raid-1"] {
-            let action: Action = serde_json::from_value(serde_json::json!(name)).expect("valid action");
+            let action: Action = serde_json::from_value(serde_json::json!(name))?;
             assert_eq!(serde_json::to_value(action).ok(), Some(serde_json::json!(name)));
         }
         for name in ["whisper:", "whisper:../bad", "unknown"] {
             assert!(serde_json::from_value::<Action>(serde_json::json!(name)).is_err());
         }
-        let action = Action::try_from("whisper:raid".to_string()).expect("group");
+        let action = Action::try_from("whisper:raid".to_string())?;
         assert_eq!(run(&[(action, "KeyG")], &["+KeyG", "-KeyG"]), [(action, true), (action, false)]);
+        Ok(())
     }
 
     #[test]
