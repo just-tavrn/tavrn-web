@@ -28,6 +28,7 @@ import { earlyPipeline, startJoin, type EarlyPipeline, type Releasable } from ".
 import { vjMark } from "./joinTimings";
 import {
   ConnectionQuality,
+  ConnectionState,
   DataPacket_Kind,
   DisconnectReason,
   LocalVideoTrack,
@@ -65,6 +66,7 @@ import { participantVolumes, type Volumes } from "./volume";
 import { isLocallyMuted, useLocalMute } from "./localMute";
 import { ANALYSER_SIZE, SPEAKING_POLL_MS, SpeakingDetector, analysersAvailable, combineLevels, localLevel, rmsDb } from "./speaking";
 import { PriorityTracker, claimsPriority, duckGain, rampTo, verifyPriority } from "./priority";
+import { dispatchSoundboard } from "./soundboardAuthorization";
 import { SOUND_TOPIC, SignalLimiter, encodeSoundSignal, parseClipEmoji, parseSoundSignal } from "./soundSignal";
 import { throttledActivity } from "../lib/idle";
 import type { LevelReport } from "./audio";
@@ -549,7 +551,9 @@ function wire(s: Session) {
       if (topic !== SOUND_TOPIC) return;
       if (!s.signals.allow(p.identity, Date.now())) return;
       const signal = parseSoundSignal(payload);
-      if (signal) showSoundOverlay(p.identity, signal.emoji, signal.duration_ms);
+      if (signal) dispatchSoundboard(s.target, p.identity,
+        () => life.current === s && room.state === ConnectionState.Connected && room.remoteParticipants.get(p.identity) === p,
+        () => showSoundOverlay(p.identity, signal.emoji, signal.duration_ms));
     })
     .on(RoomEvent.ConnectionQualityChanged, (q: ConnectionQuality, p: Participant) => {
       if (life.current !== s) return;
