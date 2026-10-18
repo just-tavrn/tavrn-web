@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { act, screen } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Route, Routes, useLocation } from "react-router";
@@ -71,7 +71,7 @@ describe("DeepLinkPrompt: a link from outside never navigates by itself", () => 
     // Cancel has the focus: Enter never opens a link by accident.
     expect(screen.getByTestId("deep-link-cancel")).toHaveFocus();
     await userEvent.setup().click(screen.getByRole("button", { name: "Öffnen" }));
-    expect(await screen.findByTestId("where")).toHaveTextContent("/invite/Code_1234?node=other.example");
+    await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/invite/Code_1234?node=other.example"));
     expect(screen.queryByTestId("deep-link-prompt")).toBeNull();
   });
 
@@ -90,7 +90,7 @@ describe("DeepLinkPrompt: a link from outside never navigates by itself", () => 
     expect(screen.getByTestId("where")).toHaveTextContent(/^\/$/);
     emit("tavrn://room/tavrn.example/R1/C1");
     await user.click(await screen.findByRole("button", { name: "Öffnen" }));
-    expect(await screen.findByTestId("where")).toHaveTextContent("/rooms/R1/channels/C1");
+    await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/rooms/R1/channels/C1"));
   });
 
   it("ignores invalid links and only wakes the waiting sign-in for tavrn://connect", async () => {
@@ -109,7 +109,7 @@ describe("DeepLinkPrompt: a link from outside never navigates by itself", () => 
     emit("tavrn://invite/chat.example/Code_1234");
     expect(await screen.findByTestId("deep-link-no-node")).toHaveTextContent("Wähle zuerst deinen Heimatknoten");
     await userEvent.setup().click(screen.getByRole("button", { name: "Knoten wählen" }));
-    expect(await screen.findByTestId("where")).toHaveTextContent("/node?address=chat.example");
+    await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent("/node?address=chat.example"));
     unmount();
     // The picker reloads the client with the chosen node: the link is offered again.
     app("https://chat.example");
