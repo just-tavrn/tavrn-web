@@ -59,6 +59,11 @@ export function keepMedia(prev: Record<string, ParticipantMedia>, next: Record<s
 }
 
 export interface VoiceState {
+  whisperSupported: boolean;
+  whisperTarget: string | null;
+  whispering: string[];
+  whisperedBy: Record<string, true>;
+  lastWhisperer: string | null;
   status: VoiceStatus;
   target: VoiceTarget | null;
   /** This device's LiveKit identity. */
@@ -110,6 +115,11 @@ export interface VoiceState {
 }
 
 export const IDLE: VoiceState = {
+  whisperSupported: false,
+  whisperTarget: null,
+  whispering: [],
+  whisperedBy: {},
+  lastWhisperer: null,
   status: "idle",
   target: null,
   identity: null,

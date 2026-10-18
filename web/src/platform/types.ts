@@ -260,7 +260,7 @@ export interface AvailableUpdate {
 }
 
 /** What a global hotkey does in the voice client (the shell's `hotkeys.rs` uses the same names). */
-export type HotkeyAction = "push_to_talk" | "priority" | "toggle_mute" | "toggle_deafen";
+export type HotkeyAction = "push_to_talk" | "priority" | "toggle_mute" | "toggle_deafen" | "whisper_reply" | `whisper:${string}`;
 
 /** A press or release of a bound combination, reported by the shell. */
 export interface HotkeyEvent {

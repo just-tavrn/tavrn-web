@@ -9,7 +9,13 @@ import { DEFAULT_SETTINGS } from "./settings";
 /** Fakes of the Web Audio graph and getUserMedia: enough to see what the pipeline captures and when it stops. */
 function fakes() {
   const captures: Array<{ constraints: MediaTrackConstraints; track: { readyState: string; stop: () => void; getSettings: () => MediaTrackSettings } }> = [];
-  const node = () => ({ connect: vi.fn(), disconnect: vi.fn(), gain: { value: 1 } });
+  type GraphNode = { outputs: GraphNode[]; gain?: { value: number } };
+  const destinations: GraphNode[] = [];
+  const gates: GraphNode[] = [];
+  const node = () => {
+    const outputs: GraphNode[] = [];
+    return { outputs, connect: vi.fn((to: GraphNode) => outputs.push(to)), disconnect: vi.fn(), gain: { value: 1 } };
+  };
   class FakeContext {
     state = "running";
     destination = {};
@@ -18,7 +24,9 @@ function fakes() {
     createMediaStreamSource = vi.fn(() => node());
     createMediaStreamDestination = () => {
       const published = { id: "published", stop: vi.fn() };
-      return { ...node(), stream: { getAudioTracks: () => [published], getTracks: () => [published] } };
+      const dest = { ...node(), stream: { getAudioTracks: () => [published], getTracks: () => [published] } };
+      destinations.push(dest);
+      return dest;
     };
     resume = vi.fn(async () => {
       this.state = "running";
@@ -32,7 +40,9 @@ function fakes() {
   }
   class FakeWorkletNode {
     port = { postMessage: vi.fn(), onmessage: null as unknown };
-    connect = vi.fn();
+    outputs: GraphNode[] = [];
+    constructor() { gates.push(this); }
+    connect = vi.fn((to: GraphNode) => this.outputs.push(to));
     disconnect = vi.fn();
   }
   const getUserMedia = vi.fn(async (c: MediaStreamConstraints) => {
@@ -49,7 +59,11 @@ function fakes() {
   vi.stubGlobal("AudioContext", FakeContext);
   vi.stubGlobal("AudioWorkletNode", FakeWorkletNode);
   Object.defineProperty(navigator, "mediaDevices", { value: { getUserMedia }, configurable: true });
-  return { captures, getUserMedia };
+  const routeGain = (from: GraphNode, to: GraphNode): number => {
+    if (from === to) return 1;
+    return (from.gain?.value ?? 1) * (from.outputs ?? []).reduce((sum, next) => sum + routeGain(next, to), 0);
+  };
+  return { captures, getUserMedia, routeGain: (destination: number) => routeGain(gates[0]!, destinations[destination]!) };
 }
 
 describe("MicPipeline: releasing the capture while muted", () => {
@@ -119,4 +133,41 @@ describe("MicPipeline: releasing the capture while muted", () => {
     vi.useRealTimers();
     await p.close();
   });
+});
+
+describe("whisper destination", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it("shares capture but has a separate stable, closable output stopped on cleanup", async () => {
+    const f = fakes();
+    const p = await MicPipeline.create({ ...DEFAULT_SETTINGS, noiseSuppression: "off" });
+    expect(f.captures).toHaveLength(1);
+    expect(p.whisperTrack).not.toBe(p.track);
+    const track = p.whisperTrack;
+    p.setWhisper(true); p.setWhisper(false);
+    expect(p.whisperTrack).toBe(track);
+    await p.close();
+    expect(track.stop).toHaveBeenCalledOnce();
+  });
+});
+
+
+it("a whisper-only PTT hold has no release tail into the normal microphone destination", async () => {
+  const f = fakes();
+  const p = await MicPipeline.create({ ...DEFAULT_SETTINGS, inputMode: "ptt", pttReleaseMs: 2000, noiseSuppression: "off" });
+  p.setWhisperHeld(true); p.setWhisper(true);
+  expect(f.routeGain(0)).toBe(0); expect(f.routeGain(1)).toBe(1);
+  p.setWhisper(false); p.setWhisperHeld(false);
+  expect(f.routeGain(0)).toBe(0); expect(f.routeGain(1)).toBe(0);
+  p.setPtt(true); expect(f.routeGain(0)).toBe(1);
+  await p.close(); vi.unstubAllGlobals();
+});
+
+it("closes normal microphone audio during a recipient transition and restores it afterward", async () => {
+  const f = fakes();
+  const p = await MicPipeline.create({ ...DEFAULT_SETTINGS, noiseSuppression: "off" });
+  expect(f.routeGain(0)).toBe(1);
+  p.setWhisperTransition(true);
+  expect(f.routeGain(0)).toBe(0); expect(f.routeGain(1)).toBe(0);
+  p.setWhisperTransition(false); expect(f.routeGain(0)).toBe(1);
+  await p.close(); vi.unstubAllGlobals();
 });

@@ -248,7 +248,9 @@ function ParticipantList({ room, channelId, participants, look, drag, onStage }:
 function ParticipantRow({ room, channelId, p, look, drag, board, joinBoard, onStage }: { room: RoomDetail; channelId: string; p: VoiceParticipant; look: ParticipantLook; drag: Drag; board: boolean; joinBoard: () => void; onStage: () => void }) {
   const t = useT();
   const { domain } = useNode();
-  const { status, level, localMuted } = useParticipantStatus(p);
+  const mainMuted = useVoice((s) => p.identity !== s.identity && !!s.media[p.identity]?.micMuted && !s.whisperedBy[p.identity]);
+  const flags = { ...p, muted: p.muted || mainMuted };
+  const { status, level, localMuted } = useParticipantStatus(flags);
   const priority = usePriority(p.identity);
   const { menu, overlay } = useParticipantMenu(room, channelId, p);
   const speaking = status === "speaking";
@@ -333,7 +335,7 @@ function ParticipantRow({ room, channelId, p, look, drag, board, joinBoard, onSt
       )}
       {status === "poor" && <ConnectionGlyph status={status} />}
       {board && <WhiteboardRowBadge />}
-      <ParticipantFlags p={p} size={14} />
+      <ParticipantFlags p={flags} size={14} />
       {localMuted && <LocalMuteMark address={p.user} name={name} size={14} />}
       <MenuButton menu={menu} label={t("voice.participant_menu", { name })} className="min-h-7 min-w-7 opacity-0 focus:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100" testId="voice-participant-menu-button" />
       {overlay}

@@ -6,7 +6,7 @@ import { apiFor } from "../../stores/nodes";
 import { roomPath } from "../../components/NodeScope";
 import { useShell } from "../../components/AppShell";
 import { channelName } from "../../lib/names";
-import { leaveVoice, toggleDeafen, toggleMute } from "../index";
+import { leaveVoice, toggleDeafen, toggleMute, whisperToAddress } from "../index";
 import { isWatched, useVoice, useWatchedStreams, type Quality } from "../store";
 import { useVoiceSettings } from "../settings";
 import { HeadphonesIcon, HeadphonesOffIcon, LeaveIcon, MicIcon, MicOffIcon, SignalBars } from "./icons";
@@ -78,6 +78,9 @@ export function VoiceBar() {
   const status = useVoice((s) => s.status);
   const target = useVoice((s) => s.target);
   const muted = useVoice((s) => s.muted);
+  const whispering = useVoice((s) => s.whispering);
+  const whisperTarget = useVoice((s) => s.whisperTarget);
+  const canWhisper = useVoice((s) => s.whisperSupported && s.canSpeak && !s.muted && !s.deafened);
   const mutedTalk = useVoice((s) => s.mutedTalk);
   const deafened = useVoice((s) => s.deafened);
   const quality = useVoice((s) => s.quality);
@@ -138,6 +141,18 @@ export function VoiceBar() {
           </span>
         )}
       </button>
+      {whisperTarget && <button type="button" data-testid="whisper-selected-hold" disabled={!canWhisper || status !== "connected"}
+        className="min-h-11 w-full touch-none rounded-md px-2 text-left text-xs text-accent [overflow-wrap:anywhere] hover:bg-bg-3 disabled:opacity-50"
+        aria-label={t("voice.whisper.hold", { name: whisperTarget })}
+        onTouchStart={(e) => e.stopPropagation()}
+        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
+        onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); whisperToAddress(whisperTarget, true); }}
+        onPointerUp={() => whisperToAddress(whisperTarget, false)} onPointerCancel={() => whisperToAddress(whisperTarget, false)} onLostPointerCapture={() => whisperToAddress(whisperTarget, false)}
+        onKeyDown={(e) => { if (!e.repeat && (e.key === " " || e.key === "Enter")) { e.preventDefault(); whisperToAddress(whisperTarget, true); } }}
+        onKeyUp={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); whisperToAddress(whisperTarget, false); } }} onBlur={() => whisperToAddress(whisperTarget, false)}>
+        {t("voice.whisper.hold", { name: whisperTarget })}
+      </button>}
+      {whispering.length > 0 && <p role="status" className="truncate px-2 text-xs text-accent" data-testid="whisper-bar">{t("voice.whisper.sending", { names: whispering.map((id) => id.split("/")[0]).join(", ") })}</p>}
       <div className="absolute right-1 top-1 flex items-center">
         <ControlButton label={muted ? t("voice.unmute") : t("voice.mute")} active={muted} pulse={mutedTalk} onClick={() => void toggleMute()} testid="voice-bar-mute" menu={micMenu.triggerProps} compact>
           {muted ? <MicOffIcon /> : <MicIcon />}

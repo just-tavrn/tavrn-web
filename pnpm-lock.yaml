@@ -170,6 +170,9 @@ overrides:
   '@excalidraw/excalidraw>@excalidraw/mermaid-to-excalidraw': '-'
   '@excalidraw/excalidraw>sass': '-'
 
+patchedDependencies:
+  livekit-client@2.22.4: a29469128c19160bd20fb471d138636ba20de3ea9569d2a0d31385ba83c71f0f
+
 importers:
 
   .: {}
@@ -263,7 +266,7 @@ importers:
         version: 0.18.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@livekit/track-processors':
         specifier: ^0.8.2
-        version: 0.8.2(@types/dom-mediacapture-transform@0.1.12)(livekit-client@2.22.4(@types/dom-mediacapture-record@1.0.22))
+        version: 0.8.2(@types/dom-mediacapture-transform@0.1.12)(livekit-client@2.22.4(patch_hash=a29469128c19160bd20fb471d138636ba20de3ea9569d2a0d31385ba83c71f0f)(@types/dom-mediacapture-record@1.0.22))
       '@sapphi-red/web-noise-suppressor':
         specifier: ^0.4.1
         version: 0.4.1
@@ -298,8 +301,8 @@ importers:
         specifier: ^11.12.0
         version: 11.12.0
       livekit-client:
-        specifier: ^2.22.4
-        version: 2.22.4(@types/dom-mediacapture-record@1.0.22)
+        specifier: 2.22.4
+        version: 2.22.4(patch_hash=a29469128c19160bd20fb471d138636ba20de3ea9569d2a0d31385ba83c71f0f)(@types/dom-mediacapture-record@1.0.22)
       marked:
         specifier: ^18.1.1
         version: 18.1.1
@@ -4107,11 +4110,11 @@ snapshots:
     dependencies:
       '@bufbuild/protobuf': 1.10.1
 
-  '@livekit/track-processors@0.8.2(@types/dom-mediacapture-transform@0.1.12)(livekit-client@2.22.4(@types/dom-mediacapture-record@1.0.22))':
+  '@livekit/track-processors@0.8.2(@types/dom-mediacapture-transform@0.1.12)(livekit-client@2.22.4(patch_hash=a29469128c19160bd20fb471d138636ba20de3ea9569d2a0d31385ba83c71f0f)(@types/dom-mediacapture-record@1.0.22))':
     dependencies:
       '@mediapipe/tasks-vision': 0.10.14
       '@types/dom-mediacapture-transform': 0.1.12
-      livekit-client: 2.22.4(@types/dom-mediacapture-record@1.0.22)
+      livekit-client: 2.22.4(patch_hash=a29469128c19160bd20fb471d138636ba20de3ea9569d2a0d31385ba83c71f0f)(@types/dom-mediacapture-record@1.0.22)
 
   '@malept/cross-spawn-promise@2.0.0':
     dependencies:
@@ -6048,7 +6051,7 @@ snapshots:
       lightningcss-win32-arm64-msvc: 1.33.0
       lightningcss-win32-x64-msvc: 1.33.0
 
-  livekit-client@2.22.4(@types/dom-mediacapture-record@1.0.22):
+  livekit-client@2.22.4(patch_hash=a29469128c19160bd20fb471d138636ba20de3ea9569d2a0d31385ba83c71f0f)(@types/dom-mediacapture-record@1.0.22):
     dependencies:
       '@livekit/mutex': 1.1.1
       '@livekit/protocol': 1.52.1

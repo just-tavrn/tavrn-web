@@ -1,0 +1,24 @@
+diff --git a/dist/livekit-client.esm.mjs b/dist/livekit-client.esm.mjs
+index dc6db6ae3aef2f1d680fd80674a9057edc095cb5..d4bbe2a9c2a6c5ad625ff767629e306f3c7de987 100644
+--- a/dist/livekit-client.esm.mjs
++++ b/dist/livekit-client.esm.mjs
+@@ -33073,6 +33073,7 @@ class Participant extends eventsExports.EventEmitter {
+         });
+         const packet = new DataPacket({
+           kind: dataPacketKind,
++          destinationIdentities,
+           value: {
+             case: 'user',
+             value: userPacket
+diff --git a/src/room/participant/LocalParticipant.ts b/src/room/participant/LocalParticipant.ts
+index 645482c224e04b45bcc596a40e713f43681d6dd8..99e6377492dd292715397a3f7db2f7492506098b 100644
+--- a/src/room/participant/LocalParticipant.ts
++++ b/src/room/participant/LocalParticipant.ts
+@@ -1761,6 +1761,7 @@ export default class LocalParticipant extends Participant {
+ 
+     const packet = new DataPacket({
+       kind: dataPacketKind,
++      destinationIdentities,
+       value: {
+         case: 'user',
+         value: userPacket,

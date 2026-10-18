@@ -14,6 +14,7 @@ import { useAuth } from "../stores/auth";
 import { apiFor, useNodes } from "../stores/nodes";
 import { fetchRoomMembers } from "../pages/ChannelPage";
 import { priorityAllowed, setPriorityVerifier } from "./priority";
+import { soundboardAllowed, setSoundboardVerifier } from "./soundboardAuthorization";
 import { useNode } from "../components/NodeScope";
 import { useVoicePresence } from "./presence";
 import { useVoice } from "./store";
@@ -42,6 +43,17 @@ export function useVoiceRealtime() {
     route.current = { pathname, navigate };
   }, [pathname, navigate]);
   useMyVoiceStates();
+
+  // Soundboard overlays require both effective bits, even when SPEAK grants LiveKit data for whisper.
+  useEffect(() => {
+    setSoundboardVerifier((target, identity) => soundboardAllowed(
+      queryClient.getQueryData<RoomDetail>(["room", target.roomId]),
+      queryClient.getQueryData<Member[]>(["members", target.roomId]),
+      target.channelId,
+      splitIdentity(identity).address,
+    ));
+    return () => setSoundboardVerifier(null);
+  }, [queryClient]);
 
   // Priority speaker claims (design note 4.13 item 3) are checked against the room's roles and overrides and
   // the speaker's member entry, never trusted from the LiveKit attribute alone.

@@ -28,7 +28,7 @@ use keywatch::{Key, KeyFilter, RawKey, Watcher};
 
 /// What a binding does in the voice client.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(try_from = "String", into = "String")]
 pub enum Action {
     /// Held: the microphone transmits.
     PushToTalk,
@@ -36,6 +36,42 @@ pub enum Action {
     Priority,
     ToggleMute,
     ToggleDeafen,
+    WhisperReply,
+    Whisper([u8; 64], u8),
+}
+
+impl TryFrom<String> for Action {
+    type Error = &'static str;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        match value.as_str() {
+            "push_to_talk" => Ok(Self::PushToTalk),
+            "priority" => Ok(Self::Priority),
+            "toggle_mute" => Ok(Self::ToggleMute),
+            "toggle_deafen" => Ok(Self::ToggleDeafen),
+            "whisper_reply" => Ok(Self::WhisperReply),
+            _ => {
+                let id = value.strip_prefix("whisper:").ok_or("invalid hotkey action")?;
+                if id.is_empty() || id.len() > 64 || !id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-') {
+                    return Err("invalid whisper group");
+                }
+                let mut bytes = [0; 64];
+                bytes[..id.len()].copy_from_slice(id.as_bytes());
+                Ok(Self::Whisper(bytes, id.len() as u8))
+            }
+        }
+    }
+}
+impl From<Action> for String {
+    fn from(action: Action) -> Self {
+        match action {
+            Action::PushToTalk => "push_to_talk".into(),
+            Action::Priority => "priority".into(),
+            Action::ToggleMute => "toggle_mute".into(),
+            Action::ToggleDeafen => "toggle_deafen".into(),
+            Action::WhisperReply => "whisper_reply".into(),
+            Action::Whisper(id, len) => format!("whisper:{}", String::from_utf8_lossy(&id[..usize::from(len)])),
+        }
+    }
 }
 
 /// Why a binding is refused; `code()` is what the client translates.
@@ -488,6 +524,20 @@ mod tests {
 
     fn canonical(text: &str) -> Result<String, HotkeyError> {
         Combo::parse(text).map(|c| c.to_string())
+    }
+
+    #[test]
+    fn dynamic_whisper_actions_round_trip_and_validate() -> Result<(), Box<dyn std::error::Error>> {
+        for name in ["whisper_reply", "whisper:raid-1"] {
+            let action: Action = serde_json::from_value(serde_json::json!(name))?;
+            assert_eq!(serde_json::to_value(action).ok(), Some(serde_json::json!(name)));
+        }
+        for name in ["whisper:", "whisper:../bad", "unknown"] {
+            assert!(serde_json::from_value::<Action>(serde_json::json!(name)).is_err());
+        }
+        let action = Action::try_from("whisper:raid".to_string())?;
+        assert_eq!(run(&[(action, "KeyG")], &["+KeyG", "-KeyG"]), [(action, true), (action, false)]);
+        Ok(())
     }
 
     #[test]

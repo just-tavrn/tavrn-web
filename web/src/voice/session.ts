@@ -28,6 +28,8 @@ import { earlyPipeline, startJoin, type EarlyPipeline, type Releasable } from ".
 import { vjMark } from "./joinTimings";
 import {
   ConnectionQuality,
+  ConnectionState,
+  DataPacket_Kind,
   DisconnectReason,
   LocalVideoTrack,
   RemoteAudioTrack,
@@ -36,11 +38,14 @@ import {
   Track,
   isE2EESupported,
   type LocalTrackPublication,
+  type TrackPublication,
   type Participant,
   type RemoteParticipant,
   type RemoteTrack,
   type RemoteTrackPublication,
 } from "livekit-client";
+import { WhisperSender, whisperPermissions } from "./whisper";
+import { WHISPER_TOPIC, WhisperLimiter, addressedWhisper } from "./whisperSignal";
 import E2EEWorker from "livekit-client/e2ee-worker?worker";
 import type { Sound, TavrnApi } from "@tavrn/sdk";
 import { apiFor } from "../stores/nodes";
@@ -61,6 +66,7 @@ import { participantVolumes, type Volumes } from "./volume";
 import { isLocallyMuted, useLocalMute } from "./localMute";
 import { ANALYSER_SIZE, SPEAKING_POLL_MS, SpeakingDetector, analysersAvailable, combineLevels, localLevel, rmsDb } from "./speaking";
 import { PriorityTracker, claimsPriority, duckGain, rampTo, verifyPriority } from "./priority";
+import { dispatchSoundboard } from "./soundboardAuthorization";
 import { SOUND_TOPIC, SignalLimiter, encodeSoundSignal, parseClipEmoji, parseSoundSignal } from "./soundSignal";
 import { throttledActivity } from "../lib/idle";
 import type { LevelReport } from "./audio";
@@ -80,6 +86,9 @@ import { NativeScreenShare, NoFrameKeyError } from "./nativeScreen";
 const E2EE_CONFIRM_MS = 10_000;
 
 interface Session {
+  whisper: WhisperSender;
+  whisperPub: LocalTrackPublication | null;
+  whisperSignals: WhisperLimiter;
   id: number;
   target: VoiceTarget;
   q: string;
@@ -149,7 +158,11 @@ const cue = (c: Cue, own: boolean) => playCue(c, { own, deafened: useVoice.getSt
 const settings = () => useVoiceSettings.getState().settings;
 
 function canPublish(room: Room, source: Track.Source): boolean {
-  const p = room.localParticipant.permissions;
+  return participantCanPublish(room.localParticipant, source);
+}
+
+function participantCanPublish(participant: Participant, source: Track.Source): boolean {
+  const p = participant.permissions;
   if (!p?.canPublish) return false;
   return p.canPublishSources.length === 0 || p.canPublishSources.map((s) => Track.sourceFromProto(s)).includes(source);
 }
@@ -191,9 +204,17 @@ function qualityOf(q: ConnectionQuality): Quality {
  * A participant's media. A remote screen share counts from its publication on (before it is joined, the stream tile
  * offers joining); its video is there only once joined and subscribed. The own share counts once its track runs.
  */
+/** The normal microphone, never the second publication sharing its LiveKit source. */
+function mainMicrophone(p: Room["localParticipant"]): LocalTrackPublication | undefined;
+function mainMicrophone(p: RemoteParticipant): RemoteTrackPublication | undefined;
+function mainMicrophone(p: Participant): TrackPublication | undefined;
+function mainMicrophone(p: Participant): TrackPublication | undefined {
+  return [...p.audioTrackPublications.values()].find((pub) => pub.source === Track.Source.Microphone && pub.trackName !== "whisper");
+}
+
 function mediaOf(p: Participant, local: boolean): ParticipantMedia {
   const cam = p.getTrackPublication(Track.Source.Camera);
-  const mic = p.getTrackPublication(Track.Source.Microphone);
+  const mic = mainMicrophone(p);
   const screen = p.getTrackPublication(Track.Source.ScreenShare);
   const screenAudio = p.getTrackPublication(Track.Source.ScreenShareAudio);
   return {
@@ -218,6 +239,8 @@ function audioSink(): HTMLElement {
 }
 
 function playAudio(s: Session, track: RemoteTrack, source: Track.Source, identity: string) {
+  const pub = s.room.remoteParticipants.get(identity)?.getTrackPublicationBySid(track.sid!);
+  if (pub?.trackName === "whisper" && !useVoice.getState().whisperedBy[identity]) return;
   if (track.kind !== Track.Kind.Audio) return;
   if (track instanceof RemoteAudioTrack) tap(s, track, source, identity);
   const el = track.attach();
@@ -415,6 +438,7 @@ function applyVolume(p: RemoteParticipant, deafened = useVoice.getState().deafen
   const address = splitIdentity(p.identity).address;
   const v = participantVolumes(settings(), address, { deafened, watched: isWatched(useWatchedStreams.getState(), p.identity), localMuted: isLocallyMuted(useLocalMute.getState(), address) });
   p.setVolume(v.microphone, Track.Source.Microphone);
+  for (const pub of p.audioTrackPublications.values()) if (pub.trackName === "whisper" && pub.track instanceof RemoteAudioTrack) pub.track.setVolume(v.microphone);
   p.setVolume(v.stream, Track.Source.ScreenShareAudio);
   applied.set(p.identity, v);
 }
@@ -434,9 +458,16 @@ async function rekey(s: Session) {
     // The Android app's screen publisher encrypts with this device's key too (VOICE.md §4b): it gets every epoch's.
     if (s.nativeScreen?.active) void s.nativeScreen.rekey({ key: vk.key.slice(), epoch: vk.epoch }).catch(() => undefined);
     await s.keyProvider.setEpochKey(vk.key, vk.epoch);
+  } catch (e) {
+    void s.whisper.set([]);
+    throw e;
   } finally {
     vk.key.fill(0);
   }
+}
+
+function backgroundRekey(s: Session): void {
+  void rekey(s).catch((e) => useToasts.getState().push({ kind: "warning", title: voiceErrorMessage(e) }));
 }
 
 /** Sets the frame key of the group's current epoch unless the key provider holds it already. */
@@ -449,7 +480,7 @@ async function publishMic(s: Session) {
   await s.fresh;
   await keyCurrent(s);
   if (life.current !== s) return;
-  if (!canPublish(s.room, Track.Source.Microphone) || s.room.localParticipant.getTrackPublication(Track.Source.Microphone)) return;
+  if (!canPublish(s.room, Track.Source.Microphone) || mainMicrophone(s.room.localParticipant)) return;
   // Never publish before encryption is confirmed for this device (VOICE.md §6).
   if (!s.room.isE2EEEnabled || !s.room.localParticipant.isE2EEEnabled) throw new VoiceError("e2ee_failed");
   // Quality presets and music mode (VOICE.md §4a): stereo only for a real two-channel capture.
@@ -470,7 +501,7 @@ function onPermissions(s: Session) {
   // self mute stays the user's (a server mute leaves the user muted).
   const canSpeak = canPublish(s.room, Track.Source.Microphone);
   set(canSpeak ? { canSpeak, serverMuted: false } : { canSpeak, serverMuted: true, muted: true });
-  if (!canSpeak) void s.capture.setMuted(true);
+  if (!canSpeak) { s.pipeline.setMuted(true); void setWhisper([]); void s.capture.setMuted(true); }
   emitSpeakers(s);
   if (canSpeak) void publishMic(s).catch(() => undefined);
 }
@@ -492,18 +523,37 @@ function wire(s: Session) {
     .on(RoomEvent.ActiveSpeakersChanged, (speakers: Participant[]) => {
       // Fallback of the analysers (and always for the own device: that ring follows the gate).
       if (life.current !== s) return;
-      s.lkSpeakers = Object.fromEntries(speakers.filter((p) => p !== room.localParticipant).map((p) => [p.identity, p.audioLevel]));
+      s.lkSpeakers = Object.fromEntries(speakers.filter((p) => p !== room.localParticipant && (!mainMicrophone(p)?.isMuted || useVoice.getState().whisperedBy[p.identity])).map((p) => [p.identity, p.audioLevel]));
       if (!analysing(s)) emitSpeakers(s);
     })
     .on(RoomEvent.ParticipantAttributesChanged, (_changed: Record<string, string>, p: Participant) => followPriorityClaim(s, p))
     .on(RoomEvent.DataReceived, (payload: Uint8Array, p?: RemoteParticipant, _kind?: unknown, topic?: string) => {
-      // Signals of participants of this call, validated and limited per sender. (They are sent end-to-end
-      // encrypted; livekit-client 2.22 reports decrypted packets with encryption type NONE, so the type
-      // cannot be checked here. A signal only shows an emoji, nothing else.)
-      if (life.current !== s || !p || topic !== SOUND_TOPIC) return;
+      // Both topics use the encrypted room data channel, with separate validation and per-sender limits.
+      // livekit-client 2.22 reports decrypted packets with encryption type NONE; it cannot be checked here.
+      if (life.current !== s || !p) return;
+      if (topic === WHISPER_TOPIC) {
+        if (useVoice.getState().deafened || !participantCanPublish(p, Track.Source.Microphone)) return;
+        const signal = addressedWhisper(payload, room.localParticipant.identity, p.identity,
+          new Set([room.localParticipant.identity, ...room.remoteParticipants.keys()]), _kind === DataPacket_Kind.RELIABLE);
+        if (!signal || !s.whisperSignals.allow(p.identity)) return;
+        const active = signal.type === "whisper.start";
+        const wasActive = !!useVoice.getState().whisperedBy[p.identity];
+        const whisperedBy = { ...useVoice.getState().whisperedBy };
+        if (active) whisperedBy[p.identity] = true; else delete whisperedBy[p.identity];
+        set({ whisperedBy, ...(active ? { lastWhisperer: p.identity } : {}) });
+        for (const pub of p.audioTrackPublications.values()) if (pub.trackName === "whisper") {
+          pub.setSubscribed(active);
+          if (pub.track) { stopAudio(s, pub.track); if (active) playAudio(s, pub.track, pub.source, p.identity); }
+        }
+        if (active !== wasActive) cue(active ? "whisper_start" : "whisper_end", false);
+        return;
+      }
+      if (topic !== SOUND_TOPIC) return;
       if (!s.signals.allow(p.identity, Date.now())) return;
       const signal = parseSoundSignal(payload);
-      if (signal) showSoundOverlay(p.identity, signal.emoji, signal.duration_ms);
+      if (signal) dispatchSoundboard(s.target, p.identity,
+        () => life.current === s && room.state === ConnectionState.Connected && room.remoteParticipants.get(p.identity) === p,
+        () => showSoundOverlay(p.identity, signal.emoji, signal.duration_ms));
     })
     .on(RoomEvent.ConnectionQualityChanged, (q: ConnectionQuality, p: Participant) => {
       if (life.current !== s) return;
@@ -514,6 +564,9 @@ function wire(s: Session) {
     .on(RoomEvent.Reconnecting, () => {
       if (life.current !== s) return;
       set({ status: "reconnecting" });
+      void setWhisper([]);
+      clearIncomingWhispers(s);
+      s.whisperSignals.clear();
       cue("connection_lost", true);
     })
     .on(RoomEvent.Reconnected, () => {
@@ -523,47 +576,71 @@ function wire(s: Session) {
     })
     .on(RoomEvent.Disconnected, (reason?: DisconnectReason) => void life.onDisconnected(s, disconnectKind(reason)))
     .on(RoomEvent.ParticipantConnected, (p: RemoteParticipant) => {
+      if (life.current !== s) return;
       forgetQuality(p.identity);
+      s.whisper.resync();
       applyVolume(p);
       followPriorityClaim(s, p);
       media();
     })
     .on(RoomEvent.ParticipantDisconnected, (p: RemoteParticipant) => {
+      if (life.current !== s) return;
+      for (const pub of p.audioTrackPublications.values()) if (pub.trackName === "whisper" && pub.track) stopAudio(s, pub.track);
       forgetQuality(p.identity);
       s.priority.remove(p.identity);
+      s.whisperSignals.forget(p.identity);
+      const whisperedBy = { ...useVoice.getState().whisperedBy }; delete whisperedBy[p.identity];
+      set({ whisperedBy, ...(useVoice.getState().lastWhisperer === p.identity ? { lastWhisperer: null } : {}) });
+      if (s.whisper.recipients.includes(p.identity)) void setWhisper([]);
       s.detector?.forget(p.identity);
+      if (!s.whisper.recipients.includes(p.identity)) s.whisper.resync();
       s.signals.forget(p.identity);
       applied.delete(p.identity);
       media();
     })
-    .on(RoomEvent.TrackSubscribed, (track: RemoteTrack, pub: { source: Track.Source }, p: RemoteParticipant) => {
-      playAudio(s, track, pub.source, p.identity);
+    .on(RoomEvent.TrackSubscribed, (track: RemoteTrack, pub: { source: Track.Source; trackName?: string }, p: RemoteParticipant) => {
+      if (life.current !== s) return;
+      if (pub.trackName !== "whisper" || useVoice.getState().whisperedBy[p.identity]) playAudio(s, track, pub.source, p.identity);
       applyVolume(p);
       media();
     })
-    .on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
+    .on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack, pub: RemoteTrackPublication, p: RemoteParticipant) => {
+      if (pub.trackName === "whisper") forgetIncomingWhisper(s, p.identity);
       stopAudio(s, track);
       media();
     })
     .on(RoomEvent.TrackPublished, (pub: RemoteTrackPublication, p: RemoteParticipant) => {
       // Microphones and cameras at once, screen shares only once joined (`streams.ts`).
-      if (life.current === s) s.streams.apply(p.identity, pub);
+      if (life.current === s) {
+        if (pub.trackName === "whisper") pub.setSubscribed(!!useVoice.getState().whisperedBy[p.identity]);
+        else s.streams.apply(p.identity, pub);
+      }
       media();
     })
-    .on(RoomEvent.TrackUnpublished, media)
-    .on(RoomEvent.TrackMuted, media)
+    .on(RoomEvent.TrackUnpublished, (pub: RemoteTrackPublication, p: RemoteParticipant) => { if (pub.trackName === "whisper") forgetIncomingWhisper(s, p.identity); media(); })
+    .on(RoomEvent.TrackMuted, (pub, p: Participant) => { if (p !== room.localParticipant && pub.trackName === "whisper") forgetIncomingWhisper(s, p.identity); media(); })
     .on(RoomEvent.TrackUnmuted, media)
-    .on(RoomEvent.LocalTrackPublished, media)
+    .on(RoomEvent.LocalTrackPublished, () => { s.whisper.resync(); media(); })
     .on(RoomEvent.LocalTrackUnpublished, (pub: LocalTrackPublication) => {
+      if (pub.trackName === "whisper") s.whisperPub = null;
+      if (life.current === s && pub.source === Track.Source.Microphone && s.whisper.recipients.length) void setWhisper([]);
+      s.whisper.resync();
       media();
       // Stopped from the browser's own "stop sharing" bar.
       if (pub.source === Track.Source.ScreenShare && life.current === s && !s.leaving) void reportState(s, { streaming: false });
       if (pub.source === Track.Source.Camera && life.current === s && !s.leaving) void stopBackground(s);
     })
     .on(RoomEvent.ParticipantPermissionsChanged, (_prev, p: Participant) => {
+      if (life.current !== s) return;
       if (p === room.localParticipant) onPermissions(s);
+      else if (!participantCanPublish(p, Track.Source.Microphone)) forgetIncomingWhisper(s, p.identity);
     })
-    .on(RoomEvent.EncryptionError, (error: Error) => console.warn("voice: encryption error", error.message));
+    .on(RoomEvent.EncryptionError, (error: Error, participant?: Participant) => {
+      // A remote epoch may arrive before its MLS commit. The decoder drops those frames while
+      // catch-up installs the key; that does not mean our independently encrypted publisher failed.
+      if (!participant || participant === room.localParticipant) void s.whisper.set([]);
+      console.warn("voice: encryption error", error.message);
+    });
 }
 
 /** Plays the cues for changes of the other participants of the call (from `voice.state`). */
@@ -573,6 +650,9 @@ function followOthers(s: Session, key: string): () => void {
 
 /** Follows changes of the MLS group, the node's epoch, the settings and push-to-talk. */
 function follow(s: Session) {
+  const cancelWhisper = () => { void s.whisper.set([]); };
+  window.addEventListener("blur", cancelWhisper);
+  s.offs.push(() => window.removeEventListener("blur", cancelWhisper));
   const key = channelKey(s.target.domain, s.target.channelId);
   s.offs.push(
     // Others joining, leaving, dropping or starting a stream/camera: notification sounds.
@@ -608,6 +688,7 @@ async function applySettings(s: Session, next: VoiceSettings, prev: VoiceSetting
       else if (next.blurStrength !== prev.blurStrength) await s.background?.setBlur(next.blurStrength);
     }
   } catch (e) {
+    void s.whisper.set([]);
     useToasts.getState().push({ kind: "warning", title: voiceErrorMessage(e) });
   }
 }
@@ -636,6 +717,8 @@ async function switchCamera(s: Session, next: VoiceSettings) {
 async function cleanup(s: Session) {
   if (s.mutedTalkPulse) clearTimeout(s.mutedTalkPulse);
   s.leaving = true;
+  s.whisper.dispose();
+  set({ whispering: [], whisperedBy: {}, lastWhisperer: null, whisperSupported: false, whisperTarget: null });
   // The screen publisher ends with the voice session (the node also removes it with this device).
   void s.nativeScreen?.dispose();
   s.capture.close();
@@ -696,6 +779,7 @@ async function connect(attempt: Attempt, canCreate: boolean, opts: ConnectOpts) 
   const q = qualify(target.domain, target.channelId);
   const api = apiFor(target.domain);
   const ep = endpoints(api, target);
+  const whisperSupport = target.call ? Promise.resolve(false) : api.node.info().then((node) => node.capabilities.includes("voice.whisper1")).catch(() => false);
   // Ghost leaves (deleted devices, this user's old devices) go before the new voice key (ENCRYPTION.md §4.7); the
   // node lists who is in the channel, so only those devices are online for the election. Never waits for the
   // election: when another device is elected the cleanup runs in the background once connected. Best effort.
@@ -753,6 +837,9 @@ async function connect(attempt: Attempt, canCreate: boolean, opts: ConnectOpts) 
     const reducedMotion = typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
     const withAnalysers = analysersAvailable({ audioContext: !!audio, reducedMotion, weakDevice: !!document.documentElement.dataset.weakDevice });
     const s: Session = {
+      whisper: createWhisperSender(() => s),
+      whisperPub: null,
+      whisperSignals: new WhisperLimiter(),
       id,
       target,
       q,
@@ -810,10 +897,10 @@ async function connect(attempt: Attempt, canCreate: boolean, opts: ConnectOpts) 
     // derived is picked up right away.
     s.offs.push(
       useMlsUi.subscribe((now, prev) => {
-        if (now.epochs[s.q] !== prev.epochs[s.q]) void rekey(s);
+        if (now.epochs[s.q] !== prev.epochs[s.q]) backgroundRekey(s);
       }),
     );
-    void rekey(s);
+    backgroundRekey(s);
     wire(s);
     room.once(RoomEvent.SignalConnected, () => vjMark("lk_signal_connected"));
     room.once(RoomEvent.Connected, () => vjMark("lk_connected_event"));
@@ -843,7 +930,8 @@ async function connect(attempt: Attempt, canCreate: boolean, opts: ConnectOpts) 
     vjMark("start_audio_done");
     attempt.check();
     const canSpeak = canPublish(room, Track.Source.Microphone);
-    set({ status: "connected", identity: room.localParticipant.identity, limits: info.limits, canSpeak, serverMuted: !canSpeak, e2ee: true });
+    set({ status: "connected", identity: room.localParticipant.identity, limits: info.limits, canSpeak, serverMuted: !canSpeak, e2ee: true, whisperSupported: false });
+    void whisperSupport.then((supported) => { if (life.current === s && !s.leaving) set({ whisperSupported: supported }); });
     vjMark("store_connected");
     if (canSpeak) await publishMic(s);
     vjMark("mic_published");
@@ -945,6 +1033,8 @@ export async function setMuted(muted: boolean): Promise<void> {
   const r = life.mute(muted);
   const s = r?.s;
   if (!r || !s) return;
+  if (muted) s.pipeline.setMuted(true);
+  await setWhisper([]);
   // The own ring goes dark at once (the paused gate reports nothing any more).
   emitSpeakers(s);
   if (!(await applyMute(s, muted))) return;
@@ -969,7 +1059,7 @@ async function applyMute(s: Session, muted: boolean): Promise<boolean> {
       return false;
     }
   }
-  const pub = s.room.localParticipant.getTrackPublication(Track.Source.Microphone);
+  const pub = mainMicrophone(s.room.localParticipant);
   if (pub) await (muted ? pub.mute() : pub.unmute());
   s.pipeline.setMuted(muted);
   await applyMutedCapture(s, muted);
@@ -993,6 +1083,8 @@ export async function setDeafened(deafened: boolean): Promise<void> {
   // A deafened client also mutes itself (VOICE.md §5); undeafening restores the earlier mute state (the lifecycle).
   const { s, muted } = life.deafen(deafened);
   if (!s) return;
+  if (deafened) { s.pipeline.setMuted(true); clearIncomingWhispers(s); }
+  await setWhisper([]);
   emitSpeakers(s);
   applyVolumes(s);
   if (!(await applyMute(s, muted))) {
@@ -1328,6 +1420,9 @@ function exposeForTests(s: Session) {
   const hooks: TestHooks = {
     room: s.room,
     state: () => ({
+      whispering: useVoice.getState().whispering,
+      whisperedBy: useVoice.getState().whisperedBy,
+      lastWhisperer: useVoice.getState().lastWhisperer,
       e2eeEnabled: s.room.isE2EEEnabled,
       localEncrypted: s.room.localParticipant.isE2EEEnabled,
       keyIndex: s.keyProvider.getLatestManuallySetKeyIndex(),
@@ -1353,11 +1448,12 @@ function exposeForTests(s: Session) {
         isSpeaking: p.isSpeaking,
         audioLevel: p.audioLevel,
         isEncrypted: p.isEncrypted,
-        tracks: [...p.trackPublications.values()].map((pub) => ({ source: pub.source, encrypted: pub.isEncrypted, subscribed: pub.isSubscribed })),
+        tracks: [...p.trackPublications.values()].map((pub) => ({ name: pub.trackName, source: pub.source, encrypted: pub.isEncrypted, subscribed: pub.isSubscribed })),
       })),
     }),
     inboundAudioPeak: async (identity, ms = 2000) => {
-      const track = s.room.getParticipantByIdentity(identity)?.getTrackPublication(Track.Source.Microphone)?.track;
+      const p = s.room.getParticipantByIdentity(identity);
+      const track = [...(p?.audioTrackPublications.values() ?? [])].find((pub) => pub.trackName === "whisper" && useVoice.getState().whisperedBy[identity])?.track ?? (p ? mainMicrophone(p)?.track : undefined);
       if (!track) return 0;
       const ctx = new AudioContext();
       try {
@@ -1377,10 +1473,98 @@ function exposeForTests(s: Session) {
     },
     drop: async () => {
       s.leaving = true;
+      s.whisper.dispose();
+      set({ whispering: [], whisperedBy: {}, lastWhisperer: null });
       await s.room.disconnect();
       s.leaving = false;
       await life.onDisconnected(s, disconnectKind(DisconnectReason.SIGNAL_CLOSE));
     },
   };
   (window as { __tavrnVoice?: TestHooks }).__tavrnVoice = hooks;
+}
+
+
+/** Adapter between the tested transition controller and this encrypted LiveKit session. */
+function createWhisperSender(current: () => Session): WhisperSender {
+  const s = () => current();
+  const main = () => mainMicrophone(s().room.localParticipant);
+  return new WhisperSender({
+    active: () => life.current === s() && !s().leaving,
+    canStart: () => {
+      const v = useVoice.getState();
+      return life.current === s() && !s().leaving && !s().target.call && v.whisperSupported && v.status === "connected" && !v.muted && !v.deafened && v.canSpeak;
+    },
+    resolve: (ids) => ids.filter((id) => id !== s().room.localParticipant.identity && !id.endsWith("#screen") && s().room.remoteParticipants.has(id)),
+    prepare: async () => {
+      await s().fresh; await keyCurrent(s());
+      if (s().keyProvider.ring.needs(s().mls.epoch(s().q) ?? -1) || !s().room.isE2EEEnabled || !s().room.localParticipant.isE2EEEnabled) throw new VoiceError("e2ee_failed");
+    },
+    publish: async () => {
+      // A previous publication muted this reusable MediaStreamTrack; the destination is still silent here.
+      s().pipeline.whisperTrack.enabled = true;
+      if (s().whisperPub) return;
+      const pub = await s().room.localParticipant.publishTrack(s().pipeline.whisperTrack, {
+        name: "whisper", source: Track.Source.Microphone,
+        ...micPublishOptions(s().info.limits.audio_bitrate_kbps, { music: isMusic(s().info.limits.audio_bitrate_kbps), stereo: s().pipeline.stereo }),
+      });
+      // A timed-out publish belongs to the old connection, never to its replacement.
+      if (life.current !== s() || s().leaving) {
+        if (pub.track) await s().room.localParticipant.unpublishTrack(pub.track, false).catch(() => undefined);
+        return;
+      }
+      s().whisperPub = pub;
+    },
+    permissions: (ids) => {
+      const local = s().room.localParticipant;
+      local.setTrackSubscriptionPermissions(!ids.length, ids.length ? whisperPermissions(s().room.remoteParticipants.keys(), local.trackPublications.values(), ids) : []);
+    },
+    mainMuted: async (muted) => {
+      const v = useVoice.getState();
+      const pub = main();
+      if (muted) { if (!pub) throw new Error("No microphone publication"); await pub.mute(); }
+      else if (life.current === s() && !s().leaving && !v.muted && !v.deafened && v.canSpeak) await pub?.unmute();
+    },
+    whisperMuted: async (muted) => {
+      const pub = s().whisperPub;
+      if (!pub) return;
+      if (muted) {
+        await pub.mute();
+        if (pub.track) await s().room.localParticipant.unpublishTrack(pub.track, false);
+        s().whisperPub = null;
+      } else await pub.unmute();
+    },
+    output: (on) => s().pipeline.setWhisper(on),
+    hold: (on) => s().pipeline.setWhisperHeld(on),
+    transition: (on) => s().pipeline.setWhisperTransition(on),
+    send: (data, ids) => s().room.localParticipant.publishData(new Uint8Array(data), { reliable: true, topic: WHISPER_TOPIC, destinationIdentities: ids }),
+    changed: (ids) => { if (life.current === s()) set({ whispering: ids }); },
+    cue: (start) => cue(start ? "whisper_start" : "whisper_end", true),
+    recover: () => { if (life.current === s() && !s().leaving) void life.onDisconnected(s(), "other"); },
+    failed: (e) => useToasts.getState().push({ kind: "warning", title: voiceErrorMessage(e) }),
+  });
+}
+
+export function setWhisper(recipients: string[]): Promise<void> {
+  return life.current?.whisper.set(recipients) ?? Promise.resolve();
+}
+
+function clearIncomingWhispers(s: Session): void {
+  set({ whisperedBy: {} });
+  for (const p of s.room.remoteParticipants.values()) for (const pub of p.audioTrackPublications.values()) if (pub.trackName === "whisper") {
+    if (pub.track) stopAudio(s, pub.track);
+    pub.setSubscribed(false);
+  }
+}
+
+function forgetIncomingWhisper(s: Session, identity: string): void {
+  if (life.current !== s) return;
+  const whisperedBy = { ...useVoice.getState().whisperedBy };
+  if (whisperedBy[identity]) cue("whisper_end", false);
+  delete whisperedBy[identity];
+  set({ whisperedBy });
+  const p = s.room.remoteParticipants.get(identity);
+  if (p) for (const pub of p.audioTrackPublications.values()) if (pub.trackName === "whisper") {
+    if (pub.track) stopAudio(s, pub.track);
+    pub.setSubscribed(false);
+  }
 }

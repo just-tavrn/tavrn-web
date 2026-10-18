@@ -4,6 +4,9 @@
  * RNNoise, background effects) sits behind dynamic imports and is loaded on the first join, so the text
  * client stays light (design note 9e).
  */
+import { splitIdentity } from "@tavrn/e2ee";
+import { t } from "../i18n";
+import { useVoiceSettings, whisperRoomKey } from "./settings";
 import { previewing } from "../stores/rolePreview";
 import { toastPreviewRefused } from "../lib/previewGuard";
 import { useToasts } from "../stores/toasts";
@@ -137,3 +140,53 @@ export async function followMove(domain: string, data: { room_id: string; from_c
 }
 
 export type { VoiceTarget, ScreenShareOptions };
+
+
+/** Whisper is only available with the browser engine; native receivers fail closed. */
+export async function whisperTo(identities: string[]): Promise<void> {
+  if (useVoice.getState().status !== "connected") return;
+  if (identities.length && !useVoice.getState().whisperSupported) return;
+  if (useVoiceEngine.getState().kind !== "browser") {
+    if (identities.length) useToasts.getState().push({ kind: "warning", title: t("voice.whisper.browser_only") });
+    return;
+  }
+  await module?.setWhisper?.(identities);
+}
+let whisperHoldAction: string | null = null;
+let whisperAddressHold: string | null = null;
+useVoice.subscribe((state, previous) => {
+  if (state.status !== "connected" || state.target !== previous.target) {
+    whisperHoldAction = null;
+    whisperAddressHold = null;
+  }
+});
+export function whisperToAddress(address: string, held: boolean): void {
+  if (!held) {
+    if (whisperAddressHold !== address) return;
+    whisperAddressHold = null;
+    void whisperTo([]);
+    return;
+  }
+  const state = useVoice.getState();
+  const ids = Object.keys(state.media).filter((id) => id !== state.identity && !id.endsWith("#screen") && splitIdentity(id).address === address);
+  if (!ids.length || state.status !== "connected" || !state.whisperSupported) return;
+  whisperHoldAction = null;
+  whisperAddressHold = address;
+  void whisperTo(ids);
+}
+export function whisperHotkey(action: string, held: boolean): void {
+  const state = useVoice.getState();
+  if (!held) {
+    if (whisperHoldAction === action) { whisperHoldAction = null; void whisperTo([]); }
+    return;
+  }
+  if (state.status !== "connected" || !state.whisperSupported || !state.target || state.target.call) return;
+  const groups = useVoiceSettings.getState().settings.whisperGroups[whisperRoomKey(state.target.domain, state.target.roomId)] ?? [];
+  const group = groups.find((g) => `whisper:${g.id}` === action);
+  const ids = action === "whisper_reply" ? (state.lastWhisperer && state.media[state.lastWhisperer] ? [state.lastWhisperer] : [])
+    : group ? Object.keys(state.media).filter((id) => id !== state.identity && !id.endsWith("#screen") && group.members.includes(splitIdentity(id).address)) : [];
+  if (!ids.length) return;
+  whisperHoldAction = action;
+  whisperAddressHold = null;
+  void whisperTo(ids);
+}

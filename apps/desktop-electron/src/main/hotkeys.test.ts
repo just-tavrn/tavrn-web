@@ -274,3 +274,7 @@ test("the bridge's hotkeys namespace: checked arguments, the Tauri shell's answe
   assert.deepEqual(await call("unregisterHotkey", 1), { ok: false, error: "ipc.invalid_arguments" });
   assert.deepEqual(await call("setHotkeysEnabled", false), { ok: true, value: false });
 });
+
+test("dynamic whisper group bindings participate in matching and conflicts", () => {
+  assert.deepEqual(run([["whisper:team", "KeyG"], ["whisper_reply", "KeyR"]], ["+KeyG", "-KeyG", "+KeyR", "-KeyR"]), [["whisper:team", true], ["whisper:team", false], ["whisper_reply", true], ["whisper_reply", false]]);
+});

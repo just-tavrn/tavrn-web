@@ -8,7 +8,7 @@ import { useToasts } from "../stores/toasts";
 import { useAuth } from "../stores/auth";
 import { IDLE, useVoice } from "./store";
 
-const voice = vi.hoisted(() => ({ pushToTalk: vi.fn(), setPrioritySpeaker: vi.fn(), toggleMute: vi.fn(async () => {}), toggleDeafen: vi.fn(async () => {}) }));
+const voice = vi.hoisted(() => ({ pushToTalk: vi.fn(), setPrioritySpeaker: vi.fn(), whisperHotkey: vi.fn(), toggleMute: vi.fn(async () => {}), toggleDeafen: vi.fn(async () => {}) }));
 vi.mock("./index", () => voice);
 
 import { actionOfKeyDown, bindHotkey, clearHotkey, comboLabel, handleHotkey, hotkeyConflict, hotkeyHeld, keyLabel, keyOs, releasesBinding, resetHotkeysForTest, restoreHotkeys, setRecording, startHotkeys, useHotkeyState } from "./hotkeys";
@@ -293,4 +293,18 @@ describe("the voice session reacts to presses and releases", () => {
     shell.emit({ action: "toggle_mute", pressed: true });
     expect(voice.toggleMute).toHaveBeenCalledTimes(1);
   });
+});
+
+
+it("dynamic whisper holds release on keyup and cancel on blur, including shell shadows", () => {
+  fakeShell();
+  bindings({ "whisper:raid": "KeyG" });
+  stop = startHotkeys();
+  fireEvent.keyDown(window, key("KeyG"));
+  expect(voice.whisperHotkey).toHaveBeenLastCalledWith("whisper:raid", true);
+  fireEvent.keyUp(window, key("KeyG"));
+  expect(voice.whisperHotkey).toHaveBeenLastCalledWith("whisper:raid", false);
+  fireEvent.keyDown(window, key("KeyG"));
+  fireEvent.blur(window);
+  expect(voice.whisperHotkey).toHaveBeenLastCalledWith("whisper:raid", false);
 });

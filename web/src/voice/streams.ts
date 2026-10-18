@@ -20,6 +20,7 @@ export const isStreamSource = (source: string): boolean => STREAM_SOURCES.has(so
 /** What the subscription logic needs of a LiveKit `RemoteTrackPublication`. */
 export interface SubscribablePublication {
   readonly source: string;
+  readonly trackName?: string;
   /** The client wants the track (LiveKit: subscribed, or about to be). */
   readonly isDesired: boolean;
   setSubscribed(subscribed: boolean): void;
@@ -57,6 +58,7 @@ export class StreamSubscriptions {
 
   /** Brings one publication to the wanted state (a track published now, or one already there). */
   apply(identity: string, pub: SubscribablePublication): void {
+    if (pub.trackName === "whisper") return;
     const want = this.wants(identity, pub.source);
     if (pub.isDesired !== want) pub.setSubscribed(want);
   }

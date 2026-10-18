@@ -1556,3 +1556,11 @@ repository, the workflow and the commit that built the file:
 ```sh
 gh attestation verify tavrn_<version>_amd64.deb --repo just-tavrn/tavrn-web
 ```
+
+### Whisper
+
+Whisper groups and the reply key work in the window and through both desktop shells' global key listeners.
+Whisper media currently requires the browser voice engine (browsers, Electron on Linux, WebView2 on Windows).
+The native engine does not send whisper and refuses every remote track named `whisper`, including unsolicited
+tracks forwarded by a faulty SFU. Its controls explain that the browser or Electron app is required. This is an
+explicit limitation until native second-track permissions and targeted receiver control are implemented.

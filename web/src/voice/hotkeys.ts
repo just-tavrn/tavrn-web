@@ -13,7 +13,7 @@ import { useAuth } from "../stores/auth";
 import { useToasts } from "../stores/toasts";
 import { HotkeyHolds } from "./hotkeyHolds";
 import { normalizeCode } from "./hotkeyRecorder";
-import { pushToTalk, setPrioritySpeaker, toggleDeafen, toggleMute } from "./index";
+import { pushToTalk, setPrioritySpeaker, toggleDeafen, toggleMute, whisperHotkey } from "./index";
 import { useVoiceSettings, type Hotkeys } from "./settings";
 import { useVoice } from "./store";
 
@@ -31,7 +31,7 @@ export interface Binding {
 }
 
 /** A binding in the canonical spelling, or null. */
-export function parseBinding(combo: string): Binding | null {
+export function parseBinding(combo: string | undefined): Binding | null {
   if (!combo) return null;
   const parts = combo.split("+");
   const key = parts.pop() ?? "";
@@ -100,17 +100,17 @@ export function keyLabel(code: string, os: KeyOs = keyOs()): string {
 }
 
 /** A binding with the platform's key names: `Ctrl + Shift + M`, `Win + 1`, `Cmd + K`, `Ctrl links`. */
-export function comboLabel(combo: string, os: KeyOs = keyOs()): string {
+export function comboLabel(combo = "", os: KeyOs = keyOs()): string {
   const parts = combo.split("+");
   const key = parts.pop() ?? "";
   return [...parts.map((m) => MODIFIER_NAMES[os][m] ?? m), keyLabel(key, os)].join(" + ");
 }
 
-export const actionLabel = (action: HotkeyAction) => t(`voice.hotkeys.action.${action}`);
+export const actionLabel = (action: HotkeyAction) => action.startsWith("whisper:") ? t("voice.whisper.group") : t(`voice.hotkeys.action.${action}`);
 
 /** The other action that already uses `combo`, or null. */
 export function hotkeyConflict(bindings: Hotkeys, action: HotkeyAction, combo: string): HotkeyAction | null {
-  return HOTKEY_ACTIONS.find((a) => a !== action && bindings[a] === combo) ?? null;
+  return (Object.keys(bindings) as HotkeyAction[]).find((a) => a !== action && bindings[a] === combo) ?? null;
 }
 
 /** The translated reason of a refusal (`hotkey.*` codes of the shell). */
@@ -156,6 +156,7 @@ function announceOutsideCall(): void {
 
 function act(action: HotkeyAction, held: boolean): void {
   useHotkeyState.setState((s) => ({ held: { ...s.held, [action]: held } }));
+  if (action === "whisper_reply" || action.startsWith("whisper:")) { whisperHotkey(action, held); return; }
   switch (action) {
     case "push_to_talk":
       pushToTalk(held);
@@ -202,7 +203,7 @@ const modifierCount = (b: Binding) => Number(b.ctrl) + Number(b.alt) + Number(b.
 export function actionOfKeyDown(bindings: Hotkeys, e: KeyState): HotkeyAction | null {
   const code = normalizeCode(e.code);
   let best: { action: HotkeyAction; n: number } | null = null;
-  for (const action of HOTKEY_ACTIONS) {
+  for (const action of Object.keys(bindings) as HotkeyAction[]) {
     const b = parseBinding(bindings[action]);
     if (!b || b.key !== code || !modifiersHeld(b, e)) continue;
     if (!best || modifierCount(b) > best.n) best = { action, n: modifierCount(b) };
@@ -211,7 +212,7 @@ export function actionOfKeyDown(bindings: Hotkeys, e: KeyState): HotkeyAction | 
 }
 
 /** Whether a keyup in the window ends the hold of a binding: its key, or one of its modifiers, went up. */
-export function releasesBinding(combo: string, e: KeyState): boolean {
+export function releasesBinding(combo: string | undefined, e: KeyState): boolean {
   const b = parseBinding(combo);
   return !!b && (b.key === normalizeCode(e.code) || !modifiersHeld(b, e));
 }
@@ -231,7 +232,7 @@ function onKeyDown(e: KeyboardEvent): void {
 
 function onKeyUp(e: KeyboardEvent): void {
   const bindings = useVoiceSettings.getState().settings.hotkeys;
-  for (const action of HOTKEY_ACTIONS) if (bindings[action] && releasesBinding(bindings[action], e)) holds.window(action, false);
+  for (const action of Object.keys(bindings) as HotkeyAction[]) if (bindings[action] && releasesBinding(bindings[action], e)) holds.window(action, false);
 }
 
 // ---------------------------------------------------------------- the shell
@@ -299,7 +300,7 @@ export async function restoreHotkeys(): Promise<void> {
   if (!hotkeys) return;
   const stored = useVoiceSettings.getState().settings.hotkeys;
   const failed: string[] = [];
-  for (const action of HOTKEY_ACTIONS) {
+  for (const action of [...new Set([...HOTKEY_ACTIONS, ...Object.keys(stored)])] as HotkeyAction[]) {
     try {
       if (stored[action]) await hotkeys.register(action, stored[action]);
       else await hotkeys.unregister(action);
@@ -317,7 +318,12 @@ export async function restoreHotkeys(): Promise<void> {
  */
 export function startHotkeys(): () => void {
   const target = typeof window === "undefined" ? null : window;
-  const blur = () => holds.blur();
+  const blur = () => {
+    holds.blur();
+    for (const action of Object.keys(useHotkeyState.getState().held) as HotkeyAction[]) {
+      if (action === "whisper_reply" || action.startsWith("whisper:")) holds.release(action);
+    }
+  };
   target?.addEventListener("keydown", onKeyDown);
   target?.addEventListener("keyup", onKeyUp);
   target?.addEventListener("blur", blur);

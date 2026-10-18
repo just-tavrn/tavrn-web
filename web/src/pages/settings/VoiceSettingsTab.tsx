@@ -16,6 +16,7 @@ import { CUES, RING_LOOP, previewCue, startRingtone } from "../../voice/cues";
 import { ConnectionTestPanel } from "../../voice/ui/ConnectionTestPanel";
 import { setVoiceDebug, voiceDebugEnabled } from "../../voice/joinTimings";
 import { platform } from "../../platform";
+import { WhisperSection } from "./WhisperSection";
 import { MoreHotkeysSection } from "./MoreHotkeysSection";
 import { HotkeyRecorder } from "./HotkeyRecorder";
 import { outputSelectable, useMediaDevices } from "../../voice/devices";
@@ -486,6 +487,7 @@ export function VoiceSettingsTab() {
       </Section>
 
       <MoreHotkeysSection />
+      <WhisperSection />
 
       <Section title={t("voice.settings.video")} description={camera.enabled ? t("voice.settings.video_hint", { resolution: camera.max_resolution, fps: camera.max_fps }) : t("voice.settings.camera_disabled")}>
         <div className="grid gap-3 md:grid-cols-3">

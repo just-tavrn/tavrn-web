@@ -177,9 +177,9 @@ async fn native_engines_hear_each_other_end_to_end_encrypted() {
     })
     .await;
     assert!(bob.events.lock().map(|l| l.iter().any(|e| matches!(e, VoiceEvent::Participants { participants } if participants.iter().any(|p| p.identity == "alice@a.test/1" && p.mic && !p.mic_muted)))).unwrap_or(false));
-    // Eve has another key: Alice's frames do not decrypt, nothing plays.
+    // Eve has another key: no frame may play, including startup frames before decryption is confirmed.
     tokio::time::sleep(Duration::from_secs(2)).await;
-    assert!(recent_peak(&eve.io, 20) < -60.0, "eve heard {} dBFS without the key", recent_peak(&eve.io, 20));
+    assert!(recent_peak(&eve.io, 600) < -60.0, "eve heard {} dBFS without the key", recent_peak(&eve.io, 600));
 
     // A new epoch: Alice sends with the new key at index 8; Bob has it, so the voice keeps flowing.
     let next = [0x6b; 32];

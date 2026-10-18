@@ -45,7 +45,7 @@ function eventHub(bridge: TavrnShellBridge) {
       if (ev?.kind === "open" && isClientPath(ev.path)) for (const fn of opens) fn(ev.path);
       if (ev?.kind === "tray" && isTrayAction(ev.action)) for (const fn of actions) fn(ev.action);
     }
-    if (e?.channel === "hotkeys" && HOTKEY_ACTIONS.includes(e.event?.action) && typeof e.event.pressed === "boolean") {
+    if (e?.channel === "hotkeys" && (HOTKEY_ACTIONS.includes(e.event?.action) || e.event?.action === "whisper_reply" || /^whisper:[A-Za-z0-9_-]{1,64}$/.test(e.event?.action)) && typeof e.event.pressed === "boolean") {
       for (const fn of hotkeys) fn({ action: e.event.action, pressed: e.event.pressed });
     }
   });
