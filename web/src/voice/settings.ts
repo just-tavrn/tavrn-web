@@ -375,7 +375,7 @@ function normalizeWhisperGroups(raw: unknown): Record<string, WhisperGroup[]> {
     out[room] = groups.slice(0, 32).flatMap((g) => {
       if (!g || typeof g !== "object" || typeof g.id !== "string" || !validHotkeyAction(`whisper:${g.id}`) || seen.has(g.id) || typeof g.name !== "string" || !g.name.trim() || !Array.isArray(g.members)) return [];
       seen.add(g.id);
-      return [{ id: g.id, name: g.name.trim().slice(0, 64), members: [...new Set<string>(g.members.filter((m: unknown): m is string => typeof m === "string" && m.length <= 320 && /^[^\s/@]+@[^\s/]+$/.test(m)))].slice(0, 32) }];
+      return [{ id: g.id, name: g.name.trim().slice(0, 64), members: [...new Set<string>(g.members.filter((m: unknown): m is string => typeof m === "string" && m.length <= 320 && /^[^\s/@]+@[^\s/]+$/.test(m)))] }];
     });
   }
   return out;
