@@ -25,9 +25,9 @@ import { whisperToAddress } from "../index";
 import { useVoiceEngine } from "../engine";
 import { joinVoice } from "../index";
 import { AvatarTile } from "./AvatarTile";
-import { ConnectionGlyph, LevelMeterBars, LocalMuteMark, ParticipantFlags, SoundOverlay, levelStyle, useMemberLooks, useParticipantStatus, usePriority } from "./common";
+import { ConnectionGlyph, LevelMeterBars, LocalMuteMark, ParticipantFlags, SoundOverlay, levelStyle, localPart, useMemberLooks, useParticipantStatus, usePriority } from "./common";
 import { localMutedCount, useLocalMute } from "../localMute";
-import { MegaphoneIcon, SpeakerIcon } from "./icons";
+import { MegaphoneIcon, SpeakerIcon, WhisperIcon } from "./icons";
 import { FullscreenButton, FullscreenControls, exitFullscreen, useFullscreen, useFullscreenShortcut, useHeldInFullscreen } from "./fullscreen";
 import { StageGrid } from "./StageGrid";
 import { SessionTimer, VoiceStatusLine } from "./VoiceHeaderMeta";
@@ -100,7 +100,7 @@ export function useIsPhone(): boolean {
  * `menu`: the participant's context menu (right-click, long press, ⋯; voice channels, design note 4.13 item 3).
  * An active priority speaker gets an accent border and a megaphone; a playing soundboard clip its emoji.
  */
-export function ParticipantTile({ roomId, tile, menu }: { roomId?: string; tile: Tile; menu?: ContextMenuTrigger }) {
+export function ParticipantTile({ roomId, tile, menu, nameOf }: { roomId?: string; tile: Tile; menu?: ContextMenuTrigger; nameOf?: (identity: string) => string }) {
   const t = useT();
   // The own preview is mirrored like a mirror; a phone's back camera films the world, not its user: never mirrored.
   const mirrorSetting = useVoiceSettings((s) => s.settings.mirror);
@@ -114,7 +114,12 @@ export function ParticipantTile({ roomId, tile, menu }: { roomId?: string; tile:
   const flags = { ...tile.flags, muted: tile.flags.muted || (mainMuted && !receivingWhisper) };
   const canWhisper = useVoice((s) => s.status === "connected" && s.whisperSupported && s.canWhisper && !s.target?.call && s.canSpeak && !s.muted && !s.deafened && !!s.media[tile.identity]);
   const browserVoice = useVoiceEngine((s) => s.kind === "browser");
-  const whisperLabel = receivingWhisper ? t("voice.whisper.receiving", { name: tile.name }) : whispering ? t("voice.whisper.sending", { names: whisperTargets.map((id) => id.split("/")[0]).join(", ") }) : null;
+  const whisperTarget = useVoice((s) => !tile.self && s.whisperTarget === tile.address);
+  // The own whisper currently reaches this participant (the tile's hold button is lit while held).
+  const whisperingToThis = !tile.self && whisperTargets.includes(tile.identity);
+  // Recipients by display name (the room member list); the address' local part where there is none.
+  const recipientNames = [...new Set(whisperTargets.map((id) => nameOf?.(id) ?? localPart(splitIdentity(id).address)))].join(", ");
+  const whisperLabel = receivingWhisper ? t("voice.whisper.receiving", { name: tile.name }) : whispering ? t("voice.whisper.sending", { names: recipientNames }) : null;
   // The own tile's microphone flag pulses while the user talks muted (issue #125).
   const mutedTalk = useVoice((s) => tile.self && s.mutedTalk);
   const { status, level, localMuted } = useParticipantStatus({ identity: tile.identity, user: tile.self ? undefined : tile.address, connection: tile.connection, muted: flags.muted, server_muted: flags.server_muted });
@@ -145,14 +150,12 @@ export function ParticipantTile({ roomId, tile, menu }: { roomId?: string; tile:
         <AvatarTile roomId={roomId} user={tile.user} name={tile.name} address={tile.address} size={72} speaking={speaking} stage />
       )}
       <SoundOverlay identity={tile.identity} roomId={roomId} />
-      {whisperLabel && <span role="status" className="absolute right-2 top-2 rounded-md bg-bg-0 px-2 text-xs text-accent" data-testid="whisper-indicator"><span aria-hidden="true">↝ </span>{whisperLabel}</span>}
-      {!tile.self && canWhisper && <button type="button" disabled={!browserVoice} aria-label={t("voice.whisper.hold", { name: tile.name })} title={!browserVoice ? t("voice.whisper.browser_only") : t("voice.whisper.hold", { name: tile.name })} className="absolute left-2 top-12 z-10 min-h-11 min-w-11 touch-none rounded-md bg-black/60 text-fg-0" data-testid="whisper-hold"
-        onTouchStart={(e) => e.stopPropagation()}
-        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
-        onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); whisperToAddress(tile.address, true); }}
-        onPointerUp={(e) => { e.stopPropagation(); whisperToAddress(tile.address, false); }} onPointerCancel={() => whisperToAddress(tile.address, false)} onLostPointerCapture={() => whisperToAddress(tile.address, false)}
-        onKeyDown={(e) => { if (!e.repeat && (e.key === " " || e.key === "Enter")) { e.preventDefault(); whisperToAddress(tile.address, true); } }}
-        onKeyUp={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); whisperToAddress(tile.address, false); } }} onBlur={() => whisperToAddress(tile.address, false)}>↝</button>}
+      {whisperLabel && (
+        <span role="status" className="absolute right-2 top-2 z-10 flex max-w-[calc(100%-1rem)] items-center gap-1 rounded-md bg-bg-0/90 px-2 py-0.5 text-xs text-accent" data-testid="whisper-indicator">
+          <WhisperIcon size={12} />
+          <span className="truncate">{whisperLabel}</span>
+        </span>
+      )}
       {priority && (
         <span role="img"
           className="absolute left-2 top-2 z-10 flex items-center gap-1 rounded-md bg-accent px-1.5 py-0.5 text-[11px] font-medium text-accent-text"
@@ -176,11 +179,26 @@ export function ParticipantTile({ roomId, tile, menu }: { roomId?: string; tile:
           <ParticipantFlags p={{ ...flags, streaming: false, camera: false }} size={12} />
         </span>
         {localMuted && <LocalMuteMark address={tile.address} name={tile.name} className="rounded-md bg-black/60 text-warn hover:bg-black/80" />}
+        {/* Hold to whisper (VOICE.md §4c): a press-and-hold control, never a toggle; the chosen target of the member menu is marked. */}
+        {!tile.self && canWhisper && (
+          <button type="button" disabled={!browserVoice} aria-label={t("voice.whisper.hold", { name: tile.name })} title={!browserVoice ? t("voice.whisper.browser_only") : t("voice.whisper.hold", { name: tile.name })}
+            className={`ml-auto flex min-h-7 shrink-0 touch-none select-none items-center gap-1 rounded-md px-2 text-xs pointer-coarse:min-h-11 ${whisperingToThis ? "bg-accent text-accent-text" : whisperTarget ? "bg-black/60 text-accent ring-1 ring-accent/70 hover:bg-black/80" : "bg-black/60 text-fg-0 hover:bg-black/80"} disabled:opacity-50`}
+            data-testid="whisper-hold" data-target={whisperTarget || undefined}
+            onTouchStart={(e) => e.stopPropagation()}
+            onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); whisperToAddress(tile.address, true); }}
+            onPointerUp={(e) => { e.stopPropagation(); whisperToAddress(tile.address, false); }} onPointerCancel={() => whisperToAddress(tile.address, false)} onLostPointerCapture={() => whisperToAddress(tile.address, false)}
+            onKeyDown={(e) => { if (!e.repeat && (e.key === " " || e.key === "Enter")) { e.preventDefault(); whisperToAddress(tile.address, true); } }}
+            onKeyUp={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); whisperToAddress(tile.address, false); } }} onBlur={() => whisperToAddress(tile.address, false)}>
+            <WhisperIcon size={14} />
+            <span>{t("voice.whisper.hold_short")}</span>
+          </button>
+        )}
         {menu && (
           <MenuButton
             menu={menu}
             label={t("voice.participant_menu", { name: tile.name })}
-            className="ml-auto min-h-7 min-w-7 rounded-md bg-black/60 text-xs text-fg-0 hover:bg-black/80"
+            className={`min-h-7 min-w-7 rounded-md bg-black/60 text-xs text-fg-0 hover:bg-black/80 ${!tile.self && canWhisper ? "" : "ml-auto"}`}
             testId="tile-menu-button"
           />
         )}
@@ -520,9 +538,10 @@ export function VoiceStage({ room, channel }: { room: RoomDetail; channel: Chann
 /** A stage tile of a voice channel with the participant's context menu (design note 4.13 item 3). */
 function RoomParticipantTile({ room, channelId, tile }: { room: RoomDetail; channelId: string; tile: Tile }) {
   const { menu, overlay: menuOverlay } = useParticipantMenu(room, channelId, tile.participant);
+  const { look } = useMemberLooks(room);
   return (
     <>
-      <ParticipantTile roomId={room.id} tile={tile} menu={tile.participant ? menu : undefined} />
+      <ParticipantTile roomId={room.id} tile={tile} menu={tile.participant ? menu : undefined} nameOf={(identity) => look(splitIdentity(identity).address).name} />
       {menuOverlay}
     </>
   );

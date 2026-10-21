@@ -9,7 +9,11 @@ import { channelName } from "../../lib/names";
 import { leaveVoice, toggleDeafen, toggleMute, whisperToAddress } from "../index";
 import { isWatched, useVoice, useWatchedStreams, type Quality } from "../store";
 import { useVoiceSettings } from "../settings";
-import { HeadphonesIcon, HeadphonesOffIcon, LeaveIcon, MicIcon, MicOffIcon, SignalBars } from "./icons";
+import { HeadphonesIcon, HeadphonesOffIcon, LeaveIcon, MicIcon, MicOffIcon, SignalBars, WhisperIcon } from "./icons";
+import { splitIdentity } from "@tavrn/e2ee";
+import { roomMembersQuery } from "../../lib/queries";
+import { memberName } from "../../lib/memberGroups";
+import { localPart } from "../order";
 import { useAuth } from "../../stores/auth";
 import { callTitle } from "../calls/actions";
 import { CallOverlay, openCallView } from "../calls/CallUi";
@@ -39,6 +43,17 @@ export function useCallNames(): { channel: string; room: string } {
   if (target?.call) return { channel: callTitle(conv.data, self), room: t("calls.call") };
   const channel = room.data?.channels.find((c) => c.id === target?.channelId);
   return { channel: channel ? channelName(channel) : "…", room: room.data?.name ?? "" };
+}
+
+/** Display names (nickname or display name of the room member list) for whisper targets and recipients; the local part otherwise. */
+function useWhisperNames(): (address: string) => string {
+  const target = useVoice((s) => s.target);
+  const wanted = useVoice((s) => !!s.whisperTarget || s.whispering.length > 0);
+  const members = useQuery({ ...roomMembersQuery(apiFor(target?.domain ?? ""), target?.roomId ?? ""), enabled: !!target && !target.call && wanted, staleTime: 60_000 });
+  return (address) => {
+    const m = members.data?.find((x) => x.user.address === address);
+    return (m && memberName(m)) || localPart(address);
+  };
 }
 
 /**
@@ -80,6 +95,7 @@ export function VoiceBar() {
   const muted = useVoice((s) => s.muted);
   const whispering = useVoice((s) => s.whispering);
   const whisperTarget = useVoice((s) => s.whisperTarget);
+  const whisperName = useWhisperNames();
   const canWhisper = useVoice((s) => s.whisperSupported && s.canWhisper && s.canSpeak && !s.muted && !s.deafened);
   const mutedTalk = useVoice((s) => s.mutedTalk);
   const deafened = useVoice((s) => s.deafened);
@@ -141,18 +157,31 @@ export function VoiceBar() {
           </span>
         )}
       </button>
-      {whisperTarget && <button type="button" data-testid="whisper-selected-hold" disabled={!canWhisper || status !== "connected"}
-        className="min-h-11 w-full touch-none rounded-md px-2 text-left text-xs text-accent [overflow-wrap:anywhere] hover:bg-bg-3 disabled:opacity-50"
-        aria-label={t("voice.whisper.hold", { name: whisperTarget })}
-        onTouchStart={(e) => e.stopPropagation()}
-        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
-        onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); whisperToAddress(whisperTarget, true); }}
-        onPointerUp={() => whisperToAddress(whisperTarget, false)} onPointerCancel={() => whisperToAddress(whisperTarget, false)} onLostPointerCapture={() => whisperToAddress(whisperTarget, false)}
-        onKeyDown={(e) => { if (!e.repeat && (e.key === " " || e.key === "Enter")) { e.preventDefault(); whisperToAddress(whisperTarget, true); } }}
-        onKeyUp={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); whisperToAddress(whisperTarget, false); } }} onBlur={() => whisperToAddress(whisperTarget, false)}>
-        {t("voice.whisper.hold", { name: whisperTarget })}
-      </button>}
-      {whispering.length > 0 && <p role="status" className="truncate px-2 text-xs text-accent" data-testid="whisper-bar">{t("voice.whisper.sending", { names: whispering.map((id) => id.split("/")[0]).join(", ") })}</p>}
+      {/* The whisper target chosen in a member menu: hold here (or on the tile) to whisper; × forgets the choice. */}
+      {whisperTarget && (
+        <div className="flex items-center gap-1 px-1 pb-1" data-testid="whisper-selected">
+          <button type="button" data-testid="whisper-selected-hold" disabled={!canWhisper || status !== "connected"}
+            className={`flex min-h-9 min-w-0 flex-1 touch-none select-none items-center gap-1.5 rounded-md border px-2 text-left text-xs pointer-coarse:min-h-11 disabled:opacity-50 ${whispering.length ? "border-accent bg-accent text-accent-text" : "border-accent/50 text-accent hover:bg-bg-3"}`}
+            aria-label={t("voice.whisper.hold", { name: whisperName(whisperTarget) })} title={t("voice.whisper.hold", { name: whisperName(whisperTarget) })}
+            onTouchStart={(e) => e.stopPropagation()}
+            onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); whisperToAddress(whisperTarget, true); }}
+            onPointerUp={() => whisperToAddress(whisperTarget, false)} onPointerCancel={() => whisperToAddress(whisperTarget, false)} onLostPointerCapture={() => whisperToAddress(whisperTarget, false)}
+            onKeyDown={(e) => { if (!e.repeat && (e.key === " " || e.key === "Enter")) { e.preventDefault(); whisperToAddress(whisperTarget, true); } }}
+            onKeyUp={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); whisperToAddress(whisperTarget, false); } }} onBlur={() => whisperToAddress(whisperTarget, false)}>
+            <WhisperIcon size={14} />
+            <span className="truncate">{t("voice.whisper.hold_target", { name: whisperName(whisperTarget) })}</span>
+          </button>
+          <button type="button" className="min-h-9 min-w-9 shrink-0 rounded-md text-fg-2 hover:bg-bg-3 hover:text-fg-0 pointer-coarse:min-h-11 pointer-coarse:min-w-11" aria-label={t("voice.whisper.clear_target")} title={t("voice.whisper.clear_target")} data-testid="whisper-selected-clear"
+            onClick={() => useVoice.setState({ whisperTarget: null })}>×</button>
+        </div>
+      )}
+      {whispering.length > 0 && (
+        <p role="status" className="flex items-center gap-1 truncate px-2 pb-1 text-xs text-accent" data-testid="whisper-bar">
+          <WhisperIcon size={12} />
+          <span className="truncate">{t("voice.whisper.sending", { names: [...new Set(whispering.map((id) => whisperName(splitIdentity(id).address)))].join(", ") })}</span>
+        </p>
+      )}
       <div className="absolute right-1 top-1 flex items-center">
         <ControlButton label={muted ? t("voice.unmute") : t("voice.mute")} active={muted} pulse={mutedTalk} onClick={() => void toggleMute()} testid="voice-bar-mute" menu={micMenu.triggerProps} compact>
           {muted ? <MicOffIcon /> : <MicIcon />}

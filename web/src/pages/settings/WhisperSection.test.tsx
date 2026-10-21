@@ -61,3 +61,29 @@ it("offers an explicit safe browser fallback for native voice", async () => {
   await userEvent.click(screen.getByRole("button", { name: "Browser zum Flüstern öffnen" }));
   expect(openExternal).toHaveBeenCalledWith("https://n.example/");
 });
+it("labels the shortcut row, names the empty states and the new-group field", async () => {
+  renderWithProviders(section());
+  expect(screen.getByTestId("whisper-groups-empty")).toHaveTextContent("In diesem Raum gibt es noch keine Flüstergruppen.");
+  const field = screen.getByRole("textbox", { name: "Gruppenname" });
+  expect(field).toHaveAttribute("placeholder", "Name der neuen Gruppe");
+  expect(screen.getByRole("button", { name: "Neue Flüstergruppe" })).toBeDisabled();
+  await userEvent.type(field, "Raid");
+  await userEvent.click(screen.getByRole("button", { name: "Neue Flüstergruppe" }));
+  const group = screen.getByRole("group", { name: "Raid" });
+  expect(screen.queryByTestId("whisper-groups-empty")).toBeNull();
+  // The hotkey row says what it is instead of repeating the group name.
+  expect(within(group).getByText("Tastenkürzel (halten)")).toBeInTheDocument();
+  expect(within(group).getByText("Noch keine Mitglieder.")).toBeInTheDocument();
+  const box = within(group).getByRole("combobox");
+  expect(box).toHaveAttribute("placeholder", "Raummitglieder suchen…");
+  await userEvent.type(box, "alice");
+  await userEvent.keyboard("{Enter}");
+  await userEvent.type(box, "alice");
+  await userEvent.keyboard("{Enter}");
+  expect(useVoiceSettings.getState().settings.whisperGroups["n/r"]![0]!.members).toHaveLength(2);
+  expect(within(group).getByText("Mitglieder")).toBeInTheDocument();
+  await userEvent.click(box);
+  expect(within(group).getByRole("status")).toHaveTextContent("Keine weiteren Raummitglieder zum Hinzufügen.");
+  await userEvent.type(box, "zzz");
+  expect(within(group).getByRole("status")).toHaveTextContent("Keine passenden Raummitglieder.");
+});

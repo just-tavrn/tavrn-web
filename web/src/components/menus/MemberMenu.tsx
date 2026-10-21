@@ -52,11 +52,11 @@ export interface VoiceMenuTarget {
 export function useMemberMenu(room: RoomDetail, member: Member | null, voiceTarget?: VoiceMenuTarget): { menu: ContextMenuTrigger; overlay: ReactNode } {
   const t = useT();
   const menu = useContextMenu();
-  const { api, domain, me, home } = useNode();
+  const { api, domain, me, home, roomPath } = useNode();
   const canReport = !!useCapabilities(home ? null : domain)?.includes("reports.v1");
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const { closeMembers } = useShell();
+  const { closeMembers, closeNav } = useShell();
   const friends = useFriends();
   const [dialog, setDialog] = useState<"kick" | "ban" | "block" | "report" | null>(null);
   const [profile, setProfile] = useState<AnchorRect | null>(null);
@@ -176,19 +176,30 @@ export function useMemberMenu(room: RoomDetail, member: Member | null, voiceTarg
   }
 
   if (menu.open && inMyCall && userId !== me?.id) {
-    entries.unshift({ kind: "item", id: "whisper-to", label: t("voice.whisper.to", { name }), disabled: !browserVoice || !mayWhisper, reason: !browserVoice ? t("voice.whisper.browser_only") : !mayWhisper ? t("voice.whisper.unavailable") : undefined,
+    // Choosing a whisper target never transmits: the hold controls (tile, voice bar) do. Groups are this room's, saved on this device.
+    entries.unshift({ kind: "item", id: "whisper-to", label: t("voice.whisper.select_target", { name }), icon: "🤫", disabled: !browserVoice || !mayWhisper, reason: !browserVoice ? t("voice.whisper.browser_only") : !mayWhisper ? t("voice.whisper.unavailable") : undefined,
       onSelect: () => {
         useVoice.setState({ whisperTarget: address });
+        useToasts.getState().push({ kind: "info", title: t("voice.whisper.target_selected", { name }), detail: t("voice.whisper.target_selected_hint"), tag: "whisper-target" });
         requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`[data-user="${CSS.escape(address)}"] [data-testid="whisper-hold"]`)?.focus());
       } });
-    entries.unshift({ kind: "submenu", id: "whisper-group", label: t("voice.whisper.add_to_group"), items: [
+    const groupsOf = () => { const { settings } = useVoiceSettings.getState(); const key = whisperRoomKey(domain, room.id); return { settings, key, groups: settings.whisperGroups[key] ?? [] }; };
+    entries.unshift({ kind: "submenu", id: "whisper-group", label: t("voice.whisper.add_to_group"), icon: "🤫", items: [
       ...whisperGroups.map((g): MenuEntry => ({ kind: "item", id: `whisper-group-${g.id}`, label: g.name, checked: g.members.includes(address), onSelect: () => {
-        const { settings, update } = useVoiceSettings.getState(); const key = whisperRoomKey(domain, room.id);
-        update({ whisperGroups: { ...settings.whisperGroups, [key]: (settings.whisperGroups[key] ?? []).map((x) => x.id === g.id ? { ...x, members: x.members.includes(address) ? x.members.filter((a) => a !== address) : [...x.members, address] } : x) } });
+        const { settings, key, groups } = groupsOf();
+        useVoiceSettings.getState().update({ whisperGroups: { ...settings.whisperGroups, [key]: groups.map((x) => x.id === g.id ? { ...x, members: x.members.includes(address) ? x.members.filter((a) => a !== address) : [...x.members, address] } : x) } });
       } })),
-      { kind: "item", id: "whisper-new-group", label: t("voice.whisper.add_group"), onSelect: () => {
-        const { settings, update } = useVoiceSettings.getState(); const key = whisperRoomKey(domain, room.id);
-        update({ whisperGroups: { ...settings.whisperGroups, [key]: [...(settings.whisperGroups[key] ?? []), { id: crypto.randomUUID(), name, members: [address] }] } });
+      ...(whisperGroups.length ? [{ kind: "separator" as const, id: "whisper-group-sep" }] : []),
+      { kind: "item", id: "whisper-new-group", label: t("voice.whisper.add_group_with", { name }), disabled: whisperGroups.length >= 32, onSelect: () => {
+        const { settings, key, groups } = groupsOf();
+        if (groups.length >= 32) return;
+        // A numbered name; the group's name, members and shortcut are edited in the room settings.
+        const used = new Set(groups.map((g) => g.name));
+        let n = groups.length + 1;
+        let groupName = t("voice.whisper.group_numbered", { n });
+        while (used.has(groupName)) groupName = t("voice.whisper.group_numbered", { n: ++n });
+        useVoiceSettings.getState().update({ whisperGroups: { ...settings.whisperGroups, [key]: [...groups, { id: crypto.randomUUID(), name: groupName, members: [address] }] } });
+        useToasts.getState().push({ kind: "info", title: t("voice.whisper.group_created", { group: groupName, name }), tag: "whisper-group", action: { label: t("voice.whisper.edit_groups"), run: () => { closeNav(); navigate(roomPath(room.id, undefined, "settings/whisper")); } } });
       } },
     ] });
   }
