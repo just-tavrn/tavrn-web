@@ -115,6 +115,8 @@ export function ParticipantTile({ roomId, tile, menu, nameOf }: { roomId?: strin
   const canWhisper = useVoice((s) => s.status === "connected" && s.whisperSupported && s.canWhisper && !s.target?.call && s.canSpeak && !s.muted && !s.deafened && !!s.media[tile.identity]);
   const browserVoice = useVoiceEngine((s) => s.kind === "browser");
   const whisperTarget = useVoice((s) => !tile.self && s.whisperTarget === tile.address);
+  // The own whisper currently reaches this participant (the tile's hold button is lit while held).
+  const whisperingToThis = !tile.self && whisperTargets.includes(tile.identity);
   // Recipients by display name (the room member list); the address' local part where there is none.
   const recipientNames = [...new Set(whisperTargets.map((id) => nameOf?.(id) ?? localPart(splitIdentity(id).address)))].join(", ");
   const whisperLabel = receivingWhisper ? t("voice.whisper.receiving", { name: tile.name }) : whispering ? t("voice.whisper.sending", { names: recipientNames }) : null;
@@ -180,7 +182,7 @@ export function ParticipantTile({ roomId, tile, menu, nameOf }: { roomId?: strin
         {/* Hold to whisper (VOICE.md §4c): a press-and-hold control, never a toggle; the chosen target of the member menu is marked. */}
         {!tile.self && canWhisper && (
           <button type="button" disabled={!browserVoice} aria-label={t("voice.whisper.hold", { name: tile.name })} title={!browserVoice ? t("voice.whisper.browser_only") : t("voice.whisper.hold", { name: tile.name })}
-            className={`ml-auto flex min-h-7 shrink-0 touch-none select-none items-center gap-1 rounded-md px-2 text-xs pointer-coarse:min-h-11 ${whispering ? "bg-accent text-accent-text" : whisperTarget ? "bg-black/60 text-accent ring-1 ring-accent/70 hover:bg-black/80" : "bg-black/60 text-fg-0 hover:bg-black/80"} disabled:opacity-50`}
+            className={`ml-auto flex min-h-7 shrink-0 touch-none select-none items-center gap-1 rounded-md px-2 text-xs pointer-coarse:min-h-11 ${whisperingToThis ? "bg-accent text-accent-text" : whisperTarget ? "bg-black/60 text-accent ring-1 ring-accent/70 hover:bg-black/80" : "bg-black/60 text-fg-0 hover:bg-black/80"} disabled:opacity-50`}
             data-testid="whisper-hold" data-target={whisperTarget || undefined}
             onTouchStart={(e) => e.stopPropagation()}
             onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
