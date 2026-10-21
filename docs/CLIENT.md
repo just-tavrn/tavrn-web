@@ -1600,9 +1600,18 @@ phone viewport, with axe-core scans of the views. How to run both is in the [REA
 
 Room Settings → Whisper groups lets each member edit personal groups for the selected room on this device,
 without a voice connection or room management permission. The voice channel context menu opens that room's Whisper groups category.
-Members are selected from the room member list with the same nickname/username suggestions as the composer;
-arrow keys and Enter select, Escape closes suggestions, and each selected member has a removal button.
-Only the independent “Reply to last whisperer (hold)” shortcut stays in User Settings → Voice & Video → More shortcuts.
+Each group has a name, its members and a “Shortcut (hold)” row (the hotkey recorder of the user settings).
+Members are selected from the room member list with the same nickname/username suggestions as the composer
+(the list opens below the search field); arrow keys and Enter select, Escape closes suggestions, and each selected
+member has a removal button. Only the independent “Reply to last whisperer (hold)” shortcut stays in
+User settings → Voice & video → More hotkeys.
+
+In a voice channel every other participant's tile carries a “Whisper” hold button next to its menu button (hold:
+pointer, touch or Space/Enter; releasing, blur or a lost pointer capture ends the whisper). The participant menu
+offers “Choose … as whisper target” (the tile button is marked and the voice bar shows a “Hold: whisper to …”
+button with a × to forget the choice; choosing never transmits) and “Add to whisper group…” with the room's groups
+and “New group with …”, which creates a numbered group containing that member and links to the room settings.
+Indicators on the tiles and in the voice bar name recipients and whisperers by their room display name.
 
 The Voice permission “Initiate whispers” controls member/group starts and their shortcuts, including native shortcut
 callbacks. Reply uses the last server-confirmed received whisper session and bypasses only that permission; speaking

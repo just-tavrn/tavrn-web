@@ -29,8 +29,8 @@ import { RoomLegalTab, showsLegalTab } from "./RoomLegalTab";
 const TABS: readonly { id: string; needs: bigint; label?: string; anyOf?: bigint[]; cap?: string }[] = [
   { id: "overview", needs: 0n },
   { id: "legal", needs: 0n },
-  { id: "whisper", needs: 0n, label: "voice.whisper.title" },
   { id: "profile", needs: 0n, label: "roomprofile.tab" },
+  { id: "whisper", needs: 0n, label: "voice.whisper.title" },
   { id: "roles", needs: Permission.MANAGE_ROLES },
   { id: "channels", needs: Permission.MANAGE_CHANNELS },
   { id: "members", needs: 0n },

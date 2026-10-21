@@ -96,7 +96,7 @@ test("only addressed participants hear whisper; the SFU rejects outsiders and no
   const bobId = (await hooks(bob.page)).local!.identity;
   // The menu selects a destination. It must never leave an unattended transmission running.
   await tile(alice.page, bob.address).getByTestId("tile-menu-button").click();
-  await alice.page.getByRole("menuitem", { name: /^Zu .* flüstern$/ }).click();
+  await alice.page.getByRole("menuitem", { name: /als Flüsterziel wählen$/ }).click();
   expect((await state(alice.page)).whispering).toEqual([]);
 
   let first = true;

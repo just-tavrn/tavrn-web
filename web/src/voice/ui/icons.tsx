@@ -180,3 +180,11 @@ export const ExitFullscreenIcon = (p: IconProps) => (
     <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
   </Svg>
 );
+
+/** Whispering: a speaker with a single, quiet wave. */
+export const WhisperIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M11 5 6 9H3v6h3l5 4z" />
+    <path d="M15.5 9.5a3.5 3.5 0 0 1 0 5" />
+  </Svg>
+);

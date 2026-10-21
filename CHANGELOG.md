@@ -6,8 +6,15 @@ checksums and update files. The node's container image embeds the web client of 
 
 ## Unreleased
 
+- **Whisper controls**: the tile's hold control is a labelled "Whisper" button next to the participant menu (marked
+  when the participant is the chosen whisper target); indicators, the voice bar and the group settings show display
+  names instead of addresses. The member menu chooses a whisper target ("Choose … as whisper target", with a hint and
+  a × in the voice bar to forget it) and creates a numbered group with that member ("New group with …", a toast
+  links to the room settings). Room Settings → Whisper groups: the shortcut row is labelled "Shortcut (hold)",
+  member suggestions open below the search field, the new-group field has a placeholder, empty states and member
+  counts, and the help text names the actual user settings path (Voice & video → More hotkeys).
 - Move personal whisper groups to their own room settings category with room-member autocomplete and a voice-channel
-  menu shortcut. Keep the reply shortcut under Voice & Video → More shortcuts. The channel-scoped Voice permission
+  menu shortcut. Keep the reply shortcut under Voice & video → More hotkeys. The channel-scoped Voice permission
   controls initiation; an actual server-confirmed whisper can still be replied to without it. `voice.whisper2`
   binds encrypted tracks to server authorization, confirms removal before restoring normal voice, and preserves
   ordinary camera/audio for other listeners. Signal reconnects establish a fresh SFU connection before new
