@@ -136,6 +136,28 @@ export interface AuthState extends Persisted {
   sessionRefused: () => void;
 }
 
+/**
+ * A detail of the signed-in session (account, device id) goes into the session the storage holds now: another tab may
+ * have rotated the tokens since this tab read them. A session that left the storage (signed out elsewhere, another
+ * account) is not written back by a request that was still running: this tab follows the storage (tavrn-web#226).
+ */
+function saveDetail(patch: Pick<Persisted, "user"> | Pick<Persisted, "deviceId">) {
+  const auth = useAuth.getState();
+  const stored = readStored();
+  if (!stored) {
+    save({ ...persisted(auth), ...patch });
+    useAuth.setState(patch);
+    return;
+  }
+  if (!stored.refresh || stored.user?.address !== auth.user?.address) {
+    auth.adoptStored();
+    return;
+  }
+  const next = { ...persisted(stored), ...patch };
+  save(next);
+  useAuth.setState(next);
+}
+
 export const useAuth = create<AuthState>((set, get) => ({
   ...load(),
   setSession: (resp, home = null) => {
@@ -158,14 +180,8 @@ export const useAuth = create<AuthState>((set, get) => ({
     save(next);
     set({ token: t.access_token, refresh: t.refresh_token, deviceId: next.deviceId });
   },
-  setUser: (user) => {
-    save({ ...persisted(get()), user });
-    set({ user });
-  },
-  setDeviceId: (deviceId) => {
-    save({ ...persisted(get()), deviceId });
-    set({ deviceId });
-  },
+  setUser: (user) => saveDetail({ user }),
+  setDeviceId: (deviceId) => saveDetail({ deviceId }),
   adoptStored: () => {
     const stored = readStored();
     if (!stored) return;

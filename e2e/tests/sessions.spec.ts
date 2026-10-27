@@ -85,6 +85,34 @@ test.describe("Sessions", () => {
     await expect.poll(async () => (await page.request.get(`${NODE}/api/v1/users/me`, { headers: { Authorization: `Bearer ${await tokenOf(page)}` } })).status()).toBe(200);
   });
 
+  test("a profile request still running does not bring back a session that left the storage", async ({ page }) => {
+    test.setTimeout(scaled(90_000));
+    await registerViaUi(page, { prefix: "lost" });
+    // Every connection of the socket takes over the own account (`GET /users/me`, tavrn-web#193): hold it.
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    let hold = true;
+    await page.route("**/api/v1/users/me", async (route) => {
+      if (hold) await held;
+      await route.continue();
+    });
+    const asked = page.waitForRequest("**/api/v1/users/me");
+    await page.reload();
+    await expect(page.getByTestId("app-shell")).toBeVisible();
+    await asked;
+    // The session is lost meanwhile (signed out elsewhere); then the answer arrives (tavrn-web#226).
+    await page.evaluate(() => localStorage.removeItem("tavrn.auth"));
+    const answered = page.waitForResponse("**/api/v1/users/me");
+    hold = false;
+    release();
+    await answered;
+    // The answer is applied right after it arrives: give it a moment before looking at the storage.
+    await page.waitForTimeout(500);
+    expect((await stored(page)).refresh ?? null).toBeNull();
+    await page.goto("/");
+    await expect(page).toHaveURL(/\/login/);
+  });
+
   test("signing in again in the same browser keeps the device", async ({ page }) => {
     test.setTimeout(scaled(150_000));
     const account = await registerViaUi(page, { prefix: "same" });

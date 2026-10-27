@@ -99,8 +99,16 @@ describe("user.update", () => {
 });
 
 describe("own account from events", () => {
-  beforeEach(() => useAuth.setState({ token: "t", refresh: "r", user: me, deviceId: "d", home: null }));
-  afterEach(() => useAuth.setState({ token: null, refresh: null, user: null, deviceId: null }));
+  // Signed in: the session in memory and in the storage of every tab.
+  beforeEach(() => {
+    const session = { token: "t", refresh: "r", user: me, deviceId: "d", home: null };
+    localStorage.setItem("tavrn.auth", JSON.stringify(session));
+    useAuth.setState(session);
+  });
+  afterEach(() => {
+    localStorage.removeItem("tavrn.auth");
+    useAuth.setState({ token: null, refresh: null, user: null, deviceId: null });
+  });
 
   it("takes only name and avatar of the own user from the home node", () => {
     const { emit } = setup(null);
