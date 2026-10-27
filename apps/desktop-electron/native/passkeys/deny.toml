@@ -16,10 +16,15 @@ ignore = [
   # CBOR with it, and so does this crate for the attestation object; no vulnerability is known. Revisit when the
   # authenticator crate moves to another CBOR library.
   { id = "RUSTSEC-2021-0127", reason = "unmaintained, used by the authenticator crate; no known vulnerability" },
+  # Owner-accepted temporary risk, tracked in https://github.com/just-tavrn/tavrn-web/issues/227.
+  { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5.5 only (authenticator 0.5 crypto_rust -> p256 0.13): owner accepts the risk of the ephemeral P-256 secret per CTAP2 PIN/UV ceremony, local only; an attack needs fine-grained local timing measurement; most patterns fixed upstream are absent in 0.5.5 and p256 0.13 uses its own field arithmetic; tracking https://github.com/just-tavrn/tavrn-web/issues/227; expires 2026-12-26" },
 ]
 
 [bans]
 multiple-versions = "allow"
+deny = [
+  { crate = "crypto-bigint:>=0.6.0, <0.7.6", reason = "RUSTSEC-2026-0387: affected versions; the advisory ignore (tavrn-web#227) is meant for 0.5.5 only" },
+]
 
 # Crates only from crates.io: no other registry and no git repository.
 [sources]
