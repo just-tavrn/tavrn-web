@@ -94,9 +94,14 @@ export function MediaAvatar({ name, still, animated, size = 32, shape = "circle"
       {src && !failed.includes(src) ? (
         <img src={src} alt="" draggable={false} decoding="async" className={`h-full w-full ${radius} bg-bg-3 object-cover`} onError={() => setFailed((f) => (f.includes(src) ? f : [...f.slice(-3), src]))} data-testid="avatar-image" />
       ) : (
-        <span className={`inline-flex h-full w-full items-center justify-center ${radius} font-semibold text-white`} style={{ background: avatarBackground(name), fontSize: size * 0.38 }}>
-          {initials(name)}
-        </span>
+        // The initials are drawn as generated content: they are part of the picture, not text of the control around
+        // it, whose name (a room's or person's name) does not repeat them (WCAG 2.5.3 Label in Name).
+        <span
+          className={`inline-flex h-full w-full items-center justify-center ${radius} font-semibold text-white before:content-[attr(data-initials)]`}
+          style={{ background: avatarBackground(name), fontSize: size * 0.38 }}
+          data-initials={initials(name)}
+          data-testid="avatar-initials"
+        />
       )}
       {presence && (
         <span

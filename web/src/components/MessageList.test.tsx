@@ -339,7 +339,7 @@ describe("MessageList: author avatars (design note 4.9)", () => {
     // Bob has no image: his initials, as before.
     const bobAvatar = within(bobRow!).getByTestId("message-avatar");
     expect(within(bobAvatar).queryByTestId("avatar-image")).toBeNull();
-    expect(bobAvatar).toHaveTextContent("B");
+    expect(within(bobAvatar).getByTestId("avatar-initials")).toHaveAttribute("data-initials", "B");
   });
 
   it("AuthorProfiles loads each author's profile once from the node and opens the card from the avatar", async () => {

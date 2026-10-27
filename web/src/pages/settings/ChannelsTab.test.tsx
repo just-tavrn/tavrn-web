@@ -39,7 +39,10 @@ describe("ChannelsTab: layered overrides", () => {
     const calls = mockFetch({ "/rooms/r1/overrides": { body: [] } });
     renderWithProviders(<ChannelsTab room={room} />, { route: "/rooms/r1/settings/channels" });
     const u = userEvent.setup();
-    await u.click(await screen.findByRole("button", { name: "Berechtigungen in der Kategorie Team" }));
+    // The name starts with the visible "Team Berechtigungen" (WCAG 2.5.3 Label in Name).
+    const open = await screen.findByRole("button", { name: "Team: Berechtigungen der Kategorie" });
+    expect(open).toHaveTextContent("Team Berechtigungen");
+    await u.click(open);
     const editor = screen.getByTestId("category-editor");
     expect(within(editor).getByRole("heading", { name: "Berechtigungen in dieser Kategorie: Team" })).toBeInTheDocument();
     expect(within(editor).getByRole("radio", { name: "Nachrichten senden: verbieten" })).toHaveAttribute("aria-checked", "true");
@@ -63,7 +66,7 @@ describe("ChannelsTab: layered overrides", () => {
     mockFetch({});
     renderWithProviders(<ChannelsTab room={hidden} />, { route: "/rooms/r1/settings/channels" });
     const u = userEvent.setup();
-    await u.click(await screen.findByRole("button", { name: "Berechtigungen in der Kategorie Team" }));
+    await u.click(await screen.findByRole("button", { name: "Team: Berechtigungen der Kategorie" }));
     const editor = screen.getByTestId("category-editor");
     await u.selectOptions(within(editor).getByRole("combobox", { name: "Rolle" }), "Moderator");
     expect(within(editor).getByTestId("inherited-VIEW_CHANNEL")).toHaveTextContent("Geerbt: von @everyone hier verboten");

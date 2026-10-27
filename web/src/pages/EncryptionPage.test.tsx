@@ -24,7 +24,10 @@ let n = 0;
 function signIn(hasIdentity: boolean) {
   const username = `enc${++n}`;
   const user = { id: "u1", username, domain: "t.local", address: `${username}@t.local`, display_name: "A", kind: "user", is_node_admin: false, avatar_blob_id: null, created_at: "", email: null, email_verified: false, has_identity_key: hasIdentity };
-  useAuth.setState({ token: "acc", refresh: "ref", user, deviceId: DEV });
+  // Signed in: the session in memory and in the storage of every tab.
+  const session = { token: "acc", refresh: "ref", user, deviceId: DEV };
+  localStorage.setItem("tavrn.auth", JSON.stringify(session));
+  useAuth.setState(session);
   return user;
 }
 

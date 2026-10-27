@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { MediaAvatar } from "./Avatar";
 
@@ -61,12 +61,23 @@ describe("MediaAvatar", () => {
     expect(src()).toBe(ANIM);
   });
 
+  it("draws the initials as part of the picture, not as text of the control around it (WCAG 2.5.3)", () => {
+    render(
+      <button type="button" aria-label="Lesbar">
+        <MediaAvatar name="Lesbar" testId="av" />
+        <span>Lesbar</span>
+      </button>,
+    );
+    expect(screen.getByTestId("avatar-initials")).toHaveAttribute("data-initials", "L");
+    expect(screen.getByRole("button", { name: "Lesbar" }).textContent).toBe("Lesbar");
+  });
+
   it("respects reduced motion and falls back to initials", () => {
     Object.defineProperty(window, "matchMedia", { writable: true, configurable: true, value: (q: string) => ({ matches: q.includes("reduce"), media: q, addEventListener: () => {}, removeEventListener: () => {} }) });
     const { rerender } = render(<MediaAvatar name="Alice Bob" still={STILL} animated={ANIM} speaking testId="av" />);
     expect(src()).toBe(STILL);
     rerender(<MediaAvatar name="Alice Bob" testId="av" presence="dnd" />);
-    expect(screen.getByTestId("av")).toHaveTextContent("AB");
+    expect(within(screen.getByTestId("av")).getByTestId("avatar-initials")).toHaveAttribute("data-initials", "AB");
     expect(screen.getByTestId("presence-dot")).toHaveAttribute("data-status", "dnd");
     // A still without an animated variant never swaps.
     rerender(<MediaAvatar name="Alice" still={STILL} testId="av" />);

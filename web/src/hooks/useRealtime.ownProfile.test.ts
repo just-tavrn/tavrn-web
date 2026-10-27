@@ -10,8 +10,16 @@ const stored = { id: "me", username: "me", address: "me@home.test", domain: "hom
 const client = (me: Partial<UserPrivate> | Error) => ({ users: { me: vi.fn(async () => (me instanceof Error ? Promise.reject(me) : ({ ...stored, ...me }) as UserPrivate)) } }) as never;
 
 describe("refreshOwnProfile", () => {
-  beforeEach(() => useAuth.setState({ token: "t", refresh: "r", user: stored, deviceId: "d", home: null }));
-  afterEach(() => useAuth.setState({ token: null, refresh: null, user: null, deviceId: null }));
+  // Signed in: the session in memory and in the storage of every tab.
+  beforeEach(() => {
+    const session = { token: "t", refresh: "r", user: stored, deviceId: "d", home: null };
+    localStorage.setItem("tavrn.auth", JSON.stringify(session));
+    useAuth.setState(session);
+  });
+  afterEach(() => {
+    localStorage.removeItem("tavrn.auth");
+    useAuth.setState({ token: null, refresh: null, user: null, deviceId: null });
+  });
 
   it("takes over the avatar the home node has now", async () => {
     await refreshOwnProfile(client({ avatar: "/media/a.webp", avatar_still: "/media/a-still.webp", display_name: "Daniel" }));

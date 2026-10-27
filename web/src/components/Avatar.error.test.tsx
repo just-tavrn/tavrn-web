@@ -20,7 +20,7 @@ describe("MediaAvatar: failed images", () => {
     const { rerender } = render(<MediaAvatar name="Alice" still="https://n.test/old.webp" />);
     fireEvent.error(screen.getByTestId("avatar-image"));
     expect(screen.queryByTestId("avatar-image")).toBeNull();
-    expect(screen.getByText("A")).toBeInTheDocument();
+    expect(screen.getByTestId("avatar-initials")).toHaveAttribute("data-initials", "A");
     rerender(<MediaAvatar name="Alice" still="https://n.test/new.webp" />);
     expect(screen.getByTestId("avatar-image")).toHaveAttribute("src", "https://n.test/new.webp");
   });

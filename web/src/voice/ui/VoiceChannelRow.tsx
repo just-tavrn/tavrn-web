@@ -180,7 +180,8 @@ export function VoiceChannelRow({ room, channel, onNavigate, access }: { room: R
           open();
         }}
         className={({ isActive }) => `group/ch ${SIDEBAR_ROW} ${sidebarRowTone(isActive, connected)}`}
-        aria-label={[t("voice.channel_label", { name: channelName(channel) }), ...marks.map((m) => t(accessMarkKey(m)))].join(", ")}
+        // The visible participant count right after the name, before the marks (icons only): WCAG 2.5.3 Label in Name.
+        aria-label={[t("voice.channel_label", { name: channelName(channel) }), count && t("voice.channel_count", { count }), ...marks.map((m) => t(accessMarkKey(m)))].filter(Boolean).join(", ")}
         aria-description={tooltip}
         title={tooltip}
         data-testid="voice-channel-link"
@@ -194,7 +195,7 @@ export function VoiceChannelRow({ room, channel, onNavigate, access }: { room: R
           <SpeakerIcon className={`sidebar-icon ${connected ? "text-accent" : "text-fg-2"}`} data-testid="channel-kind-icon" data-icon="voice" />
           <LockMark testId="voice-channel-lock" />
         </span>
-        <span className={`min-w-0 flex-1 truncate ${canConnect ? "" : "text-fg-2 group-aria-[current=page]/ch:text-fg-0"}`}>{channelName(channel)}</span>
+        <span className={`min-w-0 flex-1 truncate ${canConnect ? "" : "text-fg-2 group-aria-[current=page]/ch:text-fg-0"}`}>{channelName(channel)}</span>{" "}
         {marks.map((m) => (
           <AccessMark key={m} kind={m} />
         ))}

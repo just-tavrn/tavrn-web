@@ -106,6 +106,10 @@ Before: 3 critical + 325 serious + 241 moderate + 25 minor nodes. After: 0 criti
 |---|---|---|---|
 | `target-size` | serious | Files: the text-only breadcrumb buttons rendered below 24 CSS px with the fonts of the CI runner (WCAG 2.5.8) | A minimum size of 24 × 24 px independent of the font (`min-h-6 min-w-6` in `files/FilesView.tsx`); `files-e2ee.spec.ts` scans the breadcrumbs |
 | (layout) | – | The emoji picker grew after its data had loaded and left the viewport above the composer (WCAG 1.4.10) | A fixed panel size bounded by the viewport (`components/EmojiPicker.tsx`); the grid scrolls inside |
+| `label-content-name-mismatch` | serious | Enabled by axe-core 4.14 (WCAG 2.5.3 Label in Name): the initials of picture-less avatars and room icons were text inside the room header button, the rail's room links and the profile triggers ("L Lesbar" against the name "Lesbar") | The initials are generated content of the picture (`data-initials`, `components/Avatar.tsx`, `components/ui.tsx`) |
+| `label-content-name-mismatch` | serious | The search button showed "Search" or the last query, named "Search messages" | It shows "Search messages" or the query; with a query it is named "Search messages: …" |
+| `label-content-name-mismatch` | serious | A voice channel link showed its participant count, which its name left out | The name has the count after the channel ("Voice channel Lounge, 1 connected"); a space separates the visible words (axe joins adjacent elements' text without one) |
+| `label-content-name-mismatch` | serious | Room settings → Channels: a category's button showed "General Permissions", named "Permissions in category General" | Named "General: Permissions of the category", with a space between the visible words |
 
 ## What was built (checklist of design note 4.14 item 4)
 
@@ -295,7 +299,9 @@ be run by a person before claiming conformance.
 - The composer's `textarea` has `role="combobox"` for the slash command palette; ARIA in HTML does not list it as
   allowed on `textarea` (axe `aria-allowed-role`, minor). Screen readers handle it well; kept on purpose.
 - The whiteboard canvas (Excalidraw) is a drawing surface: its shapes are not accessible to screen readers beyond
-  the text list the client shows; Excalidraw's own footer landmark is nested (moderate).
+  the text list the client shows; Excalidraw's own footer landmark is nested (moderate). Excalidraw's zoom reset
+  button shows the zoom percentage but is named "Reset zoom" (serious `label-content-name-mismatch`); the gate skips
+  only that rule on only that button (`e2e/tests/a11y.spec.ts`) until Excalidraw changes it.
 - The context menu layer is rendered outside the landmarks (moderate `region`), as popups usually are.
 - Captions: not applicable (no prerecorded media in the app; live voice is not captioned).
 - Voice tiles show video without audio description (live content, exempt at AA).

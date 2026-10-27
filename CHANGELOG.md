@@ -6,6 +6,13 @@ checksums and update files. The node's container image embeds the web client of 
 
 ## Unreleased
 
+- **Accessibility (WCAG 2.5.3 Label in Name)**: controls are named with the text they show, for speech input. The
+  initials of avatars and room icons without a picture are part of the picture; the search button shows "Search
+  messages" (or the query); voice channel links name their participant count; a category's permissions button in the
+  channel settings is named like "General: Permissions of the category". The accessibility gate runs axe-core 4.14.
+- A profile or device update that was still running (the own account taken over on every connection) no longer
+  writes a session back that left the storage meanwhile (signed out in another tab, storage cleared), and no longer
+  overwrites tokens another tab has just rotated: it updates the session the storage holds now (#226).
 - **Whisper controls**: the tile's hold control is a labelled "Whisper" button next to the participant menu (marked
   when the participant is the chosen whisper target); indicators, the voice bar and the group settings show display
   names instead of addresses. The member menu chooses a whisper target ("Choose … as whisper target", with a hint and

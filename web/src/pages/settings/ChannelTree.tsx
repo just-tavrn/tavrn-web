@@ -219,7 +219,8 @@ export function ChannelTree({ room, canReorder, canManageRoles, selectedChannelI
                   data-category={cat.id}
                   className={`flex min-h-9 min-w-0 flex-1 items-center gap-1 rounded-md px-2 text-left uppercase ${selectedCategoryId === cat.id ? "bg-bg-3 text-fg-0" : "hover:bg-bg-3/60 hover:text-fg-0"}`}
                 >
-                  <span className="truncate">{name}</span>
+                  {/* The space separates the words of the visible text (a flex container does not render it). */}
+                  <span className="truncate">{name}</span>{" "}
                   <span className="ml-auto shrink-0 text-[10px] font-normal normal-case">{t("channels.category_permissions_short")}</span>
                 </button>
               ) : (
