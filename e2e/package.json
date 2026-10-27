@@ -12,8 +12,8 @@
     "test": "node --test \"tests/*.test.ts\""
   },
   "devDependencies": {
-    "@axe-core/playwright": "^4.13.0",
-    "@playwright/test": "^1.64.0",
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "^1.64.1",
     "@tavrn/bot": "github:just-tavrn/tavrn-js#38fdf17ab4f853569d58bf71f02f1155852943a7&path:bot",
     "@tavrn/crypto": "^0.1.0",
     "@tavrn/e2ee": "github:just-tavrn/tavrn-js#38fdf17ab4f853569d58bf71f02f1155852943a7&path:e2ee",
