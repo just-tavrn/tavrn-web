@@ -99,13 +99,14 @@ export function SearchButton(p: { conversationId: string; encrypted: boolean; ro
       <button
         type="button"
         onClick={open}
-        aria-label={t("search.open")}
+        aria-label={ui.query ? t("search.open_query", { query: ui.query }) : t("search.open")}
         aria-expanded={ui.open}
         data-testid="search-open"
         className="inline-flex min-h-10 min-w-10 items-center justify-center gap-2 rounded-md text-fg-2 hover:bg-bg-3 hover:text-fg-0 md:min-w-48 md:justify-start md:border md:border-line md:bg-bg-1 md:px-3 md:text-sm"
       >
         <span aria-hidden="true">🔍</span>
-        <span className="hidden truncate md:inline">{ui.query || t("search.placeholder")}</span>
+        {/* The visible text is part of the name (WCAG 2.5.3 Label in Name). */}
+        <span className="hidden truncate md:inline">{ui.query || t("search.open")}</span>
       </button>
       {ui.open && <SearchPanel {...p} />}
     </>

@@ -34,12 +34,32 @@ interface Finding {
 
 const findings: Finding[] = [];
 
+/**
+ * One known exception, third-party markup: Excalidraw 0.18.1's zoom reset button shows the zoom percentage ("100%")
+ * while its aria-label is Excalidraw's own `buttons.resetZoom` text ("Reset zoom"), which axe-core 4.14 reports as
+ * label-content-name-mismatch (WCAG 2.5.3). No upstream issue covers it (accessibility discussion:
+ * https://github.com/excalidraw/excalidraw/issues/5759). Only that rule on only that button is dropped; every other
+ * node of the rule and every other rule on the button still count. Remove when Excalidraw changes it.
+ */
+const EXCALIDRAW_ZOOM_RESET = ".excalidraw .reset-zoom-button";
+
 /** Runs axe on the current page state and records the violations under `screen`. */
 async function scan(page: Page, screen: string) {
   // Let transitions and lazy content settle (axe measures colors of what is painted).
   await page.waitForTimeout(400);
   const result = await new AxeBuilder({ page }).withTags(TAGS).analyze();
   for (const v of result.violations) {
+    if (v.id === "label-content-name-mismatch") {
+      const zoomReset = await Promise.all(
+        v.nodes.map((n) =>
+          n.target.length === 1 && typeof n.target[0] === "string"
+            ? page.evaluate(([t, s]) => document.querySelector(t)?.matches(s) ?? false, [n.target[0], EXCALIDRAW_ZOOM_RESET] as const)
+            : false,
+        ),
+      );
+      v.nodes = v.nodes.filter((_, i) => !zoomReset[i]);
+      if (v.nodes.length === 0) continue;
+    }
     findings.push({
       screen,
       rule: v.id,

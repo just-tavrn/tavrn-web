@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route, Routes, useLocation } from "react-router";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -94,5 +94,15 @@ describe("search panel", () => {
     await user.click(screen.getByTestId("search-input"));
     await user.keyboard("{Escape}");
     expect(screen.queryByTestId("search-panel")).toBeNull();
+  });
+
+  it("the open button's name contains its visible text, with and without a query (WCAG 2.5.3)", () => {
+    view();
+    const button = screen.getByTestId("search-open");
+    expect(button).toHaveAccessibleName("Nachrichten durchsuchen");
+    expect(button).toHaveTextContent("Nachrichten durchsuchen");
+    act(() => useSearchUi.setState({ query: "Willkommen" }));
+    expect(button).toHaveAccessibleName("Nachrichten durchsuchen: Willkommen");
+    expect(button).toHaveTextContent("Willkommen");
   });
 });

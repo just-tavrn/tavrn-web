@@ -146,6 +146,13 @@ describe("the row's tooltip: status and session timer (VOICE.md §2a, §5)", () 
     renderRow();
     expect(screen.getByTestId("voice-channel-link")).not.toHaveAttribute("title");
   });
+
+  it("names the visible participant count right after the channel (WCAG 2.5.3 Label in Name)", () => {
+    useVoicePresence.getState().apply("n.test", { room_id: "R", channel_id: "C", epoch: null, session_started_at: null, participants: [participant("alice@n.test", "DA")] } as never);
+    renderRow();
+    expect(screen.getByTestId("voice-channel-link").textContent).toBe("Sprache 1");
+    expect(screen.getByTestId("voice-channel-link")).toHaveAccessibleName(/^Sprachkanal .+, 1 verbunden$/);
+  });
 });
 
 describe("the voice member list and the whiteboard", () => {

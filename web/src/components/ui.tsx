@@ -49,15 +49,16 @@ export function Field({ label, children, hint, errorId }: { label: string; child
   );
 }
 
+/** Initials as generated content, as in MediaAvatar: part of the picture, not text of a control's name (WCAG 2.5.3). */
 export function Avatar({ name, size = 32 }: { name: string; size?: number }) {
   return (
     <span
       aria-hidden="true"
-      className="inline-flex shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
+      className="inline-flex shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white before:content-[attr(data-initials)]"
       style={{ width: size, height: size, background: avatarBackground(name), fontSize: size * 0.38 }}
-    >
-      {initials(name)}
-    </span>
+      data-initials={initials(name)}
+      data-testid="avatar-initials"
+    />
   );
 }
 

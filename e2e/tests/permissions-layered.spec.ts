@@ -55,7 +55,7 @@ test("deny view on @everyone, allow it on one channel: a member sees exactly tha
   await axe(page, "[data-testid='channel-editor']");
 
   // The category has the same editor; it stays neutral here.
-  await page.getByRole("button", { name: "Berechtigungen in der Kategorie Team" }).click();
+  await page.getByRole("button", { name: "Team: Berechtigungen der Kategorie" }).click();
   const categoryEditor = page.getByTestId("category-editor");
   await expect(categoryEditor.getByRole("heading", { name: "Berechtigungen in dieser Kategorie: Team" })).toBeVisible();
   await expect(categoryEditor.getByRole("radio", { name: "Channel ansehen: neutral" })).toHaveAttribute("aria-checked", "true");
@@ -105,7 +105,7 @@ test("the category editor's hint under a neutral role names the category's own @
 
   await loginAs(page, owner);
   await page.goto(`/rooms/${room.id}/settings/channels`);
-  await page.getByRole("button", { name: "Berechtigungen in der Kategorie Team" }).click();
+  await page.getByRole("button", { name: "Team: Berechtigungen der Kategorie" }).click();
   const categoryEditor = page.getByTestId("category-editor");
   await categoryEditor.getByRole("combobox", { name: "Rolle" }).selectOption({ label: "Moderator" });
   await expect(categoryEditor.getByTestId("inherited-VIEW_CHANNEL")).toHaveText("Geerbt: von @everyone hier verboten");
