@@ -19,7 +19,7 @@
     "@tavrn/e2ee": "github:just-tavrn/tavrn-js#38fdf17ab4f853569d58bf71f02f1155852943a7&path:e2ee",
     "@tavrn/sdk": "github:just-tavrn/tavrn-js#38fdf17ab4f853569d58bf71f02f1155852943a7&path:sdk",
     "@types/libsodium-wrappers": "^0.8.2",
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "libsodium-wrappers": "^0.8.4",
     "typescript": "^5.9.3",
     "vite-node": "^6.0.0"
