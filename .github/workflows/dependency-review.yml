@@ -32,4 +32,7 @@ jobs:
           # Exempt from the license check (any version; the action matches the purl without version, ignoring case):
           # - Swatinem/rust-cache (LGPL-3.0): a CI-only action that caches Cargo builds in the workflows; nothing of it
           #   is linked into or shipped with the apps.
-          allow-dependencies-licenses: pkg:githubactions/Swatinem/rust-cache
+          # - brotli-decompressor (Tauri's build-time asset compression): the legacy "BSD-3-Clause/MIT" (both allowed),
+          #   which GitHub cannot parse; cargo deny checks its license.
+          allow-dependencies-licenses: >-
+            pkg:githubactions/Swatinem/rust-cache, pkg:cargo/brotli-decompressor
