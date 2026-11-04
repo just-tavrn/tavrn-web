@@ -29,3 +29,10 @@ jobs:
           allow-licenses: >-
             MIT, MIT-0, 0BSD, Apache-2.0, Apache-2.0 WITH LLVM-exception, BSD-2-Clause, BSD-3-Clause, ISC,
             MPL-2.0, Zlib, Unicode-3.0, Unicode-DFS-2016, CC0-1.0, BSL-1.0, Unlicense, CDLA-Permissive-2.0
+          # Exempt from the license check (any version; the action matches the purl without version, ignoring case):
+          # - Swatinem/rust-cache (LGPL-3.0): a CI-only action that caches Cargo builds in the workflows; nothing of it
+          #   is linked into or shipped with the apps.
+          # - brotli-decompressor (Tauri's build-time asset compression): the legacy "BSD-3-Clause/MIT" (both allowed),
+          #   which GitHub cannot parse; cargo deny checks its license.
+          allow-dependencies-licenses: >-
+            pkg:githubactions/Swatinem/rust-cache, pkg:cargo/brotli-decompressor

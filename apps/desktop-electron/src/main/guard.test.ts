@@ -58,10 +58,10 @@ test("openExternal accepts web links only", () => {
   }
 });
 
-test("the main window gets the microphone, the camera and what the client needs; everything else is denied", () => {
+test("the main window gets the microphone, the camera, screen capture and what the client needs; everything else is denied", () => {
   const app = "app://tavrn/rooms/1";
-  for (const p of ["media", "clipboard-sanitized-write", "fullscreen", "speaker-selection"]) assert.equal(permission(p, app, true, null), true, p);
-  for (const p of ["notifications", "geolocation", "midi", "midiSysex", "pointerLock", "keyboardLock", "openExternal", "clipboard-read", "display-capture", "idle-detection", "window-management", "unknown", "fileSystem", "storage-access"]) {
+  for (const p of ["media", "display-capture", "clipboard-sanitized-write", "fullscreen", "speaker-selection"]) assert.equal(permission(p, app, true, null), true, p);
+  for (const p of ["notifications", "geolocation", "midi", "midiSysex", "pointerLock", "keyboardLock", "openExternal", "clipboard-read", "idle-detection", "window-management", "unknown", "fileSystem", "storage-access"]) {
     assert.equal(permission(p, app, true, null), false, p);
   }
   // Not the main window, or a frame of another origin (an embed), or a page that is not the app: nothing.
@@ -73,6 +73,13 @@ test("the main window gets the microphone, the camera and what the client needs;
   assert.equal(permission("media", app, true, null, ["audio", "video"]), true);
   assert.equal(permission("media", "app://tavrn", true, null, ["audio"]), true);
   assert.equal(permission("media", app, true, null, ["audio", "screen"]), false);
+  // Screen capture (Electron >= 45 asks for `display-capture`, with its types; the shell's picker then chooses the
+  // source): the main window's own page only, video and the sound.
+  assert.equal(permission("display-capture", app, true, null, ["video"]), true);
+  assert.equal(permission("display-capture", app, true, null, ["video", "audio"]), true);
+  assert.equal(permission("display-capture", app, true, null, ["video", "screen"]), false);
+  assert.equal(permission("display-capture", app, false, null, ["video"]), false);
+  assert.equal(permission("display-capture", "https://www.youtube-nocookie.com/embed/x", true, null, ["video"]), false);
 });
 
 test("the dev server comes from TAVRN_DESKTOP_DEV_URL only in a development run and only on this computer", () => {

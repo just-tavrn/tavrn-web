@@ -47,7 +47,8 @@ zeroize = { version = "1.9", features = ["serde"] }
 tauri-plugin-opener = "2.7"
 # Downloads (src/download.rs): the native save dialog; the shell writes the file itself (no fs plugin for the webview).
 tauri-plugin-dialog = "2.7"
-tauri-plugin-updater = "2.13"
+# 2.14.1: zip 9 (RUSTSEC-2026-0429 and the zip < 9 extraction advisories; Windows only, signature-verified downloads).
+tauri-plugin-updater = "2.14.1"
 # `tavrn://` links (src/deeplink.rs): the scheme in the Windows installers' registry and the macOS bundle, the links of a
 # start and of a second start (through the single-instance plugin's deep-link feature).
 tauri-plugin-deep-link = "2"
