@@ -8,8 +8,9 @@
  *
  * Permissions: the main window's own pages get the microphone and the camera without a prompt (it shows only the
  * bundled client), and the few web permissions the client needs to work as in a browser (writing to the clipboard,
- * fullscreen video, choosing the speaker); everything else is denied, for every page. Screen capture goes through the
- * shell's own picker (`setDisplayMediaRequestHandler`), not through a permission.
+ * fullscreen video, choosing the speaker); everything else is denied, for every page. Screen capture is granted to
+ * the same pages as `display-capture` (Electron >= 45), and the shell's own picker (`setDisplayMediaRequestHandler`)
+ * chooses what is shared.
  */
 import { isAppUrl } from "./protocol.ts";
 
@@ -63,18 +64,19 @@ export function newWindow(url: string, devUrl: string | null): string | null {
 
 /**
  * Permissions the bundled client gets in the main window (Electron's names): `media` (the microphone and the camera),
- * writing to the clipboard, fullscreen, choosing the speaker. Screen capture is not a permission here: it goes through
- * the shell's picker (`capture.ts`).
+ * `display-capture` (screen sharing; Electron >= 45 asks for it before the shell's picker, `capture.ts`, chooses the
+ * source), writing to the clipboard, fullscreen, choosing the speaker.
  */
-export const GRANTED: readonly string[] = ["media", "clipboard-sanitized-write", "fullscreen", "speaker-selection"];
+export const GRANTED: readonly string[] = ["media", "display-capture", "clipboard-sanitized-write", "fullscreen", "speaker-selection"];
 
 /**
  * The answer to a permission request or check: `origin` is the requesting frame's URL or origin, `mainWindow` whether
- * it belongs to the main window, `mediaTypes` what a `media` request asks for (only `audio` and `video` are granted).
+ * it belongs to the main window, `mediaTypes` what a `media` or `display-capture` request asks for (only `audio` and
+ * `video` are granted).
  */
 export function permission(name: string, origin: string, mainWindow: boolean, devUrl: string | null, mediaTypes: readonly string[] = []): boolean {
   if (!mainWindow || !GRANTED.includes(name) || !isAppPage(origin, devUrl)) return false;
-  return name !== "media" || mediaTypes.every((t) => t === "audio" || t === "video");
+  return (name !== "media" && name !== "display-capture") || mediaTypes.every((t) => t === "audio" || t === "video");
 }
 
 /**
