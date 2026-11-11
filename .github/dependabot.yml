@@ -30,3 +30,10 @@ updates:
     groups:
       rust:
         patterns: ["*"]
+    ignore:
+      # Test-only: the passkey JSON must stay what tavrn-node's webauthn-rs reads (src/passkey.rs tests), so these move
+      # together with tavrn-node's webauthn-rs, not on their own (0.x minor versions are breaking).
+      - dependency-name: webauthn-rs-proto
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: base64urlsafedata
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]

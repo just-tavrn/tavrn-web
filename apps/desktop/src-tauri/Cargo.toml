@@ -93,8 +93,8 @@ apple-native-keyring-store = { version = "1", features = ["keychain"] }
 # The voice integration test (tests/voice_livekit.rs) signs LiveKit tokens itself (HS256).
 ring = "0.17"
 # The native passkeys' JSON must be what tavrn-node's webauthn-rs reads (src/passkey.rs tests).
-webauthn-rs-proto = "0.6.2"
-base64urlsafedata = "0.6.2"
+webauthn-rs-proto = "0.5.5"
+base64urlsafedata = "0.5.5"
 
 [lints.clippy]
 unwrap_used = "deny"
