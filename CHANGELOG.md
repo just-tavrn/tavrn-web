@@ -6,6 +6,21 @@ checksums and update files. The node's container image embeds the web client of 
 
 ## Unreleased
 
+- **Security fixes** (0.4.0-rc.15):
+  - **Encryption:** `@tavrn/crypto` 0.1.2 with OpenMLS 0.9.2. Removed members can no longer reappear after an external
+    commit regrows the ratchet tree ([GHSA-94v4-rg25-x625](https://github.com/openmls/openmls/security/advisories/GHSA-94v4-rg25-x625)),
+    and a rejected message no longer advances the sender's ratchet
+    ([GHSA-p276-g3f3-wwgh](https://github.com/openmls/openmls/security/advisories/GHSA-p276-g3f3-wwgh)). It also
+    includes ctutils 0.4.8 ([RUSTSEC-2026-0385](https://rustsec.org/advisories/RUSTSEC-2026-0385)).
+  - **Desktop updater:** zip 9 for the update packages ([GHSA-m665-v7pm-7grj](https://github.com/advisories/GHSA-m665-v7pm-7grj),
+    [RUSTSEC-2026-0429](https://rustsec.org/advisories/RUSTSEC-2026-0429)).
+  - **Desktop TLS:** rustls-webpki no longer trusts the distrusted emSign intermediates
+    (RUSTSEC-2026-0381/0382/0383).
+  - **Electron:** the Linux and fallback apps run Electron 45.2
+    ([GHSA-jr5w-w6x2-84p9](https://github.com/advisories/GHSA-jr5w-w6x2-84p9)); screen sharing arrives as the
+    permission `display-capture` and is granted only to the app's own page.
+- Desktop voice: LiveKit's Rust SDK 0.10.
+
 - **Accessibility (WCAG 2.5.3 Label in Name)**: controls are named with the text they show, for speech input. The
   initials of avatars and room icons without a picture are part of the picture; the search button shows "Search
   messages" (or the query); voice channel links name their participant count; a category's permissions button in the
