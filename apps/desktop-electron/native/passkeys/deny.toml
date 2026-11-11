@@ -18,6 +18,10 @@ ignore = [
   { id = "RUSTSEC-2021-0127", reason = "unmaintained, used by the authenticator crate; no known vulnerability" },
   # Owner-accepted temporary risk, tracked in https://github.com/just-tavrn/tavrn-web/issues/227.
   { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5.5 only (authenticator 0.5 crypto_rust -> p256 0.13): owner accepts the risk of the ephemeral P-256 secret per CTAP2 PIN/UV ceremony, local only; an attack needs fine-grained local timing measurement; most patterns fixed upstream are absent in 0.5.5 and p256 0.13 uses its own field arithmetic; tracking https://github.com/just-tavrn/tavrn-web/issues/227; expires 2026-12-26" },
+  # rsa (Marvin timing attack), fixed in 0.10.0 but not yet reachable: rsa 0.10.0-rc.19 via crypto-glue 0.2.2 <-
+  # webauthn-rs 0.6, a dev-dependency only (the tests verify the shell's passkeys with tavrn-node's own verifier); the
+  # module itself has no RSA. Owner-approved temporary exception, tracked in https://github.com/just-tavrn/tavrn-node/issues/128.
+  { id = "RUSTSEC-2023-0071", reason = "dev-only (tests verify the shell's passkeys with tavrn-node's webauthn-rs 0.6 verifier); rsa 0.10.0-rc.19 via crypto-glue <- webauthn-rs 0.6, used to verify with public keys only; owner-approved 2026-11-11; tracking https://github.com/just-tavrn/tavrn-node/issues/128; expires 2027-02-11" },
 ]
 
 [bans]
