@@ -51,7 +51,9 @@ function renderPrompt() {
 
 beforeEach(() => {
   sessionStorage.clear();
-  deepLinkDeps.identity = async (host) => (host === "app.other.example" ? "other.example" : null);
+  // Like the real lookup (a request to the link's node), the answer comes after the click has returned: the route
+  // changes later, so the tests wait for it (#202: an assertion on the route right after the click raced the navigation).
+  deepLinkDeps.identity = (host) => new Promise((resolve) => setTimeout(() => resolve(host === "app.other.example" ? "other.example" : null), 20));
 });
 afterEach(() => {
   resetPlatform();
