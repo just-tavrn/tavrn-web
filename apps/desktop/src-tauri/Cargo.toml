@@ -57,7 +57,7 @@ keyring-core = "1"
 # Native notifications (the backend of tauri-plugin-notification, used directly for the click on Linux).
 notify-rust = "4.11"
 # The native voice engine (feature native-voice): LiveKit's Rust SDK (signalling over rustls with ring, like the updater).
-livekit = { version = "0.9.4", default-features = false, features = ["native", "rustls-tls-webpki-roots"], optional = true }
+livekit = { version = "0.10.0", default-features = false, features = ["native", "rustls-tls-webpki-roots"], optional = true }
 # Audio devices: PulseAudio (pure Rust client, also PipeWire's server) with ALSA as the fallback on Linux, WASAPI on Windows.
 cpal = { version = "0.18", features = ["pulseaudio"], optional = true }
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"], optional = true }
@@ -93,8 +93,7 @@ apple-native-keyring-store = { version = "1", features = ["keychain"] }
 # The voice integration test (tests/voice_livekit.rs) signs LiveKit tokens itself (HS256).
 ring = "0.17"
 # The native passkeys' JSON must be what tavrn-node's webauthn-rs reads (src/passkey.rs tests).
-webauthn-rs-proto = "0.5.5"
-base64urlsafedata = "0.5.5"
+webauthn-rs-proto = "0.6.2"
 
 [lints.clippy]
 unwrap_used = "deny"

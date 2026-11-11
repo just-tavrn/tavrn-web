@@ -50,12 +50,12 @@ fn soft_register(key: &mut SoftPasskey, args: &RegisterArgs) -> MakeCredentialsR
     let options = PublicKeyCredentialCreationOptions {
         rp: RelyingParty { name: args.relying_party.name.clone().unwrap_or_default(), id: args.relying_party.id.clone() },
         user: User {
-            id: args.user.id.clone().into(),
+            id: args.user.id.clone(),
             name: args.user.name.clone().unwrap_or_default(),
             display_name: args.user.display_name.clone().unwrap_or_default(),
         },
         // The authenticator signs the hash; it never sees the challenge.
-        challenge: vec![0u8; 32].into(),
+        challenge: vec![0u8; 32],
         pub_key_cred_params: args.pub_cred_params.iter().map(|p| PubKeyCredParams { type_: "public-key".into(), alg: p.alg as i64 }).collect(),
         timeout: None,
         exclude_credentials: None,
@@ -86,13 +86,13 @@ fn soft_register(key: &mut SoftPasskey, args: &RegisterArgs) -> MakeCredentialsR
 
 fn soft_sign(key: &mut SoftPasskey, args: &SignArgs, prf: Option<Vec<u8>>) -> GetAssertionResult {
     let options = PublicKeyCredentialRequestOptions {
-        challenge: vec![0u8; 32].into(),
+        challenge: vec![0u8; 32],
         timeout: None,
         rp_id: args.relying_party_id.clone(),
         allow_credentials: args
             .allow_list
             .iter()
-            .map(|d| webauthn_rs_proto::AllowCredentials { type_: "public-key".into(), id: d.id.clone().into(), transports: None })
+            .map(|d| webauthn_rs_proto::AllowCredentials { type_: "public-key".into(), id: d.id.clone(), transports: None })
             .collect(),
         user_verification: uv(args.user_verification_req),
         hints: None,

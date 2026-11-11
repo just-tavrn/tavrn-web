@@ -961,7 +961,7 @@ mod tests {
         // The node reads it with webauthn-rs' own type.
         let parsed: Result<webauthn_rs_proto::RegisterPublicKeyCredential, _> = serde_json::from_value(c.clone());
         let parsed = parsed.unwrap_or_else(|e| unreachable!("{e}"));
-        assert_eq!(parsed.raw_id.as_ref(), b"cred-1");
+        assert_eq!(parsed.raw_id.as_slice(), b"cred-1");
         // A security key over USB; a system that reports nothing.
         let usb = registration_json(&RawRegistration { transport: 1, ..raw.clone() }, "{}");
         assert_eq!(
@@ -1001,12 +1001,12 @@ mod tests {
     #[test]
     fn the_options_webauthn_rs_writes_are_read() {
         use webauthn_rs_proto::*;
-        let id = base64urlsafedata::Base64UrlSafeData::from(vec![1u8; 16]);
+        let id = vec![1u8; 16];
         let creation = CreationChallengeResponse {
             public_key: PublicKeyCredentialCreationOptions {
                 rp: RelyingParty { name: "tavrn".into(), id: "tavrn.org".into() },
                 user: User { id: id.clone(), name: "alice".into(), display_name: "Alice".into() },
-                challenge: vec![2u8; 32].into(),
+                challenge: vec![2u8; 32],
                 pub_key_cred_params: vec![PubKeyCredParams { type_: "public-key".into(), alg: -7 }],
                 timeout: Some(300_000),
                 exclude_credentials: Some(vec![PublicKeyCredentialDescriptor {
@@ -1032,7 +1032,7 @@ mod tests {
         assert_eq!(attachment(o.authenticator_selection.authenticator_attachment.as_deref()), 2);
         let request = RequestChallengeResponse {
             public_key: PublicKeyCredentialRequestOptions {
-                challenge: vec![2u8; 32].into(),
+                challenge: vec![2u8; 32],
                 timeout: Some(300_000),
                 rp_id: "tavrn.org".into(),
                 allow_credentials: vec![],
