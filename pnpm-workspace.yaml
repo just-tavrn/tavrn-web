@@ -26,7 +26,7 @@ minimumReleaseAgeExclude:
 overrides:
   "@tavrn/sdk": "github:just-tavrn/tavrn-js#38fdf17ab4f853569d58bf71f02f1155852943a7&path:sdk"
   "@tavrn/e2ee": "github:just-tavrn/tavrn-js#38fdf17ab4f853569d58bf71f02f1155852943a7&path:e2ee"
-  "@tavrn/crypto": "^0.1.0"
+  "@tavrn/crypto": "^0.1.2"
   # Security overrides for @excalidraw/excalidraw 0.18.1 (the newest release; `pnpm audit` must stay clean).
   # Drop each one once Excalidraw ships a release without the problem.
   # - nanoid: Excalidraw pins 3.3.3 exactly (GHSA-mwcw-c2x4-8c55 and three newer advisories: predictable or endless

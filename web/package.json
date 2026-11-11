@@ -26,7 +26,7 @@
     "@tanstack/react-query": "^5.105.1",
     "@tanstack/react-virtual": "^3.14.24",
     "@tauri-apps/api": "^2.12.4",
-    "@tavrn/crypto": "^0.1.0",
+    "@tavrn/crypto": "^0.1.2",
     "@tavrn/e2ee": "github:just-tavrn/tavrn-js#38fdf17ab4f853569d58bf71f02f1155852943a7&path:e2ee",
     "@tavrn/sdk": "github:just-tavrn/tavrn-js#38fdf17ab4f853569d58bf71f02f1155852943a7&path:sdk",
     "country-flag-emoji-polyfill": "0.1.10",
