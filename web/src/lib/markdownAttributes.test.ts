@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Nothing is string-edited after sanitising: emoji tokens, room emojis, bot mentions and link attributes are applied
-// to DOM nodes, so text from a message can never leave an attribute value. jsdom serialises `<`/`>` in attribute
-// values raw (like older browser engines), which makes these tests faithful for those engines.
-import { describe, expect, it } from "vitest";
-import { renderMarkdown } from "./markdown";
+// to DOM nodes, so text from a message can never leave an attribute value. String edits would only be caught where the
+// serialised HTML keeps `<`/`>` raw inside attribute values: engines from before the 2025 change to the HTML standard
+// (older WebViews of the Tauri shell) do, current ones (Chromium, Firefox, jsdom 31) escape them. So every test runs
+// with the engine's own serialiser and with the legacy one (src/test/legacySerializer.ts).
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { useLegacyAttributeSerialization } from "../test/legacySerializer";
+import { forgetRendered, renderMarkdown } from "./markdown";
 import { markBotMentions } from "./mentionBadges";
 
 const ID = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
@@ -24,11 +27,24 @@ function onlyOneLink(html: string): HTMLAnchorElement {
   return root.querySelector("a")!;
 }
 
-describe("markdown keeps attribute values intact", () => {
-  it("this engine keeps `<` raw in attribute values (the precondition these tests rely on)", () => {
+const SERIALIZERS = [
+  { name: "the engine's serialiser (escapes `<` and `>` in attribute values)", legacy: false, title: '<a title="&lt;b&gt;"></a>' },
+  { name: "the legacy serialiser (keeps `<` and `>` raw in attribute values)", legacy: true, title: '<a title="<b>"></a>' },
+];
+
+describe.each(SERIALIZERS)("markdown keeps attribute values intact, $name", ({ legacy, title: serialisedTitle }) => {
+  let restore = () => {};
+  beforeAll(() => {
+    if (legacy) restore = useLegacyAttributeSerialization();
+  });
+  afterAll(() => restore());
+  // Renderings are memoized; each serialiser must render (and serialise) from scratch.
+  beforeEach(() => forgetRendered());
+
+  it("serialises `<` in attribute values as expected (the precondition of this run)", () => {
     const d = dom("");
     d.appendChild(Object.assign(document.createElement("a"), { title: "<b>" }));
-    expect(d.innerHTML).toBe('<a title="<b>"></a>');
+    expect(d.innerHTML).toBe(serialisedTitle);
   });
 
   it("a custom emoji token in a link title stays literal text (no resolver)", () => {

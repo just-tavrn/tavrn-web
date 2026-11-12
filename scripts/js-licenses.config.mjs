@@ -8,9 +8,12 @@ export default {
   packages: ["web", "e2e", "apps/desktop", "apps/desktop-electron"],
   allowed: [
     // Permissive licenses without copyleft, used by the Electron shell's updater (electron-updater): sax (XML of the
-    // release feed) is BlueOak-1.0.0, argparse (through js-yaml) is the Python Software Foundation License.
+    // release feed) is BlueOak-1.0.0, argparse (through js-yaml) is the Python Software Foundation License: Python-2.0
+    // up to argparse 3.0.2, PSF-2.0 (the PSF License Agreement alone, OSI-approved) from 3.0.3 (js-yaml 5.5).
+    // .github/workflows/dependency-review.yml allows the same three.
     "BlueOak-1.0.0",
     "Python-2.0",
+    "PSF-2.0",
   ],
   // Packages whose metadata carries no SPDX license, verified against their license file.
   verified: { khroma: "MIT" },
